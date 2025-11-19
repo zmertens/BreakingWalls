@@ -2,7 +2,7 @@
   "version": 3,
   "configurePresets": [
     {
-      "name": "platform: web",
+      "name": "platform: desktop",
       "displayName": "Build with Desktop support",
       "description": "Build Desktop version using native toolchain",
       "generator": "Ninja Multi-Config",

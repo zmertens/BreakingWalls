@@ -2,6 +2,14 @@ include(BuildInfo)
 
 include(FetchGitRepo)
 
+if (BREAKING_WALLS_PLATFORM_WEB)
+    
+    message(STATUS "Configuring build flags for Emscripten Web platform")
+
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -matomics -mbulk-memory -pthread")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -matomics -mbulk-memory -pthread")
+endif()
+
 # Get box2d
 FetchGitRepo(box2d https://github.com/erincatto/box2d.git v3.1.1)
 # Add Box2D include directory if not already included by find_package
@@ -34,7 +42,7 @@ FetchGitRepo(SFML ${SFML_REPO_URL} ${SFML_GIT_TAG})
 
 # Get MazeBuilder
 set(MAZE_BUILDER_REPO_URL "https://github.com/zmertens/MazeBuilder")
-set(MAZE_BUILDER_GIT_TAG "v7.2.5")
+set(MAZE_BUILDER_GIT_TAG "v7.6.6")
 message(STATUS "Fetching MazeBuilder from ${MAZE_BUILDER_REPO_URL} at tag ${MAZE_BUILDER_GIT_TAG}")
 FetchGitRepo(MazeBuilder ${MAZE_BUILDER_REPO_URL} ${MAZE_BUILDER_GIT_TAG})
 
@@ -100,40 +108,44 @@ set(DEAR_IMGUI_HEADERS
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3.h
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3_loader.h)
 
+add_executable(${BREAKING_WALLS_APP_NAME} ${DEAR_IMGUI_SRC_FILES} ${BREAKING_WALLS_SRC_FILES})
+
+target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<OR:$<STREQUAL:$<CONFIG>,Debug>,$<STREQUAL:$<CONFIG>,RelWithDebInfo>>:${BREAKING_WALLS_DEBUG_DEF}>")
+target_compile_features(${BREAKING_WALLS_APP_NAME} PRIVATE cxx_std_20)
+
+target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/fonts> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/fonts>)
+target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/dearimgui> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps>)
+target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/dearimgui> $<BUILD_INTERFACE:${DEAR_IMGUI_DEP_PATH}>)
+target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/stb> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/stb>)
+
+target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} box2d::box2d MazeBuilder::MazeBuilder SDL3::SDL3 SFML::Audio SFML::Network)
+
 if (BREAKING_WALLS_PLATFORM_WEB)
     
     message(STATUS "Configuring ${BREAKING_WALLS_APP_NAME} for Web platform using Emscripten")
 
-    add_executable(${BREAKING_WALLS_APP_NAME} ${DEAR_IMGUI_SRC_FILES} ${BREAKING_WALLS_SRC_FILES})
     set_target_properties(${BREAKING_WALLS_APP_NAME} PROPERTIES SUFFIX ".html" LINK_FLAGS "-lembind")
-    target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} box2d::box2d MazeBuilder::MazeBuilder SDL3::SDL3 SFML::Audio SFML::Network)
-    target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../deps/emscripten_local)
-    target_compile_features(${BREAKING_WALLS_APP_NAME} PRIVATE cxx_std_20)
+
+    # Disable C++ modules for Emscripten builds as they're not fully supported
+    set_target_properties(${BREAKING_WALLS_APP_NAME} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+
     target_compile_options(${BREAKING_WALLS_APP_NAME} PRIVATE ${BASE_COMPILE_FLAGS} "-pthread")
-    target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<OR:$<STREQUAL:$<CONFIG>,Debug>,$<STREQUAL:$<CONFIG>,RelWithDebInfo>>:${BREAKING_WALLS_DEBUG_DEF}>")
-    target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/dearimgui> $<BUILD_INTERFACE:${DEAR_IMGUI_DEP_PATH}>)
-    target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/stb> $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/deps/stb>)
+
+    set(EMSCRIPTEN_DEP_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../deps/emscripten_local)
+    target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/emscripten_local> $<BUILD_INTERFACE:${EMSCRIPTEN_DEP_PATH}>)
 
     target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE
         "SHELL:-s PTHREAD_POOL_SIZE=5 -s WASM=1 -s USE_PTHREADS -s ALLOW_MEMORY_GROWTH=1 -s STACK_SIZE=323232 -s MODULARIZE=1 -s EXPORT_ES6=1"
-        "SHELL:--shell-file ${CMAKE_CURRENT_SOURCE_DIR}/../../deps/emscripten_local/shell_minimal.html"
-        "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/resources@/resources")
-
-    target_link_options(${EXE_NAME} PRIVATE "$<$<CONFIG:Debug>:SHELL:-s STACK_OVERFLOW_CHECK=2 -s ASSERTIONS=2 -gsource-map --profile>")
-    target_link_options(${EXE_NAME} PRIVATE "$<$<CONFIG:Release>:SHELL:-O3>")
+        "SHELL:--shell-file ${EMSCRIPTEN_DEP_PATH}/shell_minimal.html"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/resources@/resources")
+    target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<CONFIG:Debug>:SHELL:-s STACK_OVERFLOW_CHECK=2 -s ASSERTIONS=2 -gsource-map --profile>")
+    target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<CONFIG:Release>:SHELL:-O3>")
 else()
 
     message(INFO ": Configuring ${BREAKING_WALLS_APP_NAME} for Desktop platform")
 
-    add_executable(${BREAKING_WALLS_APP_NAME} ${BREAKING_WALLS_SRC_FILES} ${DEAR_IMGUI_SRC_FILES})
-    target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} box2d::box2d MazeBuilder::MazeBuilder SDL3::SDL3 SFML::Audio SFML::Network)
-    target_compile_features(${BREAKING_WALLS_APP_NAME} PRIVATE cxx_std_20)
-    target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<OR:$<STREQUAL:$<CONFIG>,Debug>,$<STREQUAL:$<CONFIG>,RelWithDebInfo>>:${MAZE_DEBUG_DEF}>")
-    target_include_directories(${BREAKING_WALLS_APP_NAME} PUBLIC $<INSTALL_INTERFACE:include> $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
-    target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps> $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/deps>)
-    target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/dearimgui> $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/deps/dearimgui>)
-
-    file(COPY "resources" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../resources" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../deps/fonts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/fonts")
 
 	# Copy shared/dlls on Windows only
 	if(WIN32)

@@ -23,4 +23,4 @@ if (BREAKING_WALLS_PLATFORM_WEB)
     endif()
 endif()
 
-add_subdirectory(src)
+add_subdirectory(src bin)

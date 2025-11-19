@@ -21,9 +21,9 @@
 #include <dearimgui/backends/imgui_impl_sdl3.h>
 #include <dearimgui/backends/imgui_impl_sdlrenderer3.h>
 
-#include "resources/Cousine_Regular.h"
-#include "resources/Limelight_Regular.h"
-#include "resources/nunito_sans.h"
+#include <fonts/Cousine_Regular.h>
+#include <fonts/Limelight_Regular.h>
+#include <fonts/nunito_sans.h>
 
 #include <MazeBuilder/configurator.h>
 #include <MazeBuilder/create.h>
