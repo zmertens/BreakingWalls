@@ -1,0 +1,15 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "platform: web",
+      "displayName": "Build with Desktop support",
+      "description": "Build Desktop version using native toolchain",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "BREAKING_WALLS_PLATFORM_WEB": "OFF"
+      }
+    }
+  ]
+}
