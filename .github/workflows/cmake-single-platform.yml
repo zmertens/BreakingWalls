@@ -50,7 +50,7 @@ jobs:
 
     # Fix C++ module scanning issue for MazeBuilder in Emscripten build
     - name: Disable C++ module scanning for MazeBuilder
-      run: echo 'set_target_properties(${{MAZE_BUILDER_LIB_OUT}}_obj PROPERTIES CXX_SCAN_FOR_MODULES OFF)' >> ${{github.workspace}}/build-emscripten/_deps/mazebuilder-src/sources/CMakeLists.txt
+      run: echo 'set_target_properties(mazebuildercore_obj PROPERTIES CXX_SCAN_FOR_MODULES OFF)' >> ${{github.workspace}}/build-emscripten/_deps/mazebuilder-src/sources/CMakeLists.txt
 
     # Build with Emscripten
     - name: Build with Emscripten
