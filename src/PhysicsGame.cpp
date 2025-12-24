@@ -243,7 +243,7 @@ struct PhysicsGame::PhysicsGameImpl
         window->beginFrame();
         stateStack->draw();
 
-#if defined(MAZE_DEBUG)
+#if defined(BW_DEBUG)
         // Window might be closed during draw calls/events
         if (window->isOpen())
         {
@@ -279,13 +279,13 @@ struct PhysicsGame::PhysicsGameImpl
             fpsUpdateTimer = 0.0;
         }
 
-        // if (currentTimeStep >= 1000.0)
-        // {
-        //     SDL_Log("FPS: %d\n", smoothedFps);
-        //     SDL_Log("Frame Time: %.3f ms/frame\n", smoothedFrameTime);
-        //
-        //     currentTimeStep = 0.0;
-        // }
+        if (currentTimeStep >= 1000.0)
+        {
+            SDL_Log("FPS: %d\n", smoothedFps);
+            SDL_Log("Frame Time: %.3f ms/frame\n", smoothedFrameTime);
+
+            currentTimeStep = 0.0;
+        }
 
         // Create ImGui overlay window
         // Set window position to top-right corner

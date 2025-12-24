@@ -3,7 +3,7 @@ include(BuildInfo)
 include(FetchGitRepo)
 
 if (BREAKING_WALLS_PLATFORM_WEB)
-    
+
     message(STATUS "Configuring build flags for Emscripten Web platform")
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -matomics -mbulk-memory -pthread")
@@ -42,7 +42,7 @@ FetchGitRepo(SFML ${SFML_REPO_URL} ${SFML_GIT_TAG})
 
 # Get MazeBuilder
 set(MAZE_BUILDER_REPO_URL "https://github.com/zmertens/MazeBuilder")
-set(MAZE_BUILDER_GIT_TAG "v7.6.6")
+set(MAZE_BUILDER_GIT_TAG "v7.8.2")
 message(STATUS "Fetching MazeBuilder from ${MAZE_BUILDER_REPO_URL} at tag ${MAZE_BUILDER_GIT_TAG}")
 FetchGitRepo(MazeBuilder ${MAZE_BUILDER_REPO_URL} ${MAZE_BUILDER_GIT_TAG})
 
@@ -121,7 +121,7 @@ target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFAC
 target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} box2d::box2d MazeBuilder::MazeBuilder SDL3::SDL3 SFML::Audio SFML::Network)
 
 if (BREAKING_WALLS_PLATFORM_WEB)
-    
+
     message(STATUS "Configuring ${BREAKING_WALLS_APP_NAME} for Web platform using Emscripten")
 
     set_target_properties(${BREAKING_WALLS_APP_NAME} PROPERTIES SUFFIX ".html" LINK_FLAGS "-lembind")

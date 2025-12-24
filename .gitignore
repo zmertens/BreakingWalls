@@ -18,30 +18,8 @@ build-*/
 
 .idea/
 
-# Script output files
-scripts/*.txt
-scripts/*.png
-scripts/*.PNG
-scripts/*.jpg
-scripts/*.jpeg
-scripts/*.JPG
-scripts/*.JPEG
-scripts/*.bmp
-!scripts/sample_icon.bmp
-!scripts/sample_maze.png
-!scripts/BreakingWallsMask.png
-!scripts/mask.txt
-
-# Ruby
-Gemfile.lock
-!Gemfile
-
 # Dear Imgui config
 *.ini
 
 # Python
 .venv
-scripts/__pycache__/
-
-# Cppcheck XML
-sources/cppcheck.xml

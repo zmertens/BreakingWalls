@@ -5,10 +5,10 @@
 
 /// @file buildinfo.h
 /// @brief Build information for the maze generation library
-/// @namespace mazes
-namespace mazes
+/// @namespace physics
+namespace physics
 {
-    /// @brief Build information for the maze generation library
+    /// @brief Build information for the application
     struct buildinfo
     {
         static inline const std::string CommitSHA = "@COMMIT_SHA@";

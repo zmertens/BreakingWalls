@@ -1,5 +1,5 @@
-#ifndef FONT_HPP
-#define FONT_HPP
+#ifndef FONT_H
+#define FONT_H
 
 #include <cwchar>
 
@@ -17,5 +17,5 @@ private:
     ImFont* mFont = nullptr;
 };
 
-#endif // FONT_HPP
+#endif // FONT_H
 
