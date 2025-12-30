@@ -19,9 +19,9 @@ class PhysicsGame : public mazes::algo_interface, public mazes::singleton_base<P
     friend class singleton_base;
 
 public:
-    PhysicsGame(std::string_view title, std::string_view version, std::string_view resourcePath, int w, int h);
+    PhysicsGame(std::string_view title, std::string_view resourcePath, int w, int h);
 
-    PhysicsGame(const std::string& title, const std::string& version, int w, int h);
+    PhysicsGame(const std::string& title, int w, int h);
 
     ~PhysicsGame() override;
 

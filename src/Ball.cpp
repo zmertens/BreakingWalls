@@ -6,54 +6,131 @@
 
 #include <box2d/box2d.h>
 
+#include "Physics.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
 
 Ball::Ball(Type type, const TextureManager& textureManager)
-    : mType{type}, mSprite{textureManager.get(Ball::getTextureID())}
+    : mType{type}, mSprite{textureManager.get(Ball::getTextureID())}, mShapeId{b2_nullShapeId}
 {
 }
 
-// // Create a dynamic body for the ball
-// b2BodyDef bodyDef = b2DefaultBodyDef();
-// bodyDef.type = b2_dynamicBody;
-// bodyDef.position = { std::get<0>(coords), std::get<1>(coords) };
+void Ball::createPhysicsBody(b2WorldId worldId, b2Vec2 position) noexcept
+{
+    // Set the scene node position
+    setPosition(position.x, position.y);
 
-// bodyDef.linearVelocity = {
-//     static_cast<float>(static_cast<int>(std::get<1>(coords)) % 100) - 50.f / 30.0f,
-//     static_cast<float>(static_cast<int>(std::get<0>(coords)) % 100) - 50.f / 30.0f
-// };
+    // Define physics properties based on ball type
+    // Using smaller radii to match the new physics scale (0.3-0.7 meters = 3-7 pixels)
+    float radius = 5.0f;       // pixels (about 0.5 meters in physics)
+    float density = 1.0f;
+    float restitution = 0.6f;  // bounciness
+    float friction = 0.3f;
+    float linearDamping = 0.2f;
+    float angularDamping = 0.4f;
 
-// // Reduced damping for more movement
-// bodyDef.linearDamping = 0.2f;
-// bodyDef.angularDamping = 0.4f;
-// // Enable continuous collision detection
-// bodyDef.isBullet = true;
-// bodyDef.userData = reinterpret_cast<void*>(this);
+    switch (mType)
+    {
+    case Type::NORMAL:
+        radius = 5.0f;  // 0.5 meters
+        density = 1.0f;
+        restitution = 0.6f;
+        friction = 0.3f;
+        break;
+    case Type::HEAVY:
+        radius = 7.0f;  // 0.7 meters
+        density = 3.0f;
+        restitution = 0.4f;
+        friction = 0.25f;
+        linearDamping = 0.3f;  // Heavier balls slow down faster
+        break;
+    case Type::LIGHT:
+        radius = 4.0f;  // 0.4 meters
+        density = 0.6f;
+        restitution = 0.7f;  // Lighter balls bounce more
+        friction = 0.2f;
+        linearDamping = 0.15f;  // Light balls maintain velocity longer
+        break;
+    case Type::EXPLOSIVE:
+        radius = 6.0f;  // 0.6 meters
+        density = 1.5f;
+        restitution = 0.5f;
+        friction = 0.25f;
+        break;
+    }
 
-// b2BodyId ballBodyId = b2CreateBody(worldId, &bodyDef);
+    // Create the Box2D dynamic body
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_dynamicBody;
+    bodyDef.position = physics::toMetersVec(position);
+    bodyDef.linearDamping = linearDamping;
+    bodyDef.angularDamping = angularDamping;
+    bodyDef.isBullet = true;  // Enable continuous collision detection for fast-moving projectiles
 
-// // Explicitly set the body to be awake
-// b2Body_SetAwake(ballBodyId, true);
+    // Create the body using Entity's helper method
+    createBody(worldId, &bodyDef);
+    
+    b2BodyId bodyId = getBodyId();
+    if (!b2Body_IsValid(bodyId))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create Ball physics body!");
+        return;
+    }
 
-// // Create a circle shape for the ball
-// b2ShapeDef shapeDef = b2DefaultShapeDef();
-// // Heavier balls for better collision impacts
-// shapeDef.density = 1.5f;
-// // Lower resistance for smoother rolling
-// shapeDef.material.rollingResistance = 0.1f;
-// shapeDef.material.friction = 0.2f;
-// // Higher restitution for more bounce
-// shapeDef.material.restitution = 0.8f;
+    // Create a circle shape for the ball
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = density;
 
-// // In Box2D 3.1.0, the circle is defined separately from the shape def
-// b2Circle circle = { {0.f, 0.f}, r };
+    // Box2D 3.x uses separate circle definition
+    b2Circle circle = {{0.0f, 0.0f}, physics::toMeters(radius)};
+    mShapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
 
-// b2ShapeId ballShapeId = b2CreateCircleShape(ballBodyId, &shapeDef, &circle);
+    // Set friction and restitution after shape creation (Box2D 3.x API)
+    b2Shape_SetFriction(mShapeId, friction);
+    b2Shape_SetRestitution(mShapeId, restitution);
 
-// bodyId = ballBodyId;
-// shapeId = ballShapeId;
-// isActive = true;
+    // Ensure the body is awake and ready for simulation
+    b2Body_SetAwake(bodyId, true);
+}
+
+void Ball::launch(b2Vec2 impulse) noexcept
+{
+    b2BodyId bodyId = getBodyId();
+    if (b2Body_IsValid(bodyId))
+    {
+        // Apply impulse at the center of mass to launch the ball
+        b2Vec2 centerOfMass = b2Body_GetWorldCenterOfMass(bodyId);
+        b2Body_ApplyLinearImpulse(bodyId, impulse, centerOfMass, true);
+        b2Body_SetAwake(bodyId, true);
+    }
+}
+
+void Ball::onBeginContact(Entity* other) noexcept
+{
+    // Log contact for debugging (can expand for game logic)
+    if (other != nullptr)
+    {
+        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Ball began contact with another entity");
+    }
+}
+
+void Ball::onPostSolve(Entity* other, float impulse) noexcept
+{
+    // Handle high-impact collisions
+    const float impactThreshold = 5.0f;
+    
+    if (impulse > impactThreshold)
+    {
+        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Ball high-impact collision: %.2f", impulse);
+        
+        // For explosive balls, could trigger explosion here
+        if (mType == Type::EXPLOSIVE)
+        {
+            // TODO: Trigger explosion effect/damage
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Explosive ball impact!");
+        }
+    }
+}
 
 void Ball::updateCurrent(float dt, CommandQueue& commands) noexcept
 {

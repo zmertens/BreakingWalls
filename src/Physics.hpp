@@ -7,8 +7,9 @@
 
 namespace physics
 {
-    // Pixels per meter conversion. Adjust to taste; 32 px = 1 m is common.
-    static constexpr float PIXELS_PER_METER = 32.0f;
+    // Pixels per meter conversion - using smaller scale for better maze physics
+    // In the working example, this equals the cell size (8-12 pixels)
+    static constexpr float PIXELS_PER_METER = 10.0f;
 
     inline float toPixels(float meters) noexcept { return meters * PIXELS_PER_METER; }
     inline float toMeters(float pixels) noexcept { return pixels / PIXELS_PER_METER; }

@@ -13,6 +13,7 @@
 #include "SceneNode.hpp"
 #include "View.hpp"
 
+class Ball;
 class Pathfinder;
 class Player;
 class RenderWindow;
@@ -53,7 +54,7 @@ private:
         LAYER_COUNT = 5
     };
 
-    static constexpr auto FORCE_DUE_TO_GRAVITY = -9.8f;
+    static constexpr auto FORCE_DUE_TO_GRAVITY = 9.8f;  // Positive Y is down in Box2D
 
     RenderWindow& mWindow;
     View mWorldView;
@@ -64,10 +65,17 @@ private:
     std::array<SceneNode*, static_cast<std::size_t>(Layer::LAYER_COUNT)> mSceneLayers;
 
     b2WorldId mWorldId;
+    b2BodyId mMazeWallsBodyId;
 
     CommandQueue mCommandQueue;
 
     Pathfinder* mPlayerPathfinder;
+
+    // Ball pointers for testing launch mechanics
+    Ball* mBallNormal;
+    Ball* mBallHeavy;
+    Ball* mBallLight;
+    Ball* mBallExplosive;
 
     bool mIsPanning;
     SDL_FPoint mLastMousePosition;

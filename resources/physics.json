@@ -17,25 +17,25 @@
 	"enemy_speed_default": 0.3451,
 	"level_defaults": [
 		{
-			"rows": 100,
-			"columns": 78,
+			"rows": 20,
+			"columns": 25,
 			"seed": 50,
 			"algo": "dfs",
-			"distances": true
+			"distances": false
 		},
 		{
-			"rows": 5,
-			"columns": 6,
+			"rows": 15,
+			"columns": 20,
 			"seed": 23,
 			"algo": "binary_tree",
 			"distances": false
 		},
 		{
-			"rows": 15,
-			"columns": 10,
-			"seed": 50,
+			"rows": 18,
+			"columns": 22,
+			"seed": 75,
 			"algo": "sidewinder",
-			"distances": true
+			"distances": false
 		}
 	]
 }

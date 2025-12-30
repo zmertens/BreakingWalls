@@ -2,7 +2,7 @@ include(BuildInfo)
 
 include(FetchGitRepo)
 
-if (BREAKING_WALLS_PLATFORM_WEB)
+if (PLATFORM_WEB)
 
     message(STATUS "Configuring build flags for Emscripten Web platform")
 
@@ -120,7 +120,7 @@ target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFAC
 
 target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} box2d::box2d MazeBuilder::MazeBuilder SDL3::SDL3 SFML::Audio SFML::Network)
 
-if (BREAKING_WALLS_PLATFORM_WEB)
+if (PLATFORM_WEB)
 
     message(STATUS "Configuring ${BREAKING_WALLS_APP_NAME} for Web platform using Emscripten")
 

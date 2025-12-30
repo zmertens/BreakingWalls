@@ -1,3 +1,4 @@
+
 #include "World.hpp"
 
 #include "Ball.hpp"
@@ -21,6 +22,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <SFML/Network.hpp>
+
 World::World(RenderWindow& window, FontManager& fonts, TextureManager& textures)
     : mWindow{window}
       , mWorldView{window.getView()}
@@ -29,6 +32,7 @@ World::World(RenderWindow& window, FontManager& fonts, TextureManager& textures)
       , mSceneGraph{}
       , mSceneLayers{}
       , mWorldId{b2_nullWorldId}
+      , mMazeWallsBodyId{b2_nullBodyId}
       , mCommandQueue{}
       , mPlayerPathfinder{nullptr}
       , mIsPanning{false}
@@ -147,19 +151,18 @@ void World::update(float dt)
 
 void World::draw() const noexcept
 {
-    if (mPostProcessingManager->isReady())
+    if (mPostProcessingManager && mPostProcessingManager->isReady())
     {
         auto* renderer = mWindow.getRenderer();
-
         mPostProcessingManager->beginScene();
-
         mWindow.draw(mSceneGraph);
-
         mPostProcessingManager->endScene();
-
         mWindow.clear();
-
         mPostProcessingManager->present(renderer);
+    }
+    else
+    {
+        mWindow.draw(mSceneGraph);
     }
 }
 
@@ -172,6 +175,40 @@ void World::handleEvent(const SDL_Event& event)
 {
     switch (event.type)
     {
+    case SDL_EVENT_KEY_DOWN:
+        // Testing: Launch balls with number keys 1-4
+        switch (event.key.key)
+        {
+        case SDLK_1:
+            if (mBallNormal)
+            {
+                mBallNormal->launch(b2Vec2{2.0f, -5.0f});  // Upward and right impulse (negative Y = up)
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Normal Ball");
+            }
+            break;
+        case SDLK_2:
+            if (mBallHeavy)
+            {
+                mBallHeavy->launch(b2Vec2{3.0f, -6.0f});  // Stronger impulse for heavier ball
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Heavy Ball");
+            }
+            break;
+        case SDLK_3:
+            if (mBallLight)
+            {
+                mBallLight->launch(b2Vec2{1.5f, -4.0f});  // Lighter impulse for light ball
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Light Ball");
+            }
+            break;
+        case SDLK_4:
+            if (mBallExplosive)
+            {
+                mBallExplosive->launch(b2Vec2{2.5f, -5.5f});
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Explosive Ball");
+            }
+            break;
+        }
+        break;
     case SDL_EVENT_MOUSE_WHEEL:
         if (event.wheel.y > 0)
             mWorldView.zoom(1.1f);
@@ -267,145 +304,141 @@ void World::buildScene()
     parallaxFore->setVerticalOffset(70.0f);
     mSceneLayers[static_cast<size_t>(Layer::PARALLAX_FORE)]->attachChild(std::move(parallaxFore));
 
-    // // Static background with LEVEL_TWO
-    // auto mazeNode = make_unique<SpriteNode>(mTextures.get(Textures::ID::LEVEL_TWO));
-    // mazeNode->setPosition(0.f, 0.f);
-    // mSceneLayers[static_cast<size_t>(Layer::BACKGROUND)]->attachChild(std::move(mazeNode));
-    //
-    // auto leader = make_unique<Pathfinder>(Pathfinder::Type::ALLY, cref(mTextures));
-    // mPlayerPathfinder = leader.get();
-    // mPlayerPathfinder->setPosition(0.f, 0.f);
-    // mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(leader));
-    //
-    // // Create and add entities directly to scene graph - positioned to be visible
-    // auto ballNormal = make_unique<Ball>(Ball::Type::NORMAL, mTextures);
-    // auto* ballNormalPtr = ballNormal.get();
-    // mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(ballNormal));
-    // ballNormalPtr->setPosition(100.0f, 550.0f); // Below splash screen
-    //
-    // auto ballHeavy = make_unique<Ball>(Ball::Type::HEAVY, mTextures);
-    // auto* ballHeavyPtr = ballHeavy.get();
-    // mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(ballHeavy));
-    // ballHeavyPtr->setPosition(250.0f, 550.0f); // Below splash screen
-    //
-    // auto ballLight = make_unique<Ball>(Ball::Type::LIGHT, mTextures);
-    // auto* ballLightPtr = ballLight.get();
-    // mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(ballLight));
-    // ballLightPtr->setPosition(400.0f, 550.0f); // Below splash screen
-    //
-    // auto ballExplosive = make_unique<Ball>(Ball::Type::EXPLOSIVE, mTextures);
-    // auto* ballExplosivePtr = ballExplosive.get();
-    // mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(ballExplosive));
-    // ballExplosivePtr->setPosition(550.0f, 550.0f); // Below splash screen
-    //
-    // auto wallHorizontal = make_unique<Wall>(Wall::Orientation::HORIZONTAL, mTextures);
-    // auto* wallHorizontalPtr = wallHorizontal.get();
-    // mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(wallHorizontal));
-    // wallHorizontalPtr->setPosition(100.0f, 700.0f); // Below balls
-    //
-    // auto wallVertical = make_unique<Wall>(Wall::Orientation::VERTICAL, mTextures);
-    // auto* wallVerticalPtr = wallVertical.get();
-    // mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(wallVertical));
-    // wallVerticalPtr->setPosition(250.0f, 700.0f); // Below balls
-    //
-    // // Create physics bodies for the created entities
-    // if (b2World_IsValid(mWorldId))
-    // {
-    //     b2BodyDef backgroundBodyDef = b2DefaultBodyDef();
-    //     backgroundBodyDef.type = b2_staticBody;
-    //     backgroundBodyDef.position = {0, 0};
-    //     b2BodyId backgroundBodyId = b2CreateBody(mWorldId, &backgroundBodyDef);
-    //
-    //     // Helper lambda to create a dynamic circular ball
-    //     auto createBallBody = [&](Ball* b, Ball::Type type, float radiusPx, float density, float restitution, float friction, bool bullet)
-    //     {
-    //         b2BodyDef bodyDef = b2DefaultBodyDef();
-    //         bodyDef.type = b2_dynamicBody;
-    //         b2Vec2 posMeters = physics::toMetersVec(b->getPosition());
-    //         bodyDef.position = posMeters;
-    //         bodyDef.linearDamping = 0.2f;
-    //         bodyDef.angularDamping = 0.4f;
-    //         bodyDef.isBullet = bullet;
-    //
-    //         b->createBody(mWorldId, &bodyDef);
-    //         b2BodyId bodyId = b->getBodyId();
-    //         if (!b2Body_IsValid(bodyId))
-    //         {
-    //             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create ball body!");
-    //             return;
-    //         }
-    //
-    //         b2ShapeDef shapeDef = b2DefaultShapeDef();
-    //         shapeDef.density = density;
-    //
-    //         b2Circle circle = {{0.0f, 0.0f}, physics::toMeters(radiusPx)};
-    //         b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
-    //
-    //         // Set friction and restitution after creation
-    //         b2Shape_SetFriction(shapeId, friction);
-    //         b2Shape_SetRestitution(shapeId, restitution);
-    //
-    //         b2Body_SetAwake(bodyId, true);
-    //     };
-    //
-    //     // Create the balls
-    //     createBallBody(ballNormalPtr, Ball::Type::NORMAL, 16.0f, 1.0f, 0.6f, 0.3f, true);
-    //     createBallBody(ballHeavyPtr, Ball::Type::HEAVY, 20.0f, 3.0f, 0.4f, 0.25f, true);
-    //     createBallBody(ballLightPtr, Ball::Type::LIGHT, 14.0f, 0.6f, 0.7f, 0.2f, true);
-    //     createBallBody(ballExplosivePtr, Ball::Type::EXPLOSIVE, 18.0f, 1.5f, 0.5f, 0.25f, true);
-    //
-    //     // Create walls as static boxes
-    //     auto createWallBody = [&](Wall* w, float halfWidthPx, float halfHeightPx)
-    //     {
-    //         b2BodyDef bodyDef = b2DefaultBodyDef();
-    //         bodyDef.type = b2_staticBody;
-    //         bodyDef.position = physics::toMetersVec(w->getPosition());
-    //
-    //         w->createBody(mWorldId, &bodyDef);
-    //         b2BodyId bodyId = w->getBodyId();
-    //         if (!b2Body_IsValid(bodyId)) return;
-    //
-    //         b2ShapeDef shapeDef = b2DefaultShapeDef();
-    //         shapeDef.density = 0.0f;
-    //
-    //         b2Polygon box = b2MakeBox(physics::toMeters(halfWidthPx), physics::toMeters(halfHeightPx));
-    //         b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-    //
-    //         // Set friction and restitution after creation
-    //         b2Shape_SetFriction(shapeId, 0.8f);
-    //         b2Shape_SetRestitution(shapeId, 0.0f);
-    //     };
-    //
-    //     // horizontal wall: wide and short
-    //     createWallBody(wallHorizontalPtr, 120.0f, 10.0f);
-    //     // vertical wall: tall and narrow
-    //     createWallBody(wallVerticalPtr, 10.0f, 120.0f);
-    //
-    //     // Create pathfinder as a kinematic body for direct control
-    //     if (mPlayerPathfinder)
-    //     {
-    //         b2BodyDef bodyDef = b2DefaultBodyDef();
-    //         bodyDef.type = b2_dynamicBody;
-    //         bodyDef.position = physics::toMetersVec(mPlayerPathfinder->getPosition());
-    //         bodyDef.fixedRotation = true;
-    //
-    //         mPlayerPathfinder->createBody(mWorldId, &bodyDef);
-    //         b2BodyId bodyId = mPlayerPathfinder->getBodyId();
-    //         if (b2Body_IsValid(bodyId))
-    //         {
-    //             b2ShapeDef shapeDef = b2DefaultShapeDef();
-    //             shapeDef.density = 1.0f;
-    //
-    //             // small box for the pathfinder
-    //             b2Polygon box = b2MakeBox(physics::toMeters(16.0f), physics::toMeters(24.0f));
-    //             b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-    //
-    //             // Set friction and restitution after creation
-    //             b2Shape_SetFriction(shapeId, 0.4f);
-    //             b2Shape_SetRestitution(shapeId, 0.1f);
-    //
-    //             b2Body_SetAwake(bodyId, true);
-    //         }
-    //     }
-    // }
+    // Static background with LEVEL_TWO
+    auto mazeNode = make_unique<SpriteNode>(mTextures.get(Textures::ID::LEVEL_TWO));
+    mazeNode->setPosition(0.f, 0.f);
+    mSceneLayers[static_cast<size_t>(Layer::BACKGROUND)]->attachChild(std::move(mazeNode));
+
+    auto leader = make_unique<Pathfinder>(Pathfinder::Type::ALLY, cref(mTextures));
+    mPlayerPathfinder = leader.get();
+    mPlayerPathfinder->setPosition(20.f, 20.f);  // Start near top-left of maze
+    mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(leader));
+
+    // Create and add ball entities - positioned to be visible
+    // Note: Physics bodies created AFTER entities are added to scene
+    auto ballNormal = make_unique<Ball>(Ball::Type::NORMAL, mTextures);
+    mBallNormal = ballNormal.get();
+    mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(ballNormal));
+
+    auto ballHeavy = make_unique<Ball>(Ball::Type::HEAVY, mTextures);
+    mBallHeavy = ballHeavy.get();
+    mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(ballHeavy));
+
+    auto ballLight = make_unique<Ball>(Ball::Type::LIGHT, mTextures);
+    mBallLight = ballLight.get();
+    mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(ballLight));
+
+    auto ballExplosive = make_unique<Ball>(Ball::Type::EXPLOSIVE, mTextures);
+    mBallExplosive = ballExplosive.get();
+    mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(ballExplosive));
+
+
+    auto wallHorizontal = make_unique<Wall>(Wall::Orientation::HORIZONTAL, mTextures);
+    auto* wallHorizontalPtr = wallHorizontal.get();
+    mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(wallHorizontal));
+    wallHorizontalPtr->setPosition(60.0f, 150.0f); // Middle area of maze
+
+    auto wallVertical = make_unique<Wall>(Wall::Orientation::VERTICAL, mTextures);
+    auto* wallVerticalPtr = wallVertical.get();
+    mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(wallVertical));
+    wallVerticalPtr->setPosition(120.0f, 150.0f); // Middle area of maze
+
+    // Create maze walls from LEVEL_TWO texture layout
+    // Load the maze layout to extract wall positions
+    if (b2World_IsValid(mWorldId))
+    {
+        // Create a single static body for all maze walls (like Box2D samples)
+        b2BodyDef wallBodyDef = b2DefaultBodyDef();
+        wallBodyDef.type = b2_staticBody;
+        mMazeWallsBodyId = b2CreateBody(mWorldId, &wallBodyDef);
+        
+        // Load maze from physics.json to get wall layout
+        MazeLayout maze = MazeLayout::fromString(
+            "+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+\n"
+            "|   |       |       |       |                   |       |                   |\n"
+            "+   +   +---+   +---+   +---+---+---+---+---+   +   +   +   +---+---+---+   +\n"
+            "|   |   |       |       |   |       |       |   |   |   |   |       |       |\n"
+            "+   +   +   +---+---+---+   +   +   +   +   +   +---+---+   +   +   +   +---+\n"
+            "|       |   |           |       |   |   |       |           |   |   |       |\n"
+            "+---+---+   +   +---+   +---+---+   +   +---+---+   +---+---+   +   +---+   +\n"
+            "|           |       |   |       |   |       |       |       |   |       |   |\n"
+            "+   +---+---+---+   +   +   +   +   +---+   +   +---+   +   +   +---+   +   +\n"
+            "|   |           |   |   |   |       |       |   |   |   |   |   |           |\n"
+            "+   +   +---+   +   +   +   +---+---+   +---+   +   +   +   +   +   +---+---+\n"
+            "|       |       |   |       |           |       |       |       |   |       |\n"
+            "+---+---+   +---+   +---+---+---+---+---+   +---+---+---+---+---+   +   +   +\n"
+            "|   |       |       |   |   |           |       |               |   |   |   |\n"
+            "+   +   +---+   +---+   +   +   +---+   +---+   +   +---+---+   +   +   +   +\n"
+            "|       |   |   |       |       |   |       |   |   |       |       |       |\n"
+            "+---+---+   +   +   +---+---+---+   +---+   +   +   +   +   +---+---+---+---+\n"
+            "|   |       |   |   |           |   |       |   |       |   |   |   |       |\n"
+            "+   +   +---+   +   +   +---+   +   +   +---+   +---+---+   +   +   +   +   +\n"
+            "|   |   |       |       |   |       |       |           |       |       |   |\n"
+            "+   +   +   +---+---+---+   +---+---+---+---+---+---+   +---+---+---+---+   +\n"
+            "|   |   |   |   |   |   |   |       |       |   |   |   |   |           |   |\n"
+            "+   +   +   +   +   +   +   +   +   +   +   +   +   +   +   +   +---+   +   +\n"
+            "|       |       |       |       |       |       |       |       |       |   |\n"
+            "+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+\n",
+            10  // Cell size matches PIXELS_PER_METER
+        );
+        
+        auto wallPositions = maze.getWallPositions();
+        
+        SDL_Log("Creating %zu wall shapes from maze layout", wallPositions.size());
+        
+        b2ShapeDef shapeDef = b2DefaultShapeDef();
+        shapeDef.material.friction = 0.8f;
+        shapeDef.material.restitution = 0.1f;
+        
+        // Create a box shape for each wall cell (10x10 pixels = 1x1 meters)
+        float halfCellSize = physics::toMeters(5.0f);  // Half of 10 pixels
+        
+        for (const auto& [x, y] : wallPositions)
+        {
+            // Create box at cell position (offset from origin)
+            b2Vec2 cellCenter = {physics::toMeters(static_cast<float>(x)), physics::toMeters(static_cast<float>(y))};
+            b2Polygon box = b2MakeOffsetBox(halfCellSize, halfCellSize, cellCenter, b2Rot_identity);
+            b2CreatePolygonShape(mMazeWallsBodyId, &shapeDef, &box);
+        }
+        
+        SDL_Log("Maze walls created with %zu shapes", wallPositions.size());
+
+        // Create pathfinder as a dynamic body with fixed rotation for player control
+        if (mPlayerPathfinder)
+        {
+            b2BodyDef bodyDef = b2DefaultBodyDef();
+            bodyDef.type = b2_dynamicBody;
+            bodyDef.position = physics::toMetersVec(mPlayerPathfinder->getPosition());
+            bodyDef.fixedRotation = true;
+
+            mPlayerPathfinder->createBody(mWorldId, &bodyDef);
+            b2BodyId bodyId = mPlayerPathfinder->getBodyId();
+            if (b2Body_IsValid(bodyId))
+            {
+                b2ShapeDef shapeDef = b2DefaultShapeDef();
+                shapeDef.density = 1.0f;
+
+                // small box for the pathfinder - about 0.4 meters (4 pixels) half-width
+                b2Polygon box = b2MakeBox(physics::toMeters(4.0f), physics::toMeters(6.0f));
+                b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
+
+                // Set friction and restitution after creation
+                b2Shape_SetFriction(shapeId, 0.4f);
+                b2Shape_SetRestitution(shapeId, 0.1f);
+
+                b2Body_SetAwake(bodyId, true);
+            }
+        }
+        
+        // Now create physics bodies for balls (AFTER scene setup)
+        if (mBallNormal)
+            mBallNormal->createPhysicsBody(mWorldId, b2Vec2{40.0f, 30.0f});
+        if (mBallHeavy)
+            mBallHeavy->createPhysicsBody(mWorldId, b2Vec2{80.0f, 30.0f});
+        if (mBallLight)
+            mBallLight->createPhysicsBody(mWorldId, b2Vec2{120.0f, 30.0f});
+        if (mBallExplosive)
+            mBallExplosive->createPhysicsBody(mWorldId, b2Vec2{160.0f, 30.0f});
+    }
 }
+

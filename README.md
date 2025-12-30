@@ -1,4 +1,4 @@
-![Sample](icon.bmp)
+![Sample](resources/icon.bmp)
 
 # Breaking Walls
 
@@ -28,7 +28,7 @@ Use the following CMake options to configure the project:
 
 | CMake Option | Default | Description |
 |--------------|---------|------------ |
-| BREAKING_WALLS_PLATFORM_WEB | OFF | Build for Web platform using Emscripten |
+| PLATFORM_WEB | OFF | Build for Web platform using Emscripten |
 
 ### Example Builds
 

@@ -21,6 +21,19 @@ public:
 
     explicit Ball(Type type, const TextureManager& textureManager);
 
+    // Create physics body for the ball
+    void createPhysicsBody(b2WorldId worldId, b2Vec2 position) noexcept;
+
+    // Launch the ball with an impulse
+    void launch(b2Vec2 impulse) noexcept;
+    
+    // Get ball type
+    [[nodiscard]] Type getType() const noexcept { return mType; }
+
+    // Contact callbacks
+    void onBeginContact(Entity* other) noexcept override;
+    void onPostSolve(Entity* other, float impulse) noexcept override;
+
 private:
     void drawCurrent(SDL_Renderer* renderer, RenderStates states) const noexcept override;
 
@@ -30,6 +43,7 @@ private:
 
     Type mType;
     Sprite mSprite;
+    b2ShapeId mShapeId;
 };
 
 #endif // BALL_HPP

@@ -82,13 +82,11 @@ struct PhysicsGame::PhysicsGameImpl
     static constexpr double FPS_UPDATE_INTERVAL = 250.0; // Update display every 250ms
 
     std::string title;
-    std::string version;
     std::string resourcePath;
     const int INIT_WINDOW_W, INIT_WINDOW_H;
 
-    PhysicsGameImpl(std::string_view title, std::string_view version, std::string_view resourcePath, int w, int h)
+    PhysicsGameImpl(std::string_view title, std::string_view resourcePath, int w, int h)
         : title{title}
-          , version{version}
           , resourcePath{resourcePath}
           , INIT_WINDOW_W{w}, INIT_WINDOW_H{h}
           , window{nullptr}
@@ -141,7 +139,7 @@ struct PhysicsGame::PhysicsGameImpl
 
     void initSDL() noexcept
     {
-        auto windowTitle = title + " - " + version;
+        auto windowTitle = title.empty() ? "Breaking Walls" : title.c_str();
         sdlHelper.init(windowTitle, INIT_WINDOW_W, INIT_WINDOW_H);
     }
 
@@ -311,14 +309,13 @@ struct PhysicsGame::PhysicsGameImpl
     }
 }; // impl
 
-PhysicsGame::PhysicsGame(std::string_view title, std::string_view version, std::string_view resourcePath, int w, int h)
-    : m_impl{std::make_unique<PhysicsGameImpl>(title, version, resourcePath, w, h)}
+PhysicsGame::PhysicsGame(std::string_view title, std::string_view resourcePath, int w, int h)
+    : m_impl{std::make_unique<PhysicsGameImpl>(title, resourcePath, w, h)}
 {
 }
 
-PhysicsGame::PhysicsGame(const std::string& title, const std::string& version, int w, int h)
-    : PhysicsGame(std::string_view(title), std::string_view(version), PhysicsGameImpl::COMMON_RESOURCE_PATH_PREFIX, w,
-                  h)
+PhysicsGame::PhysicsGame(const std::string& title, int w, int h)
+    : PhysicsGame(std::string_view(title), "", w, h)
 {
 }
 

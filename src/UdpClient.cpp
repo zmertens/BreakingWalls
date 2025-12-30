@@ -90,6 +90,46 @@ struct UdpClientImpl
         return true;
     }
 
+/*
+
+  // Create UDP socket
+    sf::UdpSocket socket;
+    socket.setBlocking(false);
+
+    // Bind to a local port (optional for sending, required for receiving)
+    if (socket.bind(54000) != sf::Socket::Status::Done) {
+        SDL_Log("Failed to bind socket\n");
+    }
+
+    // Send integer to Spring Boot server
+    int32_t value = 12345;
+    sf::IpAddress serverAddress = sf::IpAddress::getLocalAddress().value_or(*sf::IpAddress::resolve("127.0.0.1"));
+    unsigned short serverPort = 9876;
+
+    if (socket.send(&value, sizeof(value), serverAddress, serverPort) != sf::Socket::Status::Done) {
+        SDL_Log("Failed to send data\n");
+    }
+
+    // Use SocketSelector to wait for data
+    sf::SocketSelector selector;
+    selector.add(socket);
+    // Wait up to 10ms for data (non-blocking feel)
+    if (selector.wait(sf::milliseconds(10))) {
+        if (selector.isReady(socket)) {
+            int32_t receivedValue;
+            std::size_t received = 0;
+            std::optional<sf::IpAddress> sender;
+            unsigned short senderPort = 0;
+            if (socket.receive(&receivedValue, sizeof(receivedValue), received, sender, senderPort) == sf::Socket::Status::Done) {
+                SDL_Log("Received: %d from %s\n", receivedValue, sender ? sender->toString().c_str() : "unknown");
+            } else {
+                SDL_Log("Receive error\n");
+            }
+        }
+    }
+
+*/
+
     void start()
     {
         if (m_running)

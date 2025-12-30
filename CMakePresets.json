@@ -1,15 +1,37 @@
 {
-  "version": 3,
-  "configurePresets": [
-    {
-      "name": "platform: desktop",
-      "displayName": "Build with Desktop support",
-      "description": "Build Desktop version using native toolchain",
-      "generator": "Ninja Multi-Config",
-      "binaryDir": "${sourceDir}/build",
-      "cacheVariables": {
-        "BREAKING_WALLS_PLATFORM_WEB": "OFF"
-      }
-    }
-  ]
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "platform: desktop-ninja",
+            "displayName": "Build with Desktop support",
+            "description": "Build Desktop version using native toolchain",
+            "generator": "Ninja Multi-Config",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "PLATFORM_WEB": "OFF"
+            }
+        },
+        {
+            "name": "platform: desktop-msvc",
+            "displayName": "Visual Studio Community 2022 Release - amd64",
+            "description": "Using compilers for Visual Studio 17 2022 (x64 architecture)",
+            "generator": "Visual Studio 17 2022",
+            "toolset": "host=x64",
+            "architecture": "x64",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "desktop-msvc-debug",
+            "displayName": "Visual Studio Community 2022 Release - amd64 - Debug",
+            "configurePreset": "platform: desktop-msvc",
+            "configuration": "Debug"
+        }
+    ]
 }

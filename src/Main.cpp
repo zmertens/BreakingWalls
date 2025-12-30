@@ -10,23 +10,19 @@
 
 #include "PhysicsGame.hpp"
 
-#include <MazeBuilder/randomizer.h>
-#include <MazeBuilder/singleton_base.h>
-#include <MazeBuilder/string_utils.h>
+#include <MazeBuilder/maze_builder.h>
 
-static std::string TITLE_STR = "Breaking Walls";
+const auto WINDOW_TITLE{"Breaking Walls " + mazes::VERSION};
 
-static std::string VERSION_STR = "v0.3.0";
-
-static constexpr auto WINDOW_W = 1280;
-static constexpr auto WINDOW_H = 720;
+static constexpr auto WINDOW_WIDTH = 1280;
+static constexpr auto WINDOW_HEIGHT = 720;
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten/bind.h>
 
 std::shared_ptr<PhysicsGame> get()
 {
-    return mazes::singleton_base<PhysicsGame>::instance(cref(TITLE_STR), cref(VERSION_STR), WINDOW_W, WINDOW_H);
+    return mazes::singleton_base<PhysicsGame>::instance(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT);
 }
 
 // bind a getter method from C++ so that it can be accessed in the frontend with JS
@@ -35,44 +31,26 @@ EMSCRIPTEN_BINDINGS (maze_builder_module)
     emscripten::function("get", &get, emscripten::allow_raw_pointers());
     emscripten::class_<PhysicsGame>("PhysicsGame")
         .smart_ptr<std::shared_ptr<PhysicsGame>>("std::shared_ptr<PhysicsGame>")
-        .constructor<const std::string&, const std::string&, int, int>();
+        .constructor<const std::string&, int, int>();
 }
 #endif
 
 int main(int argc, char* argv[])
 {
-    using std::cerr;
-    using std::cout;
-    using std::cref;
-    using std::endl;
-    using std::exception;
-    using std::ref;
-    using std::runtime_error;
-    using std::string;
-
-    using mazes::randomizer;
-    using mazes::singleton_base;
-    using mazes::string_utils;
-
-#if defined(MAZE_DEBUG)
-
-    VERSION_STR += " - DEBUG";
-#endif
-
-    string configPath{};
+    std::string configPath{};
 
 #if !defined(__EMSCRIPTEN__)
 
     if (argc != 2)
     {
-        cerr << "Usage: " << argv[0] << " <path_to_config.json>" << endl;
+        std::cerr << "Usage: " << argv[0] << " <path_to_config.json>" << std::endl;
 
         return EXIT_FAILURE;
     }
 
-    if (!string_utils::contains(argv[1], ".json"))
+    if (!mazes::string_utils::contains(argv[1], ".json"))
     {
-        cerr << "Error: Configuration file must be a .json file" << endl;
+        std::cerr << "Error: Configuration file must be a .json file" << std::endl;
 
         return EXIT_FAILURE;
     }
@@ -85,23 +63,21 @@ int main(int argc, char* argv[])
 
     try
     {
-        const auto inst = singleton_base<PhysicsGame>::instance(TITLE_STR, VERSION_STR, configPath, WINDOW_W, WINDOW_H);
+        const auto inst = mazes::singleton_base<PhysicsGame>::instance(WINDOW_TITLE, configPath, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-        if (randomizer rng; !inst->run(nullptr, ref(rng)))
+        if (mazes::randomizer rng; !inst->run(nullptr, std::ref(rng)))
         {
-            throw runtime_error("Error: PhysicsGame encountered an error during execution");
+            throw std::runtime_error("Error: " + WINDOW_TITLE + " encountered an error during execution");
         }
 
 #if defined(MAZE_DEBUG)
 
-        cout << "PhysicsGame ran successfully (DEBUG MODE)" << endl;
+        std::cout << WINDOW_TITLE << " ran successfully (DEBUG MODE)" << std::endl;
 #endif
     }
-    catch (exception& ex)
+    catch (std::exception& ex)
     {
-        cerr << ex.what() << endl;
-
-        return EXIT_FAILURE;
+        std::cerr << ex.what() << std::endl;
     }
 
     return EXIT_SUCCESS;

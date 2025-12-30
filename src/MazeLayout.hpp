@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <MazeBuilder/enums.h>
+#include <MazeBuilder/grid_interface.h>
 
 struct SDL_Surface;
 
@@ -40,6 +41,9 @@ public:
     MazeLayout() = default;
 
     static MazeLayout fromString(std::string_view mazeStr, int cellSize);
+    
+    // Create maze layout from MazeBuilder grid interface with pixel data
+    static MazeLayout fromGrid(mazes::grid_interface* grid);
 
     [[nodiscard]] int getRows() const noexcept { return mRows; }
     [[nodiscard]] int getColumns() const noexcept { return mColumns; }
@@ -52,6 +56,9 @@ public:
     {
         return mCells[static_cast<std::size_t>(row) * mColumns + col];
     }
+    
+    // Get all wall cell positions (in pixels)
+    [[nodiscard]] std::vector<std::pair<int, int>> getWallPositions() const noexcept;
 
     [[nodiscard]] SDL_Surface* buildSurface() const noexcept;
 
@@ -60,6 +67,11 @@ private:
     int mColumns{0};
     int mCellSize{0};
     std::vector<Cell> mCells;
+    
+    // Direct pixel data from MazeBuilder (RGBA format)
+    std::vector<std::uint8_t> mPixelData;
+    int mPixelWidth{0};
+    int mPixelHeight{0};
 };
 
 #endif // MAZE_LAYOUT_HPP
