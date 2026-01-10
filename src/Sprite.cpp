@@ -32,31 +32,24 @@ void Sprite::draw(SDL_Renderer* renderer, RenderStates states) const noexcept
         return; // Renderer not available
     }
 
-    if (const auto* sdlTexture = mTexture->get(); !sdlTexture)
+    const auto textureId = mTexture->get();
+    if (textureId == 0)
     {
-        return;
+        return; // No valid OpenGL texture
     }
 
-    auto [x, y, w, h] = SDL_Rect{0, 0, mTexture->getWidth(), mTexture->getHeight()};
+    // TODO: Implement OpenGL sprite rendering
+    // The Texture class now uses OpenGL textures (mTextureId is a GLuint).
+    // This draw method needs to be refactored to use OpenGL calls:
+    // 1. Bind the texture: glBindTexture(GL_TEXTURE_2D, textureId);
+    // 2. Set up vertex data for a quad
+    // 3. Use a sprite shader program
+    // 4. Draw the quad with glDrawArrays or glDrawElements
+    //
+    // For now, this is a stub. The old SDL_RenderTexture call is incompatible
+    // with OpenGL textures.
 
-    // Convert source rect from SDL_Rect to SDL_FRect
-    SDL_FRect srcRect;
-    srcRect.x = static_cast<float>(x);
-    srcRect.y = static_cast<float>(y);
-    srcRect.w = static_cast<float>(w);
-    srcRect.h = static_cast<float>(h);
-
-    // Use the transform from RenderStates (passed from SceneNode hierarchy)
-    SDL_FRect dstRect;
-    dstRect.x = states.transform.p.x;
-    dstRect.y = states.transform.p.y;
-    dstRect.w = static_cast<float>(w);
-    dstRect.h = static_cast<float>(h);
-
-    if (!SDL_RenderTexture(renderer, mTexture->get(), &srcRect, &dstRect))
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_RenderTexture failed: %s", SDL_GetError());
-    }
+    SDL_Log("Sprite::draw() called - OpenGL rendering not yet implemented");
 }
 
 /// @brief

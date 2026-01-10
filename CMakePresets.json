@@ -2,11 +2,11 @@
     "version": 3,
     "configurePresets": [
         {
-            "name": "platform: desktop-ninja",
+            "name": "platform: build-ninja",
             "displayName": "Build with Desktop support",
             "description": "Build Desktop version using native toolchain",
             "generator": "Ninja Multi-Config",
-            "binaryDir": "${sourceDir}/build",
+            "binaryDir": "${sourceDir}/build-ninja",
             "cacheVariables": {
                 "PLATFORM_WEB": "OFF"
             }
@@ -18,11 +18,12 @@
             "generator": "Visual Studio 17 2022",
             "toolset": "host=x64",
             "architecture": "x64",
-            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "binaryDir": "${sourceDir}/build-msvc",
             "cacheVariables": {
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
                 "CMAKE_C_COMPILER": "cl.exe",
-                "CMAKE_CXX_COMPILER": "cl.exe"
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "PLATFORM_WEB": "OFF"
             }
         }
     ],

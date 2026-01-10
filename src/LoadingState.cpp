@@ -7,7 +7,6 @@
 #include <MazeBuilder/configurator.h>
 
 #include "JsonUtils.hpp"
-#include "MazeLayout.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
 #include "StateStack.hpp"
@@ -118,7 +117,7 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
     {
         for (const auto& request : textureRequests)
         {
-            textures.load(renderer, request.id, request.path);
+            textures.load(request.id, request.path);
             SDL_Log("DEBUG: Loaded texture ID %d from: %s\n", static_cast<int>(request.id), request.path.c_str());
         }
     }
@@ -149,28 +148,6 @@ void LoadingState::loadMazeTexturesFromComposedStrings() const noexcept
             {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Maze string has no newlines, skipping");
                 continue;
-            }
-            
-            // Use create2 to parse the ASCII maze string into a grid
-            // create2 returns std::string, not a grid pointer - we need to use the maze string directly
-            // Instead, let's just use the old method but with better cell sizing
-            
-            // Calculate appropriate cell size based on maze dimensions
-            // Use 8-12 pixel cells like the working physics_game example
-            // This makes the physics scale more manageable
-            const int targetCellSize = 10;  // Smaller cells work better with Box2D scale
-            
-            MazeLayout maze = MazeLayout::fromString(mazeString, targetCellSize);
-            
-            if (maze.getPixelWidth() > 0 && maze.getPixelHeight() > 0)
-            {
-                textures.load(renderer, id, maze);
-                SDL_Log("DEBUG: Loaded maze texture ID %d (%dx%d pixels, %d cell size)\n",
-                        static_cast<int>(id), maze.getPixelWidth(), maze.getPixelHeight(), targetCellSize);
-            }
-            else
-            {
-                SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Generated maze has invalid dimensions for ID %d", static_cast<int>(id));
             }
         }
     }

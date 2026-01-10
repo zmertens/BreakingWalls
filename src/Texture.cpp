@@ -1,5 +1,11 @@
 #include "Texture.hpp"
 
+#if defined(__EMSCRIPTEN__)
+#include <GLES3/gl3.h>
+#else
+#include <glad/glad.h>
+#endif
+
 #include <SDL3/SDL.h>
 
 #include <MazeBuilder/enums.h>
@@ -7,187 +13,430 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
 
-#include "MazeLayout.hpp"
+#include <vector>
+#include <algorithm>
+
+namespace
+{
+    /// Create a rotated copy of RGBA texture data (180 degrees)
+    std::vector<std::uint8_t> create_rotated_180(const std::uint8_t* data, int width, int height) noexcept
+    {
+        if (data == nullptr || width <= 0 || height <= 0)
+        {
+            return {};
+        }
+
+        const size_t total_bytes = width * height * 4;
+        std::vector<std::uint8_t> rotated(total_bytes);
+
+        const int total_pixels = width * height;
+
+        // Copy pixels in reverse order
+        for (int i = 0; i < total_pixels; ++i)
+        {
+            const int src_idx = i * 4;
+            const int dst_idx = (total_pixels - 1 - i) * 4;
+
+            rotated[dst_idx + 0] = data[src_idx + 0]; // R
+            rotated[dst_idx + 1] = data[src_idx + 1]; // G
+            rotated[dst_idx + 2] = data[src_idx + 2]; // B
+            rotated[dst_idx + 3] = data[src_idx + 3]; // A
+        }
+
+        return rotated;
+    }
+} // anonymous namespace
+
+Texture::~Texture() noexcept 
+{ 
+    free(); 
+}
+
+Texture::Texture(Texture&& other) noexcept 
+    : mTextureId(other.mTextureId), mWidth(other.mWidth), mHeight(other.mHeight), mBytes(other.mBytes)
+{
+    other.mTextureId = 0;
+    other.mWidth = 0;
+    other.mHeight = 0;
+    other.mBytes = nullptr;
+}
+
+Texture& Texture::operator=(Texture&& other) noexcept
+{
+    if (this != &other)
+    {
+        free();
+
+        mTextureId = other.mTextureId;
+        mWidth = other.mWidth;
+        mHeight = other.mHeight;
+        mBytes = other.mBytes;
+
+        other.mTextureId = 0;
+        other.mWidth = 0;
+        other.mHeight = 0;
+        other.mBytes = nullptr;
+    }
+    return *this;
+}
 
 void Texture::free() noexcept
 {
-    if (this->texture)
+    if (mTextureId != 0)
     {
-#if defined(MAZE_DEBUG)
-
-        SDL_Log("Texture::free - Freeing texture resource\n");
-#endif
-
-        SDL_DestroyTexture(texture);
-        texture = nullptr;
-        width = 0;
-        height = 0;
+        glDeleteTextures(1, &mTextureId);
+        mTextureId = 0;
+        mWidth = 0;
+        mHeight = 0;
+        mBytes = nullptr;
     }
 }
 
-SDL_Texture* Texture::get() const noexcept
+std::uint32_t Texture::get() const noexcept
 {
-    return this->texture;
+    return mTextureId;
 }
 
-bool Texture::loadTarget(SDL_Renderer* renderer, int w, int h) noexcept
+std::uint8_t* Texture::getPixelData() const noexcept
 {
-    this->free();
-
-    this->texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
-
-    if (!this->texture)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Unable to create texture: %s\n", SDL_GetError());
-    }
-    else
-    {
-        this->width = w;
-        this->height = h;
-    }
-
-    return this->texture != nullptr;
+    return mBytes;
 }
 
-// Load an image file using stb_image and create an SDL texture
-bool Texture::loadFromFile(SDL_Renderer* renderer, std::string_view path) noexcept
+int Texture::getWidth() const noexcept
+{
+    return mWidth;
+}
+
+int Texture::getHeight() const noexcept
+{
+    return mHeight;
+}
+
+bool Texture::loadTarget(const int w, const int h) noexcept
 {
     this->free();
 
-    int width, height, channels;
-    unsigned char* imageData = stbi_load(path.data(), &width, &height, &channels, STBI_rgb_alpha);
+    mWidth = w;
+    mHeight = h;
 
-    if (!imageData)
+    glGenTextures(1, &mTextureId);
+    glBindTexture(GL_TEXTURE_2D, mTextureId);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Create empty texture for render target
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    if (const GLenum error = glGetError(); error != GL_NO_ERROR)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load image: %s - %s\n", path.data(), stbi_failure_reason());
-
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error creating render target %dx%d: 0x%x\n", w, h, error);
         return false;
     }
-
-    // Create surface from image data (force RGBA format)
-    SDL_Surface* surface = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA8888, imageData, width * 4);
-
-    if (!surface)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create surface: %s\n", SDL_GetError());
-
-        stbi_image_free(imageData);
-
-        SDL_DestroySurface(surface);
-
-        return false;
-    }
-
-    // Create texture from surface
-    this->texture = SDL_CreateTextureFromSurface(renderer, surface);
-
-    if (!this->texture)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create texture: %s\n", SDL_GetError());
-
-        return false;
-    }
-
-    // Set blend mode for transparency
-    SDL_SetTextureBlendMode(this->texture, SDL_BLENDMODE_BLEND);
-
-    // Clean up
-    SDL_DestroySurface(surface);
-    stbi_image_free(imageData);
-
-    this->width = width;
-    this->height = height;
-
-    SDL_Log("Texture loaded successfully: %dx%d from %s", width, height, path.data());
 
     return true;
 }
 
-bool Texture::loadImageTexture(SDL_Renderer* renderer, std::string_view imagePath) noexcept
+bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t channelOffset) noexcept
 {
     this->free();
 
-    if (SDL_Surface* loadedSurface = SDL_LoadBMP(imagePath.data())) {
+    stbi_set_flip_vertically_on_load(true);
 
-        this->texture = SDL_CreateTextureFromSurface(renderer, loadedSurface);
+    int width, height;
+    int n; // number of components (channels)
 
-        if (!this->texture)
+    // Force RGBA (4 components) for consistency
+    auto* data = stbi_load(filepath.data(), &width, &height, &n, 4);
+
+    if (data == nullptr)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "stbi_load %s failed: %s\n",
+                     filepath.data(), stbi_failure_reason());
+        return false;
+    }
+
+    glGenTextures(1, &mTextureId);
+    glActiveTexture(GL_TEXTURE0 + channelOffset);
+    glBindTexture(GL_TEXTURE_2D, mTextureId);
+
+    // Set texture parameters
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Upload texture data - now we know it's always RGBA
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, data);
+
+    // Generate mipmaps for better quality
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    // Check for OpenGL errors
+    if (const GLenum error = glGetError(); error != GL_NO_ERROR)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error after loading %s: 0x%x\n",
+                     filepath.data(), error);
+        stbi_image_free(data);
+        return false;
+    }
+
+    mWidth = width;
+    mHeight = height;
+    mBytes = data;
+    stbi_image_free(data);
+
+    SDL_Log("Texture loaded successfully: %dx%d from %s", width, height, filepath.data());
+
+    return true;
+}
+
+bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const int height,
+                               const std::uint32_t channelOffset, const bool rotate_180) noexcept
+{
+    if (data == nullptr || width <= 0 || height <= 0)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for loadFromMemory\n");
+        return false;
+    }
+
+    this->free();
+
+    // If rotation requested, create rotated copy
+    const std::uint8_t* upload_data = data;
+    std::vector<std::uint8_t> rotated_buffer;
+
+    if (rotate_180)
+    {
+        rotated_buffer = create_rotated_180(data, width, height);
+        if (rotated_buffer.empty())
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Unable to create texture from %s! SDL Error: %s\n", imagePath.data(),
-                SDL_GetError());
-            SDL_DestroySurface(loadedSurface);
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create rotated texture copy\n");
             return false;
         }
+        upload_data = rotated_buffer.data();
+    }
 
-        this->width = loadedSurface->w;
-        this->height = loadedSurface->h;
+    mBytes = const_cast<std::uint8_t*>(data);
 
-        SDL_DestroySurface(loadedSurface);
-    } else {
+    glGenTextures(1, &mTextureId);
+    glActiveTexture(GL_TEXTURE0 + channelOffset);
+    glBindTexture(GL_TEXTURE_2D, mTextureId);
 
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Unable to load image %s! SDL Error: %s\n", imagePath.data(),
-            SDL_GetError());
+    // Set texture parameters
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+    // Upload texture data - RGBA format (potentially rotated)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, upload_data);
+
+    // Generate mipmaps
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    // Check for OpenGL errors
+    if (const GLenum error = glGetError(); error != GL_NO_ERROR)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error after loading from memory: 0x%x\n", error);
+        return false;
+    }
+
+    mWidth = width;
+    mHeight = height;
+
+    return true;
+}
+
+bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const int height,
+                                 const std::uint32_t channelOffset, const bool rotate_180) noexcept
+{
+    if (data == nullptr || width <= 0 || height <= 0)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for updateFromMemory\n");
+        return false;
+    }
+
+    // Enforce size constraints
+    if (width > MAX_TEXTURE_WIDTH || height > MAX_TEXTURE_HEIGHT)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
+                     "Texture dimensions %dx%d exceed maximum %dx%d\n",
+                     width, height, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
+        return false;
+    }
+
+    mBytes = const_cast<std::uint8_t*>(data);
+
+    // If texture doesn't exist or dimensions changed, reallocate
+    if (mTextureId == 0 || mWidth != width || mHeight != height)
+    {
+        SDL_Log("Reallocating texture: %dx%d -> %dx%d\n", mWidth, mHeight, width, height);
+        return loadFromMemory(data, width, height, channelOffset, rotate_180);
+    }
+
+    // If rotation requested, create rotated copy
+    const std::uint8_t* upload_data = data;
+    std::vector<std::uint8_t> rotated_buffer;
+
+    if (rotate_180)
+    {
+        rotated_buffer = create_rotated_180(data, width, height);
+        if (rotated_buffer.empty())
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create rotated texture copy\n");
+            return false;
+        }
+        upload_data = rotated_buffer.data();
+    }
+
+    // Efficient update using glTexSubImage2D (reuses existing texture)
+    glActiveTexture(GL_TEXTURE0 + channelOffset);
+    glBindTexture(GL_TEXTURE_2D, mTextureId);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA,
+                    GL_UNSIGNED_BYTE, upload_data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    if (const GLenum error = glGetError(); error != GL_NO_ERROR)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error in updateFromMemory: 0x%x\n", error);
         return false;
     }
 
     return true;
 }
 
-bool Texture::loadFromStr(SDL_Renderer* renderer, std::string_view str, int cellSize) noexcept
+bool Texture::loadBmpIcon(SDL_Window* window, const std::string_view filepath) noexcept
 {
-    this->free();
-
-    if (str.empty())
+    if (SDL_Surface* bmp_surface = SDL_LoadBMP(filepath.data()))
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze string is empty");
-        return false;
+        SDL_SetWindowIcon(window, bmp_surface);
+        SDL_DestroySurface(bmp_surface);
+
+        return true;
     }
 
-    MazeLayout maze = MazeLayout::fromString(str, cellSize);
-
-    if (maze.getRows() == 0 || maze.getColumns() == 0)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid maze generated from string");
-        return false;
-    }
-
-    return loadFromMaze(renderer, maze);
+    SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load window icon from %s: %s",
+                 filepath.data(), SDL_GetError());
+    return false;
 }
 
-bool Texture::loadFromMaze(SDL_Renderer* renderer, const MazeLayout& maze) noexcept
+bool Texture::loadFromStr(const std::string_view mazeStr, const int cellSize) noexcept
 {
+    if (mazeStr.empty() || cellSize <= 0)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for loadFromStr\n");
+        return false;
+    }
+
     this->free();
 
-    if (maze.getRows() <= 0 || maze.getColumns() <= 0 || maze.getCellSize() <= 0)
+    // Parse the maze string to determine dimensions
+    int rows = 1;
+    int maxCols = 0;
+    int currentCol = 0;
+
+    for (const char c : mazeStr)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "MazeLayout has invalid dimensions");
+        if (c == '\n')
+        {
+            maxCols = std::max(maxCols, currentCol);
+            currentCol = 0;
+            ++rows;
+        }
+        else
+        {
+            ++currentCol;
+        }
+    }
+    maxCols = std::max(maxCols, currentCol); // Handle last line without newline
+
+    if (rows == 0 || maxCols == 0)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid maze dimensions\n");
         return false;
     }
 
-    SDL_Surface* surface = maze.buildSurface();
+    // Calculate pixel dimensions
+    const int pixelWidth = maxCols * cellSize;
+    const int pixelHeight = rows * cellSize;
 
-    if (!surface)
+    if (pixelWidth > MAX_TEXTURE_WIDTH || pixelHeight > MAX_TEXTURE_HEIGHT)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to build surface from MazeLayout");
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze texture %dx%d exceeds maximum %dx%d\n",
+                     pixelWidth, pixelHeight, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
         return false;
     }
 
-    this->texture = SDL_CreateTextureFromSurface(renderer, surface);
+    // Create RGBA pixel buffer (4 bytes per pixel)
+    std::vector<std::uint8_t> pixels(pixelWidth * pixelHeight * 4, 0);
 
-    if (!this->texture)
+    // Define colors (RGBA)
+    constexpr std::uint8_t WALL_COLOR[4] = {40, 40, 40, 255};       // Dark gray for walls
+    constexpr std::uint8_t PATH_COLOR[4] = {200, 200, 200, 255};   // Light gray for paths
+    constexpr std::uint8_t START_COLOR[4] = {0, 255, 0, 255};      // Green for start
+    constexpr std::uint8_t END_COLOR[4] = {255, 0, 0, 255};        // Red for end
+
+    // Render maze to pixel buffer
+    int row = 0;
+    int col = 0;
+
+    for (const char c : mazeStr)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create texture from maze surface: %s", SDL_GetError());
-        SDL_DestroySurface(surface);
-        return false;
+        if (c == '\n')
+        {
+            row++;
+            col = 0;
+            continue;
+        }
+
+        // Determine color based on character
+        const std::uint8_t* color = nullptr;
+        switch (c)
+        {
+            case '#':
+            case '+':
+            case '|':
+            case '-':
+                color = WALL_COLOR;
+                break;
+            case 'S':
+                color = START_COLOR;
+                break;
+            case 'E':
+            case 'X':
+                color = END_COLOR;
+                break;
+            case ' ':
+            case '.':
+            default:
+                color = PATH_COLOR;
+                break;
+        }
+
+        // Fill the cell with the chosen color
+        for (int py = 0; py < cellSize && (row * cellSize + py) < pixelHeight; ++py)
+        {
+            for (int px = 0; px < cellSize && (col * cellSize + px) < pixelWidth; ++px)
+            {
+                const int pixelX = col * cellSize + px;
+                const int pixelY = row * cellSize + py;
+                const int idx = (pixelY * pixelWidth + pixelX) * 4;
+
+                pixels[idx + 0] = color[0]; // R
+                pixels[idx + 1] = color[1]; // G
+                pixels[idx + 2] = color[2]; // B
+                pixels[idx + 3] = color[3]; // A
+            }
+        }
+
+        col++;
     }
 
-    SDL_SetTextureBlendMode(this->texture, SDL_BLENDMODE_BLEND);
-
-    this->width = maze.getPixelWidth();
-    this->height = maze.getPixelHeight();
-
-    SDL_DestroySurface(surface);
-
-    return true;
+    // Upload to OpenGL texture
+    return loadFromMemory(pixels.data(), pixelWidth, pixelHeight, 0, false);
 }

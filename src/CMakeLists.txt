@@ -56,12 +56,9 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/HttpClient.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LoadingState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Main.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MazeLayout.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MenuState.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ParallaxNode.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Pathfinder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PauseState.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PhysicsContactListener.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PhysicsGame.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Player.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PostProcessing.cpp
@@ -70,7 +67,6 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/RenderWindow.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SceneNode.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SDLHelper.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SessionHelper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SettingsState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SplashState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Sprite.cpp
@@ -79,7 +75,6 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/StateStack.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Texture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Transformable.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/UdpClient.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Wall.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/WorkerConcurrent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/World.cpp
@@ -108,12 +103,17 @@ set(DEAR_IMGUI_HEADERS
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3.h
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3_loader.h)
 
-add_executable(${BREAKING_WALLS_APP_NAME} ${DEAR_IMGUI_SRC_FILES} ${BREAKING_WALLS_SRC_FILES})
+set(GLAD_SOURCES ${CMAKE_SOURCE_DIR}/deps/glad/src/glad_3_0.c)
+set(NOISE_SOURCES ${CMAKE_SOURCE_DIR}/deps/noise/noise.c)
+set(SQLITE3_SOURCES ${CMAKE_SOURCE_DIR}/deps/sqlite/sqlite3.c)
+
+add_executable(${BREAKING_WALLS_APP_NAME} ${DEAR_IMGUI_SRC_FILES} ${GLAD_SOURCES} ${NOISE_SOURCES} ${SQLITE3_SOURCES} ${BREAKING_WALLS_SRC_FILES})
 
 target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<OR:$<STREQUAL:$<CONFIG>,Debug>,$<STREQUAL:$<CONFIG>,RelWithDebInfo>>:${BREAKING_WALLS_DEBUG_DEF}>")
 target_compile_features(${BREAKING_WALLS_APP_NAME} PRIVATE cxx_std_20)
 
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/fonts> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/fonts>)
+target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/glad/include> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/glad/include>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/dearimgui> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/dearimgui> $<BUILD_INTERFACE:${DEAR_IMGUI_DEP_PATH}>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/stb> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/stb>)

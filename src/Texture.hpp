@@ -1,73 +1,69 @@
 #ifndef TEXTURE_HPP
 #define TEXTURE_HPP
 
+#include <cstdint>
 #include <string_view>
 
-struct SDL_Texture;
-struct SDL_Renderer;
+struct SDL_Window;
 
 class MazeLayout;
 
 /// @file Texture.hpp
-/// @brief Texture class for SDL3
-/// @details This class wraps SDL_Texture and provides methods for loading, rendering, and freeing textures.
+/// @brief Texture class for OpenGL 3 textures
+/// @details This class wraps OpenGL texture operations
 class Texture
 {
 public:
     Texture() = default;
 
-    // Destructor to ensure SDL texture is properly freed
-    ~Texture() noexcept { free(); }
+    ~Texture() noexcept;
 
-    // Delete copy constructor and copy assignment (textures shouldn't be copied)
     Texture(const Texture&) = delete;
     Texture& operator=(const Texture&) = delete;
 
-    // Allow move semantics if needed in the future
-    Texture(Texture&& other) noexcept : texture(other.texture), width(other.width), height(other.height)
-    {
-        other.texture = nullptr;
-        other.width = 0;
-        other.height = 0;
-    }
+    Texture(Texture&& other) noexcept;
 
-    Texture& operator=(Texture&& other) noexcept
-    {
-        if (this != &other)
-        {
-            free(); // Clean up existing texture
-            texture = other.texture;
-            width = other.width;
-            height = other.height;
-            other.texture = nullptr;
-            other.width = 0;
-            other.height = 0;
-        }
-        return *this;
-    }
+    Texture& operator=(Texture&& other) noexcept;
 
     void free() noexcept;
 
-    [[nodiscard]] SDL_Texture* get() const noexcept;
+    /// Get the OpenGL texture ID
+    [[nodiscard]] std::uint32_t get() const noexcept;
 
-    [[nodiscard]] int getWidth() const noexcept { return width; }
+    [[nodiscard]] std::uint8_t* getPixelData() const noexcept;
 
-    [[nodiscard]] int getHeight() const noexcept { return height; }
+    [[nodiscard]] int getWidth() const noexcept;
 
-    bool loadTarget(SDL_Renderer* renderer, int w, int h) noexcept;
+    [[nodiscard]] int getHeight() const noexcept;
 
-    bool loadFromFile(SDL_Renderer* renderer, std::string_view path) noexcept;
+    /// Create an empty texture for use as a render target
+    bool loadTarget(int w, int h) noexcept;
 
-    bool loadImageTexture(SDL_Renderer* renderer, std::string_view imagePath) noexcept;
+    /// Load texture from file using stb_image
+    bool loadFromFile(std::string_view filepath, std::uint32_t channelOffset = 0) noexcept;
 
-    bool loadFromStr(SDL_Renderer* renderer, std::string_view str, int cellSize = 10) noexcept;
+    /// Load texture from a maze string representation
+    bool loadFromStr(std::string_view mazeStr, int cellSize = 10) noexcept;
 
-    bool loadFromMaze(SDL_Renderer* renderer, const MazeLayout& maze) noexcept;
+    /// Load texture from raw RGBA memory data
+    bool loadFromMemory(const std::uint8_t* data, int width, int height,
+                          std::uint32_t channelOffset = 0, bool rotate_180 = false) noexcept;
+
+    /// Update existing texture from raw RGBA memory data efficiently
+    bool updateFromMemory(const std::uint8_t* data, int width, int height,
+                            std::uint32_t channel_offset = 0, bool rotate_180 = false) noexcept;
+
+    /// Load BMP file and set as window icon (SDL utility)
+    static bool loadBmpIcon(SDL_Window* window, std::string_view filepath) noexcept;
+
+    static constexpr int MAX_TEXTURE_WIDTH = 2560;
+    static constexpr int MAX_TEXTURE_HEIGHT = 1440;
 
 private:
-    SDL_Texture* texture = nullptr;
-    int width = 0;
-    int height = 0;
+    std::uint32_t mTextureId{0};
+    int mWidth{0};
+    int mHeight{0};
+    std::uint8_t* mBytes{nullptr};
 }; // Texture class
 
 #endif // TEXTURE_HPP

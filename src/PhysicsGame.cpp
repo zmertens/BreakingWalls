@@ -176,7 +176,7 @@ struct PhysicsGame::PhysicsGameImpl
             if (const auto mazeStr = mazes::create(config); !mazeStr.empty())
             {
                 // Load the maze texture from the generated string
-                textures.load(sdlHelper.renderer, Textures::ID::LEVEL_ONE, mazeStr, 12);
+                textures.loadFromStr(Textures::ID::LEVEL_ONE, mazeStr, 12);
             }
             else
             {

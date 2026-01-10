@@ -4,17 +4,14 @@
 #include "Ball.hpp"
 #include "Entity.hpp"
 #include "JsonUtils.hpp"
-#include "ParallaxNode.hpp"
 #include "Pathfinder.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceManager.hpp"
 #include "SpriteNode.hpp"
 #include "Texture.hpp"
 #include "Wall.hpp"
-#include "MazeLayout.hpp"
 
 #include "Physics.hpp"
-#include "PhysicsContactListener.hpp"
 
 #include <MazeBuilder/create.h>
 
@@ -283,27 +280,6 @@ void World::buildScene()
     // Each layer scrolls at a different speed to create depth effect
     // Negative speeds scroll left (like in the raylib example)
 
-    // Back layer - slowest scroll
-    auto parallaxBack = make_unique<ParallaxNode>(mTextures.get(Textures::ID::CHARACTER_SPRITE_SHEET), -20.0f);
-    parallaxBack->setPosition(0.f, 0.f);
-    parallaxBack->setScale(2.0f);
-    parallaxBack->setVerticalOffset(20.0f);
-    mSceneLayers[static_cast<size_t>(Layer::PARALLAX_BACK)]->attachChild(std::move(parallaxBack));
-
-    // Mid layer - medium scroll
-    auto parallaxMid = make_unique<ParallaxNode>(mTextures.get(Textures::ID::LEVEL_TWO), -50.0f);
-    parallaxMid->setPosition(0.f, 0.f);
-    parallaxMid->setScale(2.0f);
-    parallaxMid->setVerticalOffset(20.0f);
-    mSceneLayers[static_cast<size_t>(Layer::PARALLAX_MID)]->attachChild(std::move(parallaxMid));
-
-    // Fore layer - fastest scroll
-    auto parallaxFore = make_unique<ParallaxNode>(mTextures.get(Textures::ID::LEVEL_ONE), -100.0f);
-    parallaxFore->setPosition(0.f, 0.f);
-    parallaxFore->setScale(2.0f);
-    parallaxFore->setVerticalOffset(70.0f);
-    mSceneLayers[static_cast<size_t>(Layer::PARALLAX_FORE)]->attachChild(std::move(parallaxFore));
-
     // Static background with LEVEL_TWO
     auto mazeNode = make_unique<SpriteNode>(mTextures.get(Textures::ID::LEVEL_TWO));
     mazeNode->setPosition(0.f, 0.f);
@@ -352,93 +328,12 @@ void World::buildScene()
         wallBodyDef.type = b2_staticBody;
         mMazeWallsBodyId = b2CreateBody(mWorldId, &wallBodyDef);
         
-        // Load maze from physics.json to get wall layout
-        MazeLayout maze = MazeLayout::fromString(
-            "+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+\n"
-            "|   |       |       |       |                   |       |                   |\n"
-            "+   +   +---+   +---+   +---+---+---+---+---+   +   +   +   +---+---+---+   +\n"
-            "|   |   |       |       |   |       |       |   |   |   |   |       |       |\n"
-            "+   +   +   +---+---+---+   +   +   +   +   +   +---+---+   +   +   +   +---+\n"
-            "|       |   |           |       |   |   |       |           |   |   |       |\n"
-            "+---+---+   +   +---+   +---+---+   +   +---+---+   +---+---+   +   +---+   +\n"
-            "|           |       |   |       |   |       |       |       |   |       |   |\n"
-            "+   +---+---+---+   +   +   +   +   +---+   +   +---+   +   +   +---+   +   +\n"
-            "|   |           |   |   |   |       |       |   |   |   |   |   |           |\n"
-            "+   +   +---+   +   +   +   +---+---+   +---+   +   +   +   +   +   +---+---+\n"
-            "|       |       |   |       |           |       |       |       |   |       |\n"
-            "+---+---+   +---+   +---+---+---+---+---+   +---+---+---+---+---+   +   +   +\n"
-            "|   |       |       |   |   |           |       |               |   |   |   |\n"
-            "+   +   +---+   +---+   +   +   +---+   +---+   +   +---+---+   +   +   +   +\n"
-            "|       |   |   |       |       |   |       |   |   |       |       |       |\n"
-            "+---+---+   +   +   +---+---+---+   +---+   +   +   +   +   +---+---+---+---+\n"
-            "|   |       |   |   |           |   |       |   |       |   |   |   |       |\n"
-            "+   +   +---+   +   +   +---+   +   +   +---+   +---+---+   +   +   +   +   +\n"
-            "|   |   |       |       |   |       |       |           |       |       |   |\n"
-            "+   +   +   +---+---+---+   +---+---+---+---+---+---+   +---+---+---+---+   +\n"
-            "|   |   |   |   |   |   |   |       |       |   |   |   |   |           |   |\n"
-            "+   +   +   +   +   +   +   +   +   +   +   +   +   +   +   +   +---+   +   +\n"
-            "|       |       |       |       |       |       |       |       |       |   |\n"
-            "+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+\n",
-            10  // Cell size matches PIXELS_PER_METER
-        );
-        
-        auto wallPositions = maze.getWallPositions();
-        
-        SDL_Log("Creating %zu wall shapes from maze layout", wallPositions.size());
-        
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.material.friction = 0.8f;
         shapeDef.material.restitution = 0.1f;
         
         // Create a box shape for each wall cell (10x10 pixels = 1x1 meters)
         float halfCellSize = physics::toMeters(5.0f);  // Half of 10 pixels
-        
-        for (const auto& [x, y] : wallPositions)
-        {
-            // Create box at cell position (offset from origin)
-            b2Vec2 cellCenter = {physics::toMeters(static_cast<float>(x)), physics::toMeters(static_cast<float>(y))};
-            b2Polygon box = b2MakeOffsetBox(halfCellSize, halfCellSize, cellCenter, b2Rot_identity);
-            b2CreatePolygonShape(mMazeWallsBodyId, &shapeDef, &box);
-        }
-        
-        SDL_Log("Maze walls created with %zu shapes", wallPositions.size());
-
-        // Create pathfinder as a dynamic body with fixed rotation for player control
-        if (mPlayerPathfinder)
-        {
-            b2BodyDef bodyDef = b2DefaultBodyDef();
-            bodyDef.type = b2_dynamicBody;
-            bodyDef.position = physics::toMetersVec(mPlayerPathfinder->getPosition());
-            bodyDef.fixedRotation = true;
-
-            mPlayerPathfinder->createBody(mWorldId, &bodyDef);
-            b2BodyId bodyId = mPlayerPathfinder->getBodyId();
-            if (b2Body_IsValid(bodyId))
-            {
-                b2ShapeDef shapeDef = b2DefaultShapeDef();
-                shapeDef.density = 1.0f;
-
-                // small box for the pathfinder - about 0.4 meters (4 pixels) half-width
-                b2Polygon box = b2MakeBox(physics::toMeters(4.0f), physics::toMeters(6.0f));
-                b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-
-                // Set friction and restitution after creation
-                b2Shape_SetFriction(shapeId, 0.4f);
-                b2Shape_SetRestitution(shapeId, 0.1f);
-
-                b2Body_SetAwake(bodyId, true);
-            }
-        }
-        
-        // Now create physics bodies for balls (AFTER scene setup)
-        if (mBallNormal)
-            mBallNormal->createPhysicsBody(mWorldId, b2Vec2{40.0f, 30.0f});
-        if (mBallHeavy)
-            mBallHeavy->createPhysicsBody(mWorldId, b2Vec2{80.0f, 30.0f});
-        if (mBallLight)
-            mBallLight->createPhysicsBody(mWorldId, b2Vec2{120.0f, 30.0f});
-        if (mBallExplosive)
-            mBallExplosive->createPhysicsBody(mWorldId, b2Vec2{160.0f, 30.0f});
     }
 }
 
