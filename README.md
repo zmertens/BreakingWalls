@@ -32,8 +32,8 @@ Use the following CMake options to configure the project:
 
 ### Example Builds
 
-`cmake -G"Visual Studio 17 2022" -S . -B build-multi -DBW_PLATFORM_WEB:BOOL=OFF`
+`cmake -G"Visual Studio 17 2022" -S . -B build -DPLATFORM_WEB:BOOL=OFF`
 
-`cmake -G"Ninja Multi-Config" -S . -B build-web -DBW_PLATFORM_WEB:BOOL=ON -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${my/emsdk/repo}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake`
+`cmake -G"Ninja Multi-Config" -S . -B build-web -DPLATFORM_WEB:BOOL=ON -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${my/emsdk/repo}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake`
 
 ---

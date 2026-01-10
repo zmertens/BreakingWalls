@@ -1,6 +1,9 @@
-The MIT License (MIT)
+/*
+noise.h and noise.c are derived from this project:
 
-Copyright (c) 2016-2026 Zach Mertens
+https://github.com/caseman/noise
+
+Copyright (c) 2008 Casey Duncan
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +22,27 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+*/
+
+#ifndef _noise_h_
+#define _noise_h_
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+void seed(unsigned int x);
+
+float simplex2(
+    float x, float y,
+    int octaves, float persistence, float lacunarity);
+
+float simplex3(
+    float x, float y, float z,
+    int octaves, float persistence, float lacunarity);
+
+#if defined(__cplusplus)
+}
+#endif // cplusplus
+
+#endif
