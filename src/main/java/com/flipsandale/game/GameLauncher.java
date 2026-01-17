@@ -10,11 +10,25 @@ import org.springframework.stereotype.Component;
 public class GameLauncher {
 
   private final MazeService mazeService;
+  private final HapticFeedbackService hapticFeedbackService;
+  private final PlatformGeneratorService platformGeneratorService;
+  private final GameStateService gameStateService;
+  private final LevelProgressionService levelProgressionService;
   private final ApplicationContext applicationContext;
   private MazeGameApp gameApp;
 
-  public GameLauncher(MazeService mazeService, ApplicationContext applicationContext) {
+  public GameLauncher(
+      MazeService mazeService,
+      HapticFeedbackService hapticFeedbackService,
+      PlatformGeneratorService platformGeneratorService,
+      GameStateService gameStateService,
+      LevelProgressionService levelProgressionService,
+      ApplicationContext applicationContext) {
     this.mazeService = mazeService;
+    this.hapticFeedbackService = hapticFeedbackService;
+    this.platformGeneratorService = platformGeneratorService;
+    this.gameStateService = gameStateService;
+    this.levelProgressionService = levelProgressionService;
     this.applicationContext = applicationContext;
   }
 
@@ -28,7 +42,14 @@ public class GameLauncher {
       return;
     }
 
-    gameApp = new MazeGameApp(mazeService, this::shutdownSpring);
+    gameApp =
+        new MazeGameApp(
+            mazeService,
+            hapticFeedbackService,
+            platformGeneratorService,
+            gameStateService,
+            levelProgressionService,
+            this::shutdownSpring);
 
     AppSettings settings = MazeGameApp.createSettings();
     gameApp.setSettings(settings);

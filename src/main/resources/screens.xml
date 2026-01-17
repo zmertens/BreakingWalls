@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nifty xmlns="http://nifty-gui.lessvoid.com/nifty-gui" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://nifty-gui.lessvoid.com/nifty-gui http://nifty-gui.lessvoid.com/nifty-gui-1.4.xsd">
+
+  <!-- ============================================== -->
+  <!-- Main Menu Screen -->
+  <!-- ============================================== -->
+  <screen id="mainMenu" controller="com.flipsandale.game.MainMenuScreenController">
+    <layer id="background" backgroundColor="#000000ff" childLayout="vertical">
+      <panel id="title" childLayout="center" alignRight="center" valignCenter="center">
+        <text font="Interface/Fonts/Default.fnt" text="BREAKING WALLS" align="center" valignCenter="center" color="#ffffffff" textSize="48"/>
+      </panel>
+      
+      <panel id="menu" childLayout="vertical" padding="50,50,50,50" alignRight="center" valignCenter="center">
+        <control name="button" id="btnPlay" label="Play" align="center" valignCenter="center" height="50px" width="200px">
+          <interact onClick="startGame()"/>
+        </control>
+        <panel height="20px" childLayout="vertical"/>
+        <control name="button" id="btnSettings" label="Settings" align="center" valignCenter="center" height="50px" width="200px">
+          <interact onClick="showSettings()"/>
+        </control>
+        <panel height="20px" childLayout="vertical"/>
+        <control name="button" id="btnQuit" label="Quit" align="center" valignCenter="center" height="50px" width="200px">
+          <interact onClick="quitGame()"/>
+        </control>
+      </panel>
+    </layer>
+  </screen>
+
+  <!-- ============================================== -->
+  <!-- Mode Selection Screen -->
+  <!-- ============================================== -->
+  <screen id="modeSelection" controller="com.flipsandale.game.ModeSelectScreenController">
+    <layer id="background" backgroundColor="#1a1a2eff" childLayout="vertical">
+      <panel id="title" childLayout="center" alignRight="center" valignCenter="center">
+        <text font="Interface/Fonts/Default.fnt" text="SELECT GAME MODE" align="center" valignCenter="center" color="#ffffffff" textSize="40"/>
+      </panel>
+      
+      <panel id="modes" childLayout="horizontal" padding="50,50,50,50" alignRight="center" valignCenter="center">
+        <!-- ZEN Mode -->
+        <panel id="zenPanel" childLayout="vertical" padding="30,30,30,30" width="300px" height="300px" backgroundColor="#0066ccff">
+          <text font="Interface/Fonts/Default.fnt" text="ZEN MODE" align="center" valignCenter="top" color="#ffffffff" textSize="32"/>
+          <text font="Interface/Fonts/Default.fnt" text="First-Person" align="center" valignCenter="center" color="#ffffffff" textSize="18"/>
+          <text font="Interface/Fonts/Default.fnt" text="No Penalties" align="center" valignCenter="center" color="#ffffffff" textSize="18"/>
+          <text font="Interface/Fonts/Default.fnt" text="Infinite Lives" align="center" valignCenter="center" color="#ffffffff" textSize="18"/>
+          <control name="button" id="btnZen" label="SELECT" align="center" valignCenter="bottom" height="40px" width="150px">
+            <interact onClick="selectZenMode()"/>
+          </control>
+        </panel>
+        
+        <panel width="50px" height="100%"/>
+        
+        <!-- TIME TRIAL Mode -->
+        <panel id="timeTrialPanel" childLayout="vertical" padding="30,30,30,30" width="300px" height="300px" backgroundColor="#cc6600ff">
+          <text font="Interface/Fonts/Default.fnt" text="TIME TRIAL" align="center" valignCenter="top" color="#ffffffff" textSize="32"/>
+          <text font="Interface/Fonts/Default.fnt" text="Orthogonal View" align="center" valignCenter="center" color="#ffffffff" textSize="18"/>
+          <text font="Interface/Fonts/Default.fnt" text="Timer Resets on Fall" align="center" valignCenter="center" color="#ffffffff" textSize="18"/>
+          <text font="Interface/Fonts/Default.fnt" text="Score Race" align="center" valignCenter="center" color="#ffffffff" textSize="18"/>
+          <control name="button" id="btnTimeTrial" label="SELECT" align="center" valignCenter="bottom" height="40px" width="150px">
+            <interact onClick="selectTimeTrialMode()"/>
+          </control>
+        </panel>
+      </panel>
+
+      <panel id="footer" childLayout="center" alignRight="center" valignBottom="bottom" height="60px">
+        <control name="button" id="btnBack" label="Back" align="center" height="40px" width="100px">
+          <interact onClick="backToMainMenu()"/>
+        </control>
+      </panel>
+    </layer>
+  </screen>
+
+  <!-- ============================================== -->
+  <!-- Gameplay HUD Screen (Overlay) -->
+  <!-- ============================================== -->
+  <screen id="gameplayHUD" controller="com.flipsandale.game.GameplayHUDScreenController">
+    <layer id="hud" childLayout="absolute" backgroundColor="#00000000">
+      <!-- Top-left corner HUD -->
+      <panel id="hudPanel" x="10px" y="10px" width="300px" height="200px" childLayout="vertical" backgroundColor="#00000088" padding="10,10,10,10">
+        <text id="levelText" font="Interface/Fonts/Default.fnt" text="Level: 1" color="#ffffffff" textSize="18"/>
+        <text id="scoreText" font="Interface/Fonts/Default.fnt" text="Score: 0" color="#ffffffff" textSize="18"/>
+        <text id="timeText" font="Interface/Fonts/Default.fnt" text="Time: 0.0s" color="#ffffffff" textSize="18"/>
+        <text id="platformsText" font="Interface/Fonts/Default.fnt" text="Platforms: 0" color="#ffffffff" textSize="18"/>
+        <text id="fallsText" font="Interface/Fonts/Default.fnt" text="Falls: 0" color="#ffffffff" textSize="18"/>
+      </panel>
+
+      <!-- ESC hint at bottom center -->
+      <panel id="escHint" x="0px" y="650px" width="1280px" height="50px" childLayout="center">
+        <text font="Interface/Fonts/Default.fnt" text="Press ESC to pause" color="#aaaaaaff" textSize="14"/>
+      </panel>
+    </layer>
+  </screen>
+
+  <!-- ============================================== -->
+  <!-- Pause Menu Screen -->
+  <!-- ============================================== -->
+  <screen id="pauseMenu" controller="com.flipsandale.game.PauseMenuScreenController">
+    <layer id="background" backgroundColor="#00000088" childLayout="vertical">
+      <panel id="title" childLayout="center" alignRight="center" valignCenter="center">
+        <text font="Interface/Fonts/Default.fnt" text="PAUSED" align="center" valignCenter="center" color="#ffffffff" textSize="48"/>
+      </panel>
+      
+      <panel id="menu" childLayout="vertical" padding="50,50,50,50" alignRight="center" valignCenter="center">
+        <control name="button" id="btnResume" label="Resume" align="center" valignCenter="center" height="50px" width="200px">
+          <interact onClick="resumeGame()"/>
+        </control>
+        <panel height="20px" childLayout="vertical"/>
+        <control name="button" id="btnRestart" label="Restart Level" align="center" valignCenter="center" height="50px" width="200px">
+          <interact onClick="restartLevel()"/>
+        </control>
+        <panel height="20px" childLayout="vertical"/>
+        <control name="button" id="btnMenu" label="Main Menu" align="center" valignCenter="center" height="50px" width="200px">
+          <interact onClick="returnToMainMenu()"/>
+        </control>
+        <panel height="20px" childLayout="vertical"/>
+        <control name="button" id="btnQuit" label="Quit" align="center" valignCenter="center" height="50px" width="200px">
+          <interact onClick="quitGame()"/>
+        </control>
+      </panel>
+    </layer>
+  </screen>
+
+  <!-- ============================================== -->
+  <!-- Game Over Screen -->
+  <!-- ============================================== -->
+  <screen id="gameOverScreen" controller="com.flipsandale.game.GameOverScreenController">
+    <layer id="background" backgroundColor="#000000ff" childLayout="vertical">
+      <panel id="title" childLayout="center" alignRight="center" valignCenter="center" height="100px">
+        <text font="Interface/Fonts/Default.fnt" text="GAME OVER" align="center" valignCenter="center" color="#ff6666ff" textSize="48"/>
+      </panel>
+      
+      <panel id="stats" childLayout="vertical" padding="50,50,50,50" alignRight="center" valignCenter="center" width="400px" backgroundColor="#1a1a2eff">
+        <text id="scoreText" font="Interface/Fonts/Default.fnt" text="Score: 0" color="#ffffffff" textSize="24" align="center"/>
+        <text id="timeText" font="Interface/Fonts/Default.fnt" text="Time: 0.0s" color="#ffffffff" textSize="24" align="center"/>
+        <text id="levelText" font="Interface/Fonts/Default.fnt" text="Level Reached: 1" color="#ffffffff" textSize="24" align="center"/>
+        <text id="platformsText" font="Interface/Fonts/Default.fnt" text="Platforms: 0" color="#ffffffff" textSize="24" align="center"/>
+        <text id="fallsText" font="Interface/Fonts/Default.fnt" text="Falls: 0" color="#ffffffff" textSize="24" align="center"/>
+      </panel>
+
+      <panel id="buttons" childLayout="vertical" padding="50,50,50,50" alignRight="center" valignCenter="center">
+        <control name="button" id="btnPlayAgain" label="Play Again (Same Mode)" align="center" height="50px" width="300px">
+          <interact onClick="playAgainSameMode()"/>
+        </control>
+        <panel height="20px" childLayout="vertical"/>
+        <control name="button" id="btnChangeMode" label="Select Different Mode" align="center" height="50px" width="300px">
+          <interact onClick="selectDifferentMode()"/>
+        </control>
+        <panel height="20px" childLayout="vertical"/>
+        <control name="button" id="btnMenu" label="Main Menu" align="center" height="50px" width="300px">
+          <interact onClick="returnToMainMenu()"/>
+        </control>
+        <panel height="20px" childLayout="vertical"/>
+        <control name="button" id="btnQuit" label="Quit" align="center" height="50px" width="300px">
+          <interact onClick="quitGame()"/>
+        </control>
+      </panel>
+    </layer>
+  </screen>
+
+</nifty>

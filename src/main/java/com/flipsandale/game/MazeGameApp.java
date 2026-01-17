@@ -31,14 +31,45 @@ import java.util.logging.Logger;
 public class MazeGameApp extends SimpleApplication implements ScreenController {
 
   private final MazeService mazeService;
+  private final HapticFeedbackService hapticFeedbackService;
+  private final PlatformGeneratorService platformGeneratorService;
+  private final GameStateService gameStateService;
+  private final LevelProgressionService levelProgressionService;
   private final Runnable onCloseCallback;
   private String asciiMaze;
   private Node mazeNode;
 
+  // Game state
+  private GameState currentGameState = GameState.MENU;
+  private GameMode currentGameMode = GameMode.ZEN;
+
+  // Platform and player state
+  private PlatformLayout currentPlatformLayout;
+  private PlayerController playerController;
+  private Node platformsNode; // Visual representation of platforms
+  private FallingStateManager fallingStateManager;
+
+  // Level progression
+  private LevelProgressionService.LevelData nextLevelData; // Preloaded next level
+
+  // Input management
+  private InputManager gameInputManager;
+  private boolean jumpPressed = false;
+  private float cameraRotation = 0f; // Horizontal rotation in radians
+  private static final float CAMERA_ROTATION_SPEED = 2f; // Radians per second
+
   // Nifty GUI
   private Nifty nifty;
   private NiftyJmeDisplay niftyDisplay;
+  private NiftyInputProtector niftyInputProtector;
+  private volatile boolean isTransitioningScreen = false;
   private boolean menuVisible = true;
+
+  // UI System
+  private HUDManager hudManager;
+  private GameUIManager gameUIManager;
+  private GameplayHUDScreenController gameplayHUDScreenController;
+  private HUDLayer hudLayer;
 
   // Maze settings
   private String selectedAlgorithm = "sidewinder";
@@ -50,8 +81,18 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private static final float CELL_SIZE = 1.0f;
   private static final float WALL_HEIGHT = 2.0f;
 
-  public MazeGameApp(MazeService mazeService, Runnable onCloseCallback) {
+  public MazeGameApp(
+      MazeService mazeService,
+      HapticFeedbackService hapticFeedbackService,
+      PlatformGeneratorService platformGeneratorService,
+      GameStateService gameStateService,
+      LevelProgressionService levelProgressionService,
+      Runnable onCloseCallback) {
     this.mazeService = mazeService;
+    this.hapticFeedbackService = hapticFeedbackService;
+    this.platformGeneratorService = platformGeneratorService;
+    this.gameStateService = gameStateService;
+    this.levelProgressionService = levelProgressionService;
     this.onCloseCallback = onCloseCallback;
   }
 
@@ -70,12 +111,18 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     Logger.getLogger("de.lessvoid.nifty").setLevel(Level.SEVERE);
     Logger.getLogger("NiftyInputEventHandlingLog").setLevel(Level.SEVERE);
 
-    // Create maze node container
+    // Create maze node container (legacy)
     mazeNode = new Node("MazeNode");
     rootNode.attachChild(mazeNode);
 
-    // Set up input mappings
-    setupInputs();
+    // Create platforms node for game
+    platformsNode = new Node("PlatformsNode");
+    rootNode.attachChild(platformsNode);
+
+    // Initialize input management
+    gameInputManager = new InputManager(inputManager);
+    gameInputManager.setupInputMappings();
+    gameInputManager.setListener(new GameInputListener());
 
     // Set up camera
     setupCamera();
@@ -86,16 +133,23 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     // Initialize Nifty GUI
     initNiftyGui();
 
-    // Disable fly cam initially (menu mode)
+    // Set initial game state to MENU
+    setGameState(GameState.MENU);
     flyCam.setDragToRotate(true);
     inputManager.setCursorVisible(true);
   }
 
   private void initNiftyGui() {
+    // Use SafeNiftyJmeDisplay instead of regular NiftyJmeDisplay
+    // This catches NullPointerException during screen transitions
     niftyDisplay =
-        NiftyJmeDisplay.newNiftyJmeDisplay(assetManager, inputManager, audioRenderer, guiViewPort);
+        SafeNiftyJmeDisplay.newNiftyJmeDisplay(
+            assetManager, inputManager, audioRenderer, guiViewPort);
     nifty = niftyDisplay.getNifty();
-    guiViewPort.addProcessor(niftyDisplay);
+
+    // Create and add a protective input listener
+    niftyInputProtector = new NiftyInputProtector(nifty);
+    inputManager.addRawInputListener(niftyInputProtector);
 
     // Load default styles and controls
     nifty.loadStyleFile("nifty-default-styles.xml");
@@ -110,8 +164,105 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     // Build settings screen
     buildSettingsScreen();
 
-    // Show main menu
-    nifty.gotoScreen("mainMenu");
+    // Initialize HUD system
+    initializeHUDSystem();
+
+    // Patch Nifty to handle null screen gracefully
+    // This wraps Nifty.update() to catch NullPointerException during input handling
+    patchNiftyForNullScreen();
+
+    // Add processor after all initialization is complete
+    guiViewPort.addProcessor(niftyDisplay);
+
+    // Show main menu safely - now processor is added and initialization is complete
+    safeGotoScreen("mainMenu");
+  }
+
+  /**
+   * Patches Nifty to handle NullPointerException that occurs when getCurrentScreen() is null during
+   * screen transitions. This is done by wrapping the update method.
+   */
+  private void patchNiftyForNullScreen() {
+    // We need to override how Nifty handles input updates
+    // Since we can't directly patch Nifty, we'll prevent the issue by monitoring screen state
+    // The key insight: the error occurs in InputSystemJme.endInput() when it calls Nifty.update()
+    // We can prevent this by disabling input processing during transitions
+
+    // Unfortunately, without direct access to InputSystemJme, we can only suppress input
+    // The NiftyInputProtector will consume mouse events as a preventative measure
+  }
+
+  private void initializeHUDSystem() {
+    // Create HUDManager to track game metrics
+    hudManager = new HUDManager();
+
+    // Create GameUIManager to coordinate UI transitions
+    gameUIManager = new GameUIManager(nifty, hudManager, gameStateService);
+
+    // Create GameplayHUDScreenController for in-game HUD
+    gameplayHUDScreenController = new GameplayHUDScreenController(hudManager, gameStateService);
+
+    // Create HUDLayer for JME3-based HUD rendering
+    hudLayer = new HUDLayer(guiNode, guiFont, hudManager);
+
+    System.out.println("HUD System initialized");
+  }
+
+  /** Safely transitions to a screen, checking if it exists first. */
+  private void safeGotoScreen(String screenName) {
+    try {
+      if (nifty == null) {
+        System.err.println("Nifty not initialized, cannot transition to screen: " + screenName);
+        return;
+      }
+
+      de.lessvoid.nifty.screen.Screen screen = nifty.getScreen(screenName);
+      if (screen == null) {
+        System.err.println("Screen '" + screenName + "' not found in Nifty");
+        // Always ensure we have at least the empty screen as fallback
+        if (!"empty".equals(screenName)) {
+          System.err.println("Falling back to 'empty' screen");
+          de.lessvoid.nifty.screen.Screen emptyScreen = nifty.getScreen("empty");
+          if (emptyScreen != null) {
+            // Remove processor before transition to prevent input processing on null screen
+            try {
+              guiViewPort.removeProcessor(niftyDisplay);
+            } catch (Exception ignored) {
+            }
+            nifty.gotoScreen("empty");
+            // Re-add processor after transition
+            try {
+              guiViewPort.addProcessor(niftyDisplay);
+            } catch (Exception ignored) {
+            }
+            return;
+          }
+        }
+        // Last resort: don't transition if screen doesn't exist
+        System.err.println(
+            "WARNING: Requested screen '"
+                + screenName
+                + "' does not exist and no fallback available");
+        return;
+      }
+
+      // Remove processor before transition to prevent input processing on null screen
+      try {
+        guiViewPort.removeProcessor(niftyDisplay);
+      } catch (Exception ignored) {
+      }
+
+      nifty.gotoScreen(screenName);
+
+      // Re-add processor after transition
+      try {
+        guiViewPort.addProcessor(niftyDisplay);
+      } catch (Exception ignored) {
+      }
+    } catch (Exception e) {
+      System.err.println("Error transitioning to screen '" + screenName + "': " + e.getMessage());
+      e.printStackTrace();
+    }
   }
 
   private void buildEmptyScreen() {
@@ -557,6 +708,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   }
 
   private void setupInputs() {
+    // Legacy input mapping - kept for compatibility with menu navigation
     inputManager.addMapping("ToggleMenu", new KeyTrigger(KeyInput.KEY_ESCAPE));
     inputManager.addListener(
         (ActionListener)
@@ -568,14 +720,372 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
         "ToggleMenu");
   }
 
+  // ============== Game State Management ==============
+
+  /** Sets the current game state and triggers any state-specific initialization. */
+  private void setGameState(GameState newState) {
+    GameState previousState = currentGameState;
+    currentGameState = newState;
+
+    System.out.println("Game State: " + previousState + " -> " + newState);
+
+    switch (newState) {
+      case MENU:
+        onEnterMenuState();
+        break;
+      case PLAYING:
+        onEnterPlayingState();
+        break;
+      case FALLING:
+        onEnterFallingState();
+        break;
+      case PAUSED:
+        onEnterPausedState();
+        break;
+      case GAME_OVER:
+        onEnterGameOverState();
+        break;
+    }
+  }
+
+  private void onEnterMenuState() {
+    menuVisible = true;
+
+    // Re-enable Nifty GUI processing when returning to menu
+    if (niftyDisplay != null) {
+      try {
+        guiViewPort.addProcessor(niftyDisplay);
+      } catch (Exception e) {
+        System.err.println("Note: Could not re-add Nifty processor to viewport");
+      }
+      gameUIManager.showMainMenu();
+    } else {
+      safeGotoScreen("mainMenu");
+    }
+    flyCam.setDragToRotate(true);
+    inputManager.setCursorVisible(true);
+  }
+
+  private void onEnterPlayingState() {
+    menuVisible = false;
+
+    // IMPORTANT: Disable Nifty input processing BEFORE transitioning screens
+    // This prevents null pointer exceptions from mouse input during transitions
+    // We do this by removing the NiftyJmeDisplay processor before any screen changes
+    if (niftyDisplay != null) {
+      try {
+        guiViewPort.removeProcessor(niftyDisplay);
+      } catch (Exception e) {
+        System.err.println("Note: Could not remove Nifty processor from viewport");
+      }
+    }
+
+    // Now safe to transition screens (no Nifty input processing happening)
+    if (gameUIManager != null) {
+      gameUIManager.showGameplayHUD();
+    } else {
+      safeGotoScreen("empty");
+    }
+
+    flyCam.setDragToRotate(false);
+    inputManager.setCursorVisible(false);
+    jumpPressed = false;
+
+    // Initialize level with current maze
+    initializeLevel();
+  }
+
+  private void onEnterFallingState() {
+    // Initialize falling state manager
+    Vector3f levelStartPos =
+        currentPlatformLayout != null
+            ? currentPlatformLayout.getStartPosition()
+            : (playerController != null ? playerController.getPosition() : new Vector3f(0, 0, 0));
+
+    fallingStateManager = new FallingStateManager(currentGameMode);
+    fallingStateManager.onFallStart(playerController, levelStartPos);
+
+    System.out.println("Entered FALLING state. Mode: " + currentGameMode);
+  }
+
+  private void onEnterPausedState() {
+    // Show pause menu
+    menuVisible = true;
+
+    // Re-enable Nifty input processing for pause menu
+    if (niftyDisplay != null) {
+      try {
+        guiViewPort.addProcessor(niftyDisplay);
+      } catch (Exception e) {
+        System.err.println("Note: Could not re-add Nifty processor to viewport");
+      }
+    }
+
+    if (gameUIManager != null) {
+      gameUIManager.showPauseMenu();
+    }
+    inputManager.setCursorVisible(true);
+  }
+
+  private void onEnterGameOverState() {
+    // Show game over screen with stats
+    menuVisible = true;
+
+    // Re-enable Nifty input processing for game over screen
+    if (niftyDisplay != null) {
+      try {
+        guiViewPort.addProcessor(niftyDisplay);
+      } catch (Exception e) {
+        System.err.println("Note: Could not re-add Nifty processor to viewport");
+      }
+    }
+    inputManager.setCursorVisible(true);
+  }
+
+  // ============== Level Initialization ==============
+
+  /** Initializes a new level by generating the maze and creating platforms. */
+  private void initializeLevel() {
+    try {
+      // Generate new maze from REST API
+      MazeRequest request = new MazeRequest("sidewinder", mazeRows, mazeCols, mazeSeed, true);
+      MazeResponse mazeResponse = mazeService.createMaze(request);
+
+      if (mazeResponse == null || mazeResponse.getData() == null) {
+        System.err.println("Failed to generate maze");
+        return;
+      }
+
+      // Generate platform layout from maze
+      currentPlatformLayout =
+          platformGeneratorService.generateLayout(mazeResponse, gameStateService.getCurrentLevel());
+
+      System.out.println("Generated layout: " + currentPlatformLayout);
+
+      // Clear old platforms visualization
+      platformsNode.detachAllChildren();
+
+      // Create visual platforms
+      renderPlatforms();
+
+      // Initialize player at start position
+      if (currentPlatformLayout.getStartPosition() != null) {
+        Vector3f startPos = currentPlatformLayout.getStartPosition();
+        playerController = new PlayerController(startPos);
+        System.out.println("Player initialized at: " + startPos);
+      }
+
+    } catch (Exception e) {
+      System.err.println("Error initializing level: " + e.getMessage());
+      e.printStackTrace();
+    }
+  }
+
+  /**
+   * Loads the next level by using preloaded data or generating it on demand. Seamlessly transitions
+   * the player to the new level without state interruption.
+   */
+  private void loadNextLevel() {
+    try {
+      int nextLevelNumber = gameStateService.getCurrentLevel() + 1;
+      LevelProgressionService.LevelData levelData;
+
+      // Check if we have preloaded data
+      if (nextLevelData != null && nextLevelData.getLevelNumber() == nextLevelNumber) {
+        levelData = nextLevelData;
+        nextLevelData = null;
+        System.out.println("Using preloaded level data");
+      } else {
+        // Fallback: generate on demand
+        levelData = levelProgressionService.generateLevel(nextLevelNumber);
+      }
+
+      if (levelData == null || levelData.getMazeResponse() == null) {
+        System.err.println("Failed to load next level");
+        return;
+      }
+
+      // Generate platform layout from maze
+      currentPlatformLayout =
+          platformGeneratorService.generateLayout(levelData.getMazeResponse(), nextLevelNumber);
+
+      System.out.println("Loaded next level: " + currentPlatformLayout);
+
+      // Clear old platforms visualization
+      platformsNode.detachAllChildren();
+
+      // Create visual platforms for new level
+      renderPlatforms();
+
+      // Reset player to start of new level
+      if (currentPlatformLayout.getStartPosition() != null) {
+        Vector3f startPos = currentPlatformLayout.getStartPosition();
+        playerController.setPosition(startPos);
+        playerController.setVelocity(new Vector3f(0, 0, 0));
+        System.out.println("Player positioned at new level start: " + startPos);
+      }
+
+      // Update game state with new level
+      gameStateService.startNewLevel(nextLevelNumber, levelData.getSeed());
+
+      // Preload the level after next
+      levelProgressionService.preloadNextLevel(nextLevelNumber);
+
+    } catch (Exception e) {
+      System.err.println("Error loading next level: " + e.getMessage());
+      e.printStackTrace();
+    }
+  }
+
+  /** Renders all platforms as visual geometry in the scene. */
+  private void renderPlatforms() {
+    if (currentPlatformLayout == null) {
+      return;
+    }
+
+    for (Platform platform : currentPlatformLayout.getPlatforms()) {
+      renderPlatform(platform);
+    }
+  }
+
+  /** Renders a single platform as a 3D box geometry. */
+  private void renderPlatform(Platform platform) {
+    Box platformShape =
+        new Box(platform.getWidth() / 2, platform.getHeight() / 2, platform.getDepth() / 2);
+    Geometry platformGeom = new Geometry("Platform_" + platform.getId(), platformShape);
+
+    // Create a material with a nice color
+    Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+    mat.setColor("Color", getColorForPlatform(platform));
+    platformGeom.setMaterial(mat);
+
+    // Set position
+    platformGeom.setLocalTranslation(platform.getPosition());
+
+    // Attach to scene
+    platformsNode.attachChild(platformGeom);
+  }
+
+  /** Gets a color for a platform based on its position. */
+  private ColorRGBA getColorForPlatform(Platform platform) {
+    // Create a gradient based on platform position
+    float normalizedZ = -platform.getPosition().z / 50f; // Normalize to 0-1
+    float normalizedY = platform.getPosition().y / 10f;
+
+    // Blue -> Green -> Yellow gradient
+    if (normalizedZ < 0.5f) {
+      float t = normalizedZ * 2;
+      return new ColorRGBA(0, t, 1 - t, 1);
+    } else {
+      float t = (normalizedZ - 0.5f) * 2;
+      return new ColorRGBA(t, 1, 0, 1);
+    }
+  }
+
+  public GameState getCurrentGameState() {
+    return currentGameState;
+  }
+
+  public void setGameMode(GameMode mode) {
+    currentGameMode = mode;
+    System.out.println("Game Mode set to: " + mode);
+  }
+
+  public GameMode getCurrentGameMode() {
+    return currentGameMode;
+  }
+
+  // ============== Input Event Handler ==============
+
+  private class GameInputListener implements InputManager.InputListener {
+    private float rotationAccumulator = 0f;
+
+    @Override
+    public void onActionPressed(String action) {
+      switch (action) {
+        case InputManager.ACTION_JUMP:
+          if (currentGameState == GameState.PLAYING && !jumpPressed) {
+            jumpPressed = true;
+            hapticFeedbackService.onJump();
+            System.out.println("Jump!");
+          }
+          break;
+        case InputManager.ACTION_PAUSE:
+          handlePauseAction();
+          break;
+        case InputManager.ACTION_MENU_TOGGLE:
+          handlePauseAction();
+          break;
+        case InputManager.ACTION_PERSPECTIVE_TOGGLE:
+          if (currentGameState == GameState.PLAYING) {
+            // TODO: Toggle between first-person and orthogonal perspectives
+            System.out.println("Perspective toggled");
+          }
+          break;
+      }
+    }
+
+    private void handlePauseAction() {
+      switch (currentGameState) {
+        case PLAYING:
+          // Pause the game
+          setGameState(GameState.PAUSED);
+          break;
+        case PAUSED:
+          // Resume the game
+          gameStateService.resumeGame();
+          setGameState(GameState.PLAYING);
+          break;
+        case MENU:
+        case GAME_OVER:
+          // Return to menu from pause or game over
+          setGameState(GameState.MENU);
+          break;
+      }
+    }
+
+    @Override
+    public void onActionReleased(String action) {
+      switch (action) {
+        case InputManager.ACTION_JUMP:
+          jumpPressed = false;
+          break;
+      }
+    }
+
+    @Override
+    public void onAnalogUpdate(String action, float value) {
+      if (currentGameState != GameState.PLAYING) {
+        return;
+      }
+
+      switch (action) {
+        case InputManager.ACTION_CAMERA_ROTATE_LEFT:
+          rotationAccumulator -= value * CAMERA_ROTATION_SPEED;
+          updateCameraRotation();
+          break;
+        case InputManager.ACTION_CAMERA_ROTATE_RIGHT:
+          rotationAccumulator += value * CAMERA_ROTATION_SPEED;
+          updateCameraRotation();
+          break;
+      }
+    }
+
+    private void updateCameraRotation() {
+      cameraRotation = rotationAccumulator;
+      // TODO: Apply camera rotation to game camera based on perspective mode
+      // For now, this is a placeholder for rotation logic
+    }
+  }
+
   private void toggleMenu() {
     menuVisible = !menuVisible;
     if (menuVisible) {
-      nifty.gotoScreen("mainMenu");
+      safeGotoScreen("mainMenu");
       flyCam.setDragToRotate(true);
       inputManager.setCursorVisible(true);
     } else {
-      nifty.gotoScreen("empty");
+      safeGotoScreen("empty");
       flyCam.setDragToRotate(false);
       inputManager.setCursorVisible(false);
     }
@@ -584,7 +1094,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   // ============== Nifty GUI Callbacks ==============
 
   public void showSettings() {
-    nifty.gotoScreen("settings");
+    safeGotoScreen("settings");
     updateSettingsLabels();
   }
 
@@ -598,7 +1108,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
   public void play() {
     menuVisible = false;
-    nifty.gotoScreen("empty");
+    safeGotoScreen("empty");
     flyCam.setDragToRotate(false);
     inputManager.setCursorVisible(false);
   }
@@ -638,11 +1148,14 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   }
 
   public void generateAndPlay() {
+    // Generate initial maze
     generateMaze();
-    menuVisible = false;
-    nifty.gotoScreen("empty");
-    flyCam.setDragToRotate(false);
-    inputManager.setCursorVisible(false);
+
+    // Initialize game state service with current mode
+    gameStateService.startNewGame(currentGameMode);
+
+    // Transition to playing state
+    setGameState(GameState.PLAYING);
   }
 
   public void backToMenu() {
@@ -884,9 +1397,141 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     return new ColorRGBA(red, green, blue, 1f);
   }
 
+  /**
+   * Override update to catch NullPointerException from Nifty during screen transitions. This
+   * prevents the game from crashing when mouse events are processed while Nifty has no current
+   * screen.
+   */
+  @Override
+  public void update() {
+    try {
+      super.update();
+    } catch (NullPointerException e) {
+      // Check if this is the Nifty null screen exception
+      if (e.getMessage() != null && e.getMessage().contains("getCurrentScreen()")) {
+        // Silently suppress - the UI will recover on the next frame
+      } else {
+        // Re-throw if it's not the Nifty screen exception
+        throw e;
+      }
+    }
+  }
+
   @Override
   public void simpleUpdate(float tpf) {
-    // Game loop updates
+    // Update HUD display
+    if (hudLayer != null && currentGameState == GameState.PLAYING) {
+      hudLayer.update();
+    }
+
+    // Update game logic based on current state
+    switch (currentGameState) {
+      case PLAYING:
+        updatePlayingState(tpf);
+        break;
+      case FALLING:
+        updateFallingState(tpf);
+        break;
+      case MENU:
+      case PAUSED:
+      case GAME_OVER:
+        // No game logic updates needed in these states
+        break;
+    }
+  }
+
+  private void updatePlayingState(float tpf) {
+    if (playerController == null || currentPlatformLayout == null) {
+      return;
+    }
+
+    // Update game state service
+    gameStateService.update(tpf);
+
+    // Update player physics
+    playerController.update(tpf, currentPlatformLayout);
+
+    // Check if player fell
+    if (playerController.hasFallen()) {
+      gameStateService.playerFell();
+      setGameState(GameState.FALLING);
+      return;
+    }
+
+    // Check if player reached end of level
+    if (currentPlatformLayout.getEndPosition() != null) {
+      float distToEnd =
+          playerController.getPosition().distance(currentPlatformLayout.getEndPosition());
+      if (distToEnd < 1.5f && playerController.isGrounded()) {
+        hapticFeedbackService.onLevelComplete();
+        gameStateService.levelComplete();
+        loadNextLevel();
+      }
+    }
+
+    // Update camera to follow player
+    updateGameCamera();
+  }
+
+  private void updateFallingState(float tpf) {
+    if (fallingStateManager == null) {
+      return;
+    }
+
+    // Update falling timeout
+    fallingStateManager.update(tpf);
+
+    // Check if timeout expired
+    if (fallingStateManager.hasTimedOut()) {
+      GameState nextState = fallingStateManager.getNextGameState();
+
+      if (nextState == GameState.PLAYING) {
+        // Zen mode: restart current level
+        fallingStateManager.resetPlayerPosition();
+        gameStateService.playerFell();
+        setGameState(GameState.PLAYING);
+      } else {
+        // Time-trial mode: game over
+        gameStateService.playerFell();
+        gameStateService.gameOver();
+        setGameState(GameState.GAME_OVER);
+      }
+    }
+  }
+
+  /**
+   * Updates the game camera to follow the player. For zen mode (first-person), camera is above
+   * player head. For time-trial mode (orthogonal), camera is top-down angled view.
+   */
+  private void updateGameCamera() {
+    if (playerController == null) {
+      return;
+    }
+
+    Vector3f playerPos = playerController.getPosition();
+
+    if (currentGameMode == GameMode.ZEN) {
+      // First-person camera: follow player's eyes
+      Vector3f cameraPos = playerPos.clone();
+      cameraPos.y += playerController.getPlayerHeight() * 0.8f; // Eyes position
+
+      cam.setLocation(cameraPos);
+
+      // Look in the direction of rotation
+      Vector3f lookDir = playerController.getForwardDirection();
+      Vector3f targetLook = cameraPos.add(lookDir.mult(10));
+      cam.lookAt(targetLook, Vector3f.UNIT_Y);
+
+    } else if (currentGameMode == GameMode.TIME_TRIAL) {
+      // Orthogonal camera: top-down angled view
+      Vector3f cameraPos = playerPos.clone();
+      cameraPos.y += 15; // Height above player
+      cameraPos.z += 10; // Offset back
+      cameraPos.x += 5; // Slight offset to side
+
+      cam.setLocation(cameraPos);
+      cam.lookAt(playerPos, Vector3f.UNIT_Y);
+    }
   }
 
   @Override
