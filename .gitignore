@@ -1,25 +1,45 @@
-# C/C++ files and Craft-specific files
-CMakeCache.txt
-CMakeFiles
-CMakeLists.txt.user
-cmake_install.cmake
-env
-log.txt
-*.o
-*.db
-*.exe
-*.dll
-*.pyc
+# Compiled class file
+*.class
 
-build/
-build-*/
+# Log file
+*.log
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files #
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+replay_pid*
+
+# IDEs
+.idea
 .vscode
-.vs
+*.iml
+*.ipr
+*.iws
+*.sw?
+*.swo
+*.sln
+*.suo
+*.ntvs*
+*.njsproj
+*.sublime-workspace
+*.sublime-project
 
-.idea/
+*.jar
 
-# Dear Imgui config
-*.ini
-
-# Python
-.venv
+bin/
+build/
+out/

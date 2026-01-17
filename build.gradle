@@ -1,0 +1,134 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.2.1'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.diffplug.spotless' version '6.25.0'
+}
+
+group = 'com.flipsandale.breakingwalls'
+version = '0.0.1-SNAPSHOT'
+description = 'Demo project for Spring Boot'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+spotless {
+	java {
+		target 'src/*/java/**/*.java'
+		importOrder()
+		removeUnusedImports()
+		trimTrailingWhitespace()
+		endWithNewline()
+		googleJavaFormat('1.22.0')
+	}
+
+	groovyGradle {
+		target '*.gradle'
+		trimTrailingWhitespace()
+		endWithNewline()
+		greclipse()
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.jmonkeyengine:jme3-core:3.6.1-stable'
+	implementation 'org.jmonkeyengine:jme3-desktop:3.6.1-stable'
+	implementation 'org.jmonkeyengine:jme3-lwjgl3:3.6.1-stable'
+
+	// Nifty GUI for in-game menus
+	implementation 'org.jmonkeyengine:jme3-niftygui:3.6.1-stable'
+
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	runtimeOnly 'com.h2database:h2'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+tasks.named('compileJava') {
+	dependsOn 'spotlessApply'
+}
+
+// Package as native Windows installer (.exe) with bundled JRE
+// Requires: WiX Toolset (https://wixtoolset.org/) for Windows
+tasks.register('packageApp', Exec) {
+	dependsOn bootJar
+
+	doFirst {
+		mkdir "build/installer"
+	}
+
+	def jarName = "breaking-walls-${version}.jar"
+
+	commandLine 'jpackage',
+			'--type', 'exe',
+			'--input', 'build/libs',
+			'--main-jar', jarName,
+			'--name', 'BreakingWalls',
+			'--app-version', '1.0.0',
+			'--vendor', 'Flips and Ale',
+			'--description', 'A 3D maze game built with JMonkeyEngine and Spring Boot',
+			'--win-shortcut',
+			'--win-menu',
+			'--win-menu-group', 'BreakingWalls',
+			'--dest', 'build/installer',
+			'--java-options', '-Dspring.main.headless=false'
+
+	doLast {
+		// Copy resources folder next to the executable
+		copy {
+			from 'resources'
+			into 'build/installer/resources'
+		}
+	}
+}
+
+// Package as portable app-image (no installer, just runnable folder)
+// Does NOT require WiX Toolset
+tasks.register('packagePortable', Exec) {
+	dependsOn bootJar
+
+	doFirst {
+		// Clean the portable build directory before packaging
+		delete 'build/portable'
+		mkdir "build/portable"
+	}
+
+	def jarName = "breaking-walls-${version}.jar"
+
+	commandLine 'jpackage',
+			'--type', 'app-image',
+			'--input', 'build/libs',
+			'--main-jar', jarName,
+			'--name', 'BreakingWalls',
+			'--app-version', '1.0.0',
+			'--vendor', 'Flips and Ale',
+			'--description', 'A 3D maze game built with JMonkeyEngine and Spring Boot',
+			'--dest', 'build/portable',
+			'--java-options', '-Dspring.main.headless=false'
+
+	doLast {
+		// Copy resources folder next to the executable
+		copy {
+			from 'resources'
+			into 'build/portable/BreakingWalls/resources'
+		}
+	}
+}
