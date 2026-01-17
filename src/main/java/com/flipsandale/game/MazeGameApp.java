@@ -70,6 +70,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private GameUIManager gameUIManager;
   private GameplayHUDScreenController gameplayHUDScreenController;
   private HUDLayer hudLayer;
+  private GameCountdownManager countdownManager;
+
+  // Game flow
+  private volatile boolean gameStarted = false;
+  private boolean showRestartOption = false;
 
   // Maze settings
   private String selectedAlgorithm = "sidewinder";
@@ -204,6 +209,9 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
     // Create HUDLayer for JME3-based HUD rendering
     hudLayer = new HUDLayer(guiNode, guiFont, hudManager);
+
+    // Create countdown manager for level start
+    countdownManager = new GameCountdownManager(guiNode, guiFont);
 
     System.out.println("HUD System initialized");
   }
@@ -806,6 +814,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     fallingStateManager.onFallStart(playerController, levelStartPos);
 
     System.out.println("Entered FALLING state. Mode: " + currentGameMode);
+
+    // Reset countdown - will show restart option/timer
+    if (countdownManager != null) {
+      countdownManager.reset();
+    }
   }
 
   private void onEnterPausedState() {
@@ -868,11 +881,25 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       // Create visual platforms
       renderPlatforms();
 
-      // Initialize player at start position
+      // Initialize player at start position - on top of the first platform
       if (currentPlatformLayout.getStartPosition() != null) {
         Vector3f startPos = currentPlatformLayout.getStartPosition();
+        // Place player on top of the starting platform
+        startPos.y += 1.0f; // Add height to spawn on top of the platform
         playerController = new PlayerController(startPos);
         System.out.println("Player initialized at: " + startPos);
+
+        // Start the countdown
+        gameStarted = false;
+        if (countdownManager != null) {
+          countdownManager.startCountdown(
+              () -> {
+                gameStarted = true;
+                System.out.println("Level started!");
+              });
+        } else {
+          gameStarted = true;
+        }
       }
 
     } catch (Exception e) {
@@ -920,9 +947,23 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       // Reset player to start of new level
       if (currentPlatformLayout.getStartPosition() != null) {
         Vector3f startPos = currentPlatformLayout.getStartPosition();
+        // Place player on top of the starting platform
+        startPos.y += 1.0f; // Add height to spawn on top of the platform
         playerController.setPosition(startPos);
         playerController.setVelocity(new Vector3f(0, 0, 0));
         System.out.println("Player positioned at new level start: " + startPos);
+
+        // Start the countdown for the new level
+        gameStarted = false;
+        if (countdownManager != null) {
+          countdownManager.startCountdown(
+              () -> {
+                gameStarted = true;
+                System.out.println("Level started!");
+              });
+        } else {
+          gameStarted = true;
+        }
       }
 
       // Update game state with new level
@@ -948,15 +989,15 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     }
   }
 
-  /** Renders a single platform as a 3D box geometry. */
+  /** Renders a single platform as a 3D box geometry with visual styling. */
   private void renderPlatform(Platform platform) {
     Box platformShape =
         new Box(platform.getWidth() / 2, platform.getHeight() / 2, platform.getDepth() / 2);
     Geometry platformGeom = new Geometry("Platform_" + platform.getId(), platformShape);
 
-    // Create a material with a nice color
+    // Create a material with varying colors based on position and randomness
     Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-    mat.setColor("Color", getColorForPlatform(platform));
+    mat.setColor("Color", getRandomPlatformColor(platform));
     platformGeom.setMaterial(mat);
 
     // Set position
@@ -966,20 +1007,41 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     platformsNode.attachChild(platformGeom);
   }
 
-  /** Gets a color for a platform based on its position. */
-  private ColorRGBA getColorForPlatform(Platform platform) {
-    // Create a gradient based on platform position
-    float normalizedZ = -platform.getPosition().z / 50f; // Normalize to 0-1
-    float normalizedY = platform.getPosition().y / 10f;
+  /** Gets a random but visually appealing color for a platform. */
+  private ColorRGBA getRandomPlatformColor(Platform platform) {
+    // Use platform ID as seed for consistent but varied coloring
+    java.util.Random colorGen = new java.util.Random(platform.getId());
 
-    // Blue -> Green -> Yellow gradient
-    if (normalizedZ < 0.5f) {
-      float t = normalizedZ * 2;
-      return new ColorRGBA(0, t, 1 - t, 1);
-    } else {
-      float t = (normalizedZ - 0.5f) * 2;
-      return new ColorRGBA(t, 1, 0, 1);
-    }
+    // Create color palettes for different visual styles
+    ColorRGBA[] colorPalette = {
+      new ColorRGBA(0.2f, 0.8f, 0.9f, 1.0f), // Cyan
+      new ColorRGBA(0.1f, 0.9f, 0.4f, 1.0f), // Bright Green
+      new ColorRGBA(1.0f, 0.6f, 0.1f, 1.0f), // Orange
+      new ColorRGBA(0.9f, 0.3f, 0.8f, 1.0f), // Magenta
+      new ColorRGBA(0.3f, 0.7f, 1.0f, 1.0f), // Light Blue
+      new ColorRGBA(1.0f, 0.9f, 0.2f, 1.0f), // Yellow
+      new ColorRGBA(0.0f, 0.8f, 0.6f, 1.0f), // Teal
+      new ColorRGBA(1.0f, 0.4f, 0.4f, 1.0f), // Light Red
+      new ColorRGBA(0.5f, 1.0f, 0.2f, 1.0f), // Lime Green
+      new ColorRGBA(0.6f, 0.4f, 1.0f, 1.0f), // Lavender
+    };
+
+    // Pick a color from the palette and slightly vary it
+    int colorIndex = Math.abs(platform.getId()) % colorPalette.length;
+    ColorRGBA baseColor = colorPalette[colorIndex];
+
+    // Add slight randomization to avoid monotonous look
+    float hueVariation = (colorGen.nextFloat() - 0.5f) * 0.1f;
+    float brightnessVariation = (colorGen.nextFloat() - 0.5f) * 0.05f;
+
+    ColorRGBA finalColor =
+        new ColorRGBA(
+            Math.max(0.1f, Math.min(1.0f, baseColor.r + brightnessVariation)),
+            Math.max(0.1f, Math.min(1.0f, baseColor.g + brightnessVariation)),
+            Math.max(0.1f, Math.min(1.0f, baseColor.b + brightnessVariation)),
+            1.0f);
+
+    return finalColor;
   }
 
   public GameState getCurrentGameState() {
@@ -1419,6 +1481,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
   @Override
   public void simpleUpdate(float tpf) {
+    // Update countdown timer
+    if (countdownManager != null) {
+      countdownManager.update(tpf);
+    }
+
     // Update HUD display
     if (hudLayer != null && currentGameState == GameState.PLAYING) {
       hudLayer.update();
@@ -1448,24 +1515,27 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     // Update game state service
     gameStateService.update(tpf);
 
-    // Update player physics
-    playerController.update(tpf, currentPlatformLayout);
+    // Only update player physics if the game has actually started (countdown finished)
+    if (gameStarted) {
+      // Update player physics
+      playerController.update(tpf, currentPlatformLayout);
 
-    // Check if player fell
-    if (playerController.hasFallen()) {
-      gameStateService.playerFell();
-      setGameState(GameState.FALLING);
-      return;
-    }
+      // Check if player fell
+      if (playerController.hasFallen()) {
+        gameStateService.playerFell();
+        setGameState(GameState.FALLING);
+        return;
+      }
 
-    // Check if player reached end of level
-    if (currentPlatformLayout.getEndPosition() != null) {
-      float distToEnd =
-          playerController.getPosition().distance(currentPlatformLayout.getEndPosition());
-      if (distToEnd < 1.5f && playerController.isGrounded()) {
-        hapticFeedbackService.onLevelComplete();
-        gameStateService.levelComplete();
-        loadNextLevel();
+      // Check if player reached end of level
+      if (currentPlatformLayout.getEndPosition() != null) {
+        float distToEnd =
+            playerController.getPosition().distance(currentPlatformLayout.getEndPosition());
+        if (distToEnd < 1.5f && playerController.isGrounded()) {
+          hapticFeedbackService.onLevelComplete();
+          gameStateService.levelComplete();
+          loadNextLevel();
+        }
       }
     }
 
@@ -1489,6 +1559,19 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
         // Zen mode: restart current level
         fallingStateManager.resetPlayerPosition();
         gameStateService.playerFell();
+
+        // Restart the countdown for the restarted level
+        gameStarted = false;
+        if (countdownManager != null) {
+          countdownManager.startCountdown(
+              () -> {
+                gameStarted = true;
+                System.out.println("Level restarted!");
+              });
+        } else {
+          gameStarted = true;
+        }
+
         setGameState(GameState.PLAYING);
       } else {
         // Time-trial mode: game over

@@ -43,3 +43,4 @@ replay_pid*
 bin/
 build/
 out/
+.gradle
