@@ -21,6 +21,7 @@ public class InputManager {
   public static final String ACTION_PAUSE = "Pause";
   public static final String ACTION_CAMERA_ROTATE_LEFT = "CameraRotateLeft";
   public static final String ACTION_CAMERA_ROTATE_RIGHT = "CameraRotateRight";
+  public static final String ACTION_MOUSE_X = "MouseX";
   public static final String ACTION_PERSPECTIVE_TOGGLE = "PerspectiveToggle";
   public static final String ACTION_MENU_TOGGLE = "MenuToggle";
 
@@ -54,7 +55,7 @@ public class InputManager {
         new KeyTrigger(KeyInput.KEY_ESCAPE),
         new JoyButtonTrigger(0, 7)); // Joystick Start button
 
-    // Camera rotation: Mouse horizontal movement / Right stick
+    // Camera rotation: Keyboard A/D, Joystick Right stick, Mouse X movement
     jmeInputManager.addMapping(
         ACTION_CAMERA_ROTATE_LEFT,
         new KeyTrigger(KeyInput.KEY_A),
@@ -64,6 +65,10 @@ public class InputManager {
         ACTION_CAMERA_ROTATE_RIGHT,
         new KeyTrigger(KeyInput.KEY_D),
         new JoyAxisTrigger(0, 2, false)); // Right stick right
+
+    jmeInputManager.addMapping(
+        ACTION_MOUSE_X,
+        new com.jme3.input.controls.MouseAxisTrigger(com.jme3.input.MouseInput.AXIS_X, false));
 
     // Perspective toggle: P key, Joystick Y button
     jmeInputManager.addMapping(
@@ -106,7 +111,7 @@ public class InputManager {
         actionListener, ACTION_JUMP, ACTION_PAUSE, ACTION_PERSPECTIVE_TOGGLE, ACTION_MENU_TOGGLE);
 
     jmeInputManager.addListener(
-        analogListener, ACTION_CAMERA_ROTATE_LEFT, ACTION_CAMERA_ROTATE_RIGHT);
+        analogListener, ACTION_CAMERA_ROTATE_LEFT, ACTION_CAMERA_ROTATE_RIGHT, ACTION_MOUSE_X);
   }
 
   public void removeInputMappings() {
@@ -114,6 +119,7 @@ public class InputManager {
     jmeInputManager.deleteMapping(ACTION_PAUSE);
     jmeInputManager.deleteMapping(ACTION_CAMERA_ROTATE_LEFT);
     jmeInputManager.deleteMapping(ACTION_CAMERA_ROTATE_RIGHT);
+    jmeInputManager.deleteMapping(ACTION_MOUSE_X);
     jmeInputManager.deleteMapping(ACTION_PERSPECTIVE_TOGGLE);
     jmeInputManager.deleteMapping(ACTION_MENU_TOGGLE);
   }

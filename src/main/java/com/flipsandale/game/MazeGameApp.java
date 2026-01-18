@@ -1009,28 +1009,57 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     }
   }
 
-  /** Renders all platforms as visual geometry in the scene. */
+  /** Renders all maze walls as visual geometry in the scene. */
   private void renderPlatforms() {
     if (currentPlatformLayout == null) {
       return;
     }
 
-    System.out.println(
-        "🎮 Rendering "
-            + currentPlatformLayout.getPlatforms().size()
-            + " platforms with lit materials");
-    int count = 0;
-    for (Platform platform : currentPlatformLayout.getPlatforms()) {
-      renderPlatform(platform);
-      count++;
-    }
-    System.out.println("✓ All " + count + " platforms rendered with lighting effects");
-
     // Generate walls from platforms for obstacle-course gameplay
     if (mazeWallService != null) {
       currentWalls = mazeWallService.generateWallsFromMaze(currentPlatformLayout);
       System.out.println("✓ Generated " + currentWalls.size() + " walls for collision detection");
+
+      // Render the walls as visual geometry
+      System.out.println("🎮 Rendering " + currentWalls.size() + " maze walls with lit materials");
+      int count = 0;
+      for (MazeWallService.Wall wall : currentWalls) {
+        renderWall(wall);
+        count++;
+      }
+      System.out.println("✓ All " + count + " walls rendered with lighting effects");
     }
+  }
+
+  /** Renders a single wall as a 3D box geometry with visual styling and realistic shading. */
+  private void renderWall(MazeWallService.Wall wall) {
+    Box wallShape = new Box(wall.width / 2, wall.height / 2, wall.depth / 2);
+    Geometry wallGeom = new Geometry("Wall_" + Math.abs(wall.position.hashCode()), wallShape);
+
+    // Generate tangent/normal data for proper lighting
+    com.jme3.util.TangentBinormalGenerator.generate(wallGeom.getMesh());
+
+    // Create a lit material using MaterialManager for realistic shading
+    // Use absolute value of position hash for consistent but varied coloring per wall
+    Material mat = materialManager.getPaletteMaterial(Math.abs((long) wall.position.hashCode()));
+
+    // Debug: Log the material definition being used (first wall only to avoid spam)
+    if (platformsNode.getChildren().isEmpty()) {
+      System.out.println("✓ Wall 0 - Material: " + mat.getMaterialDef().getName());
+      System.out.println("✓ Diffuse color: " + mat.getParam("Diffuse"));
+      System.out.println("✓ Scene lights: " + rootNode.getLocalLightList().size());
+    }
+
+    wallGeom.setMaterial(mat);
+
+    // Enable shadow casting and receiving for realistic lighting
+    wallGeom.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
+
+    // Set position - wall.position is already at the center
+    wallGeom.setLocalTranslation(wall.position);
+
+    // Attach to scene
+    platformsNode.attachChild(wallGeom);
   }
 
   /** Renders a single platform as a 3D box geometry with visual styling. */
@@ -1175,26 +1204,28 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
     @Override
     public void onAnalogUpdate(String action, float value) {
-      if (currentGameState != GameState.PLAYING) {
+      if (currentGameState != GameState.PLAYING || playerController == null) {
         return;
       }
 
       switch (action) {
         case InputManager.ACTION_CAMERA_ROTATE_LEFT:
-          rotationAccumulator -= value * CAMERA_ROTATION_SPEED;
-          updateCameraRotation();
+          playerController.rotateCamera(-value * CAMERA_ROTATION_SPEED);
           break;
         case InputManager.ACTION_CAMERA_ROTATE_RIGHT:
-          rotationAccumulator += value * CAMERA_ROTATION_SPEED;
-          updateCameraRotation();
+          playerController.rotateCamera(value * CAMERA_ROTATION_SPEED);
+          break;
+        case InputManager.ACTION_MOUSE_X:
+          // Mouse X movement: positive value = move right, negative = move left
+          // Invert for intuitive camera control (moving mouse right rotates view right)
+          playerController.rotateCamera(-value * 0.5f);
           break;
       }
     }
 
     private void updateCameraRotation() {
       cameraRotation = rotationAccumulator;
-      // TODO: Apply camera rotation to game camera based on perspective mode
-      // For now, this is a placeholder for rotation logic
+      // Camera rotation is now applied directly to player controller
     }
   }
 
