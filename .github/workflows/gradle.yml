@@ -23,7 +23,7 @@ jobs:
         cache: gradle
 
     - name: Build with Gradle
-      run: ./gradlew build
+      run: chmod +x ./gradlew && ./gradlew build
 
     # Optional: Upload the built JAR file as an artifact
     - name: Upload artifact
