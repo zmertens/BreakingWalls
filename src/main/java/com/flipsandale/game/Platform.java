@@ -35,6 +35,10 @@ public class Platform {
     return position;
   }
 
+  public void setPosition(Vector3f newPosition) {
+    this.position = newPosition;
+  }
+
   public float getWidth() {
     return width;
   }

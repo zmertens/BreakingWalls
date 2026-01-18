@@ -12,28 +12,8 @@ A 2D top-down physics game.
 
 ---
 
-## CMake Configuration
-
-[CMake](https://cmake.org) is used for project configuration.
-
-Here are the external dependencies which can be pulled from the Web:
-
-  - [box2d](https://box2d.org/documentation/hello.html)
-  - [emscripten](https://emscripten.org/index.html)
-  - [Maze Builder](https://zmertens.github.io/mazebuilder.github.io/index.html)
-  - [SDL](https://libsdl.org)
-  - [SFML](https://sfml-dev.org)
-
-Use the following CMake options to configure the project:
-
-| CMake Option | Default | Description |
-|--------------|---------|------------ |
-| PLATFORM_WEB | OFF | Build for Web platform using Emscripten |
-
 ### Example Builds
 
-`cmake -G"Visual Studio 17 2022" -S . -B build -DPLATFORM_WEB:BOOL=OFF`
-
-`cmake -G"Ninja Multi-Config" -S . -B build-web -DPLATFORM_WEB:BOOL=ON -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${my/emsdk/repo}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake`
+`gradlew.bat clean build`
 
 ---

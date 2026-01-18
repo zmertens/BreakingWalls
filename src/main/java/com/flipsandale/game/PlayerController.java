@@ -20,6 +20,10 @@ public class PlayerController {
   private boolean canJump = true; // Whether player can jump
   private float groundDampening = 0.95f; // Friction when on ground
 
+  // Auto-run mechanics
+  private float autoRunSpeed = 8.0f; // Speed of auto-run forward movement
+  private boolean autoRunEnabled = true; // Whether auto-run is active
+
   // Camera and rotation
   private float horizontalRotation = 0f; // Rotation around Y axis (radians)
   private Quaternion rotation = new Quaternion(); // Current rotation
@@ -39,6 +43,13 @@ public class PlayerController {
 
   /** Updates player physics based on time delta. */
   public void update(float tpf, PlatformLayout platformLayout) {
+    // Apply auto-run forward movement
+    if (autoRunEnabled) {
+      Vector3f forward = getForwardDirection();
+      velocity.x = forward.x * autoRunSpeed;
+      velocity.z = forward.z * autoRunSpeed;
+    }
+
     // Apply gravity
     velocity.y += gravity * tpf;
 
@@ -218,6 +229,18 @@ public class PlayerController {
 
   public void setGravity(float gravity) {
     this.gravity = gravity;
+  }
+
+  public void setAutoRunSpeed(float speed) {
+    this.autoRunSpeed = speed;
+  }
+
+  public void setAutoRunEnabled(boolean enabled) {
+    this.autoRunEnabled = enabled;
+  }
+
+  public boolean isAutoRunEnabled() {
+    return autoRunEnabled;
   }
 
   @Override
