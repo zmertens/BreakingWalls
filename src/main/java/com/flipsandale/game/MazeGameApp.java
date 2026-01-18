@@ -4,9 +4,6 @@ import com.flipsandale.dto.MazeRequest;
 import com.flipsandale.dto.MazeResponse;
 import com.flipsandale.service.MazeService;
 import com.jme3.app.SimpleApplication;
-import com.jme3.input.KeyInput;
-import com.jme3.input.controls.ActionListener;
-import com.jme3.input.controls.KeyTrigger;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
@@ -125,6 +122,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     platformsNode = new Node("PlatformsNode");
     rootNode.attachChild(platformsNode);
 
+    // Disable jMonkeyEngine's default ESC-to-exit behavior so we can use it for pause menu
+    if (inputManager.hasMapping("SIMPLEAPP_Exit")) {
+      inputManager.deleteMapping("SIMPLEAPP_Exit");
+    }
+
     // Initialize input management
     gameInputManager = new InputManager(inputManager);
     gameInputManager.setupInputMappings();
@@ -185,6 +187,9 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
     // Build settings screen
     buildSettingsScreen();
+
+    // Build pause menu screen
+    buildPauseMenuScreen();
 
     // Initialize HUD system
     initializeHUDSystem();
@@ -369,12 +374,12 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
                             // Generate New Maze button
                             control(
-                                new ButtonBuilder("settingsBtn", "Generate New Maze") {
+                                new ButtonBuilder("generateBtn", "Generate New Maze") {
                                   {
                                     alignCenter();
                                     height("40px");
                                     width("100%");
-                                    interactOnClick("showSettings()");
+                                    interactOnClick("quickGenerate()");
                                   }
                                 });
 
@@ -732,17 +737,146 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
         }.build(nifty));
   }
 
-  private void setupInputs() {
-    // Legacy input mapping - kept for compatibility with menu navigation
-    inputManager.addMapping("ToggleMenu", new KeyTrigger(KeyInput.KEY_ESCAPE));
-    inputManager.addListener(
-        (ActionListener)
-            (name, isPressed, tpf) -> {
-              if (name.equals("ToggleMenu") && !isPressed) {
-                toggleMenu();
-              }
-            },
-        "ToggleMenu");
+  private void buildPauseMenuScreen() {
+    nifty.addScreen(
+        "pauseMenu",
+        new ScreenBuilder("pauseMenu") {
+          {
+            controller(new PauseMenuScreenController(gameUIManager, gameStateService));
+
+            layer(
+                new LayerBuilder("background") {
+                  {
+                    backgroundColor("#00000099");
+                    childLayoutCenter();
+                    width("100%");
+                    height("100%");
+
+                    panel(
+                        new PanelBuilder("pauseMenuContainer") {
+                          {
+                            childLayoutVertical();
+                            width("700px");
+                            height("600px");
+                            backgroundColor("#1a1a2eff");
+                            valignCenter();
+                            paddingLeft("20px");
+                            paddingRight("20px");
+                            paddingTop("20px");
+                            paddingBottom("20px");
+
+                            // Title Bar
+                            panel(
+                                new PanelBuilder("titleBar") {
+                                  {
+                                    childLayoutCenter();
+                                    height("60px");
+                                    backgroundColor("#0066ccff");
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("PAUSED");
+                                            color("#ffffffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                          }
+                                        });
+                                  }
+                                });
+
+                            // Tab Navigation Buttons
+                            panel(
+                                new PanelBuilder("tabButtons") {
+                                  {
+                                    childLayoutHorizontal();
+                                    height("50px");
+                                    paddingTop("10px");
+                                    paddingBottom("10px");
+                                    paddingLeft("5px");
+                                    paddingRight("5px");
+
+                                    control(
+                                        new ButtonBuilder("btnTabMain", "Main") {
+                                          {
+                                            height("40px");
+                                            width("150px");
+                                            alignCenter();
+                                            interactOnClick("switchToMainTab()");
+                                          }
+                                        });
+
+                                    panel(
+                                        new PanelBuilder("spacer1") {
+                                          {
+                                            width("10px");
+                                            childLayoutVertical();
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnTabGraphics", "Graphics") {
+                                          {
+                                            height("40px");
+                                            width("150px");
+                                            alignCenter();
+                                            interactOnClick("switchToGraphicsTab()");
+                                          }
+                                        });
+
+                                    panel(
+                                        new PanelBuilder("spacer2") {
+                                          {
+                                            width("10px");
+                                            childLayoutVertical();
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnTabAbout", "About") {
+                                          {
+                                            height("40px");
+                                            width("150px");
+                                            alignCenter();
+                                            interactOnClick("switchToAboutTab()");
+                                          }
+                                        });
+
+                                    panel(
+                                        new PanelBuilder("spacerExpand") {
+                                          {
+                                            width("100%");
+                                            childLayoutVertical();
+                                          }
+                                        });
+                                  }
+                                });
+
+                            // Separator
+                            panel(
+                                new PanelBuilder("separator") {
+                                  {
+                                    height("2px");
+                                    backgroundColor("#0066ccff");
+                                    childLayoutVertical();
+                                  }
+                                });
+
+                            // Tab Content Area (simplified - just show Resume/Quit buttons)
+                            control(
+                                new ButtonBuilder("btnResume", "Resume Game") {
+                                  {
+                                    height("40px");
+                                    width("250px");
+                                    alignCenter();
+                                    interactOnClick("resumeGame()");
+                                  }
+                                });
+                          }
+                        });
+                  }
+                });
+          }
+        }.build(nifty));
   }
 
   // ============== Game State Management ==============
@@ -794,18 +928,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private void onEnterPlayingState() {
     menuVisible = false;
 
-    // IMPORTANT: Disable Nifty input processing BEFORE transitioning screens
-    // This prevents null pointer exceptions from mouse input during transitions
-    // We do this by removing the NiftyJmeDisplay processor before any screen changes
-    if (niftyDisplay != null) {
-      try {
-        guiViewPort.removeProcessor(niftyDisplay);
-      } catch (Exception e) {
-        System.err.println("Note: Could not remove Nifty processor from viewport");
-      }
-    }
-
-    // Now safe to transition screens (no Nifty input processing happening)
+    // Show gameplay HUD screen
     if (gameUIManager != null) {
       gameUIManager.showGameplayHUD();
     } else {
@@ -842,18 +965,17 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     // Show pause menu
     menuVisible = true;
 
-    // Re-enable Nifty input processing for pause menu
-    if (niftyDisplay != null) {
-      try {
-        guiViewPort.addProcessor(niftyDisplay);
-      } catch (Exception e) {
-        System.err.println("Note: Could not re-add Nifty processor to viewport");
-      }
+    System.out.println("Entering PAUSED state - showing pause menu");
+
+    // Transition to pause menu screen
+    if (gameUIManager != null) {
+      System.out.println("Calling gameUIManager.showPauseMenu()");
+      gameUIManager.showPauseMenu();
+    } else {
+      System.err.println("ERROR: gameUIManager is null!");
+      safeGotoScreen("pauseMenu");
     }
 
-    if (gameUIManager != null) {
-      gameUIManager.showPauseMenu();
-    }
     inputManager.setCursorVisible(true);
   }
 
@@ -1110,19 +1232,23 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     }
 
     private void handlePauseAction() {
+      System.out.println("handlePauseAction() called. Current state: " + currentGameState);
       switch (currentGameState) {
         case PLAYING:
           // Pause the game
+          System.out.println("→ Transitioning from PLAYING to PAUSED");
           setGameState(GameState.PAUSED);
           break;
         case PAUSED:
           // Resume the game
+          System.out.println("→ Transitioning from PAUSED to PLAYING");
           gameStateService.resumeGame();
           setGameState(GameState.PLAYING);
           break;
         case MENU:
         case GAME_OVER:
           // Return to menu from pause or game over
+          System.out.println("→ Transitioning to MENU");
           setGameState(GameState.MENU);
           break;
       }
@@ -1164,19 +1290,6 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     }
   }
 
-  private void toggleMenu() {
-    menuVisible = !menuVisible;
-    if (menuVisible) {
-      safeGotoScreen("mainMenu");
-      flyCam.setDragToRotate(true);
-      inputManager.setCursorVisible(true);
-    } else {
-      safeGotoScreen("empty");
-      flyCam.setDragToRotate(false);
-      inputManager.setCursorVisible(false);
-    }
-  }
-
   // ============== Nifty GUI Callbacks ==============
 
   public void showSettings() {
@@ -1187,16 +1300,16 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   public void quickGenerate() {
     generateMaze();
     menuVisible = false;
-    nifty.gotoScreen("empty");
     flyCam.setDragToRotate(false);
     inputManager.setCursorVisible(false);
+    setGameState(GameState.PLAYING);
   }
 
   public void play() {
     menuVisible = false;
-    safeGotoScreen("empty");
     flyCam.setDragToRotate(false);
     inputManager.setCursorVisible(false);
+    setGameState(GameState.PLAYING);
   }
 
   public void exitGame() {
@@ -1368,19 +1481,36 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     Box floorBox = new Box(100, 0.05f, 100);
     Geometry floor = new Geometry("Floor", floorBox);
 
-    // Use lit material so floor responds to lighting
+    // Use lit material with brick texture
     Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
     mat.setBoolean("UseMaterialColors", true);
-    mat.setColor("Diffuse", new ColorRGBA(0.2f, 0.2f, 0.2f, 1f));
-    mat.setColor("Ambient", new ColorRGBA(0.1f, 0.1f, 0.1f, 1f));
+
+    // Load and apply brick texture
+    try {
+      com.jme3.texture.Texture brickTexture = assetManager.loadTexture("static/brick_brown.png");
+      brickTexture.setWrap(com.jme3.texture.Texture.WrapMode.Repeat);
+      mat.setTexture("DiffuseMap", brickTexture);
+      System.out.println("✓ Loaded brick texture for floor");
+    } catch (Exception e) {
+      System.err.println("⚠ Could not load brick texture: " + e.getMessage());
+      // Fallback to solid color if texture not found
+      mat.setColor("Diffuse", new ColorRGBA(0.4f, 0.3f, 0.2f, 1f));
+    }
+
+    mat.setColor("Diffuse", new ColorRGBA(1f, 1f, 1f, 1f)); // White so texture shows clearly
+    mat.setColor("Ambient", new ColorRGBA(0.3f, 0.3f, 0.3f, 1f));
     mat.setColor("Specular", ColorRGBA.Black);
     mat.setFloat("Shininess", 1f); // Matte finish
+
+    // Set texture coordinates for tiling (repeat 50x50 times across the plane)
+    floorBox.scaleTextureCoordinates(new com.jme3.math.Vector2f(50, 50));
 
     floor.setMaterial(mat);
     floor.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Receive);
 
     floor.setLocalTranslation(50, 0, -50);
     rootNode.attachChild(floor);
+    System.out.println("✓ Floor created with brick texture");
   }
 
   private void setupCamera() {

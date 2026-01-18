@@ -58,8 +58,11 @@ public class GameUIManager implements GameStateService.GameStateListener {
   /** Shows the pause menu. */
   public void showPauseMenu() {
     if (nifty != null) {
+      System.out.println("UI: Calling nifty.gotoScreen('pauseMenu')");
       nifty.gotoScreen("pauseMenu");
       System.out.println("UI: Showing pause menu");
+    } else {
+      System.err.println("ERROR: nifty is null in showPauseMenu()");
     }
   }
 

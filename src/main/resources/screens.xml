@@ -91,30 +91,136 @@
   </screen>
 
   <!-- ============================================== -->
-  <!-- Pause Menu Screen -->
+  <!-- Pause Menu Screen (Tabbed Interface) -->
   <!-- ============================================== -->
   <screen id="pauseMenu" controller="com.flipsandale.game.PauseMenuScreenController">
-    <layer id="background" backgroundColor="#00000088" childLayout="vertical">
-      <panel id="title" childLayout="center" alignRight="center" valignCenter="center">
-        <text font="Interface/Fonts/Default.fnt" text="PAUSED" align="center" valignCenter="center" color="#ffffffff" textSize="48"/>
-      </panel>
-      
-      <panel id="menu" childLayout="vertical" padding="50,50,50,50" alignRight="center" valignCenter="center">
-        <control name="button" id="btnResume" label="Resume" align="center" valignCenter="center" height="50px" width="200px">
-          <interact onClick="resumeGame()"/>
-        </control>
-        <panel height="20px" childLayout="vertical"/>
-        <control name="button" id="btnRestart" label="Restart Level" align="center" valignCenter="center" height="50px" width="200px">
-          <interact onClick="restartLevel()"/>
-        </control>
-        <panel height="20px" childLayout="vertical"/>
-        <control name="button" id="btnMenu" label="Main Menu" align="center" valignCenter="center" height="50px" width="200px">
-          <interact onClick="returnToMainMenu()"/>
-        </control>
-        <panel height="20px" childLayout="vertical"/>
-        <control name="button" id="btnQuit" label="Quit" align="center" valignCenter="center" height="50px" width="200px">
-          <interact onClick="quitGame()"/>
-        </control>
+    <layer id="background" backgroundColor="#00000099" childLayout="center" width="100%" height="100%">
+      <!-- Pause Menu Modal Container -->
+      <panel id="pauseMenuContainer" childLayout="vertical" padding="20,20,20,20" width="700px" height="600px" backgroundColor="#1a1a2eff" valignCenter="true">
+        
+        <!-- Title Bar -->
+        <panel id="titleBar" childLayout="center" height="60px" backgroundColor="#0066ccff">
+          <text font="Interface/Fonts/Default.fnt" text="PAUSED" align="center" valignCenter="center" color="#ffffffff" textSize="40"/>
+        </panel>
+
+        <!-- Tab Navigation Buttons -->
+        <panel id="tabButtons" childLayout="horizontal" height="50px" padding="10,5,10,5">
+          <control name="button" id="btnTabMain" label="Main" align="center" valignCenter="center" height="40px" width="150px">
+            <interact onClick="switchToMainTab()"/>
+          </control>
+          <panel width="10px" childLayout="vertical"/>
+          <control name="button" id="btnTabGraphics" label="Graphics" align="center" valignCenter="center" height="40px" width="150px">
+            <interact onClick="switchToGraphicsTab()"/>
+          </control>
+          <panel width="10px" childLayout="vertical"/>
+          <control name="button" id="btnTabAbout" label="About" align="center" valignCenter="center" height="40px" width="150px">
+            <interact onClick="switchToAboutTab()"/>
+          </control>
+          <panel width="100%" childLayout="vertical"/>
+        </panel>
+
+        <!-- Separator -->
+        <panel id="separator" height="2px" backgroundColor="#0066ccff" childLayout="vertical"/>
+
+        <!-- Tab Content Area -->
+        <panel id="tabContentArea" childLayout="vertical" padding="15,15,15,15" width="100%" height="450px">
+
+          <!-- Main Tab Content -->
+          <panel id="mainTabContent" childLayout="vertical" visible="true" width="100%" height="100%">
+            <text font="Interface/Fonts/Default.fnt" text="Navigation & Actions" color="#ffd700ff" textSize="18"/>
+            <panel height="8px" childLayout="vertical"/>
+            
+            <control name="button" id="btnResume" label="Resume Game" align="center" height="40px" width="250px">
+              <interact onClick="resumeGame()"/>
+            </control>
+            <panel height="10px" childLayout="vertical"/>
+            
+            <control name="button" id="btnRestart" label="Restart Level" align="center" height="40px" width="250px">
+              <interact onClick="restartLevel()"/>
+            </control>
+            <panel height="10px" childLayout="vertical"/>
+            
+            <control name="button" id="btnMenu" label="Return to Main Menu" align="center" height="40px" width="250px">
+              <interact onClick="returnToMainMenu()"/>
+            </control>
+            <panel height="20px" childLayout="vertical"/>
+
+            <text font="Interface/Fonts/Default.fnt" text="Controls Reference" color="#ffd700ff" textSize="16"/>
+            <panel height="8px" childLayout="vertical"/>
+            
+            <text font="Interface/Fonts/Default.fnt" text="W/A/S/D - Move | Space - Jump | Tab - Fly" color="#ffffffff" textSize="12"/>
+            <text font="Interface/Fonts/Default.fnt" text="Mouse Look - Right Mouse Button" color="#ffffffff" textSize="12"/>
+            <text font="Interface/Fonts/Default.fnt" text="ESC - Pause/Resume Game" color="#ffffffff" textSize="12"/>
+          </panel>
+
+          <!-- Graphics Tab Content -->
+          <panel id="graphicsTabContent" childLayout="vertical" visible="false" width="100%" height="100%">
+            <text font="Interface/Fonts/Default.fnt" text="Audio Settings" color="#ffd700ff" textSize="18"/>
+            <panel height="8px" childLayout="vertical"/>
+            
+            <text font="Interface/Fonts/Default.fnt" text="Master Volume" color="#ffffffff" textSize="14"/>
+            <control name="horizontalSlider" id="masterVolumeSlider" width="100%" height="20px" value="100">
+              <interact onClick="onMasterVolumeChanged()"/>
+            </control>
+            <panel height="10px" childLayout="vertical"/>
+
+            <text font="Interface/Fonts/Default.fnt" text="SFX Volume" color="#ffffffff" textSize="14"/>
+            <control name="horizontalSlider" id="sfxVolumeSlider" width="100%" height="20px" value="90">
+              <interact onClick="onSfxVolumeChanged()"/>
+            </control>
+            <panel height="10px" childLayout="vertical"/>
+
+            <text font="Interface/Fonts/Default.fnt" text="Field of View (FOV)" color="#ffffffff" textSize="14"/>
+            <control name="horizontalSlider" id="fovSlider" width="100%" height="20px" value="75">
+              <interact onClick="onFovChanged()"/>
+            </control>
+            <panel height="15px" childLayout="vertical"/>
+
+            <text font="Interface/Fonts/Default.fnt" text="Display Options" color="#ffd700ff" textSize="16"/>
+            <panel height="8px" childLayout="vertical"/>
+            
+            <control name="checkbox" id="chkShowStats" label="Show FPS Overlay" align="left">
+              <interact onClick="onShowStatsToggled()"/>
+            </control>
+            <panel height="5px" childLayout="vertical"/>
+            
+            <control name="checkbox" id="chkInvertMouse" label="Invert Mouse Y-Axis" align="left">
+              <interact onClick="onInvertMouseToggled()"/>
+            </control>
+          </panel>
+
+          <!-- About Tab Content -->
+          <panel id="aboutTabContent" childLayout="vertical" visible="false" width="100%" height="100%">
+            <text font="Interface/Fonts/Default.fnt" text="Game Statistics" color="#ffd700ff" textSize="18"/>
+            <panel height="8px" childLayout="vertical"/>
+            
+            <text id="aboutCurrentMode" font="Interface/Fonts/Default.fnt" text="Current Mode: Zen" color="#ffffffff" textSize="14"/>
+            <text id="aboutCurrentLevel" font="Interface/Fonts/Default.fnt" text="Current Level: 1" color="#ffffffff" textSize="14"/>
+            <text id="aboutPlatformsCleared" font="Interface/Fonts/Default.fnt" text="Platforms Cleared: 0" color="#ffffffff" textSize="14"/>
+            <text id="aboutFallCount" font="Interface/Fonts/Default.fnt" text="Falls: 0" color="#ffffffff" textSize="14"/>
+            <panel height="15px" childLayout="vertical"/>
+
+            <text font="Interface/Fonts/Default.fnt" text="About Breaking Walls" color="#ffd700ff" textSize="16"/>
+            <panel height="8px" childLayout="vertical"/>
+            
+            <text font="Interface/Fonts/Default.fnt" text="A challenging 3D maze platformer" color="#ffffffff" textSize="12"/>
+            <text font="Interface/Fonts/Default.fnt" text="with two unique game modes." color="#ffffffff" textSize="12"/>
+            <panel height="10px" childLayout="vertical"/>
+            
+            <text font="Interface/Fonts/Default.fnt" text="Version 1.0" color="#aaaaaa88" textSize="12"/>
+            <text font="Interface/Fonts/Default.fnt" text="Built with jMonkeyEngine 3" color="#aaaaaa88" textSize="12"/>
+          </panel>
+
+        </panel>
+
+        <!-- Footer with Quit Button -->
+        <panel id="footer" childLayout="horizontal" height="50px" padding="10,10,10,10">
+          <panel width="100%" childLayout="vertical"/>
+          <control name="button" id="btnQuit" label="Quit to Desktop" align="center" valignCenter="center" height="40px" width="180px" backgroundColor="#cc3333ff">
+            <interact onClick="quitGame()"/>
+          </control>
+        </panel>
+
       </panel>
     </layer>
   </screen>

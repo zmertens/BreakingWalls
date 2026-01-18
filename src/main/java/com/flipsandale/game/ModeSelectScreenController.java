@@ -44,7 +44,8 @@ public class ModeSelectScreenController extends BaseScreenController {
     System.out.println("ModeSelectScreen: Starting game with selected mode");
     GameMode selectedMode = gameUIManager.getSelectedGameMode();
     gameStateService.startNewGame(selectedMode);
-    gameUIManager.showGameplayHUD();
+    // Set game state to PLAYING which will handle the UI transition
+    gameStateService.setGameState(GameState.PLAYING);
   }
 
   public void backToMainMenu() {
