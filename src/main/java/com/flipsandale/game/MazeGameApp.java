@@ -27,6 +27,7 @@ import de.lessvoid.nifty.screen.ScreenController;
 import java.util.Base64;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.apache.logging.log4j.util.Strings;
 
 public class MazeGameApp extends SimpleApplication implements ScreenController {
 
@@ -39,6 +40,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private String asciiMaze;
   private Node mazeNode;
   private MaterialManager materialManager; // Initialized in simpleInitApp
+  private AudioManager audioManager; // Initialized in simpleInitApp
 
   // Game state
   private GameState currentGameState = GameState.MENU;
@@ -119,10 +121,6 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     Logger.getLogger("de.lessvoid.nifty").setLevel(Level.SEVERE);
     Logger.getLogger("NiftyInputEventHandlingLog").setLevel(Level.SEVERE);
 
-    // Create maze node container (legacy)
-    mazeNode = new Node("MazeNode");
-    rootNode.attachChild(mazeNode);
-
     // Create platforms node for game
     platformsNode = new Node("PlatformsNode");
     rootNode.attachChild(platformsNode);
@@ -134,6 +132,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
     // Initialize material manager now that assetManager is available
     materialManager = new MaterialManager(assetManager);
+
+    // Initialize audio manager now that assetManager is available
+    audioManager = new AudioManager(assetManager);
+    audioManager.initialize();
+    audioManager.playLoadingMusicLoop(rootNode);
 
     // Initialize maze wall service for obstacle-course gameplay
     mazeWallService = new MazeWallService();
@@ -905,6 +908,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
         startPos.y = 0.9f;
 
         playerController = new PlayerController(startPos);
+        playerController.setAudioManager(audioManager, rootNode);
         System.out.println(
             "Player initialized at ground level: " + startPos + " (infinite plane at Y=0)");
 
@@ -1062,75 +1066,6 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     platformsNode.attachChild(wallGeom);
   }
 
-  /** Renders a single platform as a 3D box geometry with visual styling. */
-  private void renderPlatform(Platform platform) {
-    Box platformShape =
-        new Box(platform.getWidth() / 2, platform.getHeight() / 2, platform.getDepth() / 2);
-    Geometry platformGeom = new Geometry("Platform_" + platform.getId(), platformShape);
-
-    // Generate tangent/normal data for proper lighting
-    com.jme3.util.TangentBinormalGenerator.generate(platformGeom.getMesh());
-
-    // Create a lit material using MaterialManager for realistic shading
-    Material mat = materialManager.getPaletteMaterial(platform.getId());
-
-    // Debug: Log the material definition being used (first platform only to avoid spam)
-    if (platform.getId() == 0) {
-      System.out.println("✓ Platform 0 - Material: " + mat.getMaterialDef().getName());
-      System.out.println("✓ Diffuse color: " + mat.getParam("Diffuse"));
-      System.out.println("✓ Scene lights: " + rootNode.getLocalLightList().size());
-    }
-
-    platformGeom.setMaterial(mat);
-
-    // Enable shadow casting and receiving for realistic lighting
-    platformGeom.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
-
-    // Set position - use CENTER position since Box is centered at origin
-    Vector3f platformPos = platform.getPosition();
-    platformGeom.setLocalTranslation(platformPos);
-
-    // Attach to scene
-    platformsNode.attachChild(platformGeom);
-  }
-
-  /** Gets a random but visually appealing color for a platform. */
-  private ColorRGBA getRandomPlatformColor(Platform platform) {
-    // Use platform ID as seed for consistent but varied coloring
-    java.util.Random colorGen = new java.util.Random(platform.getId());
-
-    // Create color palettes for different visual styles
-    ColorRGBA[] colorPalette = {
-      new ColorRGBA(0.2f, 0.8f, 0.9f, 1.0f), // Cyan
-      new ColorRGBA(0.1f, 0.9f, 0.4f, 1.0f), // Bright Green
-      new ColorRGBA(1.0f, 0.6f, 0.1f, 1.0f), // Orange
-      new ColorRGBA(0.9f, 0.3f, 0.8f, 1.0f), // Magenta
-      new ColorRGBA(0.3f, 0.7f, 1.0f, 1.0f), // Light Blue
-      new ColorRGBA(1.0f, 0.9f, 0.2f, 1.0f), // Yellow
-      new ColorRGBA(0.0f, 0.8f, 0.6f, 1.0f), // Teal
-      new ColorRGBA(1.0f, 0.4f, 0.4f, 1.0f), // Light Red
-      new ColorRGBA(0.5f, 1.0f, 0.2f, 1.0f), // Lime Green
-      new ColorRGBA(0.6f, 0.4f, 1.0f, 1.0f), // Lavender
-    };
-
-    // Pick a color from the palette and slightly vary it
-    int colorIndex = Math.abs(platform.getId()) % colorPalette.length;
-    ColorRGBA baseColor = colorPalette[colorIndex];
-
-    // Add slight randomization to avoid monotonous look
-    float hueVariation = (colorGen.nextFloat() - 0.5f) * 0.1f;
-    float brightnessVariation = (colorGen.nextFloat() - 0.5f) * 0.05f;
-
-    ColorRGBA finalColor =
-        new ColorRGBA(
-            Math.max(0.1f, Math.min(1.0f, baseColor.r + brightnessVariation)),
-            Math.max(0.1f, Math.min(1.0f, baseColor.g + brightnessVariation)),
-            Math.max(0.1f, Math.min(1.0f, baseColor.b + brightnessVariation)),
-            1.0f);
-
-    return finalColor;
-  }
-
   public GameState getCurrentGameState() {
     return currentGameState;
   }
@@ -1265,6 +1200,10 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   }
 
   public void exitGame() {
+    // Cleanup audio resources
+    if (audioManager != null) {
+      audioManager.cleanup();
+    }
     stop();
   }
 
@@ -1299,14 +1238,27 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   }
 
   public void generateAndPlay() {
-    // Generate initial maze
-    generateMaze();
+    try {
+      System.out.println("🎮 generateAndPlay() called");
 
-    // Initialize game state service with current mode
-    gameStateService.startNewGame(currentGameMode);
+      // Generate initial maze
+      System.out.println("→ Calling generateMaze()...");
+      generateMaze();
+      System.out.println("✓ Maze generated");
 
-    // Transition to playing state
-    setGameState(GameState.PLAYING);
+      // Initialize game state service with current mode
+      System.out.println("→ Starting new game with mode: " + currentGameMode);
+      gameStateService.startNewGame(currentGameMode);
+      System.out.println("✓ Game state service initialized");
+
+      // Transition to playing state
+      System.out.println("→ Transitioning to PLAYING state");
+      setGameState(GameState.PLAYING);
+      System.out.println("✓ Successfully transitioned to PLAYING state");
+    } catch (Exception e) {
+      System.err.println("ERROR in generateAndPlay(): " + e.getMessage());
+      e.printStackTrace();
+    }
   }
 
   public void backToMenu() {
@@ -1374,19 +1326,24 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   // ============== Maze Generation ==============
 
   private void generateMaze() {
-    // Clear existing maze
-    mazeNode.detachAllChildren();
+    try {
+      System.out.println("→ generateMaze() - clearing old maze");
+      // Clear existing maze
+      mazeNode.detachAllChildren();
 
-    // Load maze from API with current settings
-    loadMazeFromApi();
+      // Load maze from API with current settings
+      System.out.println("→ generateMaze() - loading maze from API");
+      loadMazeFromApi();
+      System.out.println("✓ generateMaze() - maze loaded");
 
-    // Build the 3D maze
-    if (asciiMaze != null) {
-      buildMaze3D();
+      // Reset camera position
+      System.out.println("→ generateMaze() - setting up camera");
+      setupCamera();
+      System.out.println("✓ generateMaze() - complete");
+    } catch (Exception e) {
+      System.err.println("ERROR in generateMaze(): " + e.getMessage());
+      e.printStackTrace();
     }
-
-    // Reset camera position
-    setupCamera();
   }
 
   private void loadMazeFromApi() {
@@ -1403,82 +1360,8 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       }
     } catch (Exception e) {
       System.err.println("Failed to load maze: " + e.getMessage());
-      this.asciiMaze = createDefaultMaze();
+      this.asciiMaze = Strings.EMPTY;
     }
-  }
-
-  private String createDefaultMaze() {
-    return """
-            +---+---+---+---+---+
-            | 0   1   2 | 3   4 |
-            +   +---+   +   +---+
-            | 1 | 4   3 | 4 | 7 |
-            +   +   +---+   +   +
-            | 2   3 | 6   5   6 |
-            +---+   +   +---+   +
-            | 5   4 | 7 | 8   7 |
-            +   +---+   +   +---+
-            | 6   7   8   9   8 |
-            +---+---+---+---+---+
-            """;
-  }
-
-  private void buildMaze3D() {
-    String[] lines = asciiMaze.split("\n");
-    int height = lines.length;
-    int maxDistance = findMaxDistance(asciiMaze);
-
-    for (int y = 0; y < height; y++) {
-      String line = lines[y];
-      for (int x = 0; x < line.length(); x++) {
-        char c = line.charAt(x);
-
-        if (c == '+' || c == '-' || c == '|') {
-          createWallBlock(x, y, ColorRGBA.DarkGray);
-        } else if (Character.isLetterOrDigit(c) && c != ' ') {
-          int distance = parseBase36(c);
-          if (distance >= 0) {
-            ColorRGBA color = getGradientColor(distance, maxDistance);
-            createFloorTile(x, y, color);
-          }
-        }
-      }
-    }
-  }
-
-  private int findMaxDistance(String maze) {
-    int max = 0;
-    for (char c : maze.toCharArray()) {
-      if (Character.isLetterOrDigit(c) && c != '+' && c != '-' && c != '|') {
-        int d = parseBase36(c);
-        if (d > max) max = d;
-      }
-    }
-    return max;
-  }
-
-  private void createWallBlock(int x, int z, ColorRGBA color) {
-    Box box = new Box(CELL_SIZE / 2, WALL_HEIGHT / 2, CELL_SIZE / 2);
-    Geometry wall = new Geometry("Wall_" + x + "_" + z, box);
-
-    Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-    mat.setColor("Color", color);
-    wall.setMaterial(mat);
-
-    wall.setLocalTranslation(x * CELL_SIZE, WALL_HEIGHT / 2, -z * CELL_SIZE);
-    mazeNode.attachChild(wall);
-  }
-
-  private void createFloorTile(int x, int z, ColorRGBA color) {
-    Box box = new Box(CELL_SIZE / 2, 0.1f, CELL_SIZE / 2);
-    Geometry tile = new Geometry("Tile_" + x + "_" + z, box);
-
-    Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-    mat.setColor("Color", color);
-    tile.setMaterial(mat);
-
-    tile.setLocalTranslation(x * CELL_SIZE, 0.1f, -z * CELL_SIZE);
-    mazeNode.attachChild(tile);
   }
 
   private void addFloor() {
@@ -1509,50 +1392,6 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     cam.lookAt(new Vector3f(centerX, 0, centerZ), Vector3f.UNIT_Y);
 
     flyCam.setMoveSpeed(30);
-  }
-
-  private int parseBase36(char c) {
-    if (c >= '0' && c <= '9') {
-      return c - '0';
-    } else if (c >= 'A' && c <= 'Z') {
-      return 10 + (c - 'A');
-    } else if (c >= 'a' && c <= 'z') {
-      return 10 + (c - 'a');
-    }
-    return -1;
-  }
-
-  private ColorRGBA getGradientColor(int distance, int maxDistance) {
-    if (maxDistance == 0) {
-      return ColorRGBA.White;
-    }
-
-    float ratio = (float) distance / maxDistance;
-    float red, green, blue;
-
-    if (ratio < 0.25f) {
-      float localRatio = ratio / 0.25f;
-      red = 0;
-      green = localRatio;
-      blue = 1;
-    } else if (ratio < 0.5f) {
-      float localRatio = (ratio - 0.25f) / 0.25f;
-      red = 0;
-      green = 1;
-      blue = 1 - localRatio;
-    } else if (ratio < 0.75f) {
-      float localRatio = (ratio - 0.5f) / 0.25f;
-      red = localRatio;
-      green = 1;
-      blue = 0;
-    } else {
-      float localRatio = (ratio - 0.75f) / 0.25f;
-      red = 1;
-      green = 1 - localRatio;
-      blue = 0;
-    }
-
-    return new ColorRGBA(red, green, blue, 1f);
   }
 
   /**

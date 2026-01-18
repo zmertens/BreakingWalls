@@ -12,6 +12,7 @@ public class PlayerController {
   private Vector3f velocity; // Current velocity
   private float playerRadius = 0.3f; // Collision radius
   private float playerHeight = 1.8f; // Total player height
+  private AudioManager audioManager; // Audio manager for sound effects
 
   // Jump mechanics
   private float jumpForce = 12.0f; // Initial upward velocity when jumping
@@ -34,11 +35,18 @@ public class PlayerController {
 
   // Falling detection
   private float voidThreshold = -50f; // Y position below which player is considered fallen
+  private com.jme3.scene.Node rootNode; // Scene root node for audio attachment
 
   public PlayerController(Vector3f startPosition) {
     this.position = startPosition.clone();
     this.velocity = new Vector3f(0, 0, 0);
     this.lastGroundY = startPosition.y;
+  }
+
+  /** Set the audio manager for sound effect playback. */
+  public void setAudioManager(AudioManager audioManager, com.jme3.scene.Node rootNode) {
+    this.audioManager = audioManager;
+    this.rootNode = rootNode;
   }
 
   /** Updates player physics based on time delta. */
@@ -131,6 +139,11 @@ public class PlayerController {
           && distZ < (halfDepth + expandRadius)
           && position.y < wall.height + playerHeight / 2f) {
 
+        // Play collision sound effect
+        if (audioManager != null && rootNode != null) {
+          audioManager.playCollisionSound(rootNode);
+        }
+
         // Push player out of wall (choose direction based on which side they hit)
         if (distX > distZ) {
           // Hit left/right side of wall
@@ -172,6 +185,11 @@ public class PlayerController {
       velocity.y = jumpForce;
       isGrounded = false;
       canJump = false;
+
+      // Play jump sound effect
+      if (audioManager != null && rootNode != null) {
+        audioManager.playJumpSound(rootNode);
+      }
 
       System.out.println("Jump! Velocity: " + jumpForce);
     }
