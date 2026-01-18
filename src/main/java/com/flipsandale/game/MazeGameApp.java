@@ -882,12 +882,20 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       renderPlatforms();
 
       // Initialize player at start position - on top of the first platform
-      if (currentPlatformLayout.getStartPosition() != null) {
-        Vector3f startPos = currentPlatformLayout.getStartPosition();
-        // Place player on top of the starting platform
-        startPos.y += 1.0f; // Add height to spawn on top of the platform
+      if (currentPlatformLayout.getStartPosition() != null
+          && !currentPlatformLayout.getPlatforms().isEmpty()) {
+        Vector3f startPos = currentPlatformLayout.getStartPosition().clone();
+
+        // Get the first platform to determine proper spawn height
+        Platform firstPlatform = currentPlatformLayout.getPlatforms().get(0);
+        float platformTopY = firstPlatform.getTopSurfaceY();
+
+        // Place player above the platform's top surface
+        startPos.y = platformTopY + 3.0f;
+
         playerController = new PlayerController(startPos);
-        System.out.println("Player initialized at: " + startPos);
+        System.out.println(
+            "Player initialized at: " + startPos + " (platform top was at " + platformTopY + ")");
 
         // Start the countdown
         gameStarted = false;
@@ -945,13 +953,25 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       renderPlatforms();
 
       // Reset player to start of new level
-      if (currentPlatformLayout.getStartPosition() != null) {
-        Vector3f startPos = currentPlatformLayout.getStartPosition();
-        // Place player on top of the starting platform
-        startPos.y += 1.0f; // Add height to spawn on top of the platform
+      if (currentPlatformLayout.getStartPosition() != null
+          && !currentPlatformLayout.getPlatforms().isEmpty()) {
+        Vector3f startPos = currentPlatformLayout.getStartPosition().clone();
+
+        // Get the first platform to determine proper spawn height
+        Platform firstPlatform = currentPlatformLayout.getPlatforms().get(0);
+        float platformTopY = firstPlatform.getTopSurfaceY();
+
+        // Place player above the platform's top surface
+        startPos.y = platformTopY + 3.0f;
+
         playerController.setPosition(startPos);
         playerController.setVelocity(new Vector3f(0, 0, 0));
-        System.out.println("Player positioned at new level start: " + startPos);
+        System.out.println(
+            "Player positioned at new level start: "
+                + startPos
+                + " (platform top was at "
+                + platformTopY
+                + ")");
 
         // Start the countdown for the new level
         gameStarted = false;
@@ -1000,8 +1020,9 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     mat.setColor("Color", getRandomPlatformColor(platform));
     platformGeom.setMaterial(mat);
 
-    // Set position
-    platformGeom.setLocalTranslation(platform.getPosition());
+    // Set position - use CENTER position since Box is centered at origin
+    Vector3f platformPos = platform.getPosition();
+    platformGeom.setLocalTranslation(platformPos);
 
     // Attach to scene
     platformsNode.attachChild(platformGeom);

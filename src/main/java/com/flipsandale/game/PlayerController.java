@@ -66,32 +66,52 @@ public class PlayerController {
   /** Checks collision with all platforms in the layout. */
   private void checkPlatformCollisions(PlatformLayout platformLayout) {
     Platform collidingPlatform = null;
-    float lowestPlatformY = Float.NEGATIVE_INFINITY;
+    float highestPlatformY = Float.NEGATIVE_INFINITY;
 
-    // Find the highest platform below the player
+    if (platformLayout.getPlatforms().isEmpty()) {
+      System.out.println("WARNING: No platforms to check collision with!");
+      return;
+    }
+
+    // Find the highest platform below or at the player that the player is colliding with
     for (Platform platform : platformLayout.getPlatforms()) {
-      if (platform.isPointAbovePlatform(position)) {
+      boolean isAbove = platform.isPointAbovePlatform(position);
+
+      if (isAbove) {
         float platformTop = platform.getTopSurfaceY();
+        float playerFeet = position.y - playerRadius / 2;
 
-        // Check if player is falling onto this platform
-        if (position.y - playerRadius / 2 >= platformTop
-            && position.y - playerRadius / 2 <= platformTop + 0.5f
-            && velocity.y <= 0) {
+        // Check if player is falling onto the platform or already on it
+        boolean isAboveAndFalling = playerFeet >= platformTop && velocity.y <= 0;
+        boolean isInsidePlatform =
+            playerFeet < platformTop && playerFeet >= (platformTop - playerRadius);
 
-          if (platformTop > lowestPlatformY) {
-            lowestPlatformY = platformTop;
-            collidingPlatform = platform;
-          }
+        if ((isAboveAndFalling || isInsidePlatform) && platformTop > highestPlatformY) {
+          // This is the highest platform we're colliding with
+          highestPlatformY = platformTop;
+          collidingPlatform = platform;
         }
       }
     }
 
     // Land on platform if collision detected
-    if (collidingPlatform != null && !isGrounded) {
+    if (collidingPlatform != null) {
+      // Always land on the platform to keep the player from falling through
+      if (!isGrounded) {
+        System.out.println("Landing on platform at Y=" + collidingPlatform.getTopSurfaceY());
+      }
       landOnPlatform(collidingPlatform);
     } else if (!isGrounded) {
-      // Check if we're no longer over a platform
-      isGrounded = false;
+      // If not grounded and not on a platform, we're falling
+      if (position.y > -40f) { // Only log while still in playable area
+        System.out.println(
+            "Falling: Pos.y="
+                + position.y
+                + ", Vel.y="
+                + velocity.y
+                + ", Platforms count="
+                + platformLayout.getPlatforms().size());
+      }
       canJump = false;
     }
   }
@@ -112,8 +132,6 @@ public class PlayerController {
     // Apply friction
     velocity.x *= groundDampening;
     velocity.z *= groundDampening;
-
-    System.out.println("Landed on platform: " + platform);
   }
 
   /** Checks if the player has fallen below the void threshold. */
