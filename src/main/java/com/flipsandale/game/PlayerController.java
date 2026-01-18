@@ -56,93 +56,101 @@ public class PlayerController {
     // Update position based on velocity
     position.addLocal(velocity.x * tpf, velocity.y * tpf, velocity.z * tpf);
 
-    // Check collision with platforms
-    checkPlatformCollisions(platformLayout);
+    // Check collision with ground plane and walls
+    checkGroundCollision();
 
     // Check if player has fallen into the void
     checkFallenState();
   }
 
-  /** Initiates a jump action. */
-  public void jump() {
-    if (canJump && isGrounded) {
-      velocity.y = jumpForce;
-      isGrounded = false;
-      canJump = false;
+  /**
+   * Updates player with wall collision detection for obstacle-course gameplay.
+   *
+   * @param tpf Time per frame
+   * @param walls List of walls to collide with
+   */
+  public void updateWithWalls(float tpf, java.util.List<MazeWallService.Wall> walls) {
+    // Apply auto-run forward movement
+    if (autoRunEnabled) {
+      Vector3f forward = getForwardDirection();
+      velocity.x = forward.x * autoRunSpeed;
+      velocity.z = forward.z * autoRunSpeed;
+    }
 
-      System.out.println("Jump! Velocity: " + jumpForce);
+    // Apply gravity
+    velocity.y += gravity * tpf;
+
+    // Update position based on velocity
+    position.addLocal(velocity.x * tpf, velocity.y * tpf, velocity.z * tpf);
+
+    // Check collision with ground plane (always at Y=0)
+    checkGroundCollision();
+
+    // Check collision with maze walls
+    checkWallCollisions(walls);
+
+    // Check if player has fallen into the void
+    checkFallenState();
+  }
+
+  /** Checks collision with the ground plane at Y=0. */
+  private void checkGroundCollision() {
+    float groundLevel = 0f;
+    float playerFeet = position.y - (playerHeight / 2f);
+
+    // If player's feet are below ground, push them up
+    if (playerFeet <= groundLevel && velocity.y <= 0) {
+      isGrounded = true;
+      canJump = true;
+      velocity.y = 0;
+      position.y = groundLevel + (playerHeight / 2f); // Position feet on ground
+      lastGroundY = position.y;
+
+      // Apply friction
+      velocity.x *= groundDampening;
+      velocity.z *= groundDampening;
+    } else if (playerFeet > groundLevel) {
+      // Player is in the air
+      isGrounded = false;
     }
   }
 
-  /** Checks collision with all platforms in the layout. */
-  private void checkPlatformCollisions(PlatformLayout platformLayout) {
-    Platform collidingPlatform = null;
-    float highestPlatformY = Float.NEGATIVE_INFINITY;
+  /** Checks collision with maze walls. */
+  private void checkWallCollisions(java.util.List<MazeWallService.Wall> walls) {
+    for (MazeWallService.Wall wall : walls) {
+      // Check if player is colliding with wall
+      float halfWidth = wall.width / 2f;
+      float halfDepth = wall.depth / 2f;
+      float expandRadius = playerRadius + 0.1f; // Add small buffer for smoother collision
 
-    if (platformLayout.getPlatforms().isEmpty()) {
-      System.out.println("WARNING: No platforms to check collision with!");
-      return;
-    }
+      float distX = Math.abs(position.x - wall.position.x);
+      float distZ = Math.abs(position.z - wall.position.z);
 
-    // Find the highest platform below or at the player that the player is colliding with
-    for (Platform platform : platformLayout.getPlatforms()) {
-      boolean isAbove = platform.isPointAbovePlatform(position);
+      // Collision if player is within wall bounds horizontally and below wall top
+      if (distX < (halfWidth + expandRadius)
+          && distZ < (halfDepth + expandRadius)
+          && position.y < wall.height + playerHeight / 2f) {
 
-      if (isAbove) {
-        float platformTop = platform.getTopSurfaceY();
-        float playerFeet = position.y - playerRadius / 2;
-
-        // Check if player is falling onto the platform or already on it
-        boolean isAboveAndFalling = playerFeet >= platformTop && velocity.y <= 0;
-        boolean isInsidePlatform =
-            playerFeet < platformTop && playerFeet >= (platformTop - playerRadius);
-
-        if ((isAboveAndFalling || isInsidePlatform) && platformTop > highestPlatformY) {
-          // This is the highest platform we're colliding with
-          highestPlatformY = platformTop;
-          collidingPlatform = platform;
+        // Push player out of wall (choose direction based on which side they hit)
+        if (distX > distZ) {
+          // Hit left/right side of wall
+          if (position.x < wall.position.x) {
+            position.x = wall.position.x - halfWidth - expandRadius; // Push left
+          } else {
+            position.x = wall.position.x + halfWidth + expandRadius; // Push right
+          }
+          velocity.x = 0; // Stop horizontal movement in X
+        } else {
+          // Hit front/back of wall
+          if (position.z < wall.position.z) {
+            position.z = wall.position.z - halfDepth - expandRadius; // Push back
+          } else {
+            position.z = wall.position.z + halfDepth + expandRadius; // Push forward
+          }
+          velocity.z = 0; // Stop horizontal movement in Z
         }
       }
     }
-
-    // Land on platform if collision detected
-    if (collidingPlatform != null) {
-      // Always land on the platform to keep the player from falling through
-      if (!isGrounded) {
-        System.out.println("Landing on platform at Y=" + collidingPlatform.getTopSurfaceY());
-      }
-      landOnPlatform(collidingPlatform);
-    } else if (!isGrounded) {
-      // If not grounded and not on a platform, we're falling
-      if (position.y > -40f) { // Only log while still in playable area
-        System.out.println(
-            "Falling: Pos.y="
-                + position.y
-                + ", Vel.y="
-                + velocity.y
-                + ", Platforms count="
-                + platformLayout.getPlatforms().size());
-      }
-      canJump = false;
-    }
-  }
-
-  /** Handles landing on a platform. */
-  private void landOnPlatform(Platform platform) {
-    isGrounded = true;
-    canJump = true;
-    lastPlatform = platform;
-    lastGroundY = position.y;
-
-    // Stop downward velocity
-    velocity.y = 0;
-
-    // Position player on top of platform
-    position.y = platform.getTopSurfaceY() + playerRadius / 2;
-
-    // Apply friction
-    velocity.x *= groundDampening;
-    velocity.z *= groundDampening;
   }
 
   /** Checks if the player has fallen below the void threshold. */
@@ -156,6 +164,17 @@ public class PlayerController {
   /** Checks if the player is in a fallen state (fell off all platforms). */
   public boolean hasFallen() {
     return position.y < voidThreshold;
+  }
+
+  /** Initiates a jump action. */
+  public void jump() {
+    if (canJump && isGrounded) {
+      velocity.y = jumpForce;
+      isGrounded = false;
+      canJump = false;
+
+      System.out.println("Jump! Velocity: " + jumpForce);
+    }
   }
 
   /** Rotates the player's view horizontally (for mouse/stick look). */

@@ -38,6 +38,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private final Runnable onCloseCallback;
   private String asciiMaze;
   private Node mazeNode;
+  private MaterialManager materialManager; // Initialized in simpleInitApp
 
   // Game state
   private GameState currentGameState = GameState.MENU;
@@ -48,6 +49,8 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private PlayerController playerController;
   private Node platformsNode; // Visual representation of platforms
   private FallingStateManager fallingStateManager;
+  private MazeWallService mazeWallService;
+  private java.util.List<MazeWallService.Wall> currentWalls;
 
   // Level progression
   private LevelProgressionService.LevelData nextLevelData; // Preloaded next level
@@ -128,6 +131,17 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     gameInputManager = new InputManager(inputManager);
     gameInputManager.setupInputMappings();
     gameInputManager.setListener(new GameInputListener());
+
+    // Initialize material manager now that assetManager is available
+    materialManager = new MaterialManager(assetManager);
+
+    // Initialize maze wall service for obstacle-course gameplay
+    mazeWallService = new MazeWallService();
+    currentWalls = new java.util.ArrayList<>();
+
+    // Set up lighting and shadows
+    materialManager.setupLighting(rootNode);
+    materialManager.enableShadows(viewPort, rootNode, 2048);
 
     // Set up camera
     setupCamera();
@@ -886,16 +900,13 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
           && !currentPlatformLayout.getPlatforms().isEmpty()) {
         Vector3f startPos = currentPlatformLayout.getStartPosition().clone();
 
-        // Get the first platform to determine proper spawn height
-        Platform firstPlatform = currentPlatformLayout.getPlatforms().get(0);
-        float platformTopY = firstPlatform.getTopSurfaceY();
-
-        // Place player above the platform's top surface
-        startPos.y = platformTopY + 3.0f;
+        // For obstacle-course gameplay, start player on ground plane at Y=0
+        // Player center is at 0.9f (playerHeight 1.8 / 2) so feet are at Y=0
+        startPos.y = 0.9f;
 
         playerController = new PlayerController(startPos);
         System.out.println(
-            "Player initialized at: " + startPos + " (platform top was at " + platformTopY + ")");
+            "Player initialized at ground level: " + startPos + " (infinite plane at Y=0)");
 
         // Start the countdown
         gameStarted = false;
@@ -1004,8 +1015,21 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       return;
     }
 
+    System.out.println(
+        "🎮 Rendering "
+            + currentPlatformLayout.getPlatforms().size()
+            + " platforms with lit materials");
+    int count = 0;
     for (Platform platform : currentPlatformLayout.getPlatforms()) {
       renderPlatform(platform);
+      count++;
+    }
+    System.out.println("✓ All " + count + " platforms rendered with lighting effects");
+
+    // Generate walls from platforms for obstacle-course gameplay
+    if (mazeWallService != null) {
+      currentWalls = mazeWallService.generateWallsFromMaze(currentPlatformLayout);
+      System.out.println("✓ Generated " + currentWalls.size() + " walls for collision detection");
     }
   }
 
@@ -1015,10 +1039,23 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
         new Box(platform.getWidth() / 2, platform.getHeight() / 2, platform.getDepth() / 2);
     Geometry platformGeom = new Geometry("Platform_" + platform.getId(), platformShape);
 
-    // Create a material with varying colors based on position and randomness
-    Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-    mat.setColor("Color", getRandomPlatformColor(platform));
+    // Generate tangent/normal data for proper lighting
+    com.jme3.util.TangentBinormalGenerator.generate(platformGeom.getMesh());
+
+    // Create a lit material using MaterialManager for realistic shading
+    Material mat = materialManager.getPaletteMaterial(platform.getId());
+
+    // Debug: Log the material definition being used (first platform only to avoid spam)
+    if (platform.getId() == 0) {
+      System.out.println("✓ Platform 0 - Material: " + mat.getMaterialDef().getName());
+      System.out.println("✓ Diffuse color: " + mat.getParam("Diffuse"));
+      System.out.println("✓ Scene lights: " + rootNode.getLocalLightList().size());
+    }
+
     platformGeom.setMaterial(mat);
+
+    // Enable shadow casting and receiving for realistic lighting
+    platformGeom.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
 
     // Set position - use CENTER position since Box is centered at origin
     Vector3f platformPos = platform.getPosition();
@@ -1417,9 +1454,16 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     Box floorBox = new Box(100, 0.05f, 100);
     Geometry floor = new Geometry("Floor", floorBox);
 
-    Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-    mat.setColor("Color", new ColorRGBA(0.15f, 0.15f, 0.15f, 1f));
+    // Use lit material so floor responds to lighting
+    Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+    mat.setBoolean("UseMaterialColors", true);
+    mat.setColor("Diffuse", new ColorRGBA(0.2f, 0.2f, 0.2f, 1f));
+    mat.setColor("Ambient", new ColorRGBA(0.1f, 0.1f, 0.1f, 1f));
+    mat.setColor("Specular", ColorRGBA.Black);
+    mat.setFloat("Shininess", 1f); // Matte finish
+
     floor.setMaterial(mat);
+    floor.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Receive);
 
     floor.setLocalTranslation(50, 0, -50);
     rootNode.attachChild(floor);
@@ -1538,8 +1582,14 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
     // Only update player physics if the game has actually started (countdown finished)
     if (gameStarted) {
-      // Update player physics
-      playerController.update(tpf, currentPlatformLayout);
+      // Handle jump if requested
+      if (jumpPressed) {
+        playerController.jump();
+        jumpPressed = false; // Reset after attempting jump
+      }
+
+      // Update player physics with wall collision
+      playerController.updateWithWalls(tpf, currentWalls);
 
       // Check if player fell
       if (playerController.hasFallen()) {
