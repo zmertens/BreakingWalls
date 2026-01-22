@@ -13,6 +13,7 @@ public class PlayerController {
   private float playerRadius = 0.3f; // Collision radius
   private float playerHeight = 1.8f; // Total player height
   private AudioManager audioManager; // Audio manager for sound effects
+  private CommandQueue commandQueue; // Queue for player actions
 
   // Jump mechanics
   private float jumpForce = 12.0f; // Initial upward velocity when jumping
@@ -41,12 +42,23 @@ public class PlayerController {
     this.position = startPosition.clone();
     this.velocity = new Vector3f(0, 0, 0);
     this.lastGroundY = startPosition.y;
+    this.commandQueue = new CommandQueue();
   }
 
   /** Set the audio manager for sound effect playback. */
   public void setAudioManager(AudioManager audioManager, com.jme3.scene.Node rootNode) {
     this.audioManager = audioManager;
     this.rootNode = rootNode;
+  }
+
+  /** Get the command queue for this player. */
+  public CommandQueue getCommandQueue() {
+    return commandQueue;
+  }
+
+  /** Queue a command to be executed during the next update. */
+  public void queueCommand(Command command) {
+    commandQueue.push(command);
   }
 
   /** Updates player physics based on time delta. */

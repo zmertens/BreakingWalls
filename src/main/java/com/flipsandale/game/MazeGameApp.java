@@ -2,8 +2,13 @@ package com.flipsandale.game;
 
 import com.flipsandale.dto.MazeRequest;
 import com.flipsandale.dto.MazeResponse;
+import com.flipsandale.game.state.GameStateFactory;
+import com.flipsandale.game.state.GameStateId;
+import com.flipsandale.game.state.GameStateStack;
+import com.flipsandale.game.state.StateContext;
 import com.flipsandale.service.MazeService;
 import com.jme3.app.SimpleApplication;
+import com.jme3.font.BitmapFont;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
@@ -81,6 +86,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private GameplayHUDScreenController gameplayHUDScreenController;
   private HUDLayer hudLayer;
   private GameCountdownManager countdownManager;
+  private BitmapFont guiFont;
 
   // Game flow
   private volatile boolean gameStarted = false;
@@ -95,6 +101,14 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
   private static final float CELL_SIZE = 1.0f;
   private static final float WALL_HEIGHT = 2.0f;
+
+  // State management (new architecture)
+  private GameStateStack gameStateStack;
+  private StateContext stateContext;
+  private GameStateFactory gameStateFactory;
+
+  // Command queue for processing player actions
+  private CommandQueue gameCommandQueue;
 
   public MazeGameApp(
       MazeService mazeService,
@@ -129,6 +143,10 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     // Create platforms node for game
     platformsNode = new Node("PlatformsNode");
     rootNode.attachChild(platformsNode);
+
+    // Create maze node for game
+    mazeNode = new Node("MazeNode");
+    rootNode.attachChild(mazeNode);
 
     // Disable jMonkeyEngine's default ESC-to-exit behavior so we can use it for pause menu
     if (inputManager.hasMapping("SIMPLEAPP_Exit")) {
@@ -202,6 +220,12 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     // Initialize HUD system
     initializeHUDSystem();
 
+    // Initialize command queue for player actions
+    gameCommandQueue = new CommandQueue();
+
+    // Initialize state management system
+    initializeStateManagement();
+
     // Patch Nifty to handle null screen gracefully
     // This wraps Nifty.update() to catch NullPointerException during input handling
     patchNiftyForNullScreen();
@@ -238,12 +262,58 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     gameplayHUDScreenController = new GameplayHUDScreenController(hudManager, gameStateService);
 
     // Create HUDLayer for JME3-based HUD rendering
+    // Load GUI font for HUD elements (required before creating HUD systems)
+    guiFont = assetManager.loadFont("Interface/Fonts/Default.fnt");
     hudLayer = new HUDLayer(guiNode, guiFont, hudManager);
 
     // Create countdown manager for level start
     countdownManager = new GameCountdownManager(guiNode, guiFont);
 
     System.out.println("HUD System initialized");
+  }
+
+  private void initializeStateManagement() {
+    // Create StateContext with all shared services
+    stateContext =
+        new StateContext(
+            assetManager,
+            rootNode,
+            guiNode,
+            cam,
+            guiFont,
+            materialManager,
+            audioManager,
+            gameInputManager,
+            gameStateService,
+            levelProgressionService,
+            mazeWallService,
+            nifty,
+            hudLayer,
+            // Callbacks for state transitions
+            () -> {
+              // onLevelComplete - load next level
+              System.out.println("Level completed!");
+              loadNextLevel();
+            },
+            () -> {
+              // onPlayerFall - transition to FALLING state
+              System.out.println("Player fell!");
+              setGameState(GameState.FALLING);
+            },
+            () -> {
+              // onGameOver - transition to GAME_OVER state
+              System.out.println("Game over!");
+              setGameState(GameState.GAME_OVER);
+            });
+
+    // Create GameStateFactory for dependency injection
+    gameStateFactory = new GameStateFactory(stateContext);
+
+    // Create GameStateStack and push initial MENU state
+    gameStateStack = new GameStateStack(stateContext, gameStateFactory);
+    gameStateStack.requestPush(GameStateId.MENU);
+
+    System.out.println("State Management initialized");
   }
 
   /** Safely transitions to a screen, checking if it exists first. */
@@ -890,116 +960,37 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   // ============== Game State Management ==============
 
   /** Sets the current game state and triggers any state-specific initialization. */
+  /**
+   * Transitions to a new game state via the state stack. This method translates the legacy
+   * GameState enum to the new GameStateId enum for backward compatibility.
+   */
   private void setGameState(GameState newState) {
-    GameState previousState = currentGameState;
     currentGameState = newState;
 
-    System.out.println("Game State: " + previousState + " -> " + newState);
-
-    switch (newState) {
-      case MENU:
-        onEnterMenuState();
-        break;
-      case PLAYING:
-        onEnterPlayingState();
-        break;
-      case FALLING:
-        onEnterFallingState();
-        break;
-      case PAUSED:
-        onEnterPausedState();
-        break;
-      case GAME_OVER:
-        onEnterGameOverState();
-        break;
-    }
-  }
-
-  private void onEnterMenuState() {
-    menuVisible = true;
-
-    // Re-enable Nifty GUI processing when returning to menu
-    if (niftyDisplay != null) {
-      try {
-        guiViewPort.addProcessor(niftyDisplay);
-      } catch (Exception e) {
-        System.err.println("Note: Could not re-add Nifty processor to viewport");
+    if (gameStateStack != null) {
+      // Initialize level before entering PLAYING state
+      if (newState == GameState.PLAYING) {
+        initializeLevel();
       }
-      gameUIManager.showMainMenu();
-    } else {
-      safeGotoScreen("mainMenu");
-    }
-    flyCam.setDragToRotate(true);
-    inputManager.setCursorVisible(true);
-  }
 
-  private void onEnterPlayingState() {
-    menuVisible = false;
-
-    // Show gameplay HUD screen
-    if (gameUIManager != null) {
-      gameUIManager.showGameplayHUD();
-    } else {
-      safeGotoScreen("empty");
-    }
-
-    flyCam.setDragToRotate(false);
-    inputManager.setCursorVisible(false);
-    jumpPressed = false;
-
-    // Initialize level with current maze
-    initializeLevel();
-  }
-
-  private void onEnterFallingState() {
-    // Initialize falling state manager
-    Vector3f levelStartPos =
-        currentPlatformLayout != null
-            ? currentPlatformLayout.getStartPosition()
-            : (playerController != null ? playerController.getPosition() : new Vector3f(0, 0, 0));
-
-    fallingStateManager = new FallingStateManager(currentGameMode);
-    fallingStateManager.onFallStart(playerController, levelStartPos);
-
-    System.out.println("Entered FALLING state. Mode: " + currentGameMode);
-
-    // Reset countdown - will show restart option/timer
-    if (countdownManager != null) {
-      countdownManager.reset();
-    }
-  }
-
-  private void onEnterPausedState() {
-    // Show pause menu
-    menuVisible = true;
-
-    System.out.println("Entering PAUSED state - showing pause menu");
-
-    // Transition to pause menu screen
-    if (gameUIManager != null) {
-      System.out.println("Calling gameUIManager.showPauseMenu()");
-      gameUIManager.showPauseMenu();
-    } else {
-      System.err.println("ERROR: gameUIManager is null!");
-      safeGotoScreen("pauseMenu");
-    }
-
-    inputManager.setCursorVisible(true);
-  }
-
-  private void onEnterGameOverState() {
-    // Show game over screen with stats
-    menuVisible = true;
-
-    // Re-enable Nifty input processing for game over screen
-    if (niftyDisplay != null) {
-      try {
-        guiViewPort.addProcessor(niftyDisplay);
-      } catch (Exception e) {
-        System.err.println("Note: Could not re-add Nifty processor to viewport");
+      switch (newState) {
+        case MENU:
+          gameStateStack.requestPush(GameStateId.MENU);
+          break;
+        case PLAYING:
+          gameStateStack.requestPush(GameStateId.PLAYING);
+          break;
+        case FALLING:
+          gameStateStack.requestPush(GameStateId.FALLING);
+          break;
+        case PAUSED:
+          gameStateStack.requestPush(GameStateId.PAUSED);
+          break;
+        case GAME_OVER:
+          gameStateStack.requestPush(GameStateId.GAME_OVER);
+          break;
       }
     }
-    inputManager.setCursorVisible(true);
   }
 
   // ============== Level Initialization ==============
@@ -1061,6 +1052,14 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     } catch (Exception e) {
       System.err.println("Error initializing level: " + e.getMessage());
       e.printStackTrace();
+    }
+
+    // Synchronize with state context so states can access initialized data
+    if (stateContext != null) {
+      stateContext.playerController = playerController;
+      stateContext.currentPlatformLayout = currentPlatformLayout;
+      stateContext.currentGameMode = currentGameMode;
+      stateContext.currentWalls = currentWalls;
     }
   }
 
@@ -1219,6 +1218,12 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
     @Override
     public void onActionPressed(String action) {
+      // Route to state stack first (new architecture)
+      if (gameStateStack != null) {
+        gameStateStack.handleInputAction(action);
+      }
+
+      // Keep old logic for backward compatibility during transition
       switch (action) {
         case InputManager.ACTION_JUMP:
           if (currentGameState == GameState.PLAYING && !jumpPressed) {
@@ -1232,13 +1237,6 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
           break;
         case InputManager.ACTION_MENU_TOGGLE:
           handlePauseAction();
-          break;
-        case InputManager.ACTION_PERSPECTIVE_TOGGLE:
-          if (currentGameState == GameState.PLAYING) {
-            useThirdPersonView = !useThirdPersonView;
-            System.out.println(
-                "Perspective toggled: " + (useThirdPersonView ? "Third-Person" : "First-Person"));
-          }
           break;
       }
     }
@@ -1257,6 +1255,10 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
           gameStateService.resumeGame();
           setGameState(GameState.PLAYING);
           break;
+        case FALLING:
+          // Pause during falling transitions - just show pause menu
+          System.out.println("→ Cannot pause while falling");
+          break;
         case MENU:
         case GAME_OVER:
           // Return to menu from pause or game over
@@ -1268,6 +1270,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
     @Override
     public void onActionReleased(String action) {
+      if (gameStateStack != null) {
+        // States don't currently handle action release, but route through for future extensibility
+        gameStateStack.handleInputAction(action);
+      }
+
       switch (action) {
         case InputManager.ACTION_JUMP:
           jumpPressed = false;
@@ -1277,6 +1284,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
     @Override
     public void onAnalogUpdate(String action, float value) {
+      if (gameStateStack != null) {
+        // Route analog input to current state (states typically don't handle analog,
+        // but routing for future state-specific analog handling)
+      }
+
       if (currentGameState != GameState.PLAYING || playerController == null) {
         return;
       }
@@ -1584,113 +1596,19 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
   @Override
   public void simpleUpdate(float tpf) {
-    // Update countdown timer
-    if (countdownManager != null) {
-      countdownManager.update(tpf);
-    }
-
-    // Update HUD display
-    if (hudLayer != null && currentGameState == GameState.PLAYING) {
-      hudLayer.update();
-    }
-
-    // Update game logic based on current state
-    switch (currentGameState) {
-      case PLAYING:
-        updatePlayingState(tpf);
-        break;
-      case FALLING:
-        updateFallingState(tpf);
-        break;
-      case MENU:
-      case PAUSED:
-      case GAME_OVER:
-        // No game logic updates needed in these states
-        break;
-    }
-
-    // Update player visual and camera every frame
-    updatePlayerVisual();
-  }
-
-  private void updatePlayingState(float tpf) {
-    if (playerController == null || currentPlatformLayout == null) {
-      return;
-    }
-
-    // Update game state service
-    gameStateService.update(tpf);
-
-    // Only update player physics if the game has actually started (countdown finished)
-    if (gameStarted) {
-      // Handle jump if requested
-      if (jumpPressed) {
-        playerController.jump();
-        jumpPressed = false; // Reset after attempting jump
-      }
-
-      // Update player physics with wall collision
-      playerController.updateWithWalls(tpf, currentWalls);
-
-      // Check if player fell
-      if (playerController.hasFallen()) {
-        gameStateService.playerFell();
-        setGameState(GameState.FALLING);
-        return;
-      }
-
-      // Check if player reached end of level
-      if (currentPlatformLayout.getEndPosition() != null) {
-        float distToEnd =
-            playerController.getPosition().distance(currentPlatformLayout.getEndPosition());
-        if (distToEnd < 1.5f && playerController.isGrounded()) {
-          hapticFeedbackService.onLevelComplete();
-          gameStateService.levelComplete();
-          loadNextLevel();
+    // Process any queued commands from player actions
+    if (gameCommandQueue != null) {
+      while (!gameCommandQueue.isEmpty()) {
+        Command command = gameCommandQueue.pop();
+        if (command != null) {
+          command.execute(tpf);
         }
       }
     }
 
-    // Update camera to follow player
-    updateGameCamera();
-  }
-
-  private void updateFallingState(float tpf) {
-    if (fallingStateManager == null) {
-      return;
-    }
-
-    // Update falling timeout
-    fallingStateManager.update(tpf);
-
-    // Check if timeout expired
-    if (fallingStateManager.hasTimedOut()) {
-      GameState nextState = fallingStateManager.getNextGameState();
-
-      if (nextState == GameState.PLAYING) {
-        // Zen mode: restart current level
-        fallingStateManager.resetPlayerPosition();
-        gameStateService.playerFell();
-
-        // Restart the countdown for the restarted level
-        gameStarted = false;
-        if (countdownManager != null) {
-          countdownManager.startCountdown(
-              () -> {
-                gameStarted = true;
-                System.out.println("Level restarted!");
-              });
-        } else {
-          gameStarted = true;
-        }
-
-        setGameState(GameState.PLAYING);
-      } else {
-        // Time-trial mode: game over
-        gameStateService.playerFell();
-        gameStateService.gameOver();
-        setGameState(GameState.GAME_OVER);
-      }
+    // Delegate all game updates to the state stack
+    if (gameStateStack != null) {
+      gameStateStack.update(tpf);
     }
   }
 
@@ -1699,54 +1617,6 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
    * perspectives. For zen mode with third-person, camera follows from behind. For time-trial mode,
    * uses top-down angled view.
    */
-  private void updateGameCamera() {
-    if (playerController == null) {
-      return;
-    }
-
-    Vector3f playerPos = playerController.getPosition();
-
-    if (currentGameMode == GameMode.ZEN) {
-      if (useThirdPersonView) {
-        // Third-person camera: follow player from behind
-        Vector3f cameraPos = playerPos.clone();
-
-        // Get the forward direction (direction player is facing)
-        Vector3f forward = playerController.getForwardDirection();
-
-        // Position camera behind and above the player
-        cameraPos.addLocal(forward.mult(-THIRD_PERSON_DISTANCE));
-        cameraPos.y += THIRD_PERSON_HEIGHT;
-
-        cam.setLocation(cameraPos);
-
-        // Look slightly down at the player from behind
-        Vector3f lookTarget = playerPos.clone();
-        lookTarget.y += playerController.getPlayerHeight() * 0.5f; // Look at player's torso
-        cam.lookAt(lookTarget, Vector3f.UNIT_Y);
-      } else {
-        // First-person camera: follow player's eyes
-        Vector3f cameraPos = playerPos.clone();
-        cameraPos.y += playerController.getPlayerHeight() * 0.8f; // Eyes position
-
-        cam.setLocation(cameraPos);
-
-        // Look in the direction of rotation
-        Vector3f lookDir = playerController.getForwardDirection();
-        Vector3f targetLook = cameraPos.add(lookDir.mult(10));
-        cam.lookAt(targetLook, Vector3f.UNIT_Y);
-      }
-    } else if (currentGameMode == GameMode.TIME_TRIAL) {
-      // Orthogonal camera: top-down angled view
-      Vector3f cameraPos = playerPos.clone();
-      cameraPos.y += 15; // Height above player
-      cameraPos.z += 10; // Offset back
-      cameraPos.x += 5; // Slight offset to side
-
-      cam.setLocation(cameraPos);
-      cam.lookAt(playerPos, Vector3f.UNIT_Y);
-    }
-  }
 
   /**
    * Updates the player visual geometry to match the player's current position and rotation. This is
