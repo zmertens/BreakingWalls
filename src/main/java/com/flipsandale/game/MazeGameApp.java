@@ -51,6 +51,14 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private MazeWallService mazeWallService;
   private java.util.List<MazeWallService.Wall> currentWalls;
 
+  // Third-person perspective
+  private Geometry playerVisual; // Visual representation of the player (scaled-down block)
+  private boolean useThirdPersonView = true; // Toggle between first and third person
+  private static final float PLAYER_VISUAL_SCALE =
+      0.25f; // Scale of visual player relative to actual player
+  private static final float THIRD_PERSON_DISTANCE = 4.0f; // Distance behind player for camera
+  private static final float THIRD_PERSON_HEIGHT = 2.0f; // Height above player for camera
+
   // Level progression
   private LevelProgressionService.LevelData nextLevelData; // Preloaded next level
 
@@ -1034,6 +1042,9 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
         System.out.println(
             "Player initialized at ground level: " + startPos + " (infinite plane at Y=0)");
 
+        // Create visual representation of player for third-person perspective
+        createPlayerVisual();
+
         // Start the countdown
         gameStarted = false;
         if (countdownManager != null) {
@@ -1224,8 +1235,9 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
           break;
         case InputManager.ACTION_PERSPECTIVE_TOGGLE:
           if (currentGameState == GameState.PLAYING) {
-            // TODO: Toggle between first-person and orthogonal perspectives
-            System.out.println("Perspective toggled");
+            useThirdPersonView = !useThirdPersonView;
+            System.out.println(
+                "Perspective toggled: " + (useThirdPersonView ? "Third-Person" : "First-Person"));
           }
           break;
       }
@@ -1525,6 +1537,32 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   }
 
   /**
+   * Creates a visual representation of the player for third-person perspective. Uses a scaled-down
+   * block to represent the character in the game world.
+   */
+  private void createPlayerVisual() {
+    // Remove old player visual if it exists
+    if (playerVisual != null) {
+      rootNode.detachChild(playerVisual);
+    }
+
+    // Create a small scaled-down box to represent the player
+    float playerWidth = 0.4f * PLAYER_VISUAL_SCALE;
+    float playerHeight = 1.2f * PLAYER_VISUAL_SCALE;
+    float playerDepth = 0.4f * PLAYER_VISUAL_SCALE;
+
+    Box playerBox = new Box(playerWidth / 2, playerHeight / 2, playerDepth / 2);
+    playerVisual = new Geometry("PlayerVisual", playerBox);
+
+    // Apply a distinctive material to the player visual (cyan color)
+    Material playerMaterial =
+        materialManager.createUnshadedMaterial(new ColorRGBA(0.2f, 0.8f, 1.0f, 1.0f));
+    playerVisual.setMaterial(playerMaterial);
+
+    rootNode.attachChild(playerVisual);
+  }
+
+  /**
    * Override update to catch NullPointerException from Nifty during screen transitions. This
    * prevents the game from crashing when mouse events are processed while Nifty has no current
    * screen.
@@ -1570,6 +1608,9 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
         // No game logic updates needed in these states
         break;
     }
+
+    // Update player visual and camera every frame
+    updatePlayerVisual();
   }
 
   private void updatePlayingState(float tpf) {
@@ -1654,8 +1695,9 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   }
 
   /**
-   * Updates the game camera to follow the player. For zen mode (first-person), camera is above
-   * player head. For time-trial mode (orthogonal), camera is top-down angled view.
+   * Updates the game camera to follow the player. Supports both first-person and third-person
+   * perspectives. For zen mode with third-person, camera follows from behind. For time-trial mode,
+   * uses top-down angled view.
    */
   private void updateGameCamera() {
     if (playerController == null) {
@@ -1665,17 +1707,35 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     Vector3f playerPos = playerController.getPosition();
 
     if (currentGameMode == GameMode.ZEN) {
-      // First-person camera: follow player's eyes
-      Vector3f cameraPos = playerPos.clone();
-      cameraPos.y += playerController.getPlayerHeight() * 0.8f; // Eyes position
+      if (useThirdPersonView) {
+        // Third-person camera: follow player from behind
+        Vector3f cameraPos = playerPos.clone();
 
-      cam.setLocation(cameraPos);
+        // Get the forward direction (direction player is facing)
+        Vector3f forward = playerController.getForwardDirection();
 
-      // Look in the direction of rotation
-      Vector3f lookDir = playerController.getForwardDirection();
-      Vector3f targetLook = cameraPos.add(lookDir.mult(10));
-      cam.lookAt(targetLook, Vector3f.UNIT_Y);
+        // Position camera behind and above the player
+        cameraPos.addLocal(forward.mult(-THIRD_PERSON_DISTANCE));
+        cameraPos.y += THIRD_PERSON_HEIGHT;
 
+        cam.setLocation(cameraPos);
+
+        // Look slightly down at the player from behind
+        Vector3f lookTarget = playerPos.clone();
+        lookTarget.y += playerController.getPlayerHeight() * 0.5f; // Look at player's torso
+        cam.lookAt(lookTarget, Vector3f.UNIT_Y);
+      } else {
+        // First-person camera: follow player's eyes
+        Vector3f cameraPos = playerPos.clone();
+        cameraPos.y += playerController.getPlayerHeight() * 0.8f; // Eyes position
+
+        cam.setLocation(cameraPos);
+
+        // Look in the direction of rotation
+        Vector3f lookDir = playerController.getForwardDirection();
+        Vector3f targetLook = cameraPos.add(lookDir.mult(10));
+        cam.lookAt(targetLook, Vector3f.UNIT_Y);
+      }
     } else if (currentGameMode == GameMode.TIME_TRIAL) {
       // Orthogonal camera: top-down angled view
       Vector3f cameraPos = playerPos.clone();
@@ -1685,6 +1745,27 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
       cam.setLocation(cameraPos);
       cam.lookAt(playerPos, Vector3f.UNIT_Y);
+    }
+  }
+
+  /**
+   * Updates the player visual geometry to match the player's current position and rotation. This is
+   * only visible in third-person perspective.
+   */
+  private void updatePlayerVisual() {
+    if (playerVisual == null || playerController == null) {
+      return;
+    }
+
+    // Update position to match player's position
+    Vector3f playerPos = playerController.getPosition();
+    playerVisual.setLocalTranslation(playerPos);
+
+    // Update rotation to match player's facing direction
+    if (useThirdPersonView) {
+      // Get player's rotation quaternion
+      com.jme3.math.Quaternion playerRot = playerController.getRotation();
+      playerVisual.setLocalRotation(playerRot);
     }
   }
 
