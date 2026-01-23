@@ -90,6 +90,22 @@ public class GameUIManager implements GameStateService.GameStateListener {
     }
   }
 
+  /** Shows the options menu. */
+  public void showOptionsMenu() {
+    if (nifty != null) {
+      nifty.gotoScreen("optionsMenu");
+      System.out.println("UI: Showing options menu");
+    }
+  }
+
+  /** Shows the help screen. */
+  public void showHelpScreen() {
+    if (nifty != null) {
+      nifty.gotoScreen("helpScreen");
+      System.out.println("UI: Showing help screen");
+    }
+  }
+
   /** Gets current HUD content for display. */
   public String getHUDContent() {
     return hudManager.getHUDContent();

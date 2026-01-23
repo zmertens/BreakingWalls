@@ -1,6 +1,6 @@
 package com.flipsandale.game;
 
-import com.flipsandale.service.MazeService;
+import com.flipsandale.service.CornersService;
 import org.springframework.stereotype.Service;
 
 /**
@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class LevelProgressionService {
 
-  private final MazeService mazeService;
+  private final CornersService CornersService;
 
   // Level generation parameters
   private static final String ALGORITHM = "sidewinder";
@@ -21,8 +21,8 @@ public class LevelProgressionService {
   private LevelData currentLevelCache;
   private LevelData nextLevelCache;
 
-  public LevelProgressionService(MazeService mazeService) {
-    this.mazeService = mazeService;
+  public LevelProgressionService(CornersService CornersService) {
+    this.CornersService = CornersService;
   }
 
   /** Data class holding maze and platform layout for a level. */
@@ -76,7 +76,7 @@ public class LevelProgressionService {
       com.flipsandale.dto.MazeRequest request =
           new com.flipsandale.dto.MazeRequest(ALGORITHM, MAZE_HEIGHT, MAZE_WIDTH, seed, true);
 
-      com.flipsandale.dto.MazeResponse mazeResponse = mazeService.createMaze(request);
+      com.flipsandale.dto.MazeResponse mazeResponse = CornersService.createMaze(request);
 
       if (mazeResponse == null || mazeResponse.getData() == null) {
         System.err.println("Failed to generate maze for level " + levelNumber);

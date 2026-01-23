@@ -11,10 +11,10 @@ public class GameSettings implements Serializable {
   private static final long serialVersionUID = 1L;
 
   // Graphics Settings
-  private float masterVolume = 1.0f; // 0.0f to 1.0f
-  private float musicVolume = 0.8f; // 0.0f to 1.0f
-  private float sfxVolume = 0.9f; // 0.0f to 1.0f
-  private float fov = 75.0f; // Field of view in degrees
+  private float masterVolume = 1.0f;
+  private float musicVolume = 0.8f;
+  private float sfxVolume = 0.9f;
+  private float fov = 75.0f;
   private boolean showStatsOverlay = false;
   private boolean vsyncEnabled = true;
   private boolean fullscreenEnabled = false;

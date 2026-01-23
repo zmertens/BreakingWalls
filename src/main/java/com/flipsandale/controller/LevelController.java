@@ -2,8 +2,7 @@ package com.flipsandale.controller;
 
 import com.flipsandale.dto.MazeRequest;
 import com.flipsandale.dto.MazeResponse;
-import com.flipsandale.game.GameLauncher;
-import com.flipsandale.service.MazeService;
+import com.flipsandale.service.CornersService;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -16,26 +15,18 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-public class Converter {
-  private final MazeService mazeService;
-  private final GameLauncher gameLauncher;
+public class LevelController {
+  private final CornersService CornersService;
 
   @Autowired
-  public Converter(MazeService mazeService, GameLauncher gameLauncher) {
-    this.mazeService = mazeService;
-    this.gameLauncher = gameLauncher;
-  }
-
-  @GetMapping("/convert")
-  public String hello() {
-
-    return "Hello, World!";
+  public LevelController(CornersService CornersService) {
+    this.CornersService = CornersService;
   }
 
   @GetMapping("/api/mazes/create")
   public Object createMaze() {
     try {
-      MazeResponse response = mazeService.createMaze();
+      MazeResponse response = CornersService.createMaze();
       return response;
     } catch (Exception e) {
       return "Maze API error: " + e.getMessage();
@@ -46,13 +37,13 @@ public class Converter {
   public ResponseEntity<byte[]> createMazeImage() {
     try {
       // Get maze data from API
-      MazeResponse response = mazeService.createMaze();
+      MazeResponse response = CornersService.createMaze();
 
       // Decode base64 data
-      String asciiMaze = mazeService.decodeBase64Data(response.getData());
+      String asciiMaze = CornersService.decodeBase64Data(response.getData());
 
       // Create PNG image
-      byte[] imageBytes = mazeService.createMazeImage(asciiMaze);
+      byte[] imageBytes = CornersService.createMazeImage(asciiMaze);
 
       // Return image with proper headers
       HttpHeaders headers = new HttpHeaders();
@@ -70,7 +61,7 @@ public class Converter {
   @PostMapping("/api/mazes/create")
   public Object createMazeWithParams(@RequestBody MazeRequest request) {
     try {
-      MazeResponse response = mazeService.createMaze(request);
+      MazeResponse response = CornersService.createMaze(request);
       return response;
     } catch (Exception e) {
       return Map.of("error", "Maze API error: " + e.getMessage());

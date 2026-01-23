@@ -6,7 +6,7 @@ import com.flipsandale.game.state.GameStateFactory;
 import com.flipsandale.game.state.GameStateId;
 import com.flipsandale.game.state.GameStateStack;
 import com.flipsandale.game.state.StateContext;
-import com.flipsandale.service.MazeService;
+import com.flipsandale.service.CornersService;
 import com.jme3.app.SimpleApplication;
 import com.jme3.font.BitmapFont;
 import com.jme3.material.Material;
@@ -29,20 +29,18 @@ import de.lessvoid.nifty.screen.ScreenController;
 import java.util.Base64;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.apache.logging.log4j.util.Strings;
 
 public class MazeGameApp extends SimpleApplication implements ScreenController {
 
-  private final MazeService mazeService;
+  private final CornersService CornersService;
   private final HapticFeedbackService hapticFeedbackService;
   private final PlatformGeneratorService platformGeneratorService;
   private final GameStateService gameStateService;
   private final LevelProgressionService levelProgressionService;
   private final Runnable onCloseCallback;
-  private String asciiMaze;
   private Node mazeNode;
-  private MaterialManager materialManager; // Initialized in simpleInitApp
-  private AudioManager audioManager; // Initialized in simpleInitApp
+  private MaterialManager materialManager;
+  private AudioManager audioManager;
 
   // Game state
   private GameState currentGameState = GameState.MENU;
@@ -51,13 +49,13 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   // Platform and player state
   private PlatformLayout currentPlatformLayout;
   private PlayerController playerController;
-  private Node platformsNode; // Visual representation of platforms
+  private Node platformsNode;
   private FallingStateManager fallingStateManager;
   private MazeWallService mazeWallService;
   private java.util.List<MazeWallService.Wall> currentWalls;
 
   // Third-person perspective
-  private Geometry playerVisual; // Visual representation of the player (scaled-down block)
+  private Geometry playerVisual;
   private boolean useThirdPersonView = true; // Toggle between first and third person
   private static final float PLAYER_VISUAL_SCALE =
       0.25f; // Scale of visual player relative to actual player
@@ -111,13 +109,13 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private CommandQueue gameCommandQueue;
 
   public MazeGameApp(
-      MazeService mazeService,
+      CornersService CornersService,
       HapticFeedbackService hapticFeedbackService,
       PlatformGeneratorService platformGeneratorService,
       GameStateService gameStateService,
       LevelProgressionService levelProgressionService,
       Runnable onCloseCallback) {
-    this.mazeService = mazeService;
+    this.CornersService = CornersService;
     this.hapticFeedbackService = hapticFeedbackService;
     this.platformGeneratorService = platformGeneratorService;
     this.gameStateService = gameStateService;
@@ -213,9 +211,6 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
     // Build settings screen
     buildSettingsScreen();
-
-    // Build pause menu screen
-    buildPauseMenuScreen();
 
     // Initialize HUD system
     initializeHUDSystem();
@@ -936,17 +931,640 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
                                     height("2px");
                                     backgroundColor("#0066ccff");
                                     childLayoutVertical();
+                                    marginBottom("15px");
                                   }
                                 });
 
-                            // Tab Content Area (simplified - just show Resume/Quit buttons)
+                            // Main Tab Content
+                            panel(
+                                new PanelBuilder("mainTabContent") {
+                                  {
+                                    childLayoutVertical();
+                                    width("100%");
+                                    height("350px");
+                                    paddingLeft("10px");
+                                    paddingRight("10px");
+
+                                    // Main menu buttons
+                                    control(
+                                        new ButtonBuilder("btnResume", "Resume Game") {
+                                          {
+                                            height("40px");
+                                            width("250px");
+                                            alignCenter();
+                                            marginBottom("10px");
+                                            interactOnClick("resumeGame()");
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnRestart", "Restart Level") {
+                                          {
+                                            height("40px");
+                                            width("250px");
+                                            alignCenter();
+                                            marginBottom("10px");
+                                            interactOnClick("restartLevel()");
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnOptions", "Options") {
+                                          {
+                                            height("40px");
+                                            width("250px");
+                                            alignCenter();
+                                            marginBottom("10px");
+                                            interactOnClick("showOptions()");
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnHelp", "Help") {
+                                          {
+                                            height("40px");
+                                            width("250px");
+                                            alignCenter();
+                                            marginBottom("10px");
+                                            interactOnClick("showHelp()");
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnMainMenu", "Return to Main Menu") {
+                                          {
+                                            height("40px");
+                                            width("250px");
+                                            alignCenter();
+                                            interactOnClick("returnToMainMenu()");
+                                          }
+                                        });
+                                  }
+                                });
+
+                            // Graphics Tab Content
+                            panel(
+                                new PanelBuilder("graphicsTabContent") {
+                                  {
+                                    childLayoutVertical();
+                                    width("100%");
+                                    height("350px");
+                                    paddingLeft("10px");
+                                    paddingRight("10px");
+                                    visible(false);
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("GRAPHICS SETTINGS");
+                                            color("#0088ffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("10px");
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnVSync", "Toggle VSync") {
+                                          {
+                                            height("40px");
+                                            width("250px");
+                                            alignCenter();
+                                            marginBottom("10px");
+                                            interactOnClick("onVSyncToggled()");
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnFullscreen", "Toggle Fullscreen") {
+                                          {
+                                            height("40px");
+                                            width("250px");
+                                            alignCenter();
+                                            marginBottom("10px");
+                                            interactOnClick("onFullscreenToggled()");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("AUDIO SETTINGS");
+                                            color("#0088ffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginTop("20px");
+                                            marginBottom("10px");
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnMasterVolume", "Master Volume") {
+                                          {
+                                            height("40px");
+                                            width("250px");
+                                            alignCenter();
+                                            marginBottom("10px");
+                                            interactOnClick("onMasterVolumeChanged()");
+                                          }
+                                        });
+
+                                    control(
+                                        new ButtonBuilder("btnSFXVolume", "SFX Volume") {
+                                          {
+                                            height("40px");
+                                            width("250px");
+                                            alignCenter();
+                                            interactOnClick("onSfxVolumeChanged()");
+                                          }
+                                        });
+                                  }
+                                });
+
+                            // About Tab Content
+                            panel(
+                                new PanelBuilder("aboutTabContent") {
+                                  {
+                                    childLayoutVertical();
+                                    width("100%");
+                                    height("350px");
+                                    paddingLeft("10px");
+                                    paddingRight("10px");
+                                    visible(false);
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("GAME STATUS");
+                                            color("#0088ffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("10px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("Current Mode: ");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("5px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("Current Level: ");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("5px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("Platforms Cleared: ");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("5px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("Falls: ");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("20px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("ABOUT");
+                                            color("#0088ffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("10px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("Breaking Walls - A 3D Maze Adventure");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("3px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("Built with JMonkeyEngine 3");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                          }
+                                        });
+                                  }
+                                });
+                          }
+                        });
+                  }
+                });
+          }
+        }.build(nifty));
+  }
+
+  private void buildOptionsMenuScreen() {
+    nifty.addScreen(
+        "optionsMenu",
+        new ScreenBuilder("optionsMenu") {
+          {
+            controller(new OptionsScreenController(gameUIManager, gameStateService));
+
+            layer(
+                new LayerBuilder("background") {
+                  {
+                    backgroundColor("#00000099");
+                    childLayoutCenter();
+                    width("100%");
+                    height("100%");
+
+                    panel(
+                        new PanelBuilder("optionsMenuContainer") {
+                          {
+                            childLayoutVertical();
+                            width("700px");
+                            height("600px");
+                            backgroundColor("#1a1a2eff");
+                            valignCenter();
+                            paddingLeft("20px");
+                            paddingRight("20px");
+                            paddingTop("20px");
+                            paddingBottom("20px");
+
+                            // Title Bar
+                            panel(
+                                new PanelBuilder("titleBar") {
+                                  {
+                                    childLayoutCenter();
+                                    height("60px");
+                                    backgroundColor("#0066ccff");
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("OPTIONS");
+                                            color("#ffffffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                          }
+                                        });
+                                  }
+                                });
+
+                            // Separator
+                            panel(
+                                new PanelBuilder("separator1") {
+                                  {
+                                    height("2px");
+                                    backgroundColor("#0066ccff");
+                                    childLayoutVertical();
+                                    marginBottom("15px");
+                                  }
+                                });
+
+                            // Audio Settings Section
+                            text(
+                                new TextBuilder() {
+                                  {
+                                    text("AUDIO SETTINGS");
+                                    color("#0088ffff");
+                                    font("Interface/Fonts/Default.fnt");
+                                    marginBottom("10px");
+                                  }
+                                });
+
+                            panel(
+                                new PanelBuilder("audioSettings") {
+                                  {
+                                    childLayoutVertical();
+                                    marginBottom("20px");
+
+                                    // Master Volume
+                                    control(
+                                        new ButtonBuilder("masterVolumeBtn", "Master Volume") {
+                                          {
+                                            height("30px");
+                                            width("200px");
+                                            marginBottom("5px");
+                                            interactOnClick("setMasterVolume(0.5)");
+                                          }
+                                        });
+
+                                    // Music Volume
+                                    control(
+                                        new ButtonBuilder("musicVolumeBtn", "Music Volume") {
+                                          {
+                                            height("30px");
+                                            width("200px");
+                                            marginBottom("5px");
+                                            interactOnClick("setMusicVolume(0.5)");
+                                          }
+                                        });
+
+                                    // SFX Volume
+                                    control(
+                                        new ButtonBuilder("sfxVolumeBtn", "SFX Volume") {
+                                          {
+                                            height("30px");
+                                            width("200px");
+                                            interactOnClick("setSfxVolume(0.5)");
+                                          }
+                                        });
+                                  }
+                                });
+
+                            // Separator
+                            panel(
+                                new PanelBuilder("separator2") {
+                                  {
+                                    height("1px");
+                                    backgroundColor("#444444ff");
+                                    childLayoutVertical();
+                                    marginBottom("15px");
+                                  }
+                                });
+
+                            // Graphics Settings Section
+                            text(
+                                new TextBuilder() {
+                                  {
+                                    text("GRAPHICS SETTINGS");
+                                    color("#0088ffff");
+                                    font("Interface/Fonts/Default.fnt");
+                                    marginBottom("10px");
+                                  }
+                                });
+
+                            panel(
+                                new PanelBuilder("graphicsSettings") {
+                                  {
+                                    childLayoutVertical();
+                                    marginBottom("20px");
+
+                                    // VSync Toggle
+                                    control(
+                                        new ButtonBuilder("vSyncBtn", "Toggle VSync") {
+                                          {
+                                            height("30px");
+                                            width("200px");
+                                            marginBottom("5px");
+                                            interactOnClick("toggleVSync()");
+                                          }
+                                        });
+
+                                    // Fullscreen Toggle
+                                    control(
+                                        new ButtonBuilder("fullscreenBtn", "Toggle Fullscreen") {
+                                          {
+                                            height("30px");
+                                            width("200px");
+                                            interactOnClick("toggleFullscreen()");
+                                          }
+                                        });
+                                  }
+                                });
+
+                            // Bottom buttons panel with padding
+                            panel(
+                                new PanelBuilder("bottomPanel") {
+                                  {
+                                    height("80px");
+                                    width("100%");
+                                    childLayoutHorizontal();
+                                    paddingTop("20px");
+
+                                    // Back button
+                                    control(
+                                        new ButtonBuilder("btnBackMain", "Back") {
+                                          {
+                                            height("40px");
+                                            width("200px");
+                                            interactOnClick("backToMainMenu()");
+                                          }
+                                        });
+
+                                    // Spacer
+                                    panel(
+                                        new PanelBuilder("spacerBottom") {
+                                          {
+                                            width("100%");
+                                            childLayoutVertical();
+                                          }
+                                        });
+                                  }
+                                });
+                          }
+                        });
+                  }
+                });
+          }
+        }.build(nifty));
+  }
+
+  private void buildHelpScreen() {
+    nifty.addScreen(
+        "helpScreen",
+        new ScreenBuilder("helpScreen") {
+          {
+            controller(new HelpScreenController(gameUIManager, gameStateService));
+
+            layer(
+                new LayerBuilder("background") {
+                  {
+                    backgroundColor("#00000099");
+                    childLayoutCenter();
+                    width("100%");
+                    height("100%");
+
+                    panel(
+                        new PanelBuilder("helpContainer") {
+                          {
+                            childLayoutVertical();
+                            width("800px");
+                            height("650px");
+                            backgroundColor("#1a1a2eff");
+                            valignCenter();
+                            paddingLeft("20px");
+                            paddingRight("20px");
+                            paddingTop("20px");
+                            paddingBottom("20px");
+
+                            // Title Bar
+                            panel(
+                                new PanelBuilder("titleBar") {
+                                  {
+                                    childLayoutCenter();
+                                    height("60px");
+                                    backgroundColor("#0066ccff");
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("HELP & CONTROLS");
+                                            color("#ffffffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                          }
+                                        });
+                                  }
+                                });
+
+                            // Separator
+                            panel(
+                                new PanelBuilder("separator") {
+                                  {
+                                    height("2px");
+                                    backgroundColor("#0066ccff");
+                                    childLayoutVertical();
+                                    marginBottom("15px");
+                                  }
+                                });
+
+                            // Content area
+                            panel(
+                                new PanelBuilder("contentPanel") {
+                                  {
+                                    childLayoutVertical();
+                                    width("100%");
+                                    height("450px");
+                                    paddingLeft("10px");
+                                    paddingRight("10px");
+
+                                    // Objective section
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("OBJECTIVE");
+                                            color("#0088ffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("5px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text(
+                                                "Navigate through a procedurally generated maze. Reach the exit "
+                                                    + "to complete each level. Be careful not to fall!");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("15px");
+                                            wrap(true);
+                                          }
+                                        });
+
+                                    // Controls section
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("CONTROLS");
+                                            color("#0088ffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("5px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text(
+                                                "W / A / S / D - Move | Mouse - Look | P - Toggle 3D View | ESC - Menu");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("15px");
+                                          }
+                                        });
+
+                                    // Game Modes section
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("GAME MODES");
+                                            color("#0088ffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("5px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text(
+                                                "ZEN MODE - Explore at your own pace. No time limit.");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("3px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text(
+                                                "TIME-TRIAL MODE - Race against the clock to complete each level.");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("15px");
+                                          }
+                                        });
+
+                                    // Tips section
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text("TIPS");
+                                            color("#0088ffff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("5px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text(
+                                                "- Use third-person view to better navigate and plan your path");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                            marginBottom("3px");
+                                          }
+                                        });
+
+                                    text(
+                                        new TextBuilder() {
+                                          {
+                                            text(
+                                                "- Take your time in Zen Mode to understand the maze");
+                                            color("#ccccccff");
+                                            font("Interface/Fonts/Default.fnt");
+                                          }
+                                        });
+                                  }
+                                });
+
+                            // Back button
                             control(
-                                new ButtonBuilder("btnResume", "Resume Game") {
+                                new ButtonBuilder("btnBackHelp", "Back") {
                                   {
                                     height("40px");
-                                    width("250px");
+                                    width("200px");
                                     alignCenter();
-                                    interactOnClick("resumeGame()");
+                                    marginTop("20px");
+                                    interactOnClick("backToMainMenu()");
                                   }
                                 });
                           }
@@ -1000,7 +1618,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     try {
       // Generate new maze from REST API
       MazeRequest request = new MazeRequest("sidewinder", mazeRows, mazeCols, mazeSeed, true);
-      MazeResponse mazeResponse = mazeService.createMaze(request);
+      MazeResponse mazeResponse = CornersService.createMaze(request);
 
       if (mazeResponse == null || mazeResponse.getData() == null) {
         System.err.println("Failed to generate maze");
@@ -1215,6 +1833,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
   private class GameInputListener implements InputManager.InputListener {
     private float rotationAccumulator = 0f;
+    private boolean pausePressed = false;
 
     @Override
     public void onActionPressed(String action) {
@@ -1233,10 +1852,16 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
           }
           break;
         case InputManager.ACTION_PAUSE:
-          handlePauseAction();
+          if (!pausePressed) {
+            pausePressed = true;
+            handlePauseAction();
+          }
           break;
         case InputManager.ACTION_MENU_TOGGLE:
-          handlePauseAction();
+          if (!pausePressed) {
+            pausePressed = true;
+            handlePauseAction();
+          }
           break;
       }
     }
@@ -1245,15 +1870,17 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       System.out.println("handlePauseAction() called. Current state: " + currentGameState);
       switch (currentGameState) {
         case PLAYING:
-          // Pause the game
+          // Pause the game - push PAUSED state onto stack
           System.out.println("→ Transitioning from PLAYING to PAUSED");
-          setGameState(GameState.PAUSED);
+          currentGameState = GameState.PAUSED;
+          gameStateStack.requestPush(GameStateId.PAUSED);
           break;
         case PAUSED:
-          // Resume the game
+          // Resume the game - pop PAUSED state from stack
           System.out.println("→ Transitioning from PAUSED to PLAYING");
+          currentGameState = GameState.PLAYING;
+          gameStateStack.requestPop();
           gameStateService.resumeGame();
-          setGameState(GameState.PLAYING);
           break;
         case FALLING:
           // Pause during falling transitions - just show pause menu
@@ -1263,7 +1890,8 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
         case GAME_OVER:
           // Return to menu from pause or game over
           System.out.println("→ Transitioning to MENU");
-          setGameState(GameState.MENU);
+          currentGameState = GameState.MENU;
+          gameStateStack.requestPush(GameStateId.MENU);
           break;
       }
     }
@@ -1278,6 +1906,10 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       switch (action) {
         case InputManager.ACTION_JUMP:
           jumpPressed = false;
+          break;
+        case InputManager.ACTION_PAUSE:
+        case InputManager.ACTION_MENU_TOGGLE:
+          pausePressed = false;
           break;
       }
     }
@@ -1487,17 +2119,15 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     try {
       MazeRequest request =
           new MazeRequest(selectedAlgorithm, mazeRows, mazeCols, mazeSeed, showDistances);
-      MazeResponse response = mazeService.createMaze(request);
+      MazeResponse response = CornersService.createMaze(request);
       if (response != null && response.getData() != null) {
         byte[] decodedBytes = Base64.getDecoder().decode(response.getData());
-        this.asciiMaze = new String(decodedBytes);
         System.out.println("Maze loaded successfully!");
         System.out.println("Algorithm: " + selectedAlgorithm);
         System.out.println("Size: " + mazeRows + "x" + mazeCols);
       }
     } catch (Exception e) {
       System.err.println("Failed to load maze: " + e.getMessage());
-      this.asciiMaze = Strings.EMPTY;
     }
   }
 

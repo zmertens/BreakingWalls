@@ -1,6 +1,6 @@
 package com.flipsandale.game;
 
-import com.flipsandale.service.MazeService;
+import com.flipsandale.service.CornersService;
 import com.jme3.system.AppSettings;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ApplicationContext;
@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class GameLauncher {
 
-  private final MazeService mazeService;
+  private final CornersService CornersService;
   private final HapticFeedbackService hapticFeedbackService;
   private final PlatformGeneratorService platformGeneratorService;
   private final GameStateService gameStateService;
@@ -18,13 +18,13 @@ public class GameLauncher {
   private MazeGameApp gameApp;
 
   public GameLauncher(
-      MazeService mazeService,
+      CornersService CornersService,
       HapticFeedbackService hapticFeedbackService,
       PlatformGeneratorService platformGeneratorService,
       GameStateService gameStateService,
       LevelProgressionService levelProgressionService,
       ApplicationContext applicationContext) {
-    this.mazeService = mazeService;
+    this.CornersService = CornersService;
     this.hapticFeedbackService = hapticFeedbackService;
     this.platformGeneratorService = platformGeneratorService;
     this.gameStateService = gameStateService;
@@ -44,7 +44,7 @@ public class GameLauncher {
 
     gameApp =
         new MazeGameApp(
-            mazeService,
+            CornersService,
             hapticFeedbackService,
             platformGeneratorService,
             gameStateService,

@@ -206,6 +206,18 @@ public class PauseMenuScreenController extends BaseScreenController {
     gameUIManager.showMainMenu();
   }
 
+  /** Navigates to the options menu from pause. */
+  public void showOptions() {
+    System.out.println("PauseMenu: Opening options menu");
+    gameUIManager.showOptionsMenu();
+  }
+
+  /** Navigates to the help screen from pause. */
+  public void showHelp() {
+    System.out.println("PauseMenu: Opening help screen");
+    gameUIManager.showHelpScreen();
+  }
+
   /** Quits the application. */
   // quitGame() removed - ESC should not close the application
 }

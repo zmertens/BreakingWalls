@@ -18,7 +18,11 @@ public class PausedState extends GameState {
 
     // Show pause menu
     if (stateContext.nifty != null) {
+      System.out.println("  - Nifty is available, switching to pauseMenu");
       stateContext.nifty.gotoScreen("pauseMenu");
+      System.out.println("  - gotoScreen call completed");
+    } else {
+      System.err.println("  - ERROR: Nifty is null!");
     }
 
     // Show cursor for menu interaction

@@ -15,13 +15,13 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.core.publisher.Mono;
 
 @Service
-public class MazeService {
+public class CornersService {
   private final WebClient webClient;
   private static final int CELL_SIZE = 20; // Size of each cell in pixels
   private static final Color WALL_COLOR = Color.BLACK;
   private static final Color EMPTY_COLOR = Color.WHITE;
 
-  public MazeService(WebClient.Builder webClientBuilder) {
+  public CornersService(WebClient.Builder webClientBuilder) {
     this.webClient =
         webClientBuilder.baseUrl("https://corners-app-9d22c3fdfd0c.herokuapp.com").build();
   }

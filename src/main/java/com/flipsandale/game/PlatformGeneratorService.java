@@ -1,7 +1,7 @@
 package com.flipsandale.game;
 
 import com.flipsandale.dto.MazeResponse;
-import com.flipsandale.service.MazeService;
+import com.flipsandale.service.CornersService;
 import com.jme3.math.Vector3f;
 import org.springframework.stereotype.Service;
 
@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class PlatformGeneratorService {
 
-  private final MazeService mazeService;
+  private final CornersService CornersService;
 
   // Platform dimensions (in world units)
   private static final float PLATFORM_WIDTH = 1.5f;
@@ -23,8 +23,8 @@ public class PlatformGeneratorService {
   // Vertical spacing between levels (for visual interest)
   private static final float VERTICAL_VARIATION = 0.3f;
 
-  public PlatformGeneratorService(MazeService mazeService) {
-    this.mazeService = mazeService;
+  public PlatformGeneratorService(CornersService CornersService) {
+    this.CornersService = CornersService;
   }
 
   /**
@@ -37,7 +37,7 @@ public class PlatformGeneratorService {
   public PlatformLayout generateLayout(MazeResponse mazeResponse, int levelNumber) {
     // Decode the maze ASCII data
     String base64Data = mazeResponse.getData();
-    String asciiMaze = mazeService.decodeBase64Data(base64Data);
+    String asciiMaze = CornersService.decodeBase64Data(base64Data);
 
     // Create layout with metadata
     PlatformLayout layout =

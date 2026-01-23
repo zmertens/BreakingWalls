@@ -21,9 +21,9 @@ public class PlayingState extends GameState {
   public void onEnter() {
     System.out.println("→ PlayingState.onEnter()");
 
-    // Hide menu
+    // Show gameplay HUD
     if (stateContext.nifty != null) {
-      stateContext.nifty.gotoScreen("empty");
+      stateContext.nifty.gotoScreen("gameplayHUD");
     }
 
     // Level should be pre-initialized before entering this state
