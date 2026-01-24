@@ -2,6 +2,8 @@ package com.flipsandale.game.state;
 
 import com.flipsandale.game.GameCountdownManager;
 import com.flipsandale.game.InputManager;
+import com.jme3.scene.Geometry;
+import com.jme3.scene.Spatial;
 
 /**
  * Playing state - main gameplay state. Responsible for: - Player physics updates - Collision
@@ -131,7 +133,23 @@ public class PlayingState extends GameState {
 
   /** Updates the player visual geometry to match the player's current position and rotation. */
   private void updatePlayerVisual() {
-    // This will be extracted to a separate service
-    // For now, placeholder implementation
+    if (stateContext.playerController == null || stateContext.rootNode == null) {
+      return;
+    }
+
+    Spatial playerVisual = stateContext.rootNode.getChild("PlayerVisual");
+
+    if (playerVisual instanceof Geometry) {
+      Geometry geom = (Geometry) playerVisual;
+      geom.setLocalTranslation(stateContext.playerController.getPosition());
+
+      // Only rotate the visual in third-person view
+      if (stateContext.useThirdPersonView) {
+        geom.setLocalRotation(stateContext.playerController.getRotation());
+        geom.setCullHint(Spatial.CullHint.Inherit); // Make sure it's visible
+      } else {
+        geom.setCullHint(Spatial.CullHint.Always); // Hide it in first-person
+      }
+    }
   }
 }

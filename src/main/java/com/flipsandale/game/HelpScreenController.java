@@ -8,16 +8,13 @@ public class HelpScreenController extends BaseScreenController {
   }
 
   @Override
-  protected void onBind() {
-  }
+  protected void onBind() {}
 
   @Override
-  protected void onScreenStart() {
-  }
+  protected void onScreenStart() {}
 
   @Override
-  protected void onScreenEnd() {
-  }
+  protected void onScreenEnd() {}
 
   /** Navigates to options menu from help screen. */
   public void showOptions() {

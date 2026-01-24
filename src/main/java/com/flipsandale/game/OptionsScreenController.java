@@ -58,22 +58,17 @@ public class OptionsScreenController extends BaseScreenController {
 
   // Graphics Settings
 
-  public void setGraphicsQuality(String quality) {
-  }
+  public void setGraphicsQuality(String quality) {}
 
-  public void toggleVSync() {
-  }
+  public void toggleVSync() {}
 
-  public void toggleFullscreen() {
-  }
+  public void toggleFullscreen() {}
 
   // Controls Settings
 
-  public void resetControls() {
-  }
+  public void resetControls() {}
 
-  public void showControlsRebind() {
-  }
+  public void showControlsRebind() {}
 
   // Navigation
 

@@ -8,8 +8,7 @@ public class MainMenuScreenController extends BaseScreenController {
   }
 
   @Override
-  protected void onBind() {
-  }
+  protected void onBind() {}
 
   @Override
   protected void onScreenStart() {
@@ -18,8 +17,7 @@ public class MainMenuScreenController extends BaseScreenController {
   }
 
   @Override
-  protected void onScreenEnd() {
-  }
+  protected void onScreenEnd() {}
 
   // Main Menu Actions
 
