@@ -11,18 +11,24 @@ import com.flipsandale.game.state.StateContext;
 import com.flipsandale.gui.NiftyGuiBuilder;
 import com.flipsandale.service.CornersService;
 import com.jme3.app.SimpleApplication;
+import com.jme3.asset.TextureKey;
 import com.jme3.effect.ParticleEmitter;
 import com.jme3.effect.ParticleMesh;
 import com.jme3.font.BitmapFont;
 import com.jme3.material.Material;
+import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.niftygui.NiftyJmeDisplay;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
+import com.jme3.scene.VertexBuffer;
+import com.jme3.scene.control.BillboardControl;
 import com.jme3.scene.shape.Box;
+import com.jme3.scene.shape.Quad;
 import com.jme3.system.AppSettings;
+import com.jme3.texture.Texture;
 import de.lessvoid.nifty.Nifty;
 import de.lessvoid.nifty.screen.Screen;
 import de.lessvoid.nifty.screen.ScreenController;
@@ -64,6 +70,20 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private boolean useThirdPersonView = true; // Toggle between first and third person
   private static final float PLAYER_VISUAL_SCALE =
       0.25f; // Scale of visual player relative to actual player
+
+  // Sprite animation for player
+  private static final float PLAYER_SPRITE_WIDTH = 0.8f;
+  private static final float PLAYER_SPRITE_HEIGHT = 1.2f;
+  private static final int SPRITE_COLS = 6; // colors
+  private static final int SPRITE_ROWS = 9; // animation frames per color (downward)
+  private static final int SPRITE_FRAMES_PER_COLOR = 9;
+  private static final float SPRITE_FRAME_DURATION = 0.12f;
+  private int spriteColorIndex = 0; // choose color row [0..5]
+  private int spriteFrame = 0;
+  private float spriteTimer = 0f;
+  private Texture playerSpriteTexture;
+  private Quad playerQuad;
+
   private static final float THIRD_PERSON_DISTANCE = 4.0f; // Distance behind player for camera
   private static final float THIRD_PERSON_HEIGHT = 2.0f; // Height above player for camera
 
@@ -896,8 +916,8 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   }
 
   /**
-   * Creates a visual representation of the player for third-person perspective. Uses a scaled-down
-   * block to represent the character in the game world.
+   * Creates a visual representation of the player for third-person perspective. Uses a billboarded
+   * animated sprite from a spritesheet.
    */
   private void createPlayerVisual() {
     // Remove old player visual if it exists
@@ -910,18 +930,28 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       playerExplosionEmitter = null;
     }
 
-    // Create a small scaled-down box to represent the player
-    float playerWidth = 0.4f * PLAYER_VISUAL_SCALE;
-    float playerHeight = 1.2f * PLAYER_VISUAL_SCALE;
-    float playerDepth = 0.4f * PLAYER_VISUAL_SCALE;
+    // Create a billboarded sprite for the player
+    playerQuad = new Quad(PLAYER_SPRITE_WIDTH, PLAYER_SPRITE_HEIGHT);
+    playerVisual = new Geometry("PlayerVisual", playerQuad);
 
-    Box playerBox = new Box(playerWidth / 2, playerHeight / 2, playerDepth / 2);
-    playerVisual = new Geometry("PlayerVisual", playerBox);
+    TextureKey key = new TextureKey("static/spritesheet-characters-default.png", false);
+    key.setGenerateMips(true);
+    playerSpriteTexture = assetManager.loadTexture(key);
+    playerSpriteTexture.setMagFilter(Texture.MagFilter.Bilinear);
+    playerSpriteTexture.setMinFilter(Texture.MinFilter.BilinearNearestMipMap);
 
-    // Apply a distinctive material to the player visual (cyan color)
-    Material playerMaterial =
-        materialManager.createUnshadedMaterial(new ColorRGBA(0.2f, 0.8f, 1.0f, 1.0f));
-    playerVisual.setMaterial(playerMaterial);
+    Material spriteMat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+    spriteMat.setTexture("ColorMap", playerSpriteTexture);
+    spriteMat.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+    playerVisual.setMaterial(spriteMat);
+    playerVisual.setQueueBucket(com.jme3.renderer.queue.RenderQueue.Bucket.Transparent);
+
+    BillboardControl billboardControl = new BillboardControl();
+    billboardControl.setAlignment(BillboardControl.Alignment.Camera);
+    playerVisual.addControl(billboardControl);
+
+    // Start on first frame of chosen color row
+    setSpriteFrame(spriteFrame);
 
     // Attach to root node so it's part of the scene
     rootNode.attachChild(playerVisual);
@@ -932,9 +962,10 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     // Set initial position
     if (playerController != null) {
       Vector3f pos = playerController.getPosition();
-      playerVisual.setLocalTranslation(pos);
+      playerVisual.setLocalTranslation(
+          pos.add(-PLAYER_SPRITE_WIDTH * 0.5f, -PLAYER_SPRITE_HEIGHT * 0.5f, 0));
       if (playerEffectNode != null) {
-        playerEffectNode.setLocalTranslation(pos.add(0, playerHeight * 0.5f, 0));
+        playerEffectNode.setLocalTranslation(pos.add(0, PLAYER_SPRITE_HEIGHT * 0.5f, 0));
       }
     }
   }
@@ -1003,6 +1034,23 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     playerEffectNode.setLocalTranslation(effectPos);
   }
 
+  /** Sets the current sprite frame for the player visual. */
+  private void setSpriteFrame(int frameIndex) {
+    if (!(playerVisual.getMesh() instanceof Quad)) {
+      return;
+    }
+    int col = spriteColorIndex; // fixed color column
+    int row = frameIndex % SPRITE_ROWS; // animate downward rows
+
+    float u0 = (float) col / SPRITE_COLS;
+    float u1 = u0 + 1f / SPRITE_COLS;
+    float v1 = 1f - ((float) row / SPRITE_ROWS);
+    float v0 = v1 - 1f / SPRITE_ROWS;
+
+    float[] uv = new float[] {u0, v0, u0, v1, u1, v1, u1, v0};
+    ((Quad) playerVisual.getMesh()).setBuffer(VertexBuffer.Type.TexCoord, 2, uv);
+  }
+
   /**
    * Override update to catch NullPointerException from Nifty during screen transitions. This
    * prevents the game from crashing when mouse events are processed while Nifty has no current
@@ -1053,24 +1101,32 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
    */
 
   /**
-   * Updates the player visual geometry to match the player's current position and rotation. This is
-   * only visible in third-person perspective.
+   * Updates the player visual geometry to match the player's current position and rotation. Handles
+   * sprite animation and billboarding.
    */
   private void updatePlayerVisual() {
     if (playerVisual == null || playerController == null) {
       return;
     }
 
-    // Update position to match player's position
-    Vector3f playerPos = playerController.getPosition();
-    playerVisual.setLocalTranslation(playerPos);
-
-    // Update rotation to match player's facing direction
-    if (useThirdPersonView) {
-      // Get player's rotation quaternion
-      com.jme3.math.Quaternion playerRot = playerController.getRotation();
-      playerVisual.setLocalRotation(playerRot);
+    // Animate sprite
+    float tpf = timer != null ? timer.getTimePerFrame() : 0.016f;
+    if (currentGameState == GameStateId.PLAYING) {
+      spriteTimer += tpf;
+      if (spriteTimer >= SPRITE_FRAME_DURATION) {
+        spriteTimer -= SPRITE_FRAME_DURATION;
+        spriteFrame = (spriteFrame + 1) % SPRITE_FRAMES_PER_COLOR;
+        setSpriteFrame(spriteFrame);
+      }
     }
+
+    // Update position to match player's position (centered)
+    Vector3f playerPos = playerController.getPosition();
+    Vector3f spritePos =
+        playerPos.add(-PLAYER_SPRITE_WIDTH * 0.5f, -PLAYER_SPRITE_HEIGHT * 0.5f, 0);
+    playerVisual.setLocalTranslation(spritePos);
+
+    // BillboardControl handles facing; no manual rotation needed
 
     updatePlayerEffect(playerPos);
   }
