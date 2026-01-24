@@ -1,12 +1,12 @@
 package com.flipsandale.game.state;
 
 /**
- * Enumeration of all possible game states. Used as identifiers for state creation and transitions.
+ * Defines unique identifiers for each game state. This enum is used by the state factory and state
+ * stack to manage and transition between states.
  */
 public enum GameStateId {
   MENU,
   PLAYING,
   PAUSED,
-  FALLING,
   GAME_OVER
 }

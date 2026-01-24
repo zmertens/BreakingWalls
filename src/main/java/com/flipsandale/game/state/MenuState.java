@@ -3,8 +3,8 @@ package com.flipsandale.game.state;
 import com.flipsandale.game.InputManager;
 
 /**
- * Menu state - handles main menu display and navigation. Responsible for: - Showing main menu
- * screen - Handling play, settings, and exit actions - Showing/hiding settings screen
+ * Menu state - the initial state of the game. Displays the main menu and handles navigation to
+ * other screens like settings and gameplay.
  */
 public class MenuState extends GameState {
 

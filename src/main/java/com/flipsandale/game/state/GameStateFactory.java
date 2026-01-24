@@ -14,11 +14,11 @@ public class GameStateFactory {
   }
 
   /**
-   * Creates a game state instance by ID.
+   * Creates a new GameState instance based on the provided state ID. This factory is responsible
+   * for instantiating the correct state class and injecting the shared StateContext.
    *
    * @param stateId The ID of the state to create
-   * @return A new instance of the state
-   * @throws IllegalArgumentException if stateId is unknown
+   * @return A new GameState instance
    */
   public GameState createState(GameStateId stateId) {
     switch (stateId) {
@@ -28,12 +28,10 @@ public class GameStateFactory {
         return new PlayingState(stateContext);
       case PAUSED:
         return new PausedState(stateContext);
-      case FALLING:
-        return new FallingState(stateContext);
       case GAME_OVER:
         return new GameOverState(stateContext);
       default:
-        throw new IllegalArgumentException("Unknown state ID: " + stateId);
+        throw new IllegalArgumentException("Unknown game state ID: " + stateId);
     }
   }
 }

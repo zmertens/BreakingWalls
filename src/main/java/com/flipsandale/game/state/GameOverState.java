@@ -1,8 +1,8 @@
 package com.flipsandale.game.state;
 
 /**
- * Game over state - final game state. Responsible for: - Showing game over screen with stats -
- * Handling restart and return to menu actions
+ * Game over state - entered when the player runs out of lives in time-trial mode. Displays the game
+ * over screen and provides options to restart or return to the main menu.
  */
 public class GameOverState extends GameState {
 

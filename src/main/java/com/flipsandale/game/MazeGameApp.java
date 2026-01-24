@@ -1,12 +1,13 @@
 package com.flipsandale.game;
 
+import static com.flipsandale.game.state.GameStateId.*;
+
 import com.flipsandale.dto.MazeRequest;
 import com.flipsandale.dto.MazeResponse;
 import com.flipsandale.game.state.GameStateFactory;
 import com.flipsandale.game.state.GameStateId;
 import com.flipsandale.game.state.GameStateStack;
 import com.flipsandale.game.state.StateContext;
-import com.flipsandale.gui.GameUIManager;
 import com.flipsandale.gui.NiftyGuiBuilder;
 import com.flipsandale.service.CornersService;
 import com.jme3.app.SimpleApplication;
@@ -42,14 +43,14 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   private AudioManager audioManager;
 
   // Game state
-  private GameState currentGameState = GameState.MENU;
+  private GameStateId currentGameState = GameStateId.MENU;
   private GameMode currentGameMode = GameMode.ZEN;
 
   // Platform and player state
   private PlatformLayout currentPlatformLayout;
   private PlayerController playerController;
   private Node platformsNode;
-  private FallingStateManager fallingStateManager;
+
   private MazeWallService mazeWallService;
   private java.util.List<MazeWallService.Wall> currentWalls;
 
@@ -194,7 +195,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     initNiftyGui();
 
     // Set initial game state to MENU
-    setGameState(GameState.MENU);
+    setGameState(MENU);
     flyCam.setDragToRotate(true);
     inputManager.setCursorVisible(true);
   }
@@ -300,119 +301,62 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
             hudLayer,
             // Callbacks for state transitions
             () -> {
-              // onLevelComplete - load next level
               System.out.println("Level completed!");
               loadNextLevel();
             },
             () -> {
-              // onPlayerFall - transition to FALLING state
-              System.out.println("Player fell!");
-              setGameState(GameState.FALLING);
-            },
-            () -> {
-              // onGameOver - transition to GAME_OVER state
               System.out.println("Game over!");
-              setGameState(GameState.GAME_OVER);
+              setGameState(GameStateId.GAME_OVER);
             });
 
-    // Create GameStateFactory for dependency injection
+    // Create GameStateFactory and stack
     gameStateFactory = new GameStateFactory(stateContext);
-
-    // Create GameStateStack and push initial MENU state
     gameStateStack = new GameStateStack(stateContext, gameStateFactory);
-    gameStateStack.requestPush(GameStateId.MENU);
+    gameStateStack.requestPush(MENU);
 
     System.out.println("State Management initialized");
   }
 
   /** Safely transitions to a screen, checking if it exists first. */
   private void safeGotoScreen(String screenName) {
+    if (nifty == null) {
+      System.err.println("Nifty not initialized; cannot go to screen: " + screenName);
+      return;
+    }
     try {
-      if (nifty == null) {
-        System.err.println("Nifty not initialized, cannot transition to screen: " + screenName);
+      if (nifty.getScreen(screenName) == null) {
+        System.err.println("Screen '" + screenName + "' not found");
         return;
       }
-
-      de.lessvoid.nifty.screen.Screen screen = nifty.getScreen(screenName);
-      if (screen == null) {
-        System.err.println("Screen '" + screenName + "' not found in Nifty");
-        // Always ensure we have at least the empty screen as fallback
-        if (!"empty".equals(screenName)) {
-          System.err.println("Falling back to 'empty' screen");
-          de.lessvoid.nifty.screen.Screen emptyScreen = nifty.getScreen("empty");
-          if (emptyScreen != null) {
-            // Remove processor before transition to prevent input processing on null screen
-            try {
-              guiViewPort.removeProcessor(niftyDisplay);
-            } catch (Exception ignored) {
-            }
-            nifty.gotoScreen("empty");
-            // Re-add processor after transition
-            try {
-              guiViewPort.addProcessor(niftyDisplay);
-            } catch (Exception ignored) {
-            }
-            return;
-          }
-        }
-        // Last resort: don't transition if screen doesn't exist
-        System.err.println(
-            "WARNING: Requested screen '"
-                + screenName
-                + "' does not exist and no fallback available");
-        return;
-      }
-
-      // Remove processor before transition to prevent input processing on null screen
-      try {
-        guiViewPort.removeProcessor(niftyDisplay);
-      } catch (Exception ignored) {
-      }
-
       nifty.gotoScreen(screenName);
-
-      // Re-add processor after transition
-      try {
-        guiViewPort.addProcessor(niftyDisplay);
-      } catch (Exception ignored) {
-      }
     } catch (Exception e) {
-      System.err.println("Error transitioning to screen '" + screenName + "': " + e.getMessage());
-      e.printStackTrace();
+      System.err.println("Failed to switch to screen '" + screenName + "': " + e.getMessage());
     }
   }
 
   // ============== Game State Management ==============
 
   /** Sets the current game state and triggers any state-specific initialization. */
-  /**
-   * Transitions to a new game state via the state stack. This method translates the legacy
-   * GameState enum to the new GameStateId enum for backward compatibility.
-   */
-  private void setGameState(GameState newState) {
+  private void setGameState(GameStateId newState) {
     currentGameState = newState;
 
     if (gameStateStack != null) {
-      // Initialize level before entering PLAYING state
-      if (newState == GameState.PLAYING) {
+      if (newState == PLAYING) {
         initializeLevel();
       }
 
       switch (newState) {
         case MENU:
-          gameStateStack.requestPush(GameStateId.MENU);
+          gameStateStack.requestPush(MENU);
           break;
         case PLAYING:
-          gameStateStack.requestPush(GameStateId.PLAYING);
-          break;
-        case FALLING:
-          gameStateStack.requestPush(GameStateId.FALLING);
+          gameStateStack.requestPush(PLAYING);
           break;
         case PAUSED:
           gameStateStack.requestPush(GameStateId.PAUSED);
           break;
         case GAME_OVER:
-          gameStateStack.requestPush(GameStateId.GAME_OVER);
+          gameStateStack.requestPush(GAME_OVER);
           break;
       }
     }
@@ -623,7 +567,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     platformsNode.attachChild(wallGeom);
   }
 
-  public GameState getCurrentGameState() {
+  public GameStateId getCurrentGameState() {
     return currentGameState;
   }
 
@@ -652,7 +596,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       // Keep old logic for backward compatibility during transition
       switch (action) {
         case InputManager.ACTION_JUMP:
-          if (currentGameState == GameState.PLAYING && !jumpPressed) {
+          if (currentGameState == PLAYING && !jumpPressed) {
             jumpPressed = true;
             hapticFeedbackService.onJump();
             System.out.println("Jump!");
@@ -677,28 +621,18 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       System.out.println("handlePauseAction() called. Current state: " + currentGameState);
       switch (currentGameState) {
         case PLAYING:
-          // Pause the game - push PAUSED state onto stack
-          System.out.println("→ Transitioning from PLAYING to PAUSED");
-          currentGameState = GameState.PAUSED;
+          currentGameState = GameStateId.PAUSED;
           gameStateStack.requestPush(GameStateId.PAUSED);
           break;
         case PAUSED:
-          // Resume the game - pop PAUSED state from stack
-          System.out.println("→ Transitioning from PAUSED to PLAYING");
-          currentGameState = GameState.PLAYING;
+          currentGameState = PLAYING;
           gameStateStack.requestPop();
           gameStateService.resumeGame();
           break;
-        case FALLING:
-          // Pause during falling transitions - just show pause menu
-          System.out.println("→ Cannot pause while falling");
-          break;
         case MENU:
         case GAME_OVER:
-          // Return to menu from pause or game over
-          System.out.println("→ Transitioning to MENU");
-          currentGameState = GameState.MENU;
-          gameStateStack.requestPush(GameStateId.MENU);
+          currentGameState = MENU;
+          gameStateStack.requestPush(MENU);
           break;
       }
     }
@@ -728,7 +662,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
         // but routing for future state-specific analog handling)
       }
 
-      if (currentGameState != GameState.PLAYING || playerController == null) {
+      if (currentGameState != GameStateId.PLAYING || playerController == null) {
         return;
       }
 
@@ -765,14 +699,14 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     menuVisible = false;
     flyCam.setDragToRotate(false);
     inputManager.setCursorVisible(false);
-    setGameState(GameState.PLAYING);
+    setGameState(GameStateId.PLAYING);
   }
 
   public void play() {
     menuVisible = false;
     flyCam.setDragToRotate(false);
     inputManager.setCursorVisible(false);
-    setGameState(GameState.PLAYING);
+    setGameState(GameStateId.PLAYING);
   }
 
   public void exitGame() {
@@ -829,7 +763,7 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
       // Transition to playing state
       System.out.println("→ Transitioning to PLAYING state");
-      setGameState(GameState.PLAYING);
+      setGameState(GameStateId.PLAYING);
       System.out.println("✓ Successfully transitioned to PLAYING state");
     } catch (Exception e) {
       System.err.println("ERROR in generateAndPlay(): " + e.getMessage());

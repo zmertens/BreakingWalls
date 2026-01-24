@@ -1,5 +1,7 @@
 package com.flipsandale.game;
 
+import com.flipsandale.game.state.GameStateId;
+
 /** Screen controller for the main menu. Handles navigation to new game, options, help, and exit. */
 public class MainMenuScreenController extends BaseScreenController {
 
@@ -13,7 +15,7 @@ public class MainMenuScreenController extends BaseScreenController {
   @Override
   protected void onScreenStart() {
     // Reset game state when returning to menu
-    gameStateService.setGameState(GameState.MENU);
+    gameStateService.setGameState(GameStateId.MENU);
   }
 
   @Override

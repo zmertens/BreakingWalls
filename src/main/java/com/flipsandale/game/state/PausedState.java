@@ -3,8 +3,8 @@ package com.flipsandale.game.state;
 import com.flipsandale.game.InputManager;
 
 /**
- * Paused state - pause menu overlay. Responsible for: - Showing pause menu - Handling resume,
- * settings, and exit to menu actions
+ * Paused state - entered when the player pauses the game. Displays the pause menu and suspends
+ * gameplay updates.
  */
 public class PausedState extends GameState {
 

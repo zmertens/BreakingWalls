@@ -1,13 +1,14 @@
 package com.flipsandale.game.state;
 
 /**
- * Abstract base class for all game states. Each state manages its own lifecycle (enter, update,
- * exit) and input handling. States are managed by GameStateStack and use StateContext to access
- * shared services.
+ * Base class for all game states (e.g., Menu, Playing, Paused). Defines the core lifecycle methods
+ * that each state must implement.
  */
 public abstract class GameState {
 
   protected final StateContext stateContext;
+
+  // Each state has a unique ID for identification
   protected final GameStateId stateId;
 
   protected GameState(StateContext stateContext, GameStateId stateId) {
@@ -15,24 +16,17 @@ public abstract class GameState {
     this.stateId = stateId;
   }
 
-  /**
-   * Called when this state is pushed onto the state stack. Use for initialization like setting up
-   * UI, starting timers, etc.
-   */
+  /** Called when the state is first entered. */
   public abstract void onEnter();
 
   /**
-   * Called each frame while this state is active. Use for game logic updates, physics, rendering
-   * preparation, etc.
+   * Called every frame while the state is active.
    *
    * @param tpf Time per frame in seconds
    */
   public abstract void onUpdate(float tpf);
 
-  /**
-   * Called when this state is popped from the stack. Use for cleanup like detaching nodes, stopping
-   * sounds, etc.
-   */
+  /** Called when the state is exited. */
   public abstract void onExit();
 
   /**
@@ -44,7 +38,7 @@ public abstract class GameState {
   public abstract void onInputAction(String actionName);
 
   /**
-   * Gets the shared game context containing all services, managers, and callbacks.
+   * Returns the shared context for the game, providing access to services, managers, and callbacks.
    *
    * @return The StateContext
    */
@@ -53,9 +47,9 @@ public abstract class GameState {
   }
 
   /**
-   * Gets this state's identifier.
+   * Returns the unique identifier for this state.
    *
-   * @return The GameStateId
+   * @return The GameState
    */
   public GameStateId getId() {
     return stateId;

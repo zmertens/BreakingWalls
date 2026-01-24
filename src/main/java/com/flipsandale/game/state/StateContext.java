@@ -54,7 +54,6 @@ public class StateContext {
 
   // Callbacks for state transitions and events
   public final Runnable onLevelComplete;
-  public final Runnable onPlayerFall;
   public final Runnable onGameOver;
 
   public StateContext(
@@ -72,7 +71,6 @@ public class StateContext {
       Nifty nifty,
       HUDLayer hudLayer,
       Runnable onLevelComplete,
-      Runnable onPlayerFall,
       Runnable onGameOver) {
     this.assetManager = assetManager;
     this.rootNode = rootNode;
@@ -88,7 +86,6 @@ public class StateContext {
     this.nifty = nifty;
     this.hudLayer = hudLayer;
     this.onLevelComplete = onLevelComplete;
-    this.onPlayerFall = onPlayerFall;
     this.onGameOver = onGameOver;
     this.currentWalls = new java.util.ArrayList<>();
   }

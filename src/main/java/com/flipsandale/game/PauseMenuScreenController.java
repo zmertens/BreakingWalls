@@ -1,6 +1,7 @@
 package com.flipsandale.game;
 
 import com.flipsandale.dto.GameSettings;
+import com.flipsandale.game.state.GameStateId;
 import com.flipsandale.service.GameSettingsManager;
 import de.lessvoid.nifty.elements.Element;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -181,7 +182,7 @@ public class PauseMenuScreenController extends BaseScreenController {
     if (gameSettingsManager != null) {
       gameSettingsManager.updateSettings(settings);
     }
-    gameStateService.setGameState(GameState.PLAYING);
+    gameStateService.setGameState(GameStateId.PLAYING);
     gameUIManager.showGameplayHUD();
   }
 
@@ -202,7 +203,7 @@ public class PauseMenuScreenController extends BaseScreenController {
     if (gameSettingsManager != null) {
       gameSettingsManager.updateSettings(settings);
     }
-    gameStateService.setGameState(GameState.MENU);
+    gameStateService.setGameState(GameStateId.MENU);
     gameUIManager.showMainMenu();
   }
 

@@ -1,5 +1,6 @@
 package com.flipsandale.game;
 
+import com.flipsandale.game.state.GameStateId;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -13,7 +14,7 @@ public class GameStateService {
 
   // Game flow state
   private GameMode currentMode = GameMode.ZEN;
-  private GameState currentGameState = GameState.MENU;
+  private GameStateId currentGameState = GameStateId.MENU;
   private int currentLevel = 1;
   private int currentLevelSeed = 42;
   private int platformsCleared = 0;
@@ -89,7 +90,7 @@ public class GameStateService {
   }
 
   /** Sets the current game state. */
-  public void setGameState(GameState newState) {
+  public void setGameState(GameStateId newState) {
     currentGameState = newState;
     System.out.println("Game state changed to: " + newState);
   }
@@ -224,7 +225,7 @@ public class GameStateService {
     return currentMode;
   }
 
-  public GameState getCurrentGameState() {
+  public GameStateId getCurrentGameState() {
     return currentGameState;
   }
 

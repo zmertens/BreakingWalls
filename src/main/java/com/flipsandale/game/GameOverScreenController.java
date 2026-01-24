@@ -1,5 +1,7 @@
 package com.flipsandale.game;
 
+import com.flipsandale.game.state.GameStateId;
+
 /**
  * Screen controller for the game over screen. Displays final statistics and allows player to
  * restart or return to menu.
@@ -86,7 +88,7 @@ public class GameOverScreenController extends BaseScreenController {
 
   public void returnToMainMenu() {
     System.out.println("GameOverScreen: Returning to main menu");
-    gameStateService.setGameState(GameState.MENU);
+    gameStateService.setGameState(GameStateId.MENU);
     gameUIManager.showMainMenu();
   }
 

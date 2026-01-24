@@ -1,14 +1,11 @@
 package com.flipsandale.game.state;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
-import java.util.Vector;
+import java.util.Stack;
 
 /**
- * State stack manager for game states. Handles state lifecycle, transitions, and pending changes
- * queue. Similar to craft.cpp's state_stack pattern, this enables clean state management with
- * deferred transitions (pending changes applied at frame start).
+ * Manages the stack of game states (e.g., Menu, Playing, Paused). Handles transitions between
+ * states and manages the lifecycle of each state.
  *
  * <p>States are stored in a stack; the top of the stack is the active state. Pending transitions
  * (push, pop, clear) are queued and applied at the start of the next update, ensuring consistent
@@ -16,13 +13,12 @@ import java.util.Vector;
  */
 public class GameStateStack {
 
-  private static class PendingChange {
-    enum Action {
-      PUSH,
-      POP,
-      CLEAR
-    }
+  private enum Action {
+    PUSH,
+    POP
+  }
 
+  private static final class PendingChange {
     final Action action;
     final GameStateId stateId; // Only used for PUSH
 
@@ -30,60 +26,54 @@ public class GameStateStack {
       this.action = action;
       this.stateId = stateId;
     }
-
-    PendingChange(Action action) {
-      this(action, null);
-    }
   }
 
-  private final Vector<GameState> stateStack = new Vector<>();
-  private final List<PendingChange> pendingChanges = new ArrayList<>();
+  private final Stack<GameState> stack = new Stack<>();
+  private final Stack<PendingChange> pendingChanges = new Stack<>();
   private final StateContext stateContext;
-  private final GameStateFactory stateFactory;
+  private final GameStateFactory gameStateFactory;
 
-  public GameStateStack(StateContext stateContext, GameStateFactory stateFactory) {
+  public GameStateStack(StateContext stateContext, GameStateFactory gameStateFactory) {
     this.stateContext = stateContext;
-    this.stateFactory = stateFactory;
+    this.gameStateFactory = gameStateFactory;
   }
 
   /**
-   * Requests a state to be pushed onto the stack. The push is deferred and applied at the start of
-   * the next update.
+   * Requests a new state to be pushed onto the stack. The change is queued and processed at the
+   * start of the next update cycle.
    *
    * @param stateId The ID of the state to push
    */
   public void requestPush(GameStateId stateId) {
-    pendingChanges.add(new PendingChange(PendingChange.Action.PUSH, stateId));
+    pendingChanges.push(new PendingChange(Action.PUSH, stateId));
   }
 
-  /** Requests the active state to be popped. The pop is deferred and applied at the next update. */
+  /**
+   * Requests the current state to be popped from the stack. The change is queued and processed at
+   * the start of the next update cycle.
+   */
   public void requestPop() {
-    pendingChanges.add(new PendingChange(PendingChange.Action.POP));
-  }
-
-  /** Requests all states to be cleared. The clear is deferred and applied at the next update. */
-  public void requestClear() {
-    pendingChanges.add(new PendingChange(PendingChange.Action.CLEAR));
+    pendingChanges.push(new PendingChange(Action.POP, null));
   }
 
   /**
    * Applies all pending state changes. Called at the start of each update before state logic runs.
    */
   public void applyPendingChanges() {
-    for (PendingChange change : pendingChanges) {
-      switch (change.action) {
+    while (!pendingChanges.isEmpty()) {
+      PendingChange pendingChange = pendingChanges.pop();
+
+      switch (pendingChange.action) {
         case PUSH:
-          pushState(change.stateId);
+          GameState newState = gameStateFactory.createState(pendingChange.stateId);
+          stack.push(newState);
+          newState.onEnter();
           break;
         case POP:
           popState();
           break;
-        case CLEAR:
-          clearStates();
-          break;
       }
     }
-    pendingChanges.clear();
   }
 
   /**
@@ -95,8 +85,8 @@ public class GameStateStack {
   public void update(float tpf) {
     applyPendingChanges();
 
-    if (!stateStack.isEmpty()) {
-      stateStack.lastElement().onUpdate(tpf);
+    if (!stack.isEmpty()) {
+      stack.peek().onUpdate(tpf);
     }
   }
 
@@ -106,8 +96,8 @@ public class GameStateStack {
    * @param actionName The name of the action
    */
   public void handleInputAction(String actionName) {
-    if (!stateStack.isEmpty()) {
-      stateStack.lastElement().onInputAction(actionName);
+    if (!stack.isEmpty()) {
+      stack.peek().onInputAction(actionName);
     }
   }
 
@@ -117,7 +107,7 @@ public class GameStateStack {
    * @return Optional containing the active state, or empty if stack is empty
    */
   public Optional<GameState> getActiveState() {
-    return stateStack.isEmpty() ? Optional.empty() : Optional.of(stateStack.lastElement());
+    return stack.isEmpty() ? Optional.empty() : Optional.of(stack.peek());
   }
 
   /**
@@ -126,29 +116,15 @@ public class GameStateStack {
    * @return true if the stack is empty, false otherwise
    */
   public boolean isEmpty() {
-    return stateStack.isEmpty();
+    return stack.isEmpty();
   }
 
   // Private implementation methods
 
-  private void pushState(GameStateId stateId) {
-    GameState newState = stateFactory.createState(stateId);
-    newState.onEnter();
-    stateStack.add(newState);
-    System.out.println("→ Pushed state: " + stateId);
-  }
-
   private void popState() {
-    if (!stateStack.isEmpty()) {
-      GameState poppedState = stateStack.remove(stateStack.size() - 1);
+    if (!stack.isEmpty()) {
+      GameState poppedState = stack.pop();
       poppedState.onExit();
-      System.out.println("→ Popped state: " + poppedState.getId());
-    }
-  }
-
-  private void clearStates() {
-    while (!stateStack.isEmpty()) {
-      popState();
     }
   }
 }

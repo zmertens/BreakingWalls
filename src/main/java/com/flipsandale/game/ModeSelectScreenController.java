@@ -1,5 +1,7 @@
 package com.flipsandale.game;
 
+import com.flipsandale.game.state.GameStateId;
+
 /**
  * Screen controller for the mode selection screen. Allows player to choose between ZEN and
  * TIME_TRIAL modes.
@@ -45,7 +47,7 @@ public class ModeSelectScreenController extends BaseScreenController {
     GameMode selectedMode = gameUIManager.getSelectedGameMode();
     gameStateService.startNewGame(selectedMode);
     // Set game state to PLAYING which will handle the UI transition
-    gameStateService.setGameState(GameState.PLAYING);
+    gameStateService.setGameState(GameStateId.PLAYING);
   }
 
   public void backToMainMenu() {

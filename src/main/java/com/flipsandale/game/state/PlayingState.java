@@ -76,7 +76,6 @@ public class PlayingState extends GameState {
       // Check if player fell
       if (stateContext.playerController.hasFallen()) {
         stateContext.gameStateService.playerFell();
-        stateContext.onPlayerFall.run();
         return;
       }
 
