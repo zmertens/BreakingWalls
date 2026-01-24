@@ -10,6 +10,7 @@ import com.jme3.math.Vector3f;
 import com.jme3.renderer.ViewPort;
 import com.jme3.scene.Node;
 import com.jme3.shadow.DirectionalLightShadowRenderer;
+import com.jme3.texture.Texture;
 
 /**
  * Manages all materials, lights, and shadows for the game.
@@ -24,6 +25,7 @@ import com.jme3.shadow.DirectionalLightShadowRenderer;
 public class MaterialManager {
 
   private final AssetManager assetManager;
+  private Texture wallDiffuseTexture;
 
   public MaterialManager(AssetManager assetManager) {
     this.assetManager = assetManager;
@@ -107,6 +109,33 @@ public class MaterialManager {
   public Material createUnshadedMaterial(ColorRGBA color) {
     Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
     mat.setColor("Color", color);
+    return mat;
+  }
+
+  /**
+   * Returns a lit, textured material suitable for blocks/walls. Uses a brick texture from
+   * resources/static and applies basic ambient/specular settings. The wallId seeds a tiny color
+   * tint for variety while keeping the texture visible.
+   */
+  public Material getTexturedWallMaterial(long wallId) {
+    if (wallDiffuseTexture == null) {
+      wallDiffuseTexture = assetManager.loadTexture("static/brick_brown.png");
+      wallDiffuseTexture.setWrap(Texture.WrapMode.Repeat);
+    }
+
+    Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+    mat.setTexture("DiffuseMap", wallDiffuseTexture);
+    mat.setBoolean("UseMaterialColors", true);
+    mat.setColor("Diffuse", ColorRGBA.White);
+    // Slight ambient so unlit faces are still visible
+    mat.setColor("Ambient", new ColorRGBA(0.4f, 0.4f, 0.4f, 1f));
+    mat.setColor("Specular", new ColorRGBA(0.2f, 0.2f, 0.2f, 1f));
+    mat.setFloat("Shininess", 12f);
+
+    // Tiny per-wall tint for variation without overpowering the texture
+    java.util.Random rnd = new java.util.Random(wallId);
+    float tint = 0.05f * (rnd.nextFloat() - 0.5f); // ±2.5%
+    mat.setColor("Diffuse", new ColorRGBA(1f + tint, 1f + tint, 1f + tint, 1f));
     return mat;
   }
 

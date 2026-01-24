@@ -11,9 +11,12 @@ import com.flipsandale.game.state.StateContext;
 import com.flipsandale.gui.NiftyGuiBuilder;
 import com.flipsandale.service.CornersService;
 import com.jme3.app.SimpleApplication;
+import com.jme3.effect.ParticleEmitter;
+import com.jme3.effect.ParticleMesh;
 import com.jme3.font.BitmapFont;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.niftygui.NiftyJmeDisplay;
 import com.jme3.scene.Geometry;
@@ -56,6 +59,8 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
 
   // Third-person perspective
   private Geometry playerVisual;
+  private Node playerEffectNode;
+  private ParticleEmitter playerExplosionEmitter;
   private boolean useThirdPersonView = true; // Toggle between first and third person
   private static final float PLAYER_VISUAL_SCALE =
       0.25f; // Scale of visual player relative to actual player
@@ -236,29 +241,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     // Initialize state management system
     initializeStateManagement();
 
-    // Patch Nifty to handle null screen gracefully
-    // This wraps Nifty.update() to catch NullPointerException during input handling
-    patchNiftyForNullScreen();
-
     // Add processor after all initialization is complete
     guiViewPort.addProcessor(niftyDisplay);
 
     // Show main menu safely - now processor is added and initialization is complete
     safeGotoScreen("mainMenu");
-  }
-
-  /**
-   * Patches Nifty to handle NullPointerException that occurs when getCurrentScreen() is null during
-   * screen transitions. This is done by wrapping the update method.
-   */
-  private void patchNiftyForNullScreen() {
-    // We need to override how Nifty handles input updates
-    // Since we can't directly patch Nifty, we'll prevent the issue by monitoring screen state
-    // The key insight: the error occurs in InputSystemJme.endInput() when it calls Nifty.update()
-    // We can prevent this by disabling input processing during transitions
-
-    // Unfortunately, without direct access to InputSystemJme, we can only suppress input
-    // The NiftyInputProtector will consume mouse events as a preventative measure
   }
 
   private void initializeHUDSystem() {
@@ -539,31 +526,20 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
   /** Renders a single wall as a 3D box geometry with visual styling and realistic shading. */
   private void renderWall(MazeWallService.Wall wall) {
     Box wallShape = new Box(wall.width / 2, wall.height / 2, wall.depth / 2);
+    // Scale texture coordinates so larger walls tile the brick texture instead of stretching
+    wallShape.scaleTextureCoordinates(
+        new Vector2f(Math.max(1f, wall.width), Math.max(1f, wall.height)));
     Geometry wallGeom = new Geometry("Wall_" + Math.abs(wall.position.hashCode()), wallShape);
 
-    // Generate tangent/normal data for proper lighting
     com.jme3.util.TangentBinormalGenerator.generate(wallGeom.getMesh());
 
-    // Create a lit material using MaterialManager for realistic shading
-    // Use absolute value of position hash for consistent but varied coloring per wall
-    Material mat = materialManager.getPaletteMaterial(Math.abs((long) wall.position.hashCode()));
-
-    // Debug: Log the material definition being used (first wall only to avoid spam)
-    if (platformsNode.getChildren().isEmpty()) {
-      System.out.println("✓ Wall 0 - Material: " + mat.getMaterialDef().getName());
-      System.out.println("✓ Diffuse color: " + mat.getParam("Diffuse"));
-      System.out.println("✓ Scene lights: " + rootNode.getLocalLightList().size());
-    }
+    // Textured material using static resources
+    Material mat =
+        materialManager.getTexturedWallMaterial(Math.abs((long) wall.position.hashCode()));
 
     wallGeom.setMaterial(mat);
-
-    // Enable shadow casting and receiving for realistic lighting
     wallGeom.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
-
-    // Set position - wall.position is already at the center
     wallGeom.setLocalTranslation(wall.position);
-
-    // Attach to scene
     platformsNode.attachChild(wallGeom);
   }
 
@@ -928,6 +904,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     if (playerVisual != null) {
       rootNode.detachChild(playerVisual);
     }
+    if (playerEffectNode != null) {
+      rootNode.detachChild(playerEffectNode);
+      playerEffectNode = null;
+      playerExplosionEmitter = null;
+    }
 
     // Create a small scaled-down box to represent the player
     float playerWidth = 0.4f * PLAYER_VISUAL_SCALE;
@@ -945,10 +926,81 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     // Attach to root node so it's part of the scene
     rootNode.attachChild(playerVisual);
 
+    // Create and attach a looping particle emitter that follows the player
+    createPlayerEffectNode();
+
     // Set initial position
     if (playerController != null) {
-      playerVisual.setLocalTranslation(playerController.getPosition());
+      Vector3f pos = playerController.getPosition();
+      playerVisual.setLocalTranslation(pos);
+      if (playerEffectNode != null) {
+        playerEffectNode.setLocalTranslation(pos.add(0, playerHeight * 0.5f, 0));
+      }
     }
+  }
+
+  private void createPlayerEffectNode() {
+    if (playerEffectNode != null) {
+      rootNode.detachChild(playerEffectNode);
+    }
+    playerEffectNode = new Node("PlayerEffectNode");
+
+    // Configure particle emitter using Explosion.png sprite sheet
+    playerExplosionEmitter =
+        new ParticleEmitter("PlayerExplosion", ParticleMesh.Type.Triangle, 128);
+    playerExplosionEmitter.setImagesX(4); // Explosion.png grid (columns)
+    playerExplosionEmitter.setImagesY(4); // Explosion.png grid (rows)
+    playerExplosionEmitter.setSelectRandomImage(true);
+    playerExplosionEmitter.setRotateSpeed(6f);
+    playerExplosionEmitter.setGravity(0, 0, 0);
+    playerExplosionEmitter.setLowLife(0.6f);
+    playerExplosionEmitter.setHighLife(1.2f);
+    playerExplosionEmitter.setStartSize(0.35f);
+    playerExplosionEmitter.setEndSize(0.15f);
+    playerExplosionEmitter.setParticlesPerSec(45f);
+    playerExplosionEmitter.setRandomAngle(true);
+    playerExplosionEmitter.setFacingVelocity(true);
+    playerExplosionEmitter.setVelocityVariation(0.6f);
+    playerExplosionEmitter.getParticleInfluencer().setInitialVelocity(new Vector3f(0, 2.2f, 0));
+
+    Material explosionMat = new Material(assetManager, "Common/MatDefs/Misc/Particle.j3md");
+    explosionMat.setTexture("Texture", assetManager.loadTexture("static/Explosion.png"));
+    explosionMat.setBoolean("PointSprite", false);
+    playerExplosionEmitter.setMaterial(explosionMat);
+
+    // Colors fade from bright orange to transparent
+    playerExplosionEmitter.setStartColor(new ColorRGBA(1f, 0.7f, 0.2f, 0.8f));
+    playerExplosionEmitter.setEndColor(new ColorRGBA(1f, 0.2f, 0.1f, 0f));
+
+    playerEffectNode.attachChild(playerExplosionEmitter);
+    rootNode.attachChild(playerEffectNode);
+  }
+
+  private void updatePlayerEffect(Vector3f playerPos) {
+    if (playerEffectNode == null || playerExplosionEmitter == null || playerController == null) {
+      return;
+    }
+
+    // Enable emission during active gameplay
+    boolean active = currentGameState == GameStateId.PLAYING;
+    playerExplosionEmitter.setParticlesPerSec(active ? 45f : 0f);
+    if (!active) {
+      return;
+    }
+
+    // Compute trailing offset behind movement direction
+    Vector3f dir = playerController.getVelocity();
+    if (dir == null || dir.lengthSquared() < 0.0001f) {
+      dir = playerController.getRotation().mult(Vector3f.UNIT_Z); // fallback to facing
+    }
+    if (dir.lengthSquared() > 0.0001f) {
+      dir = dir.normalize();
+    }
+
+    float offsetBack = 0.7f;
+    float offsetUp = 0.6f;
+    Vector3f effectPos = playerPos.add(dir.mult(-offsetBack)).addLocal(0, offsetUp, 0);
+    playerEffectNode.setLocalTranslation(effectPos);
   }
 
   /**
@@ -987,6 +1039,11 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
     if (gameStateStack != null) {
       gameStateStack.update(tpf);
     }
+
+    // Keep player visual/effects in sync during gameplay
+    if (currentGameState == GameStateId.PLAYING && playerController != null) {
+      updatePlayerVisual();
+    }
   }
 
   /**
@@ -1014,6 +1071,8 @@ public class MazeGameApp extends SimpleApplication implements ScreenController {
       com.jme3.math.Quaternion playerRot = playerController.getRotation();
       playerVisual.setLocalRotation(playerRot);
     }
+
+    updatePlayerEffect(playerPos);
   }
 
   @Override
