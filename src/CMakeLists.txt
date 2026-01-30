@@ -51,6 +51,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/Entity.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Font.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GameState.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/GLUtils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HttpClient.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LoadingState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Main.cpp
@@ -87,8 +88,7 @@ set(DEAR_IMGUI_SRC_FILES
     ${DEAR_IMGUI_DEP_PATH}/imgui_tables.cpp
     ${DEAR_IMGUI_DEP_PATH}/imgui_widgets.cpp
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_sdl3.cpp
-    ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3.cpp
-    ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_sdlrenderer3.cpp)
+    ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3.cpp)
 
 set(DEAR_IMGUI_HEADERS
     ${DEAR_IMGUI_DEP_PATH}/imgui.h

@@ -56,8 +56,8 @@ public:
     /// Load BMP file and set as window icon (SDL utility)
     static bool loadBmpIcon(SDL_Window* window, std::string_view filepath) noexcept;
 
-    static constexpr int MAX_TEXTURE_WIDTH = 2560;
-    static constexpr int MAX_TEXTURE_HEIGHT = 1440;
+    static constexpr int MAX_TEXTURE_WIDTH = 8192;
+    static constexpr int MAX_TEXTURE_HEIGHT = 8192;
 
 private:
     std::uint32_t mTextureId{0};

@@ -30,7 +30,7 @@ public:
     void setOrientation(Orientation orientation);
 
 private:
-    void drawCurrent(SDL_Renderer* renderer, RenderStates states) const noexcept override;
+    void drawCurrent(RenderStates states) const noexcept override;
 
     [[nodiscard]] Textures::ID getTextureID() const noexcept override;
 

@@ -140,14 +140,14 @@ void Ball::updateCurrent(float dt, CommandQueue& commands) noexcept
 
 
 // Draw the ball
-void Ball::drawCurrent(SDL_Renderer* renderer, RenderStates states) const noexcept
+void Ball::drawCurrent(RenderStates states) const noexcept
 {
     static int drawCount = 0;
     if (drawCount < 5)
     {
         drawCount++;
     }
-    mSprite.draw(renderer, states);
+    mSprite.draw(states);
 }
 
 Textures::ID Ball::getTextureID() const noexcept

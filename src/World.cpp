@@ -44,20 +44,9 @@ void World::init() noexcept
 
     mWorldId = b2CreateWorld(&worldDef);
 
-    mPostProcessingManager = std::make_unique<PostProcessingManager>();
-    if (!mPostProcessingManager->initialize(mWindow.getRenderer(),
-        static_cast<int>(mWindow.getView().getSize().x),
-        static_cast<int>(mWindow.getView().getSize().y))) {
-        SDL_Log("WARNING: Failed to initialize post-processing");
-        mPostProcessingManager.reset(); // Continue without effects
-    }
-
-    // Optional: Configure effects
-    if (mPostProcessingManager) {
-        mPostProcessingManager->setBlurRadius(2);
-        mPostProcessingManager->setBloomThreshold(0.75f);
-        mPostProcessingManager->setBloomIntensity(1.2f);
-    }
+    // Post-processing is disabled - requires OpenGL shader implementation
+    // TODO: Implement post-processing effects using OpenGL compute shaders
+    mPostProcessingManager = nullptr;
 
     mPlayerPathfinder = nullptr;
 
@@ -148,19 +137,8 @@ void World::update(float dt)
 
 void World::draw() const noexcept
 {
-    if (mPostProcessingManager && mPostProcessingManager->isReady())
-    {
-        auto* renderer = mWindow.getRenderer();
-        mPostProcessingManager->beginScene();
-        mWindow.draw(mSceneGraph);
-        mPostProcessingManager->endScene();
-        mWindow.clear();
-        mPostProcessingManager->present(renderer);
-    }
-    else
-    {
-        mWindow.draw(mSceneGraph);
-    }
+    // Post-processing disabled - render directly with OpenGL
+    mWindow.draw(mSceneGraph);
 }
 
 CommandQueue& World::getCommandQueue() noexcept

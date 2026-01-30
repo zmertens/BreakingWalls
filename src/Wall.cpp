@@ -33,11 +33,11 @@ void Wall::updateCurrent(float dt, CommandQueue& commands) noexcept
     Entity::updateCurrent(dt, commands);
 }
 
-void Wall::drawCurrent(SDL_Renderer* renderer, RenderStates states) const noexcept
+void Wall::drawCurrent(RenderStates states) const noexcept
 {
     if (!isDestroyed)
     {
-        mSprite.draw(renderer, states);
+        mSprite.draw(states);
     }
 }
 

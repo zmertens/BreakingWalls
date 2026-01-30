@@ -19,7 +19,6 @@
 
 #include <dearimgui/imgui.h>
 #include <dearimgui/backends/imgui_impl_sdl3.h>
-#include <dearimgui/backends/imgui_impl_sdlrenderer3.h>
 
 #include <fonts/Cousine_Regular.h>
 #include <fonts/Limelight_Regular.h>
@@ -96,14 +95,14 @@ struct PhysicsGame::PhysicsGameImpl
         initSDL();
 
         // Check if SDL initialization succeeded
-        if (!sdlHelper.window || !sdlHelper.renderer)
+        if (!sdlHelper.m_window)
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL window or renderer - cannot continue");
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL window - cannot continue");
             // Don't initialize further objects if SDL failed
             return;
         }
 
-        window = std::make_unique<RenderWindow>(sdlHelper.renderer, sdlHelper.window);
+        window = std::make_unique<RenderWindow>(sdlHelper.m_window);
 
         initDearImGui();
 
@@ -117,18 +116,23 @@ struct PhysicsGame::PhysicsGameImpl
         // Load initial textures needed for loading/splash screens
         generateLevelOne();
 
+        SDL_Log("PhysicsGameImpl - loadFonts()...");
         loadFonts();
 
+        SDL_Log("PhysicsGameImpl - registerStates()...");
         registerStates();
 
         // Push loading state with resource path, then splash state on top
+        SDL_Log("PhysicsGameImpl - pushing LOADING state...");
         stateStack->pushState(States::ID::LOADING);
+        SDL_Log("PhysicsGameImpl - pushing SPLASH state...");
         stateStack->pushState(States::ID::SPLASH);
+        SDL_Log("PhysicsGameImpl - initialization complete");
     }
 
     ~PhysicsGameImpl()
     {
-        if (auto& sdl = this->sdlHelper; sdl.window || sdl.renderer)
+        if (auto& sdl = this->sdlHelper; sdl.m_window)
         {
             this->stateStack->clearStates();
             this->fonts.clear();
@@ -145,21 +149,14 @@ struct PhysicsGame::PhysicsGameImpl
 
     void initDearImGui() const noexcept
     {
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-        ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
-        ImGui::GetIO().IniFilename = nullptr;
 
-        // Setup ImGui Platform/Renderer backends
-        ImGui_ImplSDL3_InitForSDLRenderer(this->sdlHelper.window, this->sdlHelper.renderer);
-        ImGui_ImplSDLRenderer3_Init(this->sdlHelper.renderer);
     }
 
     void generateLevelOne() noexcept
     {
         using std::string;
+
+        SDL_Log("generateLevelOne() - Starting maze generation...");
 
         mazes::configurator config{};
         config.rows(mazes::configurator::MAX_ROWS)
@@ -173,10 +170,13 @@ struct PhysicsGame::PhysicsGameImpl
 
         try
         {
+            SDL_Log("generateLevelOne() - Creating maze...");
             if (const auto mazeStr = mazes::create(config); !mazeStr.empty())
             {
+                SDL_Log("generateLevelOne() - Maze created, loading texture...");
                 // Load the maze texture from the generated string
                 textures.loadFromStr(Textures::ID::LEVEL_ONE, mazeStr, 12);
+                SDL_Log("generateLevelOne() - Texture loaded successfully");
             }
             else
             {
@@ -192,21 +192,21 @@ struct PhysicsGame::PhysicsGameImpl
     void loadFonts() noexcept
     {
         static constexpr auto FONT_PIXEL_SIZE = 28.f;
-        fonts.load(Fonts::ID::LIMELIGHT,
-            Limelight_Regular_compressed_data,
-            Limelight_Regular_compressed_size,
-                   FONT_PIXEL_SIZE);
-        fonts.load(Fonts::ID::NUNITO_SANS,
-            NunitoSans_compressed_data,
-            NunitoSans_compressed_size,
-            FONT_PIXEL_SIZE);
-        fonts.load(Fonts::ID::COUSINE_REGULAR,
-            Cousine_Regular_compressed_data,
-            Cousine_Regular_compressed_size,
-                   FONT_PIXEL_SIZE);
+        // fonts.load(Fonts::ID::LIMELIGHT,
+        //     Limelight_Regular_compressed_data,
+        //     Limelight_Regular_compressed_size,
+        //            FONT_PIXEL_SIZE);
+        // fonts.load(Fonts::ID::NUNITO_SANS,
+        //     NunitoSans_compressed_data,
+        //     NunitoSans_compressed_size,
+        //     FONT_PIXEL_SIZE);
+        // fonts.load(Fonts::ID::COUSINE_REGULAR,
+        //     Cousine_Regular_compressed_data,
+        //     Cousine_Regular_compressed_size,
+        //            FONT_PIXEL_SIZE);
 
-        // Build font atlas after adding fonts
-        ImGui::GetIO().Fonts->Build();
+        // // Build font atlas after adding fonts
+        // ImGui::GetIO().Fonts->Build();
     }
 
     void processInput() const noexcept

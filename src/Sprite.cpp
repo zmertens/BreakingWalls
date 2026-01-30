@@ -14,22 +14,17 @@ Sprite::Sprite(const Texture& texture, const SDL_Rect& rect)
 {
 }
 
-void Sprite::draw(SDL_Renderer* renderer, RenderStates states) const noexcept
+void Sprite::draw(RenderStates states) const noexcept
 {
     if (!mTexture)
     {
         return;
     }
 
-    // Check if SDL is still initialized before accessing renderer
+    // Check if SDL is still initialized
     if (!SDL_WasInit(SDL_INIT_VIDEO))
     {
         return; // SDL already quit, skip drawing
-    }
-
-    if (!renderer)
-    {
-        return; // Renderer not available
     }
 
     const auto textureId = mTexture->get();
@@ -39,17 +34,12 @@ void Sprite::draw(SDL_Renderer* renderer, RenderStates states) const noexcept
     }
 
     // TODO: Implement OpenGL sprite rendering
-    // The Texture class now uses OpenGL textures (mTextureId is a GLuint).
+    // The Texture class uses OpenGL textures (mTextureId is a GLuint).
     // This draw method needs to be refactored to use OpenGL calls:
     // 1. Bind the texture: glBindTexture(GL_TEXTURE_2D, textureId);
     // 2. Set up vertex data for a quad
     // 3. Use a sprite shader program
     // 4. Draw the quad with glDrawArrays or glDrawElements
-    //
-    // For now, this is a stub. The old SDL_RenderTexture call is incompatible
-    // with OpenGL textures.
-
-    SDL_Log("Sprite::draw() called - OpenGL rendering not yet implemented");
 }
 
 /// @brief

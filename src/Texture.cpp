@@ -197,6 +197,8 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
 bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const int height,
                                const std::uint32_t channelOffset, const bool rotate_180) noexcept
 {
+    SDL_Log("Texture::loadFromMemory() - width=%d, height=%d, channelOffset=%u", width, height, channelOffset);
+    
     if (data == nullptr || width <= 0 || height <= 0)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for loadFromMemory\n");
@@ -222,7 +224,9 @@ bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const in
 
     mBytes = const_cast<std::uint8_t*>(data);
 
+    SDL_Log("Texture::loadFromMemory() - Calling glGenTextures...");
     glGenTextures(1, &mTextureId);
+    SDL_Log("Texture::loadFromMemory() - TextureId=%u, binding texture...", mTextureId);
     glActiveTexture(GL_TEXTURE0 + channelOffset);
     glBindTexture(GL_TEXTURE_2D, mTextureId);
 

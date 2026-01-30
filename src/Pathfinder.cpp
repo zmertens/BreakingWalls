@@ -38,9 +38,9 @@ void Pathfinder::updateCurrent(float dt, CommandQueue& commands) noexcept
     // Additional Pathfinder-specific update logic can be added here
 }
 
-void Pathfinder::drawCurrent(SDL_Renderer* renderer, RenderStates states) const noexcept
+void Pathfinder::drawCurrent(RenderStates states) const noexcept
 {
-    mSprite.draw(renderer, states);
+    mSprite.draw(states);
 }
 
 Textures::ID Pathfinder::getTextureID() const noexcept

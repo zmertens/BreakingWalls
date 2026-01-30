@@ -4,17 +4,17 @@
 #include <mutex>
 #include <string_view>
 
+#include <SDL3/SDL.h>
+
 #include "State.hpp"
 
 struct SDL_Window;
-struct SDL_Renderer;
 
 class SDLHelper
 {
 public:
-    SDL_Window* window;
-
-    SDL_Renderer* renderer;
+    SDL_Window* m_window{nullptr};
+    SDL_GLContext m_context{nullptr};
 
 private:
     std::once_flag sdlInitializedFlag;

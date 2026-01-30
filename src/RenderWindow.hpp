@@ -4,7 +4,6 @@
 #include "RenderStates.hpp"
 #include "View.hpp"
 
-struct SDL_Renderer;
 struct SDL_Window;
 class View;
 
@@ -12,7 +11,7 @@ class View;
 class RenderWindow
 {
 public:
-    explicit RenderWindow(SDL_Renderer* renderer, SDL_Window* window);
+    explicit RenderWindow(SDL_Window* window);
 
     virtual ~RenderWindow() = default;
 
@@ -51,14 +50,10 @@ public:
 
     [[nodiscard]] bool isFullscreen() const noexcept;
 
-    /// @brief Get the SDL renderer for direct access
-    [[nodiscard]] SDL_Renderer* getRenderer() const noexcept { return mRenderer; }
-
     /// @brief Get the SDL window for direct access
     [[nodiscard]] SDL_Window* getSDLWindow() const noexcept { return mWindow; }
 
 private:
-    SDL_Renderer* mRenderer;
     SDL_Window* mWindow;
     View mCurrentView;
 };
@@ -69,7 +64,7 @@ void RenderWindow::draw(const T& drawable) const noexcept
     RenderStates states;
     // Apply view transform if needed (for camera/scrolling)
     // states.transform could be modified based on mCurrentView here
-    drawable.draw(mRenderer, states);
+    drawable.draw(states);
 }
 
 #endif // RENDER_WINDOW_HPP

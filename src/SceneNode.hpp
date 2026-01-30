@@ -11,7 +11,6 @@
 
 class CommandQueue;
 struct Command;
-struct SDL_Renderer;
 
 class SceneNode : public Transformable
 {
@@ -34,7 +33,7 @@ public:
     void update(float dt, CommandQueue& commands) noexcept;
 
     // Public draw method for Drawable interface (like sf::Drawable)
-    void draw(SDL_Renderer* renderer, RenderStates states) const noexcept;
+    void draw(RenderStates states) const noexcept;
 
     b2Vec2 getWorldPosition() const;
     Transformable getWorldTransform() const;
@@ -47,8 +46,8 @@ private:
     virtual void updateCurrent(float dt, CommandQueue& commands) noexcept;
     void updateChildren(float dt, CommandQueue& commands) noexcept;
 
-    virtual void drawCurrent(SDL_Renderer* renderer, RenderStates states) const noexcept;
-    void drawChildren(SDL_Renderer* renderer, RenderStates states) const noexcept;
+    virtual void drawCurrent(RenderStates states) const noexcept;
+    void drawChildren(RenderStates states) const noexcept;
 
     std::vector<Ptr> mChildren;
     SceneNode* mParent;

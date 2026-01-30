@@ -16,7 +16,7 @@ SpriteNode::SpriteNode(const Texture& texture, const SDL_Rect& textureRect)
 {
 }
 
-void SpriteNode::drawCurrent(SDL_Renderer* renderer, RenderStates states) const noexcept
+void SpriteNode::drawCurrent(RenderStates states) const noexcept
 {
-    mSprite.draw(renderer, states);
+    mSprite.draw(states);
 }

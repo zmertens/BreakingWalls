@@ -48,11 +48,9 @@ void GameState::initializeGraphicsResources() noexcept
     glEnable(GL_CULL_FACE);
     
     // Register debug callback if available (OpenGL 4.3+)
-#if APP_OPENGL_MAJOR >= 4 && APP_OPENGL_MINOR >= 3
     glDebugMessageCallback(GLUtils::GlDebugCallback, nullptr);
     glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
     SDL_Log("OpenGL Debug Output enabled");
-#endif
     
     SDL_Log("Graphics resources initialized for compute shader rendering");
 }
