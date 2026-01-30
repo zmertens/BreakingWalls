@@ -64,6 +64,9 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
 
         mHasFinished = true;
         SDL_Log("All textures loaded! Press any key to continue...\n");
+        
+        // Note: State transition is handled by SplashState when user presses a key
+        // SplashState checks isFinished() before allowing transition to MENU
     }
 
     if (!mHasFinished)

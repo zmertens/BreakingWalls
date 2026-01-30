@@ -84,7 +84,7 @@ struct PhysicsGame::PhysicsGameImpl
     std::string resourcePath;
     const int INIT_WINDOW_W, INIT_WINDOW_H;
 
-    PhysicsGameImpl(std::string_view title, std::string_view resourcePath, int w, int h)
+    PhysicsGameImpl(std::string_view title, int w, int h, std::string_view resourcePath = "")
         : title{title}
           , resourcePath{resourcePath}
           , INIT_WINDOW_W{w}, INIT_WINDOW_H{h}
@@ -309,13 +309,9 @@ struct PhysicsGame::PhysicsGameImpl
     }
 }; // impl
 
-PhysicsGame::PhysicsGame(std::string_view title, std::string_view resourcePath, int w, int h)
-    : m_impl{std::make_unique<PhysicsGameImpl>(title, resourcePath, w, h)}
-{
-}
-
-PhysicsGame::PhysicsGame(const std::string& title, int w, int h)
-    : PhysicsGame(std::string_view(title), "", w, h)
+// resourcePath = ""
+PhysicsGame::PhysicsGame(std::string_view title, int w, int h, std::string_view resourcePath)
+    : mImpl{std::make_unique<PhysicsGameImpl>(title, w, h, resourcePath)}
 {
 }
 
@@ -324,20 +320,7 @@ PhysicsGame::~PhysicsGame() = default;
 // Main game loop
 bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomizer& rng) const noexcept
 {
-    using std::async;
-    using std::cref;
-    using std::launch;
-    using std::make_unique;
-    using std::move;
-    using std::optional;
-    using std::ref;
-    using std::string;
-    using std::string_view;
-    using std::unique_ptr;
-    using std::unordered_map;
-    using std::vector;
-
-    auto&& gamePtr = this->m_impl;
+    auto&& gamePtr = this->mImpl;
 
     // Check if initialization succeeded before entering game loop
     if (!gamePtr->window || !gamePtr->stateStack)
@@ -384,7 +367,7 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
             gamePtr->window->close();
         }
 
-        gamePtr->render(ref(currentTimeStep), elapsed);
+        gamePtr->render(std::ref(currentTimeStep), elapsed);
     }
 
 #if defined(__EMSCRIPTEN__)

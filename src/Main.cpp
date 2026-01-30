@@ -17,29 +17,9 @@ const auto WINDOW_TITLE{"Breaking Walls " + mazes::VERSION};
 static constexpr auto WINDOW_WIDTH = 1280;
 static constexpr auto WINDOW_HEIGHT = 720;
 
-#if defined(__EMSCRIPTEN__)
-#include <emscripten/bind.h>
-
-std::shared_ptr<PhysicsGame> get()
-{
-    return mazes::singleton_base<PhysicsGame>::instance(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT);
-}
-
-// bind a getter method from C++ so that it can be accessed in the frontend with JS
-EMSCRIPTEN_BINDINGS (maze_builder_module)
-{
-    emscripten::function("get", &get, emscripten::allow_raw_pointers());
-    emscripten::class_<PhysicsGame>("PhysicsGame")
-        .smart_ptr<std::shared_ptr<PhysicsGame>>("std::shared_ptr<PhysicsGame>")
-        .constructor<const std::string&, int, int>();
-}
-#endif
-
 int main(int argc, char* argv[])
 {
     std::string configPath{};
-
-#if !defined(__EMSCRIPTEN__)
 
     if (argc != 2)
     {
@@ -56,24 +36,15 @@ int main(int argc, char* argv[])
     }
 
     configPath = argv[1];
-#else
-
-    configPath = "resources/physics.json";
-#endif
 
     try
     {
-        const auto inst = mazes::singleton_base<PhysicsGame>::instance(WINDOW_TITLE, configPath, WINDOW_WIDTH, WINDOW_HEIGHT);
+        auto inst = mazes::singleton_base<PhysicsGame>::instance(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, configPath);
 
         if (mazes::randomizer rng; !inst->run(nullptr, std::ref(rng)))
         {
-            throw std::runtime_error("Error: " + WINDOW_TITLE + " encountered an error during execution");
+            throw std::runtime_error("Error: " + std::string(argv[0]) + " encountered an error during execution");
         }
-
-#if defined(MAZE_DEBUG)
-
-        std::cout << WINDOW_TITLE << " ran successfully (DEBUG MODE)" << std::endl;
-#endif
     }
     catch (std::exception& ex)
     {

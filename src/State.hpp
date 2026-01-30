@@ -43,13 +43,13 @@ public:
     virtual bool update(float dt, unsigned int subSteps) noexcept = 0;
     virtual bool handleEvent(const SDL_Event& event) noexcept = 0;
 
-    virtual bool isOpaque() const noexcept;
-
 protected:
     void requestStackPush(States::ID stateID);
     void requestStackPop();
     void requestStateClear();
+
     Context getContext() const noexcept;
+    
     StateStack& getStack() const noexcept;
 
 private:

@@ -2,6 +2,9 @@
 
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
+#include <dearimgui/imgui.h>
+#include <dearimgui/backends/imgui_impl_sdl3.h>
+#include <dearimgui/backends/imgui_impl_opengl3.h>
 
 void SDLHelper::init(std::string_view title, int width, int height) noexcept
 {
@@ -61,6 +64,21 @@ void SDLHelper::init(std::string_view title, int width, int height) noexcept
         // Enable VSync for OpenGL
         SDL_GL_SetSwapInterval(1);
 
+        // Initialize ImGui
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        
+        // Setup ImGui style
+        ImGui::StyleColorsDark();
+        
+        // Initialize ImGui SDL3 and OpenGL3 backends
+        ImGui_ImplSDL3_InitForOpenGL(this->m_window, this->m_context);
+        ImGui_ImplOpenGL3_Init("#version 430");
+        
+        SDL_Log("SDLHelper::init - ImGui initialized successfully");
+
         SDL_Log("SDLHelper::init - OpenGL and SDL initialized successfully");
     };
 
@@ -83,6 +101,12 @@ void SDLHelper::destroyAndQuit() noexcept
         SDL_Log("SDLHelper::destroyAndQuit() - Already destroyed, skipping\n");
         return;
     }
+
+    // Shutdown ImGui backends first
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+    SDL_Log("SDLHelper::destroyAndQuit() - ImGui shutdown complete\n");
 
     if (m_context)
     {

@@ -2,7 +2,6 @@
 #define PHYSICS_GAME_HPP
 
 #include <memory>
-#include <string>
 #include <string_view>
 
 #include <MazeBuilder/algo_interface.h>
@@ -19,9 +18,7 @@ class PhysicsGame : public mazes::algo_interface, public mazes::singleton_base<P
     friend class singleton_base;
 
 public:
-    PhysicsGame(std::string_view title, std::string_view resourcePath, int w, int h);
-
-    PhysicsGame(const std::string& title, int w, int h);
+    PhysicsGame(std::string_view title, int w, int h, std::string_view resourcePath = "");
 
     ~PhysicsGame() override;
 
@@ -29,7 +26,7 @@ public:
 
 private:
     struct PhysicsGameImpl;
-    std::unique_ptr<PhysicsGameImpl> m_impl;
+    std::unique_ptr<PhysicsGameImpl> mImpl;
 };
 
 #endif // PHYSICS_GAME_HPP

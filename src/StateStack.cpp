@@ -32,27 +32,8 @@ void StateStack::draw() const noexcept
         return;
     }
 
-    // Find the first opaque state from the top of the stack
-    auto firstOpaque = mStack.begin();
-
-    for (auto it = mStack.rbegin(); it != mStack.rend(); ++it)
-    {
-        if ((*it)->isOpaque())
-        {
-            if (auto base = it.base(); base != mStack.begin())
-            {
-                firstOpaque = std::prev(base);
-            }
-            else
-            {
-                firstOpaque = mStack.begin();
-            }
-            break;
-        }
-    }
-
     // Draw from the first opaque state to the top
-    for (auto it = firstOpaque; it != mStack.end(); ++it)
+    for (auto it = mStack.rbegin(); it != mStack.rend(); ++it)
     {
         (*it)->draw();
     }
@@ -108,12 +89,16 @@ void StateStack::applyPendingChanges()
         switch (change.action)
         {
         case Action::PUSH:
+            SDL_Log("StateStack: PUSH state %d (stack size: %zu -> %zu)", 
+                    static_cast<int>(change.stateID), mStack.size(), mStack.size() + 1);
             mStack.push_back(createState(change.stateID));
             break;
         case Action::POP:
+            SDL_Log("StateStack: POP (stack size: %zu -> %zu)", mStack.size(), mStack.size() - 1);
             mStack.pop_back();
             break;
         case Action::CLEAR:
+            SDL_Log("StateStack: CLEAR (stack size: %zu -> 0)", mStack.size());
             mStack.clear();
             break;
         }

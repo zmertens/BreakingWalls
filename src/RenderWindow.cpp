@@ -4,6 +4,7 @@
 
 #include <dearimgui/imgui.h>
 #include <dearimgui/backends/imgui_impl_sdl3.h>
+#include <dearimgui/backends/imgui_impl_opengl3.h>
 
 #include <SDL3/SDL.h>
 
@@ -37,6 +38,7 @@ void RenderWindow::beginFrame() const noexcept
         return;
     }
 
+    ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 }
@@ -57,6 +59,7 @@ void RenderWindow::display() const noexcept
     }
 
     ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 bool RenderWindow::isOpen() const noexcept
