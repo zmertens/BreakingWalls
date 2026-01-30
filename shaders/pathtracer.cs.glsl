@@ -3,7 +3,7 @@
 // Path tracing compute shader with progressive refinement
 // Based on physically-based rendering principles
 
-#define MAX_SPHERES 20
+#define MAX_SPHERES 200
 #define MAX_LIGHTS 5
 #define MAX_BOUNCES 8
 #define EPSILON 0.001

@@ -258,8 +258,8 @@ void World::buildScene()
     // Each layer scrolls at a different speed to create depth effect
     // Negative speeds scroll left (like in the raylib example)
 
-    // Static background with LEVEL_TWO
-    auto mazeNode = make_unique<SpriteNode>(mTextures.get(Textures::ID::LEVEL_TWO));
+    // Static background with LEVEL_ONE (generated from maze at startup)
+    auto mazeNode = make_unique<SpriteNode>(mTextures.get(Textures::ID::LEVEL_ONE));
     mazeNode->setPosition(0.f, 0.f);
     mSceneLayers[static_cast<size_t>(Layer::BACKGROUND)]->attachChild(std::move(mazeNode));
 
@@ -297,7 +297,7 @@ void World::buildScene()
     mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(wallVertical));
     wallVerticalPtr->setPosition(120.0f, 150.0f); // Middle area of maze
 
-    // Create maze walls from LEVEL_TWO texture layout
+    // Create maze walls from LEVEL_ONE texture layout
     // Load the maze layout to extract wall positions
     if (b2World_IsValid(mWorldId))
     {

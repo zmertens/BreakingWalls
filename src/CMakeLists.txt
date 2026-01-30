@@ -47,6 +47,7 @@ FetchGitRepo(MazeBuilder ${MAZE_BUILDER_REPO_URL} ${MAZE_BUILDER_GIT_TAG})
 set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/AudioHelper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Ball.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Camera.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CommandQueue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Entity.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Font.cpp
@@ -124,6 +125,7 @@ message(INFO ": Configuring ${BREAKING_WALLS_APP_NAME} for Desktop platform")
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../resources" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../deps/fonts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/fonts")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../shaders" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
     # Copy shared/dlls on Windows only
 if(WIN32)
@@ -140,6 +142,18 @@ if(WIN32)
     add_custom_command(
         TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SFML::Network> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
+        VERBATIM
+    )
+    # Copy shaders directory to output directory (next to executable)
+    add_custom_command(
+        TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/shaders" $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/shaders
+        VERBATIM
+    )
+    # Copy resources directory to output directory (next to executable)
+    add_custom_command(
+        TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/resources" $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/resources
         VERBATIM
     )
 endif()
