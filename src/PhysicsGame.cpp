@@ -78,7 +78,7 @@ struct PhysicsGame::PhysicsGameImpl
     mutable double fpsUpdateTimer = 0.0;
     mutable int smoothedFps = 0;
     mutable float smoothedFrameTime = 0.0f;
-    static constexpr double FPS_UPDATE_INTERVAL = 250.0; // Update display every 250ms
+    static constexpr double FPS_UPDATE_INTERVAL = 250.0;
 
     std::string title;
     std::string resourcePath;
@@ -192,21 +192,18 @@ struct PhysicsGame::PhysicsGameImpl
     void loadFonts() noexcept
     {
         static constexpr auto FONT_PIXEL_SIZE = 28.f;
-        // fonts.load(Fonts::ID::LIMELIGHT,
-        //     Limelight_Regular_compressed_data,
-        //     Limelight_Regular_compressed_size,
-        //            FONT_PIXEL_SIZE);
-        // fonts.load(Fonts::ID::NUNITO_SANS,
-        //     NunitoSans_compressed_data,
-        //     NunitoSans_compressed_size,
-        //     FONT_PIXEL_SIZE);
-        // fonts.load(Fonts::ID::COUSINE_REGULAR,
-        //     Cousine_Regular_compressed_data,
-        //     Cousine_Regular_compressed_size,
-        //            FONT_PIXEL_SIZE);
-
-        // // Build font atlas after adding fonts
-        // ImGui::GetIO().Fonts->Build();
+        fonts.load(Fonts::ID::LIMELIGHT,
+            Limelight_Regular_compressed_data,
+            Limelight_Regular_compressed_size,
+                   FONT_PIXEL_SIZE);
+        fonts.load(Fonts::ID::NUNITO_SANS,
+            NunitoSans_compressed_data,
+            NunitoSans_compressed_size,
+            FONT_PIXEL_SIZE);
+        fonts.load(Fonts::ID::COUSINE_REGULAR,
+            Cousine_Regular_compressed_data,
+            Cousine_Regular_compressed_size,
+                   FONT_PIXEL_SIZE);
     }
 
     void processInput() const noexcept
@@ -234,7 +231,7 @@ struct PhysicsGame::PhysicsGameImpl
         stateStack->update(dt, subSteps);
     }
 
-    void render(double& currentTimeStep, const double elapsed) const noexcept
+    void render(const double elapsed) const noexcept
     {
         // Clear, draw, and present (like SFML)
         window->clear();
@@ -245,7 +242,7 @@ struct PhysicsGame::PhysicsGameImpl
         // Window might be closed during draw calls/events
         if (window->isOpen())
         {
-            this->handleFPS(std::ref(currentTimeStep), elapsed);
+            this->handleFPS(elapsed);
         }
 #endif
 
@@ -262,7 +259,7 @@ struct PhysicsGame::PhysicsGameImpl
         stateStack->registerState<SplashState>(States::ID::SPLASH);
     }
 
-    void handleFPS(double& currentTimeStep, const double elapsed) const noexcept
+    void handleFPS(const double elapsed) const noexcept
     {
         // Calculate instantaneous FPS and frame time
         const auto fps = static_cast<int>(1000.0 / elapsed);
@@ -277,28 +274,20 @@ struct PhysicsGame::PhysicsGameImpl
             fpsUpdateTimer = 0.0;
         }
 
-        if (currentTimeStep >= 1000.0)
-        {
-            SDL_Log("FPS: %d\n", smoothedFps);
-            SDL_Log("Frame Time: %.3f ms/frame\n", smoothedFrameTime);
-
-            currentTimeStep = 0.0;
-        }
-
-        // Create ImGui overlay window
-        // Set window position to top-right corner
-        ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 10.0f), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+        // Create ImGui overlay window positioned at top-right corner
+        ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 10.0f), ImGuiCond_Always,
+                                ImVec2(1.0f, 0.0f));
 
         // Set window background to be semi-transparent
         ImGui::SetNextWindowBgAlpha(0.65f);
 
         // Create window with no title bar, no resize, no move, auto-resize
-        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDecoration |
-                                       ImGuiWindowFlags_AlwaysAutoResize |
-                                       ImGuiWindowFlags_NoSavedSettings |
-                                       ImGuiWindowFlags_NoFocusOnAppearing |
-                                       ImGuiWindowFlags_NoNav |
-                                       ImGuiWindowFlags_NoMove;
+        constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDecoration |
+                                                 ImGuiWindowFlags_AlwaysAutoResize |
+                                                 ImGuiWindowFlags_NoSavedSettings |
+                                                 ImGuiWindowFlags_NoFocusOnAppearing |
+                                                 ImGuiWindowFlags_NoNav |
+                                                 ImGuiWindowFlags_NoMove;
 
         if (ImGui::Begin("FPS Overlay", nullptr, windowFlags))
         {
@@ -367,7 +356,7 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
             gamePtr->window->close();
         }
 
-        gamePtr->render(std::ref(currentTimeStep), elapsed);
+        gamePtr->render(elapsed);
     }
 
 #if defined(__EMSCRIPTEN__)

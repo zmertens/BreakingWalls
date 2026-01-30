@@ -6,6 +6,7 @@
 #include <dearimgui/backends/imgui_impl_sdl3.h>
 #include <dearimgui/backends/imgui_impl_opengl3.h>
 
+#include <glad/glad.h>
 #include <SDL3/SDL.h>
 
 RenderWindow::RenderWindow(SDL_Window* window)
@@ -49,6 +50,9 @@ void RenderWindow::clear() const noexcept
     {
         return;
     }
+
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 void RenderWindow::display() const noexcept
@@ -60,6 +64,8 @@ void RenderWindow::display() const noexcept
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    SDL_GL_SwapWindow(mWindow);
 }
 
 bool RenderWindow::isOpen() const noexcept
