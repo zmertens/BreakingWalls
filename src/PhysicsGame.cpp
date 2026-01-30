@@ -241,7 +241,7 @@ struct PhysicsGame::PhysicsGameImpl
         window->beginFrame();
         stateStack->draw();
 
-#if defined(BW_DEBUG)
+#if defined(BREAKING_WALLS_DEBUG)
         // Window might be closed during draw calls/events
         if (window->isOpen())
         {

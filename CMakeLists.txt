@@ -11,16 +11,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(BREAKING_WALLS_APP_NAME "breakingwalls")
-set(BREAKING_WALLS_DEBUG_DEF "BW_DEBUG")
-
-option(PLATFORM_WEB "Build for Web platform using Emscripten" OFF)
+set(BREAKING_WALLS_DEBUG_DEF "BREAKING_WALLS_DEBUG")
 
 include(NoInSourceBuilds)
-
-if (PLATFORM_WEB)
-    if (NOT EMSCRIPTEN)
-        message(FATAL_ERROR "Emscripten toolchain is required to build for Web platform. Please set up Emscripten and use the appropriate CMake toolchain file.")
-    endif()
-endif()
 
 add_subdirectory(src bin)

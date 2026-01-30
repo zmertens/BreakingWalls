@@ -1,0 +1,4 @@
+[submodule "deps/glm-0.9.7"]
+	path = deps/glm-0.9.7
+	url = https://github.com/g-truc/glm.git
+	branch = 0.9.7

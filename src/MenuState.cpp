@@ -39,7 +39,7 @@ void MenuState::draw() const noexcept
     ImGui::PushFont(getContext().fonts->get(Fonts::ID::NUNITO_SANS).get());
 
     static auto showDemoWindow{false};
-#if defined(BW_DEBUG)
+#if defined(BREAKING_WALLS_DEBUG)
 
     if (showDemoWindow) {
         ImGui::ShowDemoWindow(&showDemoWindow);

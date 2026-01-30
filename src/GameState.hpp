@@ -8,6 +8,8 @@ class Player;
 class StateStack;
 union SDL_Event;
 
+/// @brief Main game state managing physics, rendering, and input
+/// @details Orchestrates World updates, player input, and GPU-accelerated graphics pipeline
 class GameState : public State
 {
 public:
@@ -20,6 +22,13 @@ public:
 private:
     World mWorld;
     Player& mPlayer;
+    
+    /// Initialize GPU graphics resources for compute shader rendering
+    void initializeGraphicsResources() noexcept;
+    
+    /// Render using compute shaders (path tracing, raytracing, etc.)
+    /// Falls back to traditional rendering if shaders are not available
+    void renderWithComputeShaders() noexcept;
 };
 
 #endif // GAME_STATE_HPP

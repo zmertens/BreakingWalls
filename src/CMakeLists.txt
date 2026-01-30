@@ -2,13 +2,7 @@ include(BuildInfo)
 
 include(FetchGitRepo)
 
-if (PLATFORM_WEB)
-
-    message(STATUS "Configuring build flags for Emscripten Web platform")
-
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -matomics -mbulk-memory -pthread")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -matomics -mbulk-memory -pthread")
-endif()
+find_package(OpenGL REQUIRED)
 
 # Get box2d
 FetchGitRepo(box2d https://github.com/erincatto/box2d.git v3.1.1)
@@ -39,6 +33,10 @@ set(SFML_DISABLE_FIND_THREADS ON)
 set(SFML_USE_DRM OFF CACHE BOOL "Use DRM for audio")
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries")
 FetchGitRepo(SFML ${SFML_REPO_URL} ${SFML_GIT_TAG})
+
+# Get GLM
+set(GLM_DIR deps/glm-0.9.7)
+message(STATUS "GLM included at ${GLM_DIR}")
 
 # Get MazeBuilder
 set(MAZE_BUILDER_REPO_URL "https://github.com/zmertens/MazeBuilder")
@@ -103,66 +101,44 @@ set(DEAR_IMGUI_HEADERS
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3.h
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3_loader.h)
 
-set(GLAD_SOURCES ${CMAKE_SOURCE_DIR}/deps/glad/src/glad_3_0.c)
+set(GLAD_SOURCES ${CMAKE_SOURCE_DIR}/deps/glad/src/glad_4_3.c)
 set(NOISE_SOURCES ${CMAKE_SOURCE_DIR}/deps/noise/noise.c)
-set(SQLITE3_SOURCES ${CMAKE_SOURCE_DIR}/deps/sqlite/sqlite3.c)
 
-add_executable(${BREAKING_WALLS_APP_NAME} ${DEAR_IMGUI_SRC_FILES} ${GLAD_SOURCES} ${NOISE_SOURCES} ${SQLITE3_SOURCES} ${BREAKING_WALLS_SRC_FILES})
+add_executable(${BREAKING_WALLS_APP_NAME} ${DEAR_IMGUI_SRC_FILES} ${GLAD_SOURCES} ${NOISE_SOURCES} ${BREAKING_WALLS_SRC_FILES})
 
 target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<OR:$<STREQUAL:$<CONFIG>,Debug>,$<STREQUAL:$<CONFIG>,RelWithDebInfo>>:${BREAKING_WALLS_DEBUG_DEF}>")
 target_compile_features(${BREAKING_WALLS_APP_NAME} PRIVATE cxx_std_20)
+target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE GLM_FORCE_RADIANS)
 
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/fonts> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/fonts>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/glad/include> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/glad/include>)
+target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/fonts> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/fonts>)
+target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/glm-0.9.7> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/glm-0.9.7>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/dearimgui> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/dearimgui> $<BUILD_INTERFACE:${DEAR_IMGUI_DEP_PATH}>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/stb> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/stb>)
 
-target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} box2d::box2d MazeBuilder::MazeBuilder SDL3::SDL3 SFML::Audio SFML::Network)
+target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} OpenGL::GL box2d::box2d MazeBuilder::MazeBuilder SDL3::SDL3 SFML::Audio SFML::Network)
+message(INFO ": Configuring ${BREAKING_WALLS_APP_NAME} for Desktop platform")
 
-if (PLATFORM_WEB)
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../resources" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../deps/fonts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/fonts")
 
-    message(STATUS "Configuring ${BREAKING_WALLS_APP_NAME} for Web platform using Emscripten")
-
-    set_target_properties(${BREAKING_WALLS_APP_NAME} PROPERTIES SUFFIX ".html" LINK_FLAGS "-lembind")
-
-    # Disable C++ modules for Emscripten builds as they're not fully supported
-    set_target_properties(${BREAKING_WALLS_APP_NAME} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
-
-    target_compile_options(${BREAKING_WALLS_APP_NAME} PRIVATE ${BASE_COMPILE_FLAGS} "-pthread")
-
-    set(EMSCRIPTEN_DEP_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../deps/emscripten_local)
-    target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/emscripten_local> $<BUILD_INTERFACE:${EMSCRIPTEN_DEP_PATH}>)
-
-    target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE
-        "SHELL:-s PTHREAD_POOL_SIZE=5 -s WASM=1 -s USE_PTHREADS -s ALLOW_MEMORY_GROWTH=1 -s STACK_SIZE=323232 -s MODULARIZE=1 -s EXPORT_ES6=1"
-        "SHELL:--shell-file ${EMSCRIPTEN_DEP_PATH}/shell_minimal.html"
-        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/resources@/resources")
-    target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<CONFIG:Debug>:SHELL:-s STACK_OVERFLOW_CHECK=2 -s ASSERTIONS=2 -gsource-map --profile>")
-    target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<CONFIG:Release>:SHELL:-O3>")
-else()
-
-    message(INFO ": Configuring ${BREAKING_WALLS_APP_NAME} for Desktop platform")
-
-    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../resources" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../deps/fonts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/fonts")
-
-	# Copy shared/dlls on Windows only
-	if(WIN32)
-		add_custom_command(
-			TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
-			COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3::SDL3-static> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
-			VERBATIM
-		)
-		add_custom_command(
-			TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
-			COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SFML::Audio> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
-			VERBATIM
-		)
-        add_custom_command(
-			TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
-			COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SFML::Network> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
-			VERBATIM
-		)
-	endif()
+    # Copy shared/dlls on Windows only
+if(WIN32)
+    add_custom_command(
+        TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3::SDL3-static> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
+        VERBATIM
+    )
+    add_custom_command(
+        TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SFML::Audio> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
+        VERBATIM
+    )
+    add_custom_command(
+        TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SFML::Network> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
+        VERBATIM
+    )
 endif()

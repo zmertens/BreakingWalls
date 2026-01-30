@@ -230,7 +230,7 @@ void WorkerConcurrent::generate(std::string_view resourcePath) noexcept
     {
         JSONUtils::loadConfiguration(string{resourcePath}, ref(resources));
 
-#if defined(BW_DEBUG)
+#if defined(BREAKING_WALLS_DEBUG)
 
         SDL_Log("Loaded %zu resources from %s\n", resources.size(), resourcePath.data());
 #endif
@@ -259,7 +259,7 @@ void WorkerConcurrent::generate(std::string_view resourcePath) noexcept
     mTotalWorkItems = static_cast<int>(mWorkQueue.size());
     mPendingWorkCount = mTotalWorkItems;
 
-#if defined(BW_DEBUG)
+#if defined(BREAKING_WALLS_DEBUG)
 
     SDL_Log("Created %d work items for resource loading\n", mTotalWorkItems);
 #endif
@@ -276,7 +276,7 @@ void WorkerConcurrent::doWork(WorkItem const& workItem) noexcept
         return;
     }
 
-#if defined(BW_DEBUG)
+#if defined(BREAKING_WALLS_DEBUG)
 
     SDL_Log("Processing resource [%d]: %s = %s\n", workItem.index, workItem.key.c_str(), workItem.value.c_str());
 #endif
@@ -306,7 +306,7 @@ void WorkerConcurrent::doWork(WorkItem const& workItem) noexcept
         {
             std::string composedMazeString;
 
-#if defined(BW_DEBUG)
+#if defined(BREAKING_WALLS_DEBUG)
             SDL_Log("Processing %zu level configurations from level_defaults\n", levelConfigs.size());
 #endif
 
@@ -375,7 +375,7 @@ void WorkerConcurrent::doWork(WorkItem const& workItem) noexcept
                         }
                         composedMazeString += mazeStr;
 
-#if defined(BW_DEBUG)
+#if defined(BREAKING_WALLS_DEBUG)
                         SDL_Log("Generated maze %zu: %zu characters\n", i, mazeStr.size());
 #endif
                     }
@@ -393,7 +393,7 @@ void WorkerConcurrent::doWork(WorkItem const& workItem) noexcept
                 // Use LEVEL_TWO as the ID for the composed maze (you can change this mapping)
                 mComposedMazeStrings[Textures::ID::LEVEL_TWO] = composedMazeString;
 
-#if defined(BW_DEBUG)
+#if defined(BREAKING_WALLS_DEBUG)
                 SDL_Log("Composed maze string: %zu total characters\n", composedMazeString.size());
 #endif
 
