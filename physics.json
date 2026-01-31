@@ -1,0 +1,41 @@
+{
+	"window_icon": "textures/icon.bmp",
+    "splash_image": "textures/title.png",
+    "ogg_files": ["audio/generate.ogg", "audio/sfx_select.ogg", "audio/sfx_throw.ogg"],
+    "wav_files": ["audio/loading.wav"],
+    "SDL_logo": "textures/SDL_logo.png",
+	"SFML_logo": "textures/SFML_logo.png",
+	"network_url": "http://localhost:3000",
+	"character_default_image": "textures/character_beige_front.png",
+	"characters_spritesheet": "textures/spritesheet-characters-default.png",
+	"explosion_spritesheet": "textures/Explosion.png",
+	"ball_normal": "textures/bomb.png",
+	"wall_horizontal": "textures/brick_brown.png",
+	"player_hitpoints_default": 100,
+	"player_speed_default": 0.3451,
+	"enemy_hitpoints_default": 50,
+	"enemy_speed_default": 0.3451,
+	"level_defaults": [
+		{
+			"rows": 20,
+			"columns": 25,
+			"seed": 50,
+			"algo": "dfs",
+			"distances": false
+		},
+		{
+			"rows": 15,
+			"columns": 20,
+			"seed": 23,
+			"algo": "binary_tree",
+			"distances": false
+		},
+		{
+			"rows": 18,
+			"columns": 22,
+			"seed": 75,
+			"algo": "sidewinder",
+			"distances": false
+		}
+	]
+}

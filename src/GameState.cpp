@@ -31,9 +31,7 @@ GameState::GameState(StateStack& stack, Context context)
       , mCamera{glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f}
 {
     mPlayer.setActive(true);
-    mWorld.init();
-    mWorld.setPlayer(context.player);
-    
+
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
     mLastCameraYaw = mCamera.getYaw();
@@ -69,11 +67,13 @@ void GameState::initializeGraphicsResources() noexcept
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     
+#if defined(BREAKING_WALLS_DEBUG)
     // Register debug callback if available (OpenGL 4.3+)
     glDebugMessageCallback(GLUtils::GlDebugCallback, nullptr);
     glEnable(GL_DEBUG_OUTPUT);
     glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
     SDL_Log("GameState: OpenGL Debug Output enabled");
+#endif
     
     // Initialize shaders
     if (initializeShaders())
@@ -393,6 +393,78 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     auto& commands = mWorld.getCommandQueue();
     mPlayer.handleRealtimeInput(std::ref(commands));
 
+    // Handle camera movement with WASD for 3D path tracer scene
+    int numKeys = 0;
+    const auto* keyState = SDL_GetKeyboardState(&numKeys);
+    
+    if (keyState)
+    {
+        const float cameraMoveSpeed = 50.0f * dt;  // 50 units per second
+        glm::vec3 movement(0.0f);
+        
+        // WASD controls camera position
+        if (keyState[SDL_SCANCODE_W])
+        {
+            movement += mCamera.getTarget() * cameraMoveSpeed;  // Forward
+        }
+        if (keyState[SDL_SCANCODE_S])
+        {
+            movement -= mCamera.getTarget() * cameraMoveSpeed;  // Backward
+        }
+        if (keyState[SDL_SCANCODE_A])
+        {
+            movement -= mCamera.getRight() * cameraMoveSpeed;   // Left
+        }
+        if (keyState[SDL_SCANCODE_D])
+        {
+            movement += mCamera.getRight() * cameraMoveSpeed;   // Right
+        }
+        
+        // Q/E for vertical movement
+        if (keyState[SDL_SCANCODE_Q])
+        {
+            movement.y += cameraMoveSpeed;  // Up
+        }
+        if (keyState[SDL_SCANCODE_E])
+        {
+            movement.y -= cameraMoveSpeed;  // Down
+        }
+        
+        // Apply movement if any key was pressed
+        if (glm::length(movement) > 0.001f)
+        {
+            glm::vec3 newPos = mCamera.getPosition() + movement;
+            mCamera.setPosition(newPos);
+        }
+        
+        // Arrow keys for camera rotation
+        const float rotateSpeed = 90.0f * dt;  // 90 degrees per second
+        float yawDelta = 0.0f;
+        float pitchDelta = 0.0f;
+        
+        if (keyState[SDL_SCANCODE_LEFT])
+        {
+            yawDelta -= rotateSpeed;
+        }
+        if (keyState[SDL_SCANCODE_RIGHT])
+        {
+            yawDelta += rotateSpeed;
+        }
+        if (keyState[SDL_SCANCODE_UP])
+        {
+            pitchDelta += rotateSpeed;
+        }
+        if (keyState[SDL_SCANCODE_DOWN])
+        {
+            pitchDelta -= rotateSpeed;
+        }
+        
+        if (std::abs(yawDelta) > 0.001f || std::abs(pitchDelta) > 0.001f)
+        {
+            mCamera.rotate(yawDelta, pitchDelta);
+        }
+    }
+
     return true;
 }
 
@@ -400,6 +472,7 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
 {
     auto& commands = mWorld.getCommandQueue();
 
+    // Let player handle events for 2D physics (if needed)
     mPlayer.handleEvent(event, std::ref(commands));
     mWorld.handleEvent(event);
 
@@ -409,6 +482,38 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
         {
             requestStackPush(States::ID::PAUSE);
         }
+        
+        // Reset camera to initial position with R key
+        if (event.key.scancode == SDL_SCANCODE_R)
+        {
+            mCamera.setPosition(glm::vec3(0.0f, 50.0f, 200.0f));
+            mCamera.rotate(0.0f, 0.0f);  // Reset to default angles
+            SDL_Log("Camera reset to initial position");
+        }
+        
+        // Toggle progressive rendering reset with SPACE
+        if (event.key.scancode == SDL_SCANCODE_SPACE)
+        {
+            mCurrentBatch = 0;
+            SDL_Log("Path tracing accumulation reset");
+        }
+    }
+    
+    // Handle mouse motion for camera rotation (right mouse button)
+    if (event.type == SDL_EVENT_MOUSE_MOTION)
+    {
+        Uint32 mouseState = SDL_GetMouseState(nullptr, nullptr);
+        if (mouseState & SDL_BUTTON_RMASK)
+        {
+            const float sensitivity = 0.1f;
+            mCamera.rotate(event.motion.xrel * sensitivity, -event.motion.yrel * sensitivity);
+        }
+    }
+    
+    // Handle mouse wheel for field of view adjustment
+    if (event.type == SDL_EVENT_MOUSE_WHEEL)
+    {
+        mCamera.updateFieldOfView(static_cast<float>(event.wheel.y));
     }
 
     return true;

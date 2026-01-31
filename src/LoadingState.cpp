@@ -1,6 +1,7 @@
 #include "LoadingState.hpp"
 
 #include <SDL3/SDL.h>
+#include <filesystem>
 
 #include <MazeBuilder/io_utils.h>
 #include <MazeBuilder/create2.h>
@@ -115,12 +116,30 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
 
     SDL_Log("Loading %zu textures on main thread...\n", textureRequests.size());
 
+    // Get the resource directory prefix (same as used for window icon)
+    auto resourcePathPrefix = mazes::io_utils::getDirectoryPath(mResourcePath);
+
     try
     {
         for (const auto& request : textureRequests)
         {
-            textures.load(request.id, request.path);
-            SDL_Log("DEBUG: Loaded texture ID %d from: %s\n", static_cast<int>(request.id), request.path.c_str());
+            // Construct full path: if request.path is relative, prepend resource directory
+            std::string fullPath = request.path;
+            
+            // If path starts with '/' or is not absolute, treat as relative to resource directory
+            if (!fullPath.empty() && fullPath[0] == '/')
+            {
+                // Remove leading slash and prepend resource directory
+                fullPath = resourcePathPrefix + fullPath.substr(1);
+            }
+            else if (!std::filesystem::path(fullPath).is_absolute())
+            {
+                // Path is relative, prepend resource directory
+                fullPath = resourcePathPrefix + fullPath;
+            }
+            
+            textures.load(request.id, fullPath);
+            SDL_Log("DEBUG: Loaded texture ID %d from: %s\n", static_cast<int>(request.id), fullPath.c_str());
         }
     }
     catch (const std::exception& e)
@@ -163,7 +182,7 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
     using std::string;
 
     JSONUtils jsonUtils{};
-    auto resourcePathPrefix = mazes::io_utils::getDirectoryPath(mResourcePath) + "/";
+    auto resourcePathPrefix = mazes::io_utils::getDirectoryPath(mResourcePath);
 
     // Window icon is special case, no need to save the texture in the manager
     if (auto windowIconKey = resources.find(string{JSONKeys::WINDOW_ICON}); windowIconKey != resources.cend())

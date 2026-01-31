@@ -123,11 +123,13 @@ target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFAC
 target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} OpenGL::GL box2d::box2d MazeBuilder::MazeBuilder SDL3::SDL3 SFML::Audio SFML::Network)
 message(INFO ": Configuring ${BREAKING_WALLS_APP_NAME} for Desktop platform")
 
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../resources" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../textures" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../deps/fonts" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/fonts")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../shaders" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../audio" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_SOURCE_DIR}/physics.json" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
-    # Copy shared/dlls on Windows only
+# Copy shared/dlls on Windows only
 if(WIN32)
     add_custom_command(
         TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
@@ -144,16 +146,29 @@ if(WIN32)
         COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SFML::Network> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
         VERBATIM
     )
+
     # Copy shaders directory to output directory (next to executable)
     add_custom_command(
         TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/shaders" $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/shaders
         VERBATIM
     )
-    # Copy resources directory to output directory (next to executable)
+
     add_custom_command(
         TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/resources" $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/resources
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/textures" $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/textures
+        VERBATIM
+    )
+
+    add_custom_command(
+        TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/audio" $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/audio
+        VERBATIM
+    )
+
+    add_custom_command(
+        TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_SOURCE_DIR}/physics.json" $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/physics.json
         VERBATIM
     )
 endif()

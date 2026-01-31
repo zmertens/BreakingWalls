@@ -18,6 +18,8 @@ public:
     {
         MOVE_LEFT,
         MOVE_RIGHT,
+        MOVE_UP,
+        MOVE_DOWN,
         JUMP,
         ACTION_COUNT
     };

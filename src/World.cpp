@@ -1,4 +1,3 @@
-
 #include "World.hpp"
 
 #include "Ball.hpp"
@@ -265,7 +264,7 @@ void World::buildScene()
 
     auto leader = make_unique<Pathfinder>(Pathfinder::Type::ALLY, cref(mTextures));
     mPlayerPathfinder = leader.get();
-    mPlayerPathfinder->setPosition(20.f, 20.f);  // Start near top-left of maze
+    mPlayerPathfinder->setPosition(100.f, 100.f);  // Start position in screen space
     mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(leader));
 
     // Create and add ball entities - positioned to be visible
@@ -297,21 +296,91 @@ void World::buildScene()
     mSceneLayers[static_cast<size_t>(Layer::FOREGROUND)]->attachChild(std::move(wallVertical));
     wallVerticalPtr->setPosition(120.0f, 150.0f); // Middle area of maze
 
-    // Create maze walls from LEVEL_ONE texture layout
-    // Load the maze layout to extract wall positions
+    // Create physics bodies for all entities now that the world is valid
     if (b2World_IsValid(mWorldId))
     {
+        // Create player physics body (dynamic kinematic body for free-flying)
+        b2BodyDef playerBodyDef = b2DefaultBodyDef();
+        playerBodyDef.type = b2_kinematicBody;  // Kinematic for WASD free-flying (no gravity)
+        playerBodyDef.position = physics::toMetersVec({100.0f, 100.0f});
+        playerBodyDef.linearDamping = 5.0f;  // High damping for responsive control
+        playerBodyDef.fixedRotation = true;  // Don't rotate the player
+        
+        mPlayerPathfinder->createBody(mWorldId, &playerBodyDef);
+        
+        b2BodyId playerBodyId = mPlayerPathfinder->getBodyId();
+        if (b2Body_IsValid(playerBodyId))
+        {
+            // Create a capsule shape for the player
+            b2ShapeDef playerShapeDef = b2DefaultShapeDef();
+            playerShapeDef.density = 1.0f;
+            
+            b2Capsule playerCapsule;
+            playerCapsule.center1 = {0.0f, -physics::toMeters(10.0f)};  // 10 pixels up
+            playerCapsule.center2 = {0.0f, physics::toMeters(10.0f)};   // 10 pixels down
+            playerCapsule.radius = physics::toMeters(8.0f);              // 8 pixel radius
+            
+            b2ShapeId playerShapeId = b2CreateCapsuleShape(playerBodyId, &playerShapeDef, &playerCapsule);
+            b2Shape_SetFriction(playerShapeId, 0.3f);
+            b2Body_SetAwake(playerBodyId, true);
+            
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Created player physics body (kinematic for free-flying)");
+        }
+
+        // Position balls in a visible arrangement and create their physics bodies
+        // Balls positioned higher so they fall into view
+        b2Vec2 ballPositions[] = {
+            {150.0f, 50.0f},   // Normal ball
+            {200.0f, 50.0f},   // Heavy ball
+            {250.0f, 50.0f},   // Light ball
+            {300.0f, 50.0f}    // Explosive ball
+        };
+
+        Ball* balls[] = {mBallNormal, mBallHeavy, mBallLight, mBallExplosive};
+        
+        for (int i = 0; i < 4; ++i)
+        {
+            balls[i]->createPhysicsBody(mWorldId, ballPositions[i]);
+            
+            // Set collision filtering so balls can collide with each other and everything else
+            b2BodyId ballBodyId = balls[i]->getBodyId();
+            if (b2Body_IsValid(ballBodyId))
+            {
+                // Get the first shape from the body
+                int shapeCount = b2Body_GetShapeCount(ballBodyId);
+                if (shapeCount > 0)
+                {
+                    b2ShapeId shapeIds[1];
+                    b2Body_GetShapes(ballBodyId, shapeIds, 1);
+                    
+                    // Set filter to allow ball-to-ball collisions
+                    b2Filter filter = b2Shape_GetFilter(shapeIds[0]);
+                    filter.categoryBits = 0x0002;  // Ball category
+                    filter.maskBits = 0xFFFF;       // Collides with everything
+                    b2Shape_SetFilter(shapeIds[0], filter);
+                }
+            }
+        }
+
         // Create a single static body for all maze walls (like Box2D samples)
         b2BodyDef wallBodyDef = b2DefaultBodyDef();
         wallBodyDef.type = b2_staticBody;
         mMazeWallsBodyId = b2CreateBody(mWorldId, &wallBodyDef);
         
         b2ShapeDef shapeDef = b2DefaultShapeDef();
-        shapeDef.material.friction = 0.8f;
-        shapeDef.material.restitution = 0.1f;
         
         // Create a box shape for each wall cell (10x10 pixels = 1x1 meters)
         float halfCellSize = physics::toMeters(5.0f);  // Half of 10 pixels
+        
+        // Add ground at the bottom of the screen for balls to land on
+        b2Polygon groundBox = b2MakeBox(physics::toMeters(400.0f), physics::toMeters(10.0f));
+        b2Vec2 groundPosition = physics::toMetersVec({400.0f, 580.0f});
+        b2ShapeId groundShapeId = b2CreatePolygonShape(mMazeWallsBodyId, &shapeDef, &groundBox);
+        b2Shape_SetFriction(groundShapeId, 0.8f);
+        b2Shape_SetRestitution(groundShapeId, 0.1f);
+        b2Body_SetTransform(mMazeWallsBodyId, groundPosition, b2Rot_identity);
+        
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Created ground and maze walls");
     }
 }
 

@@ -44,11 +44,6 @@
 #include "StateStack.hpp"
 #include "Texture.hpp"
 
-#if defined(__EMSCRIPTEN__)
-
-#include <emscripten_local/emscripten_mainloop_stub.h>
-#endif
-
 struct PhysicsGame::PhysicsGameImpl
 {
     static constexpr auto COMMON_RESOURCE_PATH_PREFIX = "resources";
@@ -326,11 +321,7 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
     // Apply pending state changes (push SPLASH state onto stack)
     gamePtr->stateStack->update(0.1f, 4);
 
-#if defined(__EMSCRIPTEN__)
-    EMSCRIPTEN_MAINLOOP_BEGIN
-#else
     while (gamePtr->window && gamePtr->window->isOpen())
-#endif
     {
         // Expected milliseconds per frame (16.67ms)
         static constexpr auto FIXED_TIME_STEP = 1000.0 / 60.0;
@@ -358,11 +349,6 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
 
         gamePtr->render(elapsed);
     }
-
-#if defined(__EMSCRIPTEN__)
-    EMSCRIPTEN_MAINLOOP_END;
-    emscripten_cancel_main_loop();
-#endif
 
     return true;
 }

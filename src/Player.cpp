@@ -11,8 +11,11 @@
 
 Player::Player() : mIsActive(true), mIsOnGround(false)
 {
-    mKeyBinding[SDL_SCANCODE_LEFT] = Action::MOVE_LEFT;
-    mKeyBinding[SDL_SCANCODE_RIGHT] = Action::MOVE_RIGHT;
+    // WASD controls for free-flying movement
+    mKeyBinding[SDL_SCANCODE_A] = Action::MOVE_LEFT;
+    mKeyBinding[SDL_SCANCODE_D] = Action::MOVE_RIGHT;
+    mKeyBinding[SDL_SCANCODE_W] = Action::MOVE_UP;
+    mKeyBinding[SDL_SCANCODE_S] = Action::MOVE_DOWN;
     mKeyBinding[SDL_SCANCODE_SPACE] = Action::JUMP;
 
     initializeActions();
@@ -64,6 +67,8 @@ bool Player::isRealtimeAction(Action action)
     {
     case Action::MOVE_LEFT:
     case Action::MOVE_RIGHT:
+    case Action::MOVE_UP:
+    case Action::MOVE_DOWN:
         return true;
     default:
         return false;
@@ -72,20 +77,59 @@ bool Player::isRealtimeAction(Action action)
 
 void Player::initializeActions()
 {
-    static constexpr auto playerSpeed = 200.f;
+    // For free-flying kinematic body, use velocity control instead of forces
+    static constexpr auto flySpeed = 3.0f;  // Meters per second for kinematic body
     static constexpr auto jumpForce = -500.f;
 
     mActionBinding[Action::MOVE_LEFT].action = derivedAction<Pathfinder>(
         [](Pathfinder& pathfinder, float)
         {
-            b2Body_ApplyForceToCenter(pathfinder.getBodyId(), {-playerSpeed, 0.f}, true);
+            b2BodyId bodyId = pathfinder.getBodyId();
+            if (b2Body_IsValid(bodyId))
+            {
+                b2Vec2 velocity = b2Body_GetLinearVelocity(bodyId);
+                velocity.x = -flySpeed;
+                b2Body_SetLinearVelocity(bodyId, velocity);
+            }
         }
     );
 
     mActionBinding[Action::MOVE_RIGHT].action = derivedAction<Pathfinder>(
         [](Pathfinder& pathfinder, float)
         {
-            b2Body_ApplyForceToCenter(pathfinder.getBodyId(), {+playerSpeed, 0.f}, true);
+            b2BodyId bodyId = pathfinder.getBodyId();
+            if (b2Body_IsValid(bodyId))
+            {
+                b2Vec2 velocity = b2Body_GetLinearVelocity(bodyId);
+                velocity.x = flySpeed;
+                b2Body_SetLinearVelocity(bodyId, velocity);
+            }
+        }
+    );
+
+    mActionBinding[Action::MOVE_UP].action = derivedAction<Pathfinder>(
+        [](Pathfinder& pathfinder, float)
+        {
+            b2BodyId bodyId = pathfinder.getBodyId();
+            if (b2Body_IsValid(bodyId))
+            {
+                b2Vec2 velocity = b2Body_GetLinearVelocity(bodyId);
+                velocity.y = -flySpeed;  // Negative Y is up
+                b2Body_SetLinearVelocity(bodyId, velocity);
+            }
+        }
+    );
+
+    mActionBinding[Action::MOVE_DOWN].action = derivedAction<Pathfinder>(
+        [](Pathfinder& pathfinder, float)
+        {
+            b2BodyId bodyId = pathfinder.getBodyId();
+            if (b2Body_IsValid(bodyId))
+            {
+                b2Vec2 velocity = b2Body_GetLinearVelocity(bodyId);
+                velocity.y = flySpeed;  // Positive Y is down
+                b2Body_SetLinearVelocity(bodyId, velocity);
+            }
         }
     );
 
