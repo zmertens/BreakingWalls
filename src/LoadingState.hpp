@@ -31,6 +31,10 @@ private:
 
     void loadWindowIcon(const std::unordered_map<std::string, std::string>& resources) noexcept;
 
+    void loadFonts() noexcept;
+
+    void loadShaders() noexcept;
+
     void setCompletion(float percent) noexcept;
 
     //Sprite mLoadingSprite;

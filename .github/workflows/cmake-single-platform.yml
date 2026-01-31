@@ -29,36 +29,9 @@ jobs:
         sudo apt-get install -y libfreetype6-dev libudev-dev libopenal-dev libflac-dev libogg-dev libvorbis-dev
         sudo apt-get install -y pkg-config
 
-    # Step to download Emsdk
-    - name: Download Emsdk
-      uses: actions/checkout@v3
-      with:
-        repository: emscripten-core/emsdk
-        path: 'emsdk'
-
-    # Step to install and activate the latest Emscripten SDK
-    - name: Install Emscripten
-      run: |
-        cd emsdk
-        ./emsdk install latest
-        ./emsdk activate latest
-        source ./emsdk_env.sh
-
-    # Configure CMake with Emscripten toolchain
-    - name: Configure CMake for Emscripten
-      run: cmake -B ${{github.workspace}}/build-emscripten -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=${{github.workspace}}/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake -DBREAKING_WALLS_PLATFORM_WEB=ON
-
-    # Fix C++ module scanning issue for MazeBuilder in Emscripten build
-    - name: Disable C++ module scanning for MazeBuilder
-      run: echo 'set_target_properties(mazebuildercore_obj PROPERTIES CXX_SCAN_FOR_MODULES OFF)' >> ${{github.workspace}}/build-emscripten/_deps/mazebuilder-src/sources/CMakeLists.txt
-
-    # Build with Emscripten
-    - name: Build with Emscripten
-      run: cmake --build ${{github.workspace}}/build-emscripten --config ${{env.BUILD_TYPE}}
-
-    # Configure CMake for default build (without Emscripten)
+    # Configure CMake for default build
     - name: Configure CMake for Default Build
-      run: cmake -B ${{github.workspace}}/build-default -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DBREAKING_WALLS_PLATFORM_WEB=OFF
+      run: cmake -B ${{github.workspace}}/build-default -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
     - name: Build Default
       run: cmake --build ${{github.workspace}}/build-default --config ${{env.BUILD_TYPE}}

@@ -31,12 +31,12 @@ private:
     World mWorld;  // Manages both 2D physics and 3D sphere scene
     Player& mPlayer;
     
-    // OpenGL 4.3 pipeline resources (following Compute.cpp approach)
-    std::unique_ptr<Shader> mDisplayShader;      // Vertex/Fragment shader for display
-    std::unique_ptr<Shader> mComputeShader;      // Compute shader for path tracing
-    
     // Path tracer camera (for 3D scene navigation)
     Camera mCamera;
+    
+    // Shader references from context
+    Shader* mDisplayShader{nullptr};
+    Shader* mComputeShader{nullptr};
     
     // GPU resources
     GLuint mShapeSSBO{0};     // Shader Storage Buffer Object for spheres
@@ -60,9 +60,6 @@ private:
     
     /// Initialize GPU graphics resources for compute shader rendering
     void initializeGraphicsResources() noexcept;
-    
-    /// Initialize shaders following Compute.cpp approach
-    bool initializeShaders() noexcept;
     
     /// Create textures for path tracing (accumulation + display)
     void createPathTracerTextures() noexcept;

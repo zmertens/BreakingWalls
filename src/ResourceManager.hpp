@@ -19,6 +19,8 @@ class ResourceManager
 {
 public:
 
+    void load(Identifier id, std::string_view filename);
+
     void load(SDL_Window* window, Identifier id, std::string_view filename);
 
     void load(Identifier id, std::string_view filename, std::uint32_t channelOffset = 0);
@@ -35,6 +37,12 @@ public:
     Resource& get(Identifier id);
     const Resource& get(Identifier id) const;
 
+    /// Insert a pre-constructed resource
+    void insert(Identifier id, std::unique_ptr<Resource> resource)
+    {
+        insertResource(id, std::move(resource));
+    }
+
     void clear() noexcept
     {
         mResourceMap.clear();
@@ -48,6 +56,21 @@ private:
 private:
     std::map<Identifier, std::unique_ptr<Resource>> mResourceMap;
 };
+
+template <typename Resource, typename Identifier>
+void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view filename)
+{
+    // Create and load resource
+    auto resource = std::make_unique<Resource>();
+
+    if (!resource->compileAndAttachShader(filename))
+    {
+        throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
+    }
+
+    // If loading successful, insert resource to map
+    insertResource(id, std::move(resource));
+}
 
 template <typename Resource, typename Identifier>
 void ResourceManager<Resource, Identifier>::load(SDL_Window* window, Identifier id, std::string_view filename)

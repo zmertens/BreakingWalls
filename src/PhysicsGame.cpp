@@ -21,10 +21,6 @@
 #include <dearimgui/backends/imgui_impl_sdl3.h>
 #include <dearimgui/backends/imgui_impl_opengl3.h>
 
-#include <fonts/Cousine_Regular.h>
-#include <fonts/Limelight_Regular.h>
-#include <fonts/nunito_sans.h>
-
 #include "Font.hpp"
 #include "GameState.hpp"
 #include "LoadingState.hpp"
@@ -60,20 +56,18 @@ struct PhysicsGame::PhysicsGameImpl
     mutable float smoothedFrameTime = 0.0f;
     static constexpr double FPS_UPDATE_INTERVAL = 250.0;
 
-    std::string title;
+    std::string windowTitle;
     std::string resourcePath;
     const int INIT_WINDOW_W, INIT_WINDOW_H;
 
     PhysicsGameImpl(std::string_view title, int w, int h, std::string_view resourcePath = "")
-        : title{title}
+        : windowTitle{title}
           , resourcePath{resourcePath}
           , INIT_WINDOW_W{w}, INIT_WINDOW_H{h}
           , window{nullptr}
           , sdlHelper{}
           , stateStack{nullptr}
-    {
-        SDL_Log("=== PhysicsGameImpl Constructor START ===");
-        
+    {        
         initSDL();
 
         // Check if SDL initialization succeeded
@@ -84,13 +78,11 @@ struct PhysicsGame::PhysicsGameImpl
             return;
         }
 
-        SDL_Log("Creating RenderWindow...");
         window = std::make_unique<RenderWindow>(sdlHelper.window);
 
         SDL_Log("Initializing ImGui...");
         initDearImGui();
 
-        SDL_Log("Creating StateStack...");
         stateStack = std::make_unique<StateStack>(State::Context{
             *window,
             std::ref(fonts),
@@ -99,21 +91,10 @@ struct PhysicsGame::PhysicsGameImpl
             std::ref(p1)
             });
 
-        SDL_Log("Loading fonts...");
-        loadFonts();
-
-        SDL_Log("Registering states...");
         registerStates();
-        
-        SDL_Log("Pushing initial states...");
-        // Push initial states onto the stack
+       
         stateStack->pushState(States::ID::LOADING);
-        SDL_Log("  -> Pushed LOADING state to pending list");
-        
         stateStack->pushState(States::ID::SPLASH);
-        SDL_Log("  -> Pushed SPLASH state to pending list");
-        
-        SDL_Log("=== PhysicsGameImpl Constructor COMPLETE ===");
     }
 
     ~PhysicsGameImpl()
@@ -122,6 +103,7 @@ struct PhysicsGame::PhysicsGameImpl
         {
             this->stateStack->clearStates();
             this->fonts.clear();
+            this->shaders.clear();
             this->textures.clear();
 
             ImGui_ImplOpenGL3_Shutdown();
@@ -134,8 +116,8 @@ struct PhysicsGame::PhysicsGameImpl
 
     void initSDL() noexcept
     {
-        auto windowTitle = title.empty() ? "Breaking Walls" : title.c_str();
-        sdlHelper.init(windowTitle, INIT_WINDOW_W, INIT_WINDOW_H);
+        auto title = windowTitle.empty() ? "Breaking Walls" : windowTitle.c_str();
+        sdlHelper.init(title, INIT_WINDOW_W, INIT_WINDOW_H);
     }
 
     void initDearImGui() const noexcept
@@ -152,26 +134,6 @@ struct PhysicsGame::PhysicsGameImpl
         // Initialize ImGui SDL3 and OpenGL3 backends
         ImGui_ImplSDL3_InitForOpenGL(this->sdlHelper.window, this->sdlHelper.glContext);
         ImGui_ImplOpenGL3_Init("#version 430");
-    }
-
-    void loadFonts() noexcept
-    {
-        static constexpr auto FONT_PIXEL_SIZE = 28.f;
-
-        fonts.load(Fonts::ID::LIMELIGHT,
-            Limelight_Regular_compressed_data,
-            Limelight_Regular_compressed_size,
-                   FONT_PIXEL_SIZE);
-
-        fonts.load(Fonts::ID::NUNITO_SANS,
-            NunitoSans_compressed_data,
-            NunitoSans_compressed_size,
-            FONT_PIXEL_SIZE);
-
-        fonts.load(Fonts::ID::COUSINE_REGULAR,
-            Cousine_Regular_compressed_data,
-            Cousine_Regular_compressed_size,
-                   FONT_PIXEL_SIZE);
     }
 
     void processInput() const noexcept

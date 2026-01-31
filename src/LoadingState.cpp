@@ -7,11 +7,17 @@
 #include <MazeBuilder/create2.h>
 #include <MazeBuilder/configurator.h>
 
+#include "Font.hpp"
 #include "JsonUtils.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
+#include "Shader.hpp"
 #include "StateStack.hpp"
 #include "Texture.hpp"
+
+#include <fonts/Cousine_Regular.h>
+#include <fonts/Limelight_Regular.h>
+#include <fonts/nunito_sans.h>
 
 /// @brief
 /// @param stack
@@ -23,8 +29,6 @@ LoadingState::LoadingState(StateStack& stack, Context context, std::string_view 
       , mHasFinished{false}
       , mResourcePath{resourcePath}
 {
-    SDL_Log("LoadingState constructor - resource path: '%s'", resourcePath.empty() ? "(empty)" : resourcePath.data());
-    
     mForeman.initThreads();
 
     // Start loading resources in background if path is provided
@@ -37,8 +41,6 @@ LoadingState::LoadingState(StateStack& stack, Context context, std::string_view 
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: No resource path provided\n");
         mHasFinished = true;
     }
-    
-    SDL_Log("LoadingState constructor complete");
 }
 
 void LoadingState::draw() const noexcept
@@ -104,6 +106,70 @@ void LoadingState::loadResources() noexcept
     // This would be called by the application to trigger resource loading
     // The resources would be loaded by the worker threads and stored
     mForeman.generate(mResourcePath);
+
+    loadFonts();
+
+    loadShaders();
+}
+
+void LoadingState::loadFonts() noexcept
+{
+    static constexpr auto FONT_PIXEL_SIZE = 28.f;
+
+    auto& fonts = *getContext().fonts;
+
+    fonts.load(Fonts::ID::LIMELIGHT,
+        Limelight_Regular_compressed_data,
+        Limelight_Regular_compressed_size,
+        FONT_PIXEL_SIZE);
+
+    fonts.load(Fonts::ID::NUNITO_SANS,
+        NunitoSans_compressed_data,
+        NunitoSans_compressed_size,
+        FONT_PIXEL_SIZE);
+
+    fonts.load(Fonts::ID::COUSINE_REGULAR,
+        Cousine_Regular_compressed_data,
+        Cousine_Regular_compressed_size,
+        FONT_PIXEL_SIZE);
+}
+
+void LoadingState::loadShaders() noexcept
+{
+    auto& shaders = *getContext().shaders;
+
+    try
+    {
+        // Load display shader (vertex + fragment)
+        auto displayShader = std::make_unique<Shader>();
+        displayShader->compileAndAttachShader(ShaderType::VERTEX, "./shaders/raytracer.vert.glsl");
+        displayShader->compileAndAttachShader(ShaderType::FRAGMENT, "./shaders/raytracer.frag.glsl");
+        displayShader->linkProgram();
+
+        SDL_Log("LoadingState: Display shader compiled and linked");
+        SDL_Log("%s", displayShader->getGlslUniforms().c_str());
+        SDL_Log("%s", displayShader->getGlslAttribs().c_str());
+
+        // Insert display shader into manager (using vertex ID as the combined shader program ID)
+        shaders.insert(Shaders::ID::DISPLAY_QUAD_VERTEX, std::move(displayShader));
+
+        // Load compute shader for path tracing
+        auto computeShader = std::make_unique<Shader>();
+        computeShader->compileAndAttachShader(ShaderType::COMPUTE, "./shaders/pathtracer.cs.glsl");
+        computeShader->linkProgram();
+
+        SDL_Log("LoadingState: Compute shader compiled and linked");
+        SDL_Log("%s", computeShader->getGlslUniforms().c_str());
+
+        // Insert compute shader into manager
+        shaders.insert(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE, std::move(computeShader));
+
+        SDL_Log("LoadingState: All shaders loaded successfully");
+    }
+    catch (const std::exception& e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Shader initialization failed: %s", e.what());
+    }
 }
 
 void LoadingState::loadTexturesFromWorkerRequests() const noexcept
@@ -137,7 +203,8 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
                 fullPath = resourcePathPrefix + fullPath;
             }
             
-            textures.load(request.id, fullPath);
+            // Use string_view to avoid ambiguity with the overloaded load methods
+            textures.load(request.id, std::string_view(fullPath), 0u);
             SDL_Log("DEBUG: Loaded texture ID %d from: %s\n", static_cast<int>(request.id), fullPath.c_str());
         }
     }

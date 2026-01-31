@@ -3,6 +3,7 @@
 
 #include <string_view>
 
+// Resource Keys
 namespace JSONKeys
 {
     constexpr std::string_view CHARACTER_IMAGE = "character_default_image";
@@ -22,6 +23,26 @@ namespace JSONKeys
     constexpr std::string_view WALL_HORIZONTAL = "wall_horizontal";
     constexpr std::string_view WAV_FILES = "wav_files";
     constexpr std::string_view WINDOW_ICON = "window_icon";
+}
+
+namespace Fonts
+{
+    enum class ID : unsigned int
+    {
+        COUSINE_REGULAR = 0,
+        LIMELIGHT = 1,
+        NUNITO_SANS = 2
+    };
+}
+
+namespace Shaders
+{
+    enum class ID : unsigned int
+    {
+        DISPLAY_QUAD_VERTEX = 0,
+        DISPLAY_QUAD_FRAGMENT = 1,
+        COMPUTE_PATH_TRACER_COMPUTE = 2,
+    };
 }
 
 namespace Textures
@@ -46,16 +67,6 @@ namespace Textures
     };
 }
 
-namespace Fonts
-{
-    enum class ID : unsigned int
-    {
-        COUSINE_REGULAR = 0,
-        LIMELIGHT = 1,
-        NUNITO_SANS = 2
-    };
-}
-
 class Font;
 class Shader;
 class Texture;
@@ -66,6 +77,6 @@ class ResourceManager;
 
 typedef ResourceManager<Texture, Textures::ID> TextureManager;
 typedef ResourceManager<Font, Fonts::ID> FontManager;
-typedef ResourceManager<Shader, std::string_view> ShaderManager;
+typedef ResourceManager<Shader, Shaders::ID> ShaderManager;
 
 #endif // RESOURCE_IDENTIFIERS_HPP

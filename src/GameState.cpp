@@ -10,8 +10,9 @@
 
 #include "CommandQueue.hpp"
 #include "Player.hpp"
+#include "ResourceManager.hpp"
+#include "Shader.hpp"
 #include "StateStack.hpp"
-#include "GLUtils.hpp"
 #include "Sphere.hpp"
 
 GameState::GameState(StateStack& stack, Context context)
@@ -27,13 +28,31 @@ GameState::GameState(StateStack& stack, Context context)
     mWorld.init();  // This now initializes both 2D physics and 3D path tracer scene
     mWorld.setPlayer(context.player);
     
+    // Get shaders from context
+    auto& shaders = *context.shaders;
+    try
+    {
+        mDisplayShader = &shaders.get(Shaders::ID::DISPLAY_QUAD_VERTEX);
+        mComputeShader = &shaders.get(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE);
+        mShadersInitialized = true;
+        SDL_Log("GameState: Shaders loaded from context");
+    }
+    catch (const std::exception& e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
+        mShadersInitialized = false;
+    }
+    
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
     mLastCameraYaw = mCamera.getYaw();
     mLastCameraPitch = mCamera.getPitch();
     
     // Initialize GPU graphics pipeline following Compute.cpp approach
-    initializeGraphicsResources();
+    if (mShadersInitialized)
+    {
+        initializeGraphicsResources();
+    }
 }
 
 GameState::~GameState()
@@ -62,78 +81,25 @@ void GameState::initializeGraphicsResources() noexcept
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     
-#if defined(BREAKING_WALLS_DEBUG)
-    // Register debug callback if available (OpenGL 4.3+)
-    glDebugMessageCallback(GLUtils::GlDebugCallback, nullptr);
-    glEnable(GL_DEBUG_OUTPUT);
-    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-    SDL_Log("GameState: OpenGL Debug Output enabled");
-#endif
-    
-    // Initialize shaders
-    if (initializeShaders())
-    {
-        // Create VAO for fullscreen quad (like Compute.cpp)
-        glGenVertexArrays(1, &mVAO);
-        glBindVertexArray(mVAO);
+    // Create VAO for fullscreen quad (like Compute.cpp)
+    glGenVertexArrays(1, &mVAO);
+    glBindVertexArray(mVAO);
         
-        // Create SSBO for sphere data
-        glGenBuffers(1, &mShapeSSBO);
+    // Create SSBO for sphere data
+    glGenBuffers(1, &mShapeSSBO);
         
-        // Create textures for path tracing
-        createPathTracerTextures();
+    // Create textures for path tracing
+    createPathTracerTextures();
         
-        // Upload sphere data from World to GPU
-        const auto& spheres = mWorld.getSpheres();
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, spheres.size() * sizeof(Sphere), spheres.data(), GL_DYNAMIC_DRAW);
-        SDL_Log("GameState: Uploaded %zu spheres to GPU", spheres.size());
-        
-        mShadersInitialized = true;
-        SDL_Log("GameState: Shaders and OpenGL resources initialized successfully");
-    }
-    else
-    {
-        SDL_Log("GameState: Shader initialization failed, using fallback rendering");
-        mShadersInitialized = false;
-    }
-    
+    // Upload sphere data from World to GPU
+    const auto& spheres = mWorld.getSpheres();
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, spheres.size() * sizeof(Sphere), spheres.data(), GL_DYNAMIC_DRAW);
+
+    SDL_Log("GameState: Uploaded %zu spheres to GPU", spheres.size());       
     SDL_Log("GameState: Graphics pipeline initialization complete");
 }
-
-bool GameState::initializeShaders() noexcept
-{
-    try
-    {
-        // Create display shader (vertex + fragment) following Compute.cpp
-        mDisplayShader = std::make_unique<Shader>();
-        mDisplayShader->compileAndAttachShader(ShaderType::VERTEX, "./shaders/raytracer.vert.glsl");
-        mDisplayShader->compileAndAttachShader(ShaderType::FRAGMENT, "./shaders/raytracer.frag.glsl");
-        mDisplayShader->linkProgram();
-        
-        SDL_Log("GameState: Display shader compiled and linked");
-        SDL_Log("%s", mDisplayShader->getGlslUniforms().c_str());
-        SDL_Log("%s", mDisplayShader->getGlslAttribs().c_str());
-        
-        // Create compute shader for path tracing (following Compute.cpp)
-        mComputeShader = std::make_unique<Shader>();
-        mComputeShader->compileAndAttachShader(ShaderType::COMPUTE, "./shaders/pathtracer.cs.glsl");
-        mComputeShader->linkProgram();
-        
-        SDL_Log("GameState: Compute shader compiled and linked");
-        SDL_Log("%s", mComputeShader->getGlslUniforms().c_str());
-        
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Shader initialization failed: %s", e.what());
-        mDisplayShader.reset();
-        mComputeShader.reset();
-        return false;
-    }
-}
-
+  
 void GameState::createPathTracerTextures() noexcept
 {
     // Create accumulation texture for progressive rendering (following Compute.cpp)
@@ -278,8 +244,9 @@ void GameState::cleanupResources() noexcept
         mDisplayTex = 0;
     }
     
-    mDisplayShader.reset();
-    mComputeShader.reset();
+    // Shaders are now managed by ShaderManager - don't delete them here
+    mDisplayShader = nullptr;
+    mComputeShader = nullptr;
     
     SDL_Log("GameState: OpenGL resources cleaned up");
 }

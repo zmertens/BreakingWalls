@@ -1,20 +1,22 @@
 #ifndef SHADER_HPP
 #define SHADER_HPP
 
-#include <string>
 #include <memory>
+#include <string>
 #include <unordered_map>
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
-enum class ShaderType : int {
-    VERTEX = 0,
-    FRAGMENT = 1,
-    GEOMETRY = 2,
-    TESSELATION_EVAL = 3,
-    TESSELATION_CONTROL = 4,
-    COMPUTE = 5
+/// @brief Shader type enumeration
+enum class ShaderType
+{
+    VERTEX,
+    FRAGMENT,
+    GEOMETRY,
+    TESSELATION_CONTROL,
+    TESSELATION_EVAL,
+    COMPUTE
 };
 
 /// @brief Manages OpenGL shader programs with automatic uniform location caching
@@ -31,7 +33,7 @@ public:
     /// Compile and attach a shader from file
     void compileAndAttachShader(ShaderType shaderType, const std::string& filename);
     
-    /// Compile and attach a shader from source code string
+    /// Compile and attach a shader from memory
     void compileAndAttachShader(ShaderType shaderType, const std::string& codeId, const GLchar* code);
     
     /// Link the shader program

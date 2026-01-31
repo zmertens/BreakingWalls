@@ -95,7 +95,6 @@ void Shader::cleanUp()
 
 std::string Shader::getGlslUniforms() const
 {
-#if APP_OPENGL_MAJOR >= 4 && APP_OPENGL_MINOR >= 3
     GLint numUniforms = 0;
     glGetProgramInterfaceiv(mProgram, GL_UNIFORM, GL_ACTIVE_RESOURCES, &numUniforms);
     GLenum properties[] = {GL_NAME_LENGTH, GL_TYPE, GL_LOCATION, GL_BLOCK_INDEX};
@@ -122,14 +121,10 @@ std::string Shader::getGlslUniforms() const
     }
 
     return retString;
-#else
-    return "GLSL Uniforms not supported (requires OpenGL 4.3+)\n";
-#endif
 }
 
 std::string Shader::getGlslAttribs() const
 {
-#if APP_OPENGL_MAJOR >= 4 && APP_OPENGL_MINOR >= 3
     GLint numAttribs;
     glGetProgramInterfaceiv(mProgram, GL_PROGRAM_INPUT, GL_ACTIVE_RESOURCES, &numAttribs);
     GLenum properties[] = {GL_NAME_LENGTH, GL_TYPE, GL_LOCATION};
@@ -152,9 +147,6 @@ std::string Shader::getGlslAttribs() const
         delete[] name;
     }
     return retString;
-#else
-    return "GLSL Attributes not supported (requires OpenGL 4.3+)\n";
-#endif
 }
 
 void Shader::setUniform(const std::string& str, const glm::mat3& matrix)
@@ -234,9 +226,7 @@ void Shader::setSubroutine(GLenum shaderType, GLuint count, GLuint index)
 
 void Shader::bindFragDataLocation(const std::string& str, GLuint loc)
 {
-#if APP_OPENGL_MAJOR >= 4 && APP_OPENGL_MINOR >= 3
     glBindFragDataLocation(mProgram, loc, str.c_str());
-#endif
 }
 
 void Shader::bindAttribLocation(const std::string& str, GLuint loc)
@@ -391,11 +381,7 @@ GLint Shader::getAttribLocation(const std::string& str)
 
 GLuint Shader::getSubroutineLocation(GLenum shaderType, const std::string& name)
 {
-#if APP_OPENGL_MAJOR >= 4 && APP_OPENGL_MINOR >= 3
     return glGetSubroutineIndex(mProgram, shaderType, name.c_str());
-#else
-    return static_cast<GLuint>(-1);
-#endif
 }
 
 std::string Shader::getStringFromType(GLenum type) const
@@ -406,9 +392,7 @@ std::string Shader::getStringFromType(GLenum type) const
         case GL_FLOAT_VEC2: return "vec2";
         case GL_FLOAT_VEC3: return "vec3";
         case GL_FLOAT_VEC4: return "vec4";
-#if APP_OPENGL_MAJOR >= 4 && APP_OPENGL_MINOR >= 3
         case GL_DOUBLE: return "double";
-#endif
         case GL_INT: return "int";
         case GL_UNSIGNED_INT: return "unsigned int";
         case GL_BOOL: return "bool";

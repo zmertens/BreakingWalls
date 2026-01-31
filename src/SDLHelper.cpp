@@ -1,6 +1,9 @@
 #include "SDLHelper.hpp"
 
 #include <SDL3/SDL.h>
+
+#include "GLUtils.hpp"
+
 #include <glad/glad.h>
 
 void SDLHelper::init(std::string_view title, int width, int height) noexcept
@@ -63,6 +66,14 @@ void SDLHelper::init(std::string_view title, int width, int height) noexcept
 
         // Enable VSync for OpenGL
         SDL_GL_SetSwapInterval(1);
+
+#if defined(BREAKING_WALLS_DEBUG)
+        // Register debug callback if available (OpenGL 4.3+)
+        glDebugMessageCallback(GLUtils::GlDebugCallback, nullptr);
+        glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        SDL_Log("GameState: OpenGL Debug Output enabled");
+#endif
 
         SDL_Log("SDLHelper::init - OpenGL and SDL initialized successfully");
     };
