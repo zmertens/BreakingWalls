@@ -4,17 +4,20 @@
 
 #include <SDL3/SDL.h>
 
-State::Context::Context(RenderWindow& window, FontManager& fonts, TextureManager& textures, Player& player)
-    : window{&window}
-      , fonts{&fonts}
-      , textures{&textures}
-      , player{&player}
+State::Context::Context(RenderWindow& window, FontManager& fonts,
+    ShaderManager& shaders,
+    TextureManager& textures, Player& player)
+    : window{ &window }
+    , fonts{ &fonts }
+    , shaders{ &shaders }
+    , textures{ &textures }
+    , player{ &player }
 {
 }
 
 State::State(StateStack& stack, Context context)
-    : mStack{&stack}
-      , mContext{context}
+    : mStack{ &stack }
+    , mContext{ context }
 {
 }
 

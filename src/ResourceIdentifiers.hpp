@@ -56,8 +56,9 @@ namespace Fonts
     };
 }
 
-class Texture;
 class Font;
+class Shader;
+class Texture;
 
 // Forward declaration and a few type definitions
 template <typename Resource, typename Identifier>
@@ -65,5 +66,6 @@ class ResourceManager;
 
 typedef ResourceManager<Texture, Textures::ID> TextureManager;
 typedef ResourceManager<Font, Fonts::ID> FontManager;
+typedef ResourceManager<Shader, std::string_view> ShaderManager;
 
 #endif // RESOURCE_IDENTIFIERS_HPP

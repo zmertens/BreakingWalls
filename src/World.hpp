@@ -47,8 +47,6 @@ public:
     std::vector<Sphere>& getSpheres() noexcept { return mSpheres; }
 
 private:
-    // Build the scene (initialize scene graph and layers)
-    void buildScene();
     
     // Initialize 3D path tracer scene with spheres
     void initPathTracerScene() noexcept;

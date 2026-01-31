@@ -1,10 +1,6 @@
 #include "Texture.hpp"
 
-#if defined(__EMSCRIPTEN__)
-#include <GLES3/gl3.h>
-#else
 #include <glad/glad.h>
-#endif
 
 #include <SDL3/SDL.h>
 
@@ -13,8 +9,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
 
-#include <vector>
 #include <algorithm>
+#include <vector>
 
 namespace
 {
@@ -26,7 +22,7 @@ namespace
             return {};
         }
 
-        const size_t total_bytes = width * height * 4;
+        const size_t total_bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
         std::vector<std::uint8_t> rotated(total_bytes);
 
         const int total_pixels = width * height;
@@ -36,11 +32,11 @@ namespace
         {
             const int src_idx = i * 4;
             const int dst_idx = (total_pixels - 1 - i) * 4;
-
-            rotated[dst_idx + 0] = data[src_idx + 0]; // R
-            rotated[dst_idx + 1] = data[src_idx + 1]; // G
-            rotated[dst_idx + 2] = data[src_idx + 2]; // B
-            rotated[dst_idx + 3] = data[src_idx + 3]; // A
+            // RGBA channels
+            rotated[dst_idx + 0] = data[src_idx + 0];
+            rotated[dst_idx + 1] = data[src_idx + 1];
+            rotated[dst_idx + 2] = data[src_idx + 2];
+            rotated[dst_idx + 3] = data[src_idx + 3];
         }
 
         return rotated;
@@ -146,10 +142,10 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
     stbi_set_flip_vertically_on_load(true);
 
     int width, height;
-    int n; // number of components (channels)
+    int components;
 
     // Force RGBA (4 components) for consistency
-    auto* data = stbi_load(filepath.data(), &width, &height, &n, 4);
+    auto* data = stbi_load(filepath.data(), &width, &height, &components, 4);
 
     if (data == nullptr)
     {
@@ -189,16 +185,12 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
     mBytes = data;
     stbi_image_free(data);
 
-    SDL_Log("Texture loaded successfully: %dx%d from %s", width, height, filepath.data());
-
     return true;
 }
 
 bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const int height,
                                const std::uint32_t channelOffset, const bool rotate_180) noexcept
-{
-    SDL_Log("Texture::loadFromMemory() - width=%d, height=%d, channelOffset=%u", width, height, channelOffset);
-    
+{   
     if (data == nullptr || width <= 0 || height <= 0)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for loadFromMemory\n");
@@ -224,9 +216,7 @@ bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const in
 
     mBytes = const_cast<std::uint8_t*>(data);
 
-    SDL_Log("Texture::loadFromMemory() - Calling glGenTextures...");
     glGenTextures(1, &mTextureId);
-    SDL_Log("Texture::loadFromMemory() - TextureId=%u, binding texture...", mTextureId);
     glActiveTexture(GL_TEXTURE0 + channelOffset);
     glBindTexture(GL_TEXTURE_2D, mTextureId);
 
@@ -279,7 +269,6 @@ bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const 
     // If texture doesn't exist or dimensions changed, reallocate
     if (mTextureId == 0 || mWidth != width || mHeight != height)
     {
-        SDL_Log("Reallocating texture: %dx%d -> %dx%d\n", mWidth, mHeight, width, height);
         return loadFromMemory(data, width, height, channelOffset, rotate_180);
     }
 
@@ -329,11 +318,11 @@ bool Texture::loadBmpIcon(SDL_Window* window, const std::string_view filepath) n
     return false;
 }
 
-bool Texture::loadFromStr(const std::string_view mazeStr, const int cellSize) noexcept
+bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cellSize) noexcept
 {
     if (mazeStr.empty() || cellSize <= 0)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for loadFromStr\n");
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for loadFromMazeBuilder\n");
         return false;
     }
 
@@ -402,24 +391,15 @@ bool Texture::loadFromStr(const std::string_view mazeStr, const int cellSize) no
         const std::uint8_t* color = nullptr;
         switch (c)
         {
-            case '#':
-            case '+':
-            case '|':
-            case '-':
-                color = WALL_COLOR;
-                break;
-            case 'S':
-                color = START_COLOR;
-                break;
-            case 'E':
-            case 'X':
-                color = END_COLOR;
-                break;
-            case ' ':
-            case '.':
-            default:
-                color = PATH_COLOR;
-                break;
+        case static_cast<unsigned char>(mazes::barriers::CORNER):
+        case static_cast<unsigned char>(mazes::barriers::HORIZONTAL):
+        case static_cast<unsigned char>(mazes::barriers::VERTICAL):
+            color = WALL_COLOR;
+            break;
+        case static_cast<unsigned char>(mazes::barriers::SINGLE_SPACE):
+        default:
+            color = PATH_COLOR;
+            break;
         }
 
         // Fill the cell with the chosen color

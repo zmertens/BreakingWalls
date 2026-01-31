@@ -13,8 +13,8 @@ struct SDL_Window;
 class SDLHelper
 {
 public:
-    SDL_Window* m_window{nullptr};
-    SDL_GLContext m_context{nullptr};
+    SDL_Window* window{nullptr};
+    SDL_GLContext glContext{};
 
 private:
     std::once_flag sdlInitializedFlag;

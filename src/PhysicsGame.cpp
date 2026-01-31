@@ -25,10 +25,6 @@
 #include <fonts/Limelight_Regular.h>
 #include <fonts/nunito_sans.h>
 
-#include <MazeBuilder/configurator.h>
-#include <MazeBuilder/create.h>
-#include <MazeBuilder/json_helper.h>
-
 #include "Font.hpp"
 #include "GameState.hpp"
 #include "LoadingState.hpp"
@@ -50,14 +46,13 @@ struct PhysicsGame::PhysicsGameImpl
     Player p1;
 
     std::unique_ptr<RenderWindow> window;
+    std::unique_ptr<StateStack> stateStack;
 
     SDLHelper sdlHelper;
 
     FontManager fonts;
-
+    ShaderManager shaders;
     TextureManager textures;
-
-    std::unique_ptr<StateStack> stateStack;
 
     // FPS smoothing variables
     mutable double fpsUpdateTimer = 0.0;
@@ -82,7 +77,7 @@ struct PhysicsGame::PhysicsGameImpl
         initSDL();
 
         // Check if SDL initialization succeeded
-        if (!sdlHelper.m_window)
+        if (!sdlHelper.window)
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL window - cannot continue");
             // Don't initialize further objects if SDL failed
@@ -90,7 +85,7 @@ struct PhysicsGame::PhysicsGameImpl
         }
 
         SDL_Log("Creating RenderWindow...");
-        window = std::make_unique<RenderWindow>(sdlHelper.m_window);
+        window = std::make_unique<RenderWindow>(sdlHelper.window);
 
         SDL_Log("Initializing ImGui...");
         initDearImGui();
@@ -99,6 +94,7 @@ struct PhysicsGame::PhysicsGameImpl
         stateStack = std::make_unique<StateStack>(State::Context{
             *window,
             std::ref(fonts),
+            std::ref(shaders),
             std::ref(textures),
             std::ref(p1)
             });
@@ -122,7 +118,7 @@ struct PhysicsGame::PhysicsGameImpl
 
     ~PhysicsGameImpl()
     {
-        if (auto& sdl = this->sdlHelper; sdl.m_window)
+        if (auto& sdl = this->sdlHelper; sdl.window)
         {
             this->stateStack->clearStates();
             this->fonts.clear();
@@ -154,7 +150,7 @@ struct PhysicsGame::PhysicsGameImpl
         ImGui::StyleColorsDark();
 
         // Initialize ImGui SDL3 and OpenGL3 backends
-        ImGui_ImplSDL3_InitForOpenGL(this->sdlHelper.m_window, this->sdlHelper.m_context);
+        ImGui_ImplSDL3_InitForOpenGL(this->sdlHelper.window, this->sdlHelper.glContext);
         ImGui_ImplOpenGL3_Init("#version 430");
     }
 
