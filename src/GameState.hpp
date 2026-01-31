@@ -5,12 +5,10 @@
 #include "World.hpp"
 #include "Shader.hpp"
 #include "Camera.hpp"
-#include "Sphere.hpp"
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <memory>
-#include <vector>
 
 class Player;
 class StateStack;
@@ -18,7 +16,7 @@ union SDL_Event;
 
 /// @brief Main game state managing physics, rendering, and input
 /// @details Orchestrates World updates, player input, and GPU-accelerated graphics pipeline
-/// Following OpenGL 4.3 compute shader approach from zmertens-compute
+/// World now manages both 2D physics entities and 3D path tracer spheres with physics
 class GameState : public State
 {
 public:
@@ -30,21 +28,18 @@ public:
     bool handleEvent(const SDL_Event& event) noexcept override;
 
 private:
-    World mWorld;
+    World mWorld;  // Manages both 2D physics and 3D sphere scene
     Player& mPlayer;
     
     // OpenGL 4.3 pipeline resources (following Compute.cpp approach)
     std::unique_ptr<Shader> mDisplayShader;      // Vertex/Fragment shader for display
     std::unique_ptr<Shader> mComputeShader;      // Compute shader for path tracing
     
-    // Path tracer camera (independent from player for 3D scene navigation)
+    // Path tracer camera (for 3D scene navigation)
     Camera mCamera;
     
-    // Scene data
-    std::vector<Sphere> mSpheres;
+    // GPU resources
     GLuint mShapeSSBO{0};     // Shader Storage Buffer Object for spheres
-    
-    // Textures for progressive path tracing
     GLuint mVAO{0};           // Vertex Array Object for fullscreen quad
     GLuint mAccumTex{0};      // Accumulation texture for progressive rendering
     GLuint mDisplayTex{0};    // Display texture for final output
@@ -72,9 +67,6 @@ private:
     /// Create textures for path tracing (accumulation + display)
     void createPathTracerTextures() noexcept;
     
-    /// Initialize path tracer scene with spheres
-    void initPathTracerScene() noexcept;
-    
     /// Render using compute shaders (path tracing)
     void renderWithComputeShaders() const noexcept;
     
@@ -83,9 +75,6 @@ private:
     
     /// Clean up OpenGL resources
     void cleanupResources() noexcept;
-    
-    /// Helper to generate random float in range
-    static float getRandomFloat(float low, float high) noexcept;
 };
 
 #endif // GAME_STATE_HPP

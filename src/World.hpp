@@ -5,6 +5,7 @@
 
 #include <array>
 #include <vector>
+#include <glm/glm.hpp>
 
 #include "CommandQueue.hpp"
 #include "PostProcessingManager.hpp"
@@ -17,6 +18,7 @@ class Ball;
 class Pathfinder;
 class Player;
 class RenderWindow;
+class Sphere;
 
 class World final
 {
@@ -39,10 +41,23 @@ public:
     void handleEvent(const SDL_Event& event);
 
     void setPlayer(Player* player);
+    
+    // Access to 3D spheres for rendering
+    const std::vector<Sphere>& getSpheres() const noexcept { return mSpheres; }
+    std::vector<Sphere>& getSpheres() noexcept { return mSpheres; }
 
 private:
     // Build the scene (initialize scene graph and layers)
     void buildScene();
+    
+    // Initialize 3D path tracer scene with spheres
+    void initPathTracerScene() noexcept;
+    
+    // Sync physics bodies to sphere positions
+    void syncPhysicsToSpheres() noexcept;
+    
+    // Helper to generate random float
+    static float getRandomFloat(float low, float high) noexcept;
 
     enum class Layer
     {
@@ -81,6 +96,12 @@ private:
     SDL_FPoint mLastMousePosition;
 
     std::unique_ptr<PostProcessingManager> mPostProcessingManager;
+    
+    // 3D Path tracer scene data
+    std::vector<Sphere> mSpheres;
+    std::vector<b2BodyId> mSphereBodyIds;  // Physics bodies for each sphere
+    
+    static constexpr int TOTAL_SPHERES = 200;
 };
 
 #endif // WORLD_HPP

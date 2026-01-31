@@ -11,6 +11,7 @@
 #include "Wall.hpp"
 
 #include "Physics.hpp"
+#include "Sphere.hpp"
 
 #include <MazeBuilder/create.h>
 
@@ -19,6 +20,11 @@
 #include <SDL3/SDL.h>
 
 #include <SFML/Network.hpp>
+
+#include <glm/glm.hpp>
+#include <glad/glad.h>
+
+#include <random>
 
 World::World(RenderWindow& window, FontManager& fonts, TextureManager& textures)
     : mWindow{window}
@@ -50,6 +56,9 @@ void World::init() noexcept
     mPlayerPathfinder = nullptr;
 
     buildScene();
+    
+    // Initialize 3D path tracer scene with physics-enabled spheres
+    initPathTracerScene();
 }
 
 void World::update(float dt)
@@ -127,6 +136,9 @@ void World::update(float dt)
                 if (entityB) entityB->onEndContact(entityA);
             }
         }
+        
+        // Sync physics body positions to 3D sphere positions for path tracer
+        syncPhysicsToSpheres();
     }
 
 
@@ -381,6 +393,247 @@ void World::buildScene()
         b2Body_SetTransform(mMazeWallsBodyId, groundPosition, b2Rot_identity);
         
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Created ground and maze walls");
+    }
+}
+
+float World::getRandomFloat(float low, float high) noexcept
+{
+    static std::random_device rd;
+    static std::mt19937 mt(rd());
+    std::uniform_real_distribution<float> dist(low, high);
+    return dist(mt);
+}
+
+void World::initPathTracerScene() noexcept
+{
+    SDL_Log("World: Initializing 3D Path Tracer scene with physics...");
+    
+    mSpheres.clear();
+    mSphereBodyIds.clear();
+    
+    if (!b2World_IsValid(mWorldId))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Cannot init path tracer - physics world invalid");
+        return;
+    }
+    
+    // Ground sphere (large Lambertian) - static body
+    mSpheres.emplace_back(
+        glm::vec3(0.0f, -1000.0f, 0.0f),  // center
+        1000.0f,                           // radius
+        glm::vec3(0.5f, 0.5f, 0.5f),      // color (gray)
+        MaterialType::LAMBERTIAN,          // type
+        0.0f,                              // fuzz
+        0.0f                               // refractive index
+    );
+    
+    // Ground has no physics body (too large, acts as infinite plane)
+    mSphereBodyIds.push_back(b2_nullBodyId);
+
+    // Center glass sphere - dynamic physics body
+    mSpheres.emplace_back(
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        1.0f,
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        MaterialType::DIELECTRIC,
+        0.0f,
+        1.5f  // Glass refractive index
+    );
+    
+    // Create physics body for center sphere
+    {
+        b2BodyDef bodyDef = b2DefaultBodyDef();
+        bodyDef.type = b2_dynamicBody;
+        bodyDef.position = {0.0f, 1.0f};  // 3D center maps to 2D position
+        bodyDef.linearDamping = 0.1f;
+        bodyDef.angularDamping = 0.3f;
+        
+        b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
+        
+        b2ShapeDef shapeDef = b2DefaultShapeDef();
+        shapeDef.density = 0.8f;  // Glass-like density
+        
+        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
+        b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
+        b2Shape_SetFriction(shapeId, 0.3f);
+        b2Shape_SetRestitution(shapeId, 0.4f);
+        b2Body_SetAwake(bodyId, true);
+        
+        mSphereBodyIds.push_back(bodyId);
+    }
+
+    // Left diffuse sphere - dynamic physics body
+    mSpheres.emplace_back(
+        glm::vec3(-4.0f, 1.0f, 0.0f),
+        1.0f,
+        glm::vec3(0.4f, 0.2f, 0.1f),
+        MaterialType::LAMBERTIAN,
+        0.0f,
+        0.0f
+    );
+    
+    {
+        b2BodyDef bodyDef = b2DefaultBodyDef();
+        bodyDef.type = b2_dynamicBody;
+        bodyDef.position = {-4.0f, 1.0f};
+        bodyDef.linearDamping = 0.2f;
+        bodyDef.angularDamping = 0.3f;
+        
+        b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
+        
+        b2ShapeDef shapeDef = b2DefaultShapeDef();
+        shapeDef.density = 1.0f;
+        
+        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
+        b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
+        b2Shape_SetFriction(shapeId, 0.5f);
+        b2Shape_SetRestitution(shapeId, 0.3f);
+        b2Body_SetAwake(bodyId, true);
+        
+        mSphereBodyIds.push_back(bodyId);
+    }
+
+    // Right metal sphere - dynamic physics body
+    mSpheres.emplace_back(
+        glm::vec3(4.0f, 1.0f, 0.0f),
+        1.0f,
+        glm::vec3(0.7f, 0.6f, 0.5f),
+        MaterialType::METAL,
+        0.0f,  // No fuzz for sharp reflection
+        0.0f
+    );
+    
+    {
+        b2BodyDef bodyDef = b2DefaultBodyDef();
+        bodyDef.type = b2_dynamicBody;
+        bodyDef.position = {4.0f, 1.0f};
+        bodyDef.linearDamping = 0.1f;
+        bodyDef.angularDamping = 0.3f;
+        
+        b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
+        
+        b2ShapeDef shapeDef = b2DefaultShapeDef();
+        shapeDef.density = 2.5f;  // Metal is heavier
+        
+        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
+        b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
+        b2Shape_SetFriction(shapeId, 0.2f);
+        b2Shape_SetRestitution(shapeId, 0.5f);
+        b2Body_SetAwake(bodyId, true);
+        
+        mSphereBodyIds.push_back(bodyId);
+    }
+
+    // Generate random small spheres in a circle pattern with physics bodies
+    float imgCircleRadius = 125.0f;
+    float offset = 15.25f;
+
+    for (unsigned int index = 4; index < TOTAL_SPHERES; ++index)
+    {
+        float matChoice = getRandomFloat(0.0f, 1.0f);
+
+        float angle = static_cast<float>(index - 4) / static_cast<float>(TOTAL_SPHERES - 4) * 360.0f;
+        float angleRad = glm::radians(angle);
+        float displacement = getRandomFloat(-offset, offset);
+
+        float xpos = std::sin(angleRad) * imgCircleRadius + displacement;
+        displacement = getRandomFloat(-offset, offset);
+        float y = std::abs(displacement) * 7.5f;
+        displacement = getRandomFloat(-offset, offset);
+        float z = std::cos(angleRad) * imgCircleRadius + displacement;
+
+        glm::vec3 center = glm::vec3(xpos, y, z);
+        float radius = getRandomFloat(5.0f, 12.0f);
+
+        MaterialType matType;
+        float density;
+        float fuzzOrRefract = 0.0f;
+
+        if (matChoice < 0.7f) {
+            // Lambertian (diffuse) - 70% chance
+            glm::vec3 albedo(
+                getRandomFloat(0.1f, 0.9f),
+                getRandomFloat(0.1f, 0.9f),
+                getRandomFloat(0.1f, 0.9f)
+            );
+            mSpheres.emplace_back(center, radius, albedo, MaterialType::LAMBERTIAN, 0.0f, 0.0f);
+            matType = MaterialType::LAMBERTIAN;
+            density = 1.0f;
+        } else if (matChoice < 0.9f) {
+            // Metal - 20% chance
+            glm::vec3 albedo(
+                getRandomFloat(0.5f, 1.0f),
+                getRandomFloat(0.5f, 1.0f),
+                getRandomFloat(0.5f, 1.0f)
+            );
+            float fuzz = getRandomFloat(0.0f, 0.5f);
+            mSpheres.emplace_back(center, radius, albedo, MaterialType::METAL, fuzz, 0.0f);
+            matType = MaterialType::METAL;
+            density = 2.0f;
+            fuzzOrRefract = fuzz;
+        } else {
+            // Glass (dielectric) - 10% chance
+            mSpheres.emplace_back(center, radius, glm::vec3(1.0f), MaterialType::DIELECTRIC, 0.0f, 1.5f);
+            matType = MaterialType::DIELECTRIC;
+            density = 0.8f;
+            fuzzOrRefract = 1.5f;
+        }
+        
+        // Create physics body for small sphere
+        // Map 3D position (x, z) to 2D physics (x, y)
+        b2BodyDef bodyDef = b2DefaultBodyDef();
+        bodyDef.type = b2_dynamicBody;
+        bodyDef.position = {xpos, z};  // Use X and Z from 3D as X and Y in 2D physics
+        bodyDef.linearDamping = 0.2f;
+        bodyDef.angularDamping = 0.3f;
+        bodyDef.isBullet = radius < 7.0f;  // Small fast spheres need CCD
+        
+        b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
+        
+        b2ShapeDef shapeDef = b2DefaultShapeDef();
+        shapeDef.density = density;
+        
+        b2Circle circle = {{0.0f, 0.0f}, radius};
+        b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
+        
+        // Set friction and restitution after creation
+        float friction = matType == MaterialType::METAL ? 0.2f : 0.4f;
+        float restitution = matType == MaterialType::DIELECTRIC ? 0.6f : 0.3f;
+        b2Shape_SetFriction(shapeId, friction);
+        b2Shape_SetRestitution(shapeId, restitution);
+        b2Body_SetAwake(bodyId, true);
+        
+        // Set collision filtering for sphere-to-sphere collision
+        b2Filter filter = b2Shape_GetFilter(shapeId);
+        filter.categoryBits = 0x0004;  // Sphere category
+        filter.maskBits = 0xFFFF;       // Collides with everything
+        b2Shape_SetFilter(shapeId, filter);
+        
+        mSphereBodyIds.push_back(bodyId);
+    }
+
+    SDL_Log("World: Path tracer scene initialized with %zu spheres (%zu with physics bodies)", 
+            mSpheres.size(), mSphereBodyIds.size());
+}
+
+void World::syncPhysicsToSpheres() noexcept
+{
+    // Sync physics body positions back to 3D sphere positions
+    // Skip index 0 (ground sphere has no body)
+    for (size_t i = 1; i < mSpheres.size() && i < mSphereBodyIds.size(); ++i)
+    {
+        b2BodyId bodyId = mSphereBodyIds[i];
+        if (b2Body_IsValid(bodyId))
+        {
+            b2Vec2 pos = b2Body_GetPosition(bodyId);
+            
+            // Update sphere center: map 2D physics (x, y) back to 3D (x, y_original, z)
+            // Keep Y coordinate from original sphere, use physics Y as Z coordinate
+            float originalY = mSpheres[i].center.y;
+            mSpheres[i].center.x = pos.x;
+            mSpheres[i].center.y = originalY;  // Preserve height
+            mSpheres[i].center.z = pos.y;       // Physics Y becomes Z
+        }
     }
 }
 

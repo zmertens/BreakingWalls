@@ -4,22 +4,15 @@
 
 #include <cmath>
 #include <functional>
-#include <random>
-#include <vector>
 
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 
-#include <MazeBuilder/create.h>
-
 #include "CommandQueue.hpp"
 #include "Player.hpp"
 #include "StateStack.hpp"
-#include "Texture.hpp"
 #include "GLUtils.hpp"
-
-// Number of spheres in scene (matching Compute.cpp)
-static constexpr int TOTAL_SPHERES = 200;
+#include "Sphere.hpp"
 
 GameState::GameState(StateStack& stack, Context context)
     : State{stack, context}
@@ -31,7 +24,9 @@ GameState::GameState(StateStack& stack, Context context)
       , mCamera{glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f}
 {
     mPlayer.setActive(true);
-
+    mWorld.init();  // This now initializes both 2D physics and 3D path tracer scene
+    mWorld.setPlayer(context.player);
+    
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
     mLastCameraYaw = mCamera.getYaw();
@@ -88,8 +83,11 @@ void GameState::initializeGraphicsResources() noexcept
         // Create textures for path tracing
         createPathTracerTextures();
         
-        // Initialize scene with spheres
-        initPathTracerScene();
+        // Upload sphere data from World to GPU
+        const auto& spheres = mWorld.getSpheres();
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, spheres.size() * sizeof(Sphere), spheres.data(), GL_DYNAMIC_DRAW);
+        SDL_Log("GameState: Uploaded %zu spheres to GPU", spheres.size());
         
         mShadersInitialized = true;
         SDL_Log("GameState: Shaders and OpenGL resources initialized successfully");
@@ -163,111 +161,6 @@ void GameState::createPathTracerTextures() noexcept
     SDL_Log("GameState: Path tracer textures created (%dx%d)", mWindowWidth, mWindowHeight);
 }
 
-void GameState::initPathTracerScene() noexcept
-{
-    SDL_Log("GameState: Initializing PBR Path Tracer scene...");
-    
-    mSpheres.clear();
-    
-    // Ground sphere (large Lambertian) - matching Compute.cpp
-    mSpheres.emplace_back(
-        glm::vec3(0.0f, -1000.0f, 0.0f),  // center
-        1000.0f,                           // radius
-        glm::vec3(0.5f, 0.5f, 0.5f),      // color (gray)
-        MaterialType::LAMBERTIAN,          // type
-        0.0f,                              // fuzz
-        0.0f                               // refractive index
-    );
-
-    // Center glass sphere
-    mSpheres.emplace_back(
-        glm::vec3(0.0f, 1.0f, 0.0f),
-        1.0f,
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        MaterialType::DIELECTRIC,
-        0.0f,
-        1.5f  // Glass refractive index
-    );
-
-    // Left diffuse sphere
-    mSpheres.emplace_back(
-        glm::vec3(-4.0f, 1.0f, 0.0f),
-        1.0f,
-        glm::vec3(0.4f, 0.2f, 0.1f),
-        MaterialType::LAMBERTIAN,
-        0.0f,
-        0.0f
-    );
-
-    // Right metal sphere
-    mSpheres.emplace_back(
-        glm::vec3(4.0f, 1.0f, 0.0f),
-        1.0f,
-        glm::vec3(0.7f, 0.6f, 0.5f),
-        MaterialType::METAL,
-        0.0f,  // No fuzz for sharp reflection
-        0.0f
-    );
-
-    // Generate random small spheres in a circle pattern (matching Compute.cpp)
-    float imgCircleRadius = 125.0f;
-    float offset = 15.25f;
-
-    for (unsigned int index = 4; index < TOTAL_SPHERES; ++index)
-    {
-        float matChoice = getRandomFloat(0.0f, 1.0f);
-
-        float angle = static_cast<float>(index - 4) / static_cast<float>(TOTAL_SPHERES - 4) * 360.0f;
-        float angleRad = glm::radians(angle);
-        float displacement = getRandomFloat(-offset, offset);
-
-        float xpos = std::sin(angleRad) * imgCircleRadius + displacement;
-        displacement = getRandomFloat(-offset, offset);
-        float y = std::abs(displacement) * 7.5f;
-        displacement = getRandomFloat(-offset, offset);
-        float z = std::cos(angleRad) * imgCircleRadius + displacement;
-
-        glm::vec3 center = glm::vec3(xpos, y, z);
-        float radius = getRandomFloat(5.0f, 12.0f);
-
-        if (matChoice < 0.7f) {
-            // Lambertian (diffuse) - 70% chance
-            glm::vec3 albedo(
-                getRandomFloat(0.1f, 0.9f),
-                getRandomFloat(0.1f, 0.9f),
-                getRandomFloat(0.1f, 0.9f)
-            );
-            mSpheres.emplace_back(center, radius, albedo, MaterialType::LAMBERTIAN, 0.0f, 0.0f);
-        } else if (matChoice < 0.9f) {
-            // Metal - 20% chance
-            glm::vec3 albedo(
-                getRandomFloat(0.5f, 1.0f),
-                getRandomFloat(0.5f, 1.0f),
-                getRandomFloat(0.5f, 1.0f)
-            );
-            float fuzz = getRandomFloat(0.0f, 0.5f);
-            mSpheres.emplace_back(center, radius, albedo, MaterialType::METAL, fuzz, 0.0f);
-        } else {
-            // Glass (dielectric) - 10% chance
-            mSpheres.emplace_back(center, radius, glm::vec3(1.0f), MaterialType::DIELECTRIC, 0.0f, 1.5f);
-        }
-    }
-
-    // Upload sphere data to SSBO
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, mSpheres.size() * sizeof(Sphere), mSpheres.data(), GL_STATIC_DRAW);
-
-    SDL_Log("GameState: Path tracer scene initialized with %zu spheres", mSpheres.size());
-}
-
-float GameState::getRandomFloat(float low, float high) noexcept
-{
-    static std::random_device rd;
-    static std::mt19937 mt(rd());
-    std::uniform_real_distribution<float> dist(low, high);
-    return dist(mt);
-}
-
 bool GameState::checkCameraMovement() const noexcept
 {
     glm::vec3 currentPos = mCamera.getPosition();
@@ -300,6 +193,11 @@ void GameState::renderWithComputeShaders() const noexcept
     
     // Check if camera has moved - if so, reset accumulation
     checkCameraMovement();
+    
+    // Update sphere data on GPU every frame (physics may have changed positions)
+    const auto& spheres = mWorld.getSpheres();
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheres.size() * sizeof(Sphere), spheres.data());
     
     // Only compute if we haven't finished all batches
     if (mCurrentBatch < mTotalBatches)
