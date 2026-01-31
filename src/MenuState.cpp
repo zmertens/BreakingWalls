@@ -38,13 +38,10 @@ void MenuState::draw() const noexcept
 
     ImGui::PushFont(getContext().fonts->get(Fonts::ID::NUNITO_SANS).get());
 
-    static auto showDemoWindow{false};
-#if defined(BREAKING_WALLS_DEBUG)
-
-    if (showDemoWindow) {
+    if constexpr (false) {
+        auto showDemoWindow = false;
         ImGui::ShowDemoWindow(&showDemoWindow);
     }
-#endif
 
     // Apply color schema
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.016f, 0.047f, 0.024f, 0.95f)); // #040c06
@@ -139,28 +136,31 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
 {
     // If menu is visible, just keep it showing (no transitions yet)
     if (mShowMainMenu) {
-
         return true;
     }
 
     // Menu was closed by user - process the selected action
     switch (mSelectedMenuItem) {
         case MenuItem::CONTINUE:
-            // Check if Pause state is underneath
-            if (auto isPauseState = getStack().peekState<PauseState*>(); isPauseState)
+            // Only pop if we're not the only state
+            if (getStack().peekState<PauseState*>() || !getStack().isEmpty())
             {
-                // Pop menu state, returning to paused game
+                // Pop menu state, returning to previous state
                 requestStackPop();
             }
             else
             {
+                // If menu is the only state, start a new game
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, 
+                           "MenuState: Cannot continue - no previous state. Starting new game.");
                 requestStackPop();
                 requestStackPush(States::ID::GAME);
             }
             break;
 
         case MenuItem::NEW_GAME:
-            requestStackPop();
+            // Clear all states and start fresh game
+            requestStateClear();
             requestStackPush(States::ID::GAME);
             break;
 

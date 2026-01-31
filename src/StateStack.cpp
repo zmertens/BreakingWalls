@@ -1,8 +1,10 @@
 #include "StateStack.hpp"
 
-#include <stdexcept>
+#if defined(BREAKING_WALLS_DEBUG)
+#include <SDL3/SDL_log.h>
+#endif
 
-#include <SDL3/SDL_events.h>
+#include <stdexcept>
 
 StateStack::StateStack(State::Context context)
     : mStack()
@@ -14,14 +16,20 @@ StateStack::StateStack(State::Context context)
 
 void StateStack::update(float dt, unsigned int subSteps) noexcept
 {
-    for (auto it = mStack.rbegin(); it != mStack.rend(); ++it)
+    // Process existing states (skip if empty)
+    if (!mStack.empty())
     {
-        if (!(*it)->update(dt, subSteps))
+        for (auto it = mStack.rbegin(); it != mStack.rend(); ++it)
         {
-            break;
+            if (!(*it)->update(dt, subSteps))
+            {
+                break;
+            }
         }
     }
 
+    // ALWAYS apply pending changes, even if stack is currently empty
+    // This is crucial for initial state pushes during startup
     applyPendingChanges();
 }
 
@@ -29,6 +37,9 @@ void StateStack::draw() const noexcept
 {
     if (mStack.empty())
     {
+#if defined(BREAKING_WALLS_DEBUG)
+        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "StateStack::draw called on empty stack");
+#endif
         return;
     }
 
@@ -41,14 +52,20 @@ void StateStack::draw() const noexcept
 
 void StateStack::handleEvent(const SDL_Event& event) noexcept
 {
-    for (auto it = mStack.rbegin(); it != mStack.rend(); ++it)
+    // Process events for existing states (skip if empty)
+    if (!mStack.empty())
     {
-        if (!(*it)->handleEvent(event))
+        for (auto it = mStack.rbegin(); it != mStack.rend(); ++it)
         {
-            break;
+            if (!(*it)->handleEvent(event))
+            {
+                break;
+            }
         }
     }
 
+    // ALWAYS apply pending changes, even if stack is currently empty
+    // This ensures state transitions from events are processed
     applyPendingChanges();
 }
 
@@ -89,16 +106,22 @@ void StateStack::applyPendingChanges()
         switch (change.action)
         {
         case Action::PUSH:
-            SDL_Log("StateStack: PUSH state %d (stack size: %zu -> %zu)", 
-                    static_cast<int>(change.stateID), mStack.size(), mStack.size() + 1);
             mStack.push_back(createState(change.stateID));
             break;
         case Action::POP:
-            SDL_Log("StateStack: POP (stack size: %zu -> %zu)", mStack.size(), mStack.size() - 1);
-            mStack.pop_back();
+            if (!mStack.empty())
+            {
+                mStack.pop_back();
+            }
+            else
+            {
+#if defined(BREAKING_WALLS_DEBUG)
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, 
+                           "StateStack::applyPendingChanges - Attempted to pop from empty stack");
+#endif
+            }
             break;
         case Action::CLEAR:
-            SDL_Log("StateStack: CLEAR (stack size: %zu -> 0)", mStack.size());
             mStack.clear();
             break;
         }

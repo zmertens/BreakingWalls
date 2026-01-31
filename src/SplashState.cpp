@@ -35,19 +35,10 @@ bool SplashState::handleEvent(const SDL_Event& event) noexcept
         // Only allow transition if loading is complete
         if (!isLoadingComplete())
         {
-#if defined(MAZE_DEBUG)
-
-            SDL_Log("Loading not complete yet, please wait...");
-#endif
-
             return true;
         }
 
-        // Pop the splash state
-        requestStackPop();
-        // Pop the loading state underneath
-        requestStackPop();
-        // Push the game state
+        requestStateClear();
         requestStackPush(States::ID::MENU);
         mShowText = !mShowText;
     }

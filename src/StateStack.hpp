@@ -1,8 +1,8 @@
 #ifndef STATE_STACK_HPP
 #define STATE_STACK_HPP
 
-#include <map>
 #include <functional>
+#include <map>
 #include <memory>
 #include <vector>
 

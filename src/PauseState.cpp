@@ -84,13 +84,9 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
         break;
     case static_cast<unsigned int>(States::ID::MENU):
         SDL_Log("Menu selected from PauseState, clearing states and returning to MenuState");
-        // Pop pause state
-        requestStackPop();
-        // Pop game state
-        requestStackPop();
-        // Push menu state
+        requestStateClear();
         requestStackPush(States::ID::MENU);
-        break;
+        break;      
     default: break;
     }
 

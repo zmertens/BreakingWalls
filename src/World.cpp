@@ -168,29 +168,30 @@ void World::handleEvent(const SDL_Event& event)
         case SDLK_1:
             if (mBallNormal)
             {
-                mBallNormal->launch(b2Vec2{2.0f, -5.0f});  // Upward and right impulse (negative Y = up)
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Normal Ball");
+                // Increased impulse values for visible effect (in meters)
+                mBallNormal->launch(b2Vec2{8.0f, -15.0f});  // Upward and right impulse (negative Y = up)
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Normal Ball with impulse (8.0, -15.0)");
             }
             break;
         case SDLK_2:
             if (mBallHeavy)
             {
-                mBallHeavy->launch(b2Vec2{3.0f, -6.0f});  // Stronger impulse for heavier ball
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Heavy Ball");
+                mBallHeavy->launch(b2Vec2{10.0f, -20.0f});  // Stronger impulse for heavier ball
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Heavy Ball with impulse (10.0, -20.0)");
             }
             break;
         case SDLK_3:
             if (mBallLight)
             {
-                mBallLight->launch(b2Vec2{1.5f, -4.0f});  // Lighter impulse for light ball
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Light Ball");
+                mBallLight->launch(b2Vec2{6.0f, -12.0f});  // Lighter impulse for light ball
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Light Ball with impulse (6.0, -12.0)");
             }
             break;
         case SDLK_4:
             if (mBallExplosive)
             {
-                mBallExplosive->launch(b2Vec2{2.5f, -5.5f});
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Explosive Ball");
+                mBallExplosive->launch(b2Vec2{9.0f, -18.0f});
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Launched Explosive Ball with impulse (9.0, -18.0)");
             }
             break;
         }

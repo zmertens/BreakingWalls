@@ -335,8 +335,8 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
             mCamera.setPosition(newPos);
         }
         
-        // Arrow keys for camera rotation
-        const float rotateSpeed = 90.0f * dt;  // 90 degrees per second
+        // Arrow keys for camera rotation - INCREASED SPEED
+        const float rotateSpeed = 180.0f * dt;  // 180 degrees per second (doubled from 90)
         float yawDelta = 0.0f;
         float pitchDelta = 0.0f;
         
@@ -397,13 +397,13 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
         }
     }
     
-    // Handle mouse motion for camera rotation (right mouse button)
+    // Handle mouse motion for camera rotation (right mouse button) - INCREASED SENSITIVITY
     if (event.type == SDL_EVENT_MOUSE_MOTION)
     {
         Uint32 mouseState = SDL_GetMouseState(nullptr, nullptr);
         if (mouseState & SDL_BUTTON_RMASK)
         {
-            const float sensitivity = 0.1f;
+            const float sensitivity = 0.2f;  // Increased from 0.1f to 0.2f
             mCamera.rotate(event.motion.xrel * sensitivity, -event.motion.yrel * sensitivity);
         }
     }

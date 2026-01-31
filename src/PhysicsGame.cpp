@@ -19,6 +19,7 @@
 
 #include <dearimgui/imgui.h>
 #include <dearimgui/backends/imgui_impl_sdl3.h>
+#include <dearimgui/backends/imgui_impl_opengl3.h>
 
 #include <fonts/Cousine_Regular.h>
 #include <fonts/Limelight_Regular.h>
@@ -46,14 +47,6 @@
 
 struct PhysicsGame::PhysicsGameImpl
 {
-    static constexpr auto COMMON_RESOURCE_PATH_PREFIX = "resources";
-
-    // Game-specific constants
-    static constexpr float WALL_HIT_THRESHOLD = 4.0f; // Number of hits before a wall breaks
-    static constexpr float WALL_WIDTH = 0.1f;
-
-    static constexpr int MAX_BALLS = 10;
-
     Player p1;
 
     std::unique_ptr<RenderWindow> window;
@@ -65,9 +58,6 @@ struct PhysicsGame::PhysicsGameImpl
     TextureManager textures;
 
     std::unique_ptr<StateStack> stateStack;
-
-    // Game-specific variables
-    int score = 0;
 
     // FPS smoothing variables
     mutable double fpsUpdateTimer = 0.0;
@@ -106,23 +96,11 @@ struct PhysicsGame::PhysicsGameImpl
             std::ref(fonts),
             std::ref(textures),
             std::ref(p1)
-        });
+            });
 
-        // Load initial textures needed for loading/splash screens
-        generateLevelOne();
-
-        SDL_Log("PhysicsGameImpl - loadFonts()...");
         loadFonts();
 
-        SDL_Log("PhysicsGameImpl - registerStates()...");
         registerStates();
-
-        // Push loading state with resource path, then splash state on top
-        SDL_Log("PhysicsGameImpl - pushing LOADING state...");
-        stateStack->pushState(States::ID::LOADING);
-        SDL_Log("PhysicsGameImpl - pushing SPLASH state...");
-        stateStack->pushState(States::ID::SPLASH);
-        SDL_Log("PhysicsGameImpl - initialization complete");
     }
 
     ~PhysicsGameImpl()
@@ -132,6 +110,11 @@ struct PhysicsGame::PhysicsGameImpl
             this->stateStack->clearStates();
             this->fonts.clear();
             this->textures.clear();
+
+            ImGui_ImplOpenGL3_Shutdown();
+            ImGui_ImplSDL3_Shutdown();
+            ImGui::DestroyContext();
+
             sdl.destroyAndQuit();
         }
     }
@@ -144,57 +127,34 @@ struct PhysicsGame::PhysicsGameImpl
 
     void initDearImGui() const noexcept
     {
+        // Initialize ImGui
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    }
+        // Setup ImGui style
+        ImGui::StyleColorsDark();
 
-    void generateLevelOne() noexcept
-    {
-        using std::string;
-
-        SDL_Log("generateLevelOne() - Starting maze generation...");
-
-        mazes::configurator config{};
-        config.rows(mazes::configurator::MAX_ROWS)
-              .columns(mazes::configurator::MAX_COLUMNS)
-              .levels(1)
-              .algo_id(mazes::algo::BINARY_TREE)
-              .seed(42)
-              .distances(true)
-              .distances_start(0)
-              .distances_end(-1);
-
-        try
-        {
-            SDL_Log("generateLevelOne() - Creating maze...");
-            if (const auto mazeStr = mazes::create(config); !mazeStr.empty())
-            {
-                SDL_Log("generateLevelOne() - Maze created, loading texture...");
-                // Load the maze texture from the generated string
-                textures.loadFromStr(Textures::ID::LEVEL_ONE, mazeStr, 12);
-                SDL_Log("generateLevelOne() - Texture loaded successfully");
-            }
-            else
-            {
-                throw std::runtime_error("Failed to create maze:\n" + mazeStr);
-            }
-        }
-        catch (const std::exception& e)
-        {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to generate level one: %s", e.what());
-        }
+        // Initialize ImGui SDL3 and OpenGL3 backends
+        ImGui_ImplSDL3_InitForOpenGL(this->sdlHelper.m_window, this->sdlHelper.m_context);
+        ImGui_ImplOpenGL3_Init("#version 430");
     }
 
     void loadFonts() noexcept
     {
         static constexpr auto FONT_PIXEL_SIZE = 28.f;
+
         fonts.load(Fonts::ID::LIMELIGHT,
             Limelight_Regular_compressed_data,
             Limelight_Regular_compressed_size,
                    FONT_PIXEL_SIZE);
+
         fonts.load(Fonts::ID::NUNITO_SANS,
             NunitoSans_compressed_data,
             NunitoSans_compressed_size,
             FONT_PIXEL_SIZE);
+
         fonts.load(Fonts::ID::COUSINE_REGULAR,
             Cousine_Regular_compressed_data,
             Cousine_Regular_compressed_size,
@@ -212,22 +172,37 @@ struct PhysicsGame::PhysicsGameImpl
 
             if (event.type == SDL_EVENT_QUIT)
             {
+                SDL_Log("SDL_EVENT_QUIT received - clearing state stack");
                 stateStack->clearStates();
-                break;
+                // Don't process any more events after quit
+                return;
             }
 
-            // Then let the state stack handle events
-            stateStack->handleEvent(event);
+            // Only handle events if state stack is not empty
+            if (!stateStack->isEmpty())
+            {
+                stateStack->handleEvent(event);
+            }
         }
     }
 
     void update(const float dt, int subSteps = 4) const noexcept
     {
-        stateStack->update(dt, subSteps);
+        // Only update if state stack has states
+        if (!stateStack->isEmpty())
+        {
+            stateStack->update(dt, subSteps);
+        }
     }
 
     void render(const double elapsed) const noexcept
     {
+        // Only render if state stack has states
+        if (stateStack->isEmpty())
+        {
+            return;
+        }
+
         // Clear, draw, and present (like SFML)
         window->clear();
         window->beginFrame();
@@ -318,8 +293,8 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
 
     SDL_Log("Entering game loop...\n");
 
-    // Apply pending state changes (push SPLASH state onto stack)
-    gamePtr->stateStack->update(0.1f, 4);
+    gamePtr->stateStack->pushState(States::ID::LOADING);
+    gamePtr->stateStack->pushState(States::ID::SPLASH);
 
     while (gamePtr->window && gamePtr->window->isOpen())
     {
@@ -340,16 +315,26 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
             currentTimeStep += FIXED_TIME_STEP;
 
             gamePtr->update(static_cast<float>(FIXED_TIME_STEP) / 1000.f);
+            
+            // Check if state stack became empty during update
+            if (gamePtr->stateStack->isEmpty())
+            {
+                SDL_Log("State stack is empty after update - closing application");
+                gamePtr->window->close();
+                break;
+            }
         }
 
-        if (gamePtr->stateStack->isEmpty())
+        // Exit outer loop if window was closed in update loop
+        if (!gamePtr->window->isOpen())
         {
-            gamePtr->window->close();
+            break;
         }
 
         gamePtr->render(elapsed);
     }
 
+    SDL_Log("Exiting game loop...\n");
     return true;
 }
 

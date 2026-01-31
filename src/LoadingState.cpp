@@ -57,9 +57,6 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
         // Now actually load the textures from the worker-collected texture requests
         loadTexturesFromWorkerRequests();
 
-        // Load composed maze textures from level_defaults
-        loadMazeTexturesFromComposedStrings();
-
         // Handle window icon separately (special case, not managed by TextureManager)
         loadWindowIcon(resources);
 
