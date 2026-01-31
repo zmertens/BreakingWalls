@@ -266,15 +266,6 @@ void World::buildScene()
         mSceneGraph.attachChild(std::move(layer));
     }
 
-    // Create parallax background layers using LEVEL_ONE texture
-    // Each layer scrolls at a different speed to create depth effect
-    // Negative speeds scroll left (like in the raylib example)
-
-    // Static background with LEVEL_ONE (generated from maze at startup)
-    auto mazeNode = make_unique<SpriteNode>(mTextures.get(Textures::ID::LEVEL_ONE));
-    mazeNode->setPosition(0.f, 0.f);
-    mSceneLayers[static_cast<size_t>(Layer::BACKGROUND)]->attachChild(std::move(mazeNode));
-
     auto leader = make_unique<Pathfinder>(Pathfinder::Type::ALLY, cref(mTextures));
     mPlayerPathfinder = leader.get();
     mPlayerPathfinder->setPosition(100.f, 100.f);  // Start position in screen space

@@ -29,13 +29,11 @@ private:
 
     void loadTexturesFromWorkerRequests() const noexcept;
 
-    void loadMazeTexturesFromComposedStrings() const noexcept;
-
     void loadWindowIcon(const std::unordered_map<std::string, std::string>& resources) noexcept;
 
     void setCompletion(float percent) noexcept;
 
-    Sprite mLoadingSprite;
+    //Sprite mLoadingSprite;
 
     WorkerConcurrent mForeman;
 

@@ -11,16 +11,16 @@
 SplashState::SplashState(StateStack& stack, Context context)
     : State(stack, context)
       , mShowText{true}
-      , mSplashSprite{context.textures->get(Textures::ID::LEVEL_ONE)}
+      //, mSplashSprite{context.textures->get(Textures::ID::LEVEL_ONE)}
 {
     getContext().player->setActive(false);
 }
 
 void SplashState::draw() const noexcept
 {
-    auto& window = *getContext().window;
-
-    window.draw(mSplashSprite);
+    // SplashState doesn't need to draw anything special yet
+    // Will show clear color until textures are loaded
+    // TODO: Add splash graphics after LoadingState completes
 }
 
 bool SplashState::update(float dt, unsigned int subSteps) noexcept

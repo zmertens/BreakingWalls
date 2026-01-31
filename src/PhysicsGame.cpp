@@ -77,6 +77,8 @@ struct PhysicsGame::PhysicsGameImpl
           , sdlHelper{}
           , stateStack{nullptr}
     {
+        SDL_Log("=== PhysicsGameImpl Constructor START ===");
+        
         initSDL();
 
         // Check if SDL initialization succeeded
@@ -87,10 +89,13 @@ struct PhysicsGame::PhysicsGameImpl
             return;
         }
 
+        SDL_Log("Creating RenderWindow...");
         window = std::make_unique<RenderWindow>(sdlHelper.m_window);
 
+        SDL_Log("Initializing ImGui...");
         initDearImGui();
 
+        SDL_Log("Creating StateStack...");
         stateStack = std::make_unique<StateStack>(State::Context{
             *window,
             std::ref(fonts),
@@ -98,9 +103,21 @@ struct PhysicsGame::PhysicsGameImpl
             std::ref(p1)
             });
 
+        SDL_Log("Loading fonts...");
         loadFonts();
 
+        SDL_Log("Registering states...");
         registerStates();
+        
+        SDL_Log("Pushing initial states...");
+        // Push initial states onto the stack
+        stateStack->pushState(States::ID::LOADING);
+        SDL_Log("  -> Pushed LOADING state to pending list");
+        
+        stateStack->pushState(States::ID::SPLASH);
+        SDL_Log("  -> Pushed SPLASH state to pending list");
+        
+        SDL_Log("=== PhysicsGameImpl Constructor COMPLETE ===");
     }
 
     ~PhysicsGameImpl()
@@ -188,11 +205,9 @@ struct PhysicsGame::PhysicsGameImpl
 
     void update(const float dt, int subSteps = 4) const noexcept
     {
-        // Only update if state stack has states
-        if (!stateStack->isEmpty())
-        {
-            stateStack->update(dt, subSteps);
-        }
+        // Always call update - StateStack handles empty stack internally
+        // and MUST apply pending changes even when stack is empty
+        stateStack->update(dt, subSteps);
     }
 
     void render(const double elapsed) const noexcept
@@ -291,10 +306,9 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
     auto previous = static_cast<double>(SDL_GetTicks());
     double accumulator = 0.0, currentTimeStep = 0.0;
 
-    SDL_Log("Entering game loop...\n");
+    SDL_Log("Entering game loop...");
 
-    gamePtr->stateStack->pushState(States::ID::LOADING);
-    gamePtr->stateStack->pushState(States::ID::SPLASH);
+    // States already pushed in constructor - no need to push again
 
     while (gamePtr->window && gamePtr->window->isOpen())
     {
@@ -334,7 +348,7 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
         gamePtr->render(elapsed);
     }
 
-    SDL_Log("Exiting game loop...\n");
+    SDL_Log("Exiting game loop...");
     return true;
 }
 

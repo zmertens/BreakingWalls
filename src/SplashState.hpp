@@ -16,7 +16,7 @@ public:
 private:
     bool isLoadingComplete() const noexcept;
 
-    Sprite mSplashSprite;
+    //Sprite mSplashSprite;
 
     bool mShowText;
 };
