@@ -12,7 +12,7 @@
             }
         },
         {
-            "name": "platform: desktop-msvc",
+            "name": "platform: build-msvc",
             "displayName": "Visual Studio Community 2022 Release - amd64",
             "description": "Using compilers for Visual Studio 17 2022 (x64 architecture)",
             "generator": "Visual Studio 17 2022",
@@ -28,9 +28,9 @@
     ],
     "buildPresets": [
         {
-            "name": "desktop-msvc-debug",
+            "name": "build-msvc-debug",
             "displayName": "Visual Studio Community 2022 Release - amd64 - Debug",
-            "configurePreset": "platform: desktop-msvc",
+            "configurePreset": "platform: build-msvc",
             "configuration": "Debug"
         }
     ]

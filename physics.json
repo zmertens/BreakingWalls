@@ -1,5 +1,5 @@
 {
-	"window_icon": "textures/icon.bmp",
+	"window_icon": "textures/icon2.bmp",
     "splash_image": "textures/title.png",
     "ogg_files": ["audio/generate.ogg", "audio/sfx_select.ogg", "audio/sfx_throw.ogg"],
     "wav_files": ["audio/loading.wav"],

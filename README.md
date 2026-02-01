@@ -1,39 +1,29 @@
-![Sample](resources/icon.bmp)
+![Sample](textures/icon2.bmp)
 
 # Breaking Walls
 
-A 2D top-down physics game.
+A cozy float-in-space game with cutting edge graphics.
 
-  - Simple scoring system that includes maintaining a string of highlighted bricks
-  - Balls interact with the bricks and break them after repeated bounces
-  - Updated event handling (mouse, touch, keyboard)
-  - Maintains high scores via a network connection with [Corners](https://github.com/zmertens/Corners) or locally on harddrive
-  - Spatialized sound effects in 2D
+  - Players interact with and dodge obstacles using deterministic physics
+  - Zen mode that includes maintaining balance in a procedurally generated open world
+  - Simple event handling (mouse, touch, keyboard) and haptic feedback
+  - Performance goal-seeking mode with points given to obstacles avoided
+  - Spatialized sound effects
+  - Break down the 4th wall and advance into evolving worlds with online gameplay
 
----
-
-## CMake Configuration
+## Configuration
 
 [CMake](https://cmake.org) is used for project configuration.
 
-Here are the external dependencies which can be pulled from the Web:
+These exteneral dependencies are downloaded with CMake and Git:
 
-  - [box2d](https://box2d.org/documentation/hello.html)
-  - [emscripten](https://emscripten.org/index.html)
-  - [Maze Builder](https://zmertens.github.io/mazebuilder.github.io/index.html)
-  - [SDL](https://libsdl.org)
-  - [SFML](https://sfml-dev.org)
+  * `git clone https://github.com/zmertens/BreakingWalls.git --shallow-submodules`
 
-Use the following CMake options to configure the project:
+  * `cmake --preset="platform: build-msvc"` **(this will automatically download the following dependencies)**
 
-| CMake Option | Default | Description |
-|--------------|---------|------------ |
-| PLATFORM_WEB | OFF | Build for Web platform using Emscripten |
+    - [box2d](https://box2d.org/documentation/hello.html)
+    - [glm](https://github.com/g-truc/glm)
+    - [Maze Builder](https://zmertens.github.io/mazebuilder.github.io/index.html)
+    - [SDL](https://libsdl.org)
+    - [SFML](https://sfml-dev.org)
 
-### Example Builds
-
-`cmake -G"Visual Studio 17 2022" -S . -B build -DPLATFORM_WEB:BOOL=OFF`
-
-`cmake -G"Ninja Multi-Config" -S . -B build-web -DPLATFORM_WEB:BOOL=ON -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${my/emsdk/repo}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake`
-
----
