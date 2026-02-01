@@ -3,7 +3,7 @@
 // Path tracing compute shader with progressive refinement
 // Based on physically-based rendering principles
 
-#define MAX_SPHERES 200
+#define MAX_SPHERES 2000  // Increased for dynamic spawning
 #define MAX_LIGHTS 5
 #define MAX_BOUNCES 8
 #define EPSILON 0.001
@@ -100,6 +100,7 @@ struct HitRecord {
 uniform Camera uCamera;
 uniform uint uBatch;
 uniform uint uSamplesPerBatch;
+uniform uint uSphereCount;  // Actual number of spheres to check
 
 // Shader storage buffer for spheres
 layout (std430, binding = 1) buffer SphereBuffer {
@@ -148,7 +149,7 @@ bool hitWorld(in Ray ray, float tMin, float tMax, out HitRecord hit) {
     bool hitAnything = false;
     float closest = tMax;
 
-    for (int i = 0; i < MAX_SPHERES; i++) {
+    for (uint i = 0; i < uSphereCount; i++) {
         if (sphereIntersect(bSpheres[i], ray, tMin, closest, tempHit)) {
             hitAnything = true;
             closest = tempHit.t;
@@ -326,4 +327,5 @@ void main() {
 
     imageStore(uDisplayTexture, ivec2(pixel), vec4(averageColor, 1.0));
 }
+
 

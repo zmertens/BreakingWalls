@@ -91,12 +91,25 @@ void GameState::initializeGraphicsResources() noexcept
     // Create textures for path tracing
     createPathTracerTextures();
         
-    // Upload sphere data from World to GPU
+    // Upload sphere data from World to GPU with extra capacity for dynamic spawning
     const auto& spheres = mWorld.getSpheres();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, spheres.size() * sizeof(Sphere), spheres.data(), GL_DYNAMIC_DRAW);
+    
+    // Allocate buffer with 4x capacity to handle chunk-based spawning
+    // This reduces frequent reallocations as spheres are loaded/unloaded
+    size_t initialCapacity = std::max(spheres.size() * 4, size_t(1000));
+    size_t bufferSize = initialCapacity * sizeof(Sphere);
+    
+    glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, nullptr, GL_DYNAMIC_DRAW);
+    
+    // Upload initial sphere data
+    if (!spheres.empty())
+    {
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheres.size() * sizeof(Sphere), spheres.data());
+    }
 
-    SDL_Log("GameState: Uploaded %zu spheres to GPU", spheres.size());       
+    SDL_Log("GameState: Uploaded %zu spheres to GPU (buffer capacity: %zu spheres)", 
+            spheres.size(), initialCapacity);       
     SDL_Log("GameState: Graphics pipeline initialization complete");
 }
   
@@ -162,8 +175,36 @@ void GameState::renderWithComputeShaders() const noexcept
     
     // Update sphere data on GPU every frame (physics may have changed positions)
     const auto& spheres = mWorld.getSpheres();
+    
+    // Safety check: ensure we have spheres to render
+    if (spheres.empty())
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "No spheres to render");
+        return;
+    }
+    
+    // Calculate required buffer size
+    size_t requiredSize = spheres.size() * sizeof(Sphere);
+    
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheres.size() * sizeof(Sphere), spheres.data());
+    
+    // Check if we need to reallocate the buffer (sphere count changed)
+    GLint currentBufferSize = 0;
+    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &currentBufferSize);   
+    
+    if (static_cast<size_t>(currentBufferSize) < requiredSize)
+    {
+        // Reallocate buffer with new size (add some headroom to avoid frequent reallocations)
+        size_t newSize = requiredSize * 2;
+        glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, spheres.data(), GL_DYNAMIC_DRAW);
+        SDL_Log("GameState: Reallocated SSBO for %zu spheres (buffer size: %zu bytes)", 
+                spheres.size(), newSize);
+    }
+    else
+    {
+        // Update existing buffer
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, requiredSize, spheres.data());
+    }
     
     // Only compute if we haven't finished all batches
     if (mCurrentBatch < mTotalBatches)
@@ -185,6 +226,9 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uBatch", mCurrentBatch);
         mComputeShader->setUniform("uSamplesPerBatch", mSamplesPerBatch);
         
+        // Set sphere count uniform (NEW - tells shader how many spheres to check)
+        mComputeShader->setUniform("uSphereCount", static_cast<uint32_t>(spheres.size()));
+        
         // Bind both textures as images for compute shader
         glBindImageTexture(0, mAccumTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
         glBindImageTexture(1, mDisplayTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
@@ -203,8 +247,8 @@ void GameState::renderWithComputeShaders() const noexcept
         if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches) {
             uint32_t totalSamples = mCurrentBatch * mSamplesPerBatch;
             float progress = static_cast<float>(mCurrentBatch) / static_cast<float>(mTotalBatches) * 100.0f;
-            SDL_Log("Path tracing progress: %.1f%% (%u/%u batches, %u samples)",
-                    progress, mCurrentBatch, mTotalBatches, totalSamples);
+            SDL_Log("Path tracing progress: %.1f%% (%u/%u batches, %u samples, %zu spheres)",
+                    progress, mCurrentBatch, mTotalBatches, totalSamples, spheres.size());
         }
     }
     
@@ -257,6 +301,9 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     auto& commands = mWorld.getCommandQueue();
     mPlayer.handleRealtimeInput(std::ref(commands));
+    
+    // Update sphere chunks based on camera position for dynamic spawning
+    mWorld.updateSphereChunks(mCamera.getPosition());
 
     // Handle camera movement with WASD for 3D path tracer scene
     int numKeys = 0;
