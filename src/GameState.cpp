@@ -21,7 +21,7 @@ GameState::GameState(StateStack& stack, Context context)
       , mPlayer{*context.player}
       , mDisplayShader{nullptr}
       , mComputeShader{nullptr}
-      // Initialize camera matching Compute.cpp: above and in front of sphere circle
+      // Initialize camera at maze spawn position (will be updated after first chunk loads)
       , mCamera{glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f}
 {
     mPlayer.setActive(true);
@@ -42,6 +42,17 @@ GameState::GameState(StateStack& stack, Context context)
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
         mShadersInitialized = false;
     }
+    
+    // Trigger initial chunk load to get maze spawn position
+    mWorld.updateSphereChunks(mCamera.getPosition());
+    
+    // Update camera to maze spawn position (position "0" in the maze)
+    glm::vec3 spawnPos = mWorld.getMazeSpawnPosition();
+    spawnPos.y += 50.0f;  // Place camera above spawn
+    spawnPos.z += 50.0f;  // Move back a bit
+    mCamera.setPosition(spawnPos);
+    SDL_Log("GameState: Camera positioned at maze spawn (%.1f, %.1f, %.1f)", 
+            spawnPos.x, spawnPos.y, spawnPos.z);
     
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();

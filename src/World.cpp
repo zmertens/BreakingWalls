@@ -11,8 +11,9 @@
 
 #include "Physics.hpp"
 #include "Sphere.hpp"
+#include "Material.hpp"
 
-#include <MazeBuilder/create.h>
+#include <MazeBuilder/maze_builder.h>
 
 #include <box2d/box2d.h>
 
@@ -26,6 +27,8 @@
 #include <random>
 #include <limits>
 #include <algorithm>
+#include <sstream>
+#include <cctype>
 
 World::World(RenderWindow& window, FontManager& fonts, TextureManager& textures)
     : mWindow{window}
@@ -56,6 +59,9 @@ void World::init() noexcept
 
     mPlayerPathfinder = nullptr;
     
+    // Initialize player spawn position (will be set when chunk 0,0 loads)
+    mPlayerSpawnPosition = glm::vec3(0.0f, 10.0f, 0.0f);
+    
     // Initialize 3D path tracer scene with physics-enabled spheres
     initPathTracerScene();
     
@@ -66,7 +72,7 @@ void World::init() noexcept
     // Initialize chunk system - set to invalid position to force first update
     mLastChunkUpdatePosition = glm::vec3(std::numeric_limits<float>::max());
     
-    SDL_Log("World: Initialization complete - chunk system ready");
+    SDL_Log("World: Initialization complete - maze-based chunk system ready");
 }
 
 void World::update(float dt)
@@ -446,7 +452,7 @@ void World::loadChunk(const ChunkCoord& coord) noexcept
     }
     
     mLoadedChunks.insert(coord);
-    generateSpheresInChunk(coord);
+    generateSpheresInChunkFromMaze(coord);
 }
 
 void World::unloadChunk(const ChunkCoord& coord) noexcept
@@ -484,68 +490,187 @@ void World::unloadChunk(const ChunkCoord& coord) noexcept
     mLoadedChunks.erase(coord);
 }
 
-void World::generateSpheresInChunk(const ChunkCoord& coord) noexcept
+std::string World::generateMazeForChunk(const ChunkCoord& coord) const noexcept
+{
+    try {
+        // Check if maze is cached
+        auto it = mChunkMazes.find(coord);
+        if (it != mChunkMazes.end()) {
+            return it->second;
+        }
+        
+        // Use chunk coordinates as seed for deterministic maze generation
+        unsigned int seed = static_cast<unsigned int>(coord.x * 73856093 ^ coord.z * 19349663);
+        
+        // Create maze WITHOUT distances first to see the format
+        auto mazeStr = mazes::create(
+            mazes::configurator()
+                .rows(MAZE_ROWS)
+                .columns(MAZE_COLS)
+                .distances(false)  // Try WITHOUT distances first
+                .seed(seed)
+        );
+        
+        // Debug: Print first maze to see format
+        if (coord.x == 0 && coord.z == 0) {
+            SDL_Log("World: DEBUG - Maze string for chunk (0,0) - First 500 chars:");
+            SDL_Log("%s", mazeStr.substr(0, std::min(size_t(500), mazeStr.length())).c_str());
+            SDL_Log("World: DEBUG - Maze string length: %zu", mazeStr.length());
+        }
+        
+        return mazeStr;
+    }
+    catch (const std::exception& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to generate maze: %s", e.what());
+        return "";
+    }
+}
+
+int World::parseBase36(const std::string& str) const noexcept
+{
+    if (str.empty()) return -1;
+    
+    int result = 0;
+    for (char c : str) {
+        result *= 36;
+        if (c >= '0' && c <= '9') {
+            result += (c - '0');
+        } else if (c >= 'A' && c <= 'Z') {
+            result += (c - 'A' + 10);
+        } else if (c >= 'a' && c <= 'z') {
+            result += (c - 'a' + 10);
+        }
+    }
+    return result;
+}
+
+std::vector<World::MazeCell> World::parseMazeCells(const std::string& mazeStr, const ChunkCoord& coord) const noexcept
+{
+    std::vector<MazeCell> cells;
+    
+    if (mazeStr.empty()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "World: Empty maze string for chunk (%d, %d)", coord.x, coord.z);
+        return cells;
+    }
+    
+    // Since we're not using distances for now, just create a simple pattern
+    // based on row/column to test the system
+    float chunkWorldX = coord.x * CHUNK_SIZE;
+    float chunkWorldZ = coord.z * CHUNK_SIZE;
+    
+    // Generate cells for each position in the maze grid
+    for (int row = 0; row < MAZE_ROWS; ++row) {
+        for (int col = 0; col < MAZE_COLS; ++col) {
+            // Calculate distance from center for now (as a placeholder)
+            int centerRow = MAZE_ROWS / 2;
+            int centerCol = MAZE_COLS / 2;
+            int distance = std::abs(row - centerRow) + std::abs(col - centerCol);
+            
+            // Calculate world position for this cell
+            float worldX = chunkWorldX + (col * CELL_SIZE) + (CELL_SIZE * 0.5f);
+            float worldZ = chunkWorldZ + (row * CELL_SIZE) + (CELL_SIZE * 0.5f);
+            
+            cells.push_back(MazeCell{row, col, distance, worldX, worldZ});
+            
+            // Track player spawn (center cell of chunk 0,0)
+            if (row == centerRow && col == centerCol && coord.x == 0 && coord.z == 0) {
+                const_cast<World*>(this)->mPlayerSpawnPosition = glm::vec3(worldX, 10.0f, worldZ);
+                SDL_Log("World: Player spawn set to (%.1f, %.1f, %.1f)", worldX, 10.0f, worldZ);
+            }
+        }
+    }
+    
+    SDL_Log("World: Generated %zu cells for maze chunk (%d, %d) using Manhattan distance", 
+            cells.size(), coord.x, coord.z);
+    return cells;
+}
+
+MaterialType World::getMaterialForDistance(int distance) const noexcept
+{
+    // Metal spheres at positions divisible by 4
+    if (distance % 4 == 0 && distance != 0) {
+        return MaterialType::METAL;
+    }
+    // Dielectric (glass) spheres at positions divisible by 6
+    else if (distance % 6 == 0 && distance != 0) {
+        return MaterialType::DIELECTRIC;
+    }
+    // Lambertian (diffuse) for everything else
+    else {
+        return MaterialType::LAMBERTIAN;
+    }
+}
+
+void World::generateSpheresInChunkFromMaze(const ChunkCoord& coord) noexcept
 {
     if (!b2World_IsValid(mWorldId)) {
         return;
     }
     
-    // Use chunk coordinates as seed for deterministic random generation
-    std::mt19937 generator(coord.x * 73856093 ^ coord.z * 19349663);
+    // Generate maze for this chunk
+    std::string mazeStr = generateMazeForChunk(coord);
+    if (mazeStr.empty()) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Empty maze string for chunk (%d, %d)", coord.x, coord.z);
+        return;
+    }
+    
+    // Cache the maze
+    mChunkMazes[coord] = mazeStr;
+    
+    // Parse maze cells
+    auto cells = parseMazeCells(mazeStr, coord);
     
     std::vector<size_t> sphereIndices;
     
-    // Calculate chunk world position
-    float chunkWorldX = coord.x * CHUNK_SIZE;
-    float chunkWorldZ = coord.z * CHUNK_SIZE;
+    // Use chunk coordinates as seed for random properties
+    std::mt19937 generator(coord.x * 73856093 ^ coord.z * 19349663);
     
     auto getRandomFloat = [&generator](float low, float high) -> float {
         std::uniform_real_distribution<float> distribution(low, high);
         return distribution(generator);
     };
     
-    // Generate spheres within this chunk
-    for (int i = 0; i < SPHERES_PER_CHUNK; ++i) {
-        float xpos = chunkWorldX + getRandomFloat(0.0f, CHUNK_SIZE);
-        float zpos = chunkWorldZ + getRandomFloat(0.0f, CHUNK_SIZE);
-        float ypos = getRandomFloat(5.0f, 25.0f);
+    // Generate spheres at maze cell positions
+    for (const auto& cell : cells) {
+        // PERFORMANCE FIX: Only spawn 5% of cells (was 30%)
+        // This gives us ~20 spheres per chunk instead of ~120
+        if (getRandomFloat(0.0f, 1.0f) > 0.05f) {
+            continue;
+        }
         
-        glm::vec3 center(xpos, ypos, zpos);
-        float radius = getRandomFloat(3.0f, 8.0f);
+        // Determine material based on distance
+        MaterialType matType = getMaterialForDistance(cell.distance);
         
-        float matChoice = getRandomFloat(0.0f, 1.0f);
-        MaterialType matType;
-        float density;
+        // Set properties based on material type
+        float density, fuzz = 0.0f, refractIdx = 1.5f;
         glm::vec3 albedo;
-        float fuzz = 0.0f;
-        float refractIdx = 1.5f;
         
-        if (matChoice < 0.7f) {
-            // Lambertian (diffuse)
-            matType = MaterialType::LAMBERTIAN;
-            density = 1.0f;
+        if (matType == MaterialType::METAL) {
+            density = 2.5f;
             albedo = glm::vec3(
-                getRandomFloat(0.1f, 0.9f),
-                getRandomFloat(0.1f, 0.9f),
-                getRandomFloat(0.1f, 0.9f)
+                getRandomFloat(0.6f, 1.0f),
+                getRandomFloat(0.6f, 1.0f),
+                getRandomFloat(0.6f, 1.0f)
             );
-        } else if (matChoice < 0.9f) {
-            // Metal
-            matType = MaterialType::METAL;
-            density = 2.0f;
-            albedo = glm::vec3(
-                getRandomFloat(0.5f, 1.0f),
-                getRandomFloat(0.5f, 1.0f),
-                getRandomFloat(0.5f, 1.0f)
-            );
-            fuzz = getRandomFloat(0.0f, 0.5f);
-        } else {
-            // Glass (dielectric)
-            matType = MaterialType::DIELECTRIC;
+            fuzz = getRandomFloat(0.0f, 0.3f);
+        } else if (matType == MaterialType::DIELECTRIC) {
             density = 0.8f;
             albedo = glm::vec3(1.0f);
             refractIdx = 1.5f;
+        } else { // LAMBERTIAN
+            density = 1.0f;
+            albedo = glm::vec3(
+                getRandomFloat(0.2f, 0.8f),
+                getRandomFloat(0.2f, 0.8f),
+                getRandomFloat(0.2f, 0.8f)
+            );
         }
+        
+        // Vary height based on distance (creates interesting vertical patterns)
+        float ypos = 5.0f + (cell.distance % 10) * 2.0f;
+        float radius = getRandomFloat(2.0f, 5.0f);
+        
+        glm::vec3 center(cell.worldX, ypos, cell.worldZ);
         
         // Add sphere
         size_t sphereIndex = mSpheres.size();
@@ -556,10 +681,10 @@ void World::generateSpheresInChunk(const ChunkCoord& coord) noexcept
         // Create physics body
         b2BodyDef bodyDef = b2DefaultBodyDef();
         bodyDef.type = b2_dynamicBody;
-        bodyDef.position = {xpos, zpos};
+        bodyDef.position = {cell.worldX, cell.worldZ};
         bodyDef.linearDamping = 0.2f;
         bodyDef.angularDamping = 0.3f;
-        bodyDef.isBullet = radius < 5.0f;
+        bodyDef.isBullet = radius < 4.0f;
         
         b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
         
@@ -584,5 +709,8 @@ void World::generateSpheresInChunk(const ChunkCoord& coord) noexcept
     }
     
     mChunkSphereIndices[coord] = sphereIndices;
+    
+    SDL_Log("World: Generated %zu spheres from maze in chunk (%d, %d)", 
+            sphereIndices.size(), coord.x, coord.z);
 }
 

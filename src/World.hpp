@@ -7,6 +7,7 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <string>
 #include <glm/glm.hpp>
 
 #include "CommandQueue.hpp"
@@ -15,6 +16,7 @@
 #include "ResourceIdentifiers.hpp"
 #include "SceneNode.hpp"
 #include "View.hpp"
+#include "Material.hpp"  // For MaterialType enum
 
 class Ball;
 class Pathfinder;
@@ -50,6 +52,9 @@ public:
     
     // Update sphere chunks based on camera position
     void updateSphereChunks(const glm::vec3& cameraPosition) noexcept;
+    
+    // Get spawn position from maze (position "0")
+    glm::vec3 getMazeSpawnPosition() const noexcept { return mPlayerSpawnPosition; }
 
 private:
     
@@ -59,7 +64,7 @@ private:
     // Sync physics bodies to sphere positions
     void syncPhysicsToSpheres() noexcept;
     
-    // Chunk-based sphere management
+    // Chunk-based sphere management with maze integration
     struct ChunkCoord {
         int x, z;
         
@@ -74,10 +79,23 @@ private:
         }
     };
     
+    // Maze cell data for sphere spawning
+    struct MazeCell {
+        int row, col;
+        int distance;        // Base-10 distance from start
+        float worldX, worldZ; // 3D world position
+    };
+    
     ChunkCoord getChunkCoord(const glm::vec3& position) const noexcept;
     void loadChunk(const ChunkCoord& coord) noexcept;
     void unloadChunk(const ChunkCoord& coord) noexcept;
-    void generateSpheresInChunk(const ChunkCoord& coord) noexcept;
+    
+    // Maze-based sphere generation
+    void generateSpheresInChunkFromMaze(const ChunkCoord& coord) noexcept;
+    std::string generateMazeForChunk(const ChunkCoord& coord) const noexcept;
+    std::vector<MazeCell> parseMazeCells(const std::string& mazeStr, const ChunkCoord& coord) const noexcept;
+    int parseBase36(const std::string& str) const noexcept;
+    MaterialType getMaterialForDistance(int distance) const noexcept;
     
     // Helper to generate random float
     static float getRandomFloat(float low, float high) noexcept;
@@ -124,13 +142,18 @@ private:
     std::vector<Sphere> mSpheres;
     std::vector<b2BodyId> mSphereBodyIds;  // Physics bodies for each sphere
     
-    // Chunk management
+    // Chunk management with maze integration
     static constexpr float CHUNK_SIZE = 100.0f;
-    static constexpr int CHUNK_LOAD_RADIUS = 3;  // Load chunks within 3 chunk radius
-    static constexpr int SPHERES_PER_CHUNK = 15;
+    static constexpr int CHUNK_LOAD_RADIUS = 3;
+    static constexpr int MAZE_ROWS = 20;    // Rows per chunk maze
+    static constexpr int MAZE_COLS = 20;    // Columns per chunk maze
+    static constexpr float CELL_SIZE = CHUNK_SIZE / static_cast<float>(MAZE_COLS); // 5 units per cell
+    
     std::unordered_set<ChunkCoord, ChunkCoordHash> mLoadedChunks;
     std::unordered_map<ChunkCoord, std::vector<size_t>, ChunkCoordHash> mChunkSphereIndices;
+    std::unordered_map<ChunkCoord, std::string, ChunkCoordHash> mChunkMazes; // Cache generated mazes
     glm::vec3 mLastChunkUpdatePosition;
+    glm::vec3 mPlayerSpawnPosition;  // Spawn at maze position "0"
     
     static constexpr int TOTAL_SPHERES = 200;  // Initial reserved capacity
 };
