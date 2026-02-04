@@ -255,37 +255,66 @@ void LoadingState::loadAudio() noexcept
 
     try
     {
+        // Helper lambda to parse JSON array string into vector of strings
+        auto parseJsonArray = [](const std::string& jsonStr) -> std::vector<std::string> {
+            std::vector<std::string> result;
+            if (jsonStr.empty()) return result;
+
+            std::string str = jsonStr;
+            // Remove outer brackets
+            if (str.front() == '[') str = str.substr(1);
+            if (str.back() == ']') str = str.substr(0, str.length() - 1);
+
+            // Split by comma and extract quoted strings
+            size_t pos = 0;
+            while (pos < str.length()) {
+                // Find next opening quote
+                size_t quoteStart = str.find('"', pos);
+                if (quoteStart == std::string::npos) break;
+
+                // Find closing quote
+                size_t quoteEnd = str.find('"', quoteStart + 1);
+                if (quoteEnd == std::string::npos) break;
+
+                // Extract the string between quotes
+                std::string value = str.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+                result.push_back(value);
+
+                pos = quoteEnd + 1;
+            }
+            return result;
+        };
+
         // Load OGG files
         if (auto oggFilesKey = resources.find(std::string{JSONKeys::OGG_FILES}); 
             oggFilesKey != resources.cend())
         {
-            JSONUtils jsonUtils{};
-            auto oggFiles = jsonUtils.parseJsonArray(oggFilesKey->second);
+            auto oggFiles = parseJsonArray(oggFilesKey->second);
             
             SDL_Log("Loading %zu OGG audio files...\n", oggFiles.size());
             
-            for (size_t i = 0; i < oggFiles.size(); ++i)
+            for (const auto& oggFile : oggFiles)
             {
-                std::string audioPath = resourcePathPrefix + oggFiles[i];
+                std::string audioPath = resourcePathPrefix + oggFile;
                 Audio::ID audioId;
                 
                 // Map filenames to Audio IDs
-                if (oggFiles[i].find("generate.ogg") != std::string::npos)
+                if (oggFile.find("generate.ogg") != std::string::npos)
                 {
                     audioId = Audio::ID::GENERATE;
                 }
-                else if (oggFiles[i].find("sfx_select.ogg") != std::string::npos)
+                else if (oggFile.find("sfx_select.ogg") != std::string::npos)
                 {
                     audioId = Audio::ID::SFX_SELECT;
                 }
-                else if (oggFiles[i].find("sfx_throw.ogg") != std::string::npos)
+                else if (oggFile.find("sfx_throw.ogg") != std::string::npos)
                 {
                     audioId = Audio::ID::SFX_THROW;
                 }
                 else
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "Unknown OGG file: %s, skipping", 
-                               oggFiles[i].c_str());
+                               oggFile.c_str());
                     continue;
                 }
                 
@@ -298,25 +327,24 @@ void LoadingState::loadAudio() noexcept
         if (auto wavFilesKey = resources.find(std::string{JSONKeys::WAV_FILES}); 
             wavFilesKey != resources.cend())
         {
-            JSONUtils jsonUtils{};
-            auto wavFiles = jsonUtils.parseJsonArray(wavFilesKey->second);
+            auto wavFiles = parseJsonArray(wavFilesKey->second);
             
             SDL_Log("Loading %zu WAV audio files...\n", wavFiles.size());
             
-            for (size_t i = 0; i < wavFiles.size(); ++i)
+            for (const auto& wavFile : wavFiles)
             {
-                std::string audioPath = resourcePathPrefix + wavFiles[i];
+                std::string audioPath = resourcePathPrefix + wavFile;
                 Audio::ID audioId;
                 
                 // Map filenames to Audio IDs
-                if (wavFiles[i].find("loading.wav") != std::string::npos)
+                if (wavFile.find("loading.wav") != std::string::npos)
                 {
                     audioId = Audio::ID::LOADING;
                 }
                 else
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "Unknown WAV file: %s, skipping", 
-                               wavFiles[i].c_str());
+                               wavFile.c_str());
                     continue;
                 }
                 
