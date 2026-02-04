@@ -2,6 +2,11 @@
 
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <cstring>
+
+// stb_vorbis for OGG support
+#define STB_VORBIS_HEADER_ONLY
+#include <stb/stb_vorbis.c>
 
 Audio::Audio()
     : mAudioStream{nullptr}
@@ -56,16 +61,55 @@ bool Audio::loadFromFile(std::string_view filename) noexcept
 {
     cleanup();
 
+    // Check file extension to determine format
+    std::string filenameStr(filename);
+    bool isOgg = filenameStr.find(".ogg") != std::string::npos || 
+                 filenameStr.find(".OGG") != std::string::npos;
+
     SDL_AudioSpec spec;
     std::uint8_t* audioBuffer = nullptr;
     std::uint32_t audioLength = 0;
 
-    // Load WAV file
-    if (!SDL_LoadWAV(filename.data(), &spec, &audioBuffer, &audioLength))
+    if (isOgg)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to load audio file %s: %s", 
-                     filename.data(), SDL_GetError());
-        return false;
+        // Load OGG file using stb_vorbis
+        int channels = 0;
+        int sampleRate = 0;
+        short* samples = nullptr;
+        int numSamples = stb_vorbis_decode_filename(filename.data(), &channels, &sampleRate, &samples);
+        
+        if (numSamples <= 0)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to load OGG file %s", filename.data());
+            return false;
+        }
+
+        // Convert to bytes
+        audioLength = static_cast<std::uint32_t>(numSamples * channels * sizeof(short));
+        audioBuffer = static_cast<std::uint8_t*>(SDL_malloc(audioLength));
+        if (!audioBuffer)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to allocate audio buffer for %s", filename.data());
+            free(samples);
+            return false;
+        }
+        std::memcpy(audioBuffer, samples, audioLength);
+        free(samples);
+
+        // Set up SDL audio spec for decoded OGG data
+        spec.freq = sampleRate;
+        spec.format = SDL_AUDIO_S16;
+        spec.channels = static_cast<std::uint8_t>(channels);
+    }
+    else
+    {
+        // Load WAV file using SDL
+        if (!SDL_LoadWAV(filename.data(), &spec, &audioBuffer, &audioLength))
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to load WAV file %s: %s", 
+                         filename.data(), SDL_GetError());
+            return false;
+        }
     }
 
     // Create audio stream for playback
@@ -75,7 +119,10 @@ bool Audio::loadFromFile(std::string_view filename) noexcept
     {
         SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to create audio stream: %s", 
                      SDL_GetError());
-        SDL_free(audioBuffer);
+        if (isOgg)
+            SDL_free(audioBuffer);
+        else
+            SDL_free(audioBuffer);
         return false;
     }
 

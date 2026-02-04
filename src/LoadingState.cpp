@@ -253,6 +253,14 @@ void LoadingState::loadAudio() noexcept
     const auto resources = mForeman.getResources();
     auto resourcePathPrefix = mazes::io_utils::getDirectoryPath(mResourcePath);
 
+    // Map of base filenames to Audio IDs
+    static const std::unordered_map<std::string, Audio::ID> audioFileMap = {
+        {"generate.ogg", Audio::ID::GENERATE},
+        {"sfx_select.ogg", Audio::ID::SFX_SELECT},
+        {"sfx_throw.ogg", Audio::ID::SFX_THROW},
+        {"loading.wav", Audio::ID::LOADING}
+    };
+
     try
     {
         // Helper lambda to parse JSON array string into vector of strings
@@ -285,6 +293,15 @@ void LoadingState::loadAudio() noexcept
             return result;
         };
 
+        // Helper lambda to extract base filename from path
+        auto getBaseFilename = [](const std::string& path) -> std::string {
+            size_t lastSlash = path.find_last_of("/\\");
+            if (lastSlash != std::string::npos) {
+                return path.substr(lastSlash + 1);
+            }
+            return path;
+        };
+
         // Load OGG files
         if (auto oggFilesKey = resources.find(std::string{JSONKeys::OGG_FILES}); 
             oggFilesKey != resources.cend())
@@ -296,30 +313,20 @@ void LoadingState::loadAudio() noexcept
             for (const auto& oggFile : oggFiles)
             {
                 std::string audioPath = resourcePathPrefix + oggFile;
-                Audio::ID audioId;
+                std::string baseFilename = getBaseFilename(oggFile);
                 
-                // Map filenames to Audio IDs
-                if (oggFile.find("generate.ogg") != std::string::npos)
+                // Look up Audio ID from map
+                auto it = audioFileMap.find(baseFilename);
+                if (it != audioFileMap.end())
                 {
-                    audioId = Audio::ID::GENERATE;
-                }
-                else if (oggFile.find("sfx_select.ogg") != std::string::npos)
-                {
-                    audioId = Audio::ID::SFX_SELECT;
-                }
-                else if (oggFile.find("sfx_throw.ogg") != std::string::npos)
-                {
-                    audioId = Audio::ID::SFX_THROW;
+                    audioManager.load(nullptr, it->second, audioPath);
+                    SDL_Log("Loaded audio: %s", audioPath.c_str());
                 }
                 else
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "Unknown OGG file: %s, skipping", 
-                               oggFile.c_str());
-                    continue;
+                               baseFilename.c_str());
                 }
-                
-                audioManager.load(nullptr, audioId, audioPath);
-                SDL_Log("Loaded audio: %s", audioPath.c_str());
             }
         }
 
@@ -334,22 +341,20 @@ void LoadingState::loadAudio() noexcept
             for (const auto& wavFile : wavFiles)
             {
                 std::string audioPath = resourcePathPrefix + wavFile;
-                Audio::ID audioId;
+                std::string baseFilename = getBaseFilename(wavFile);
                 
-                // Map filenames to Audio IDs
-                if (wavFile.find("loading.wav") != std::string::npos)
+                // Look up Audio ID from map
+                auto it = audioFileMap.find(baseFilename);
+                if (it != audioFileMap.end())
                 {
-                    audioId = Audio::ID::LOADING;
+                    audioManager.load(nullptr, it->second, audioPath);
+                    SDL_Log("Loaded audio: %s", audioPath.c_str());
                 }
                 else
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "Unknown WAV file: %s, skipping", 
-                               wavFile.c_str());
-                    continue;
+                               baseFilename.c_str());
                 }
-                
-                audioManager.load(nullptr, audioId, audioPath);
-                SDL_Log("Loaded audio: %s", audioPath.c_str());
             }
         }
 
