@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 
 // stb_vorbis for OGG support
@@ -84,8 +85,17 @@ bool Audio::loadFromFile(std::string_view filename) noexcept
             return false;
         }
 
+        // Check for potential integer overflow before converting to bytes
+        const std::int64_t totalBytes = static_cast<std::int64_t>(numSamples) * channels * sizeof(short);
+        if (totalBytes > UINT32_MAX || totalBytes <= 0)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Audio file too large or invalid size for %s", filename.data());
+            free(samples);
+            return false;
+        }
+
         // Convert to bytes
-        audioLength = static_cast<std::uint32_t>(numSamples * channels * sizeof(short));
+        audioLength = static_cast<std::uint32_t>(totalBytes);
         audioBuffer = static_cast<std::uint8_t*>(SDL_malloc(audioLength));
         if (!audioBuffer)
         {
