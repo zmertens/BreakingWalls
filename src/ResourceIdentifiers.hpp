@@ -67,9 +67,21 @@ namespace Textures
     };
 }
 
+namespace Audio
+{
+    enum class ID : unsigned int
+    {
+        GENERATE = 0,
+        SFX_SELECT = 1,
+        SFX_THROW = 2,
+        LOADING = 3
+    };
+}
+
 class Font;
 class Shader;
 class Texture;
+class Audio;
 
 // Forward declaration and a few type definitions
 template <typename Resource, typename Identifier>
@@ -78,5 +90,6 @@ class ResourceManager;
 typedef ResourceManager<Texture, Textures::ID> TextureManager;
 typedef ResourceManager<Font, Fonts::ID> FontManager;
 typedef ResourceManager<Shader, Shaders::ID> ShaderManager;
+typedef ResourceManager<Audio, Audio::ID> AudioManager;
 
 #endif // RESOURCE_IDENTIFIERS_HPP

@@ -19,6 +19,8 @@
 #include <fonts/Limelight_Regular.h>
 #include <fonts/nunito_sans.h>
 
+#include "Audio.hpp"
+
 /// @brief
 /// @param stack
 /// @param context
@@ -110,6 +112,8 @@ void LoadingState::loadResources() noexcept
     loadFonts();
 
     loadShaders();
+
+    loadAudio();
 }
 
 void LoadingState::loadFonts() noexcept
@@ -240,5 +244,91 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load icon: %s - %s\n", windowIconPath.c_str(),
                          SDL_GetError());
         }
+    }
+}
+
+void LoadingState::loadAudio() noexcept
+{
+    auto& audioManager = *getContext().audio;
+    const auto resources = mForeman.getResources();
+    auto resourcePathPrefix = mazes::io_utils::getDirectoryPath(mResourcePath);
+
+    try
+    {
+        // Load OGG files
+        if (auto oggFilesKey = resources.find(std::string{JSONKeys::OGG_FILES}); 
+            oggFilesKey != resources.cend())
+        {
+            JSONUtils jsonUtils{};
+            auto oggFiles = jsonUtils.parseJsonArray(oggFilesKey->second);
+            
+            SDL_Log("Loading %zu OGG audio files...\n", oggFiles.size());
+            
+            for (size_t i = 0; i < oggFiles.size(); ++i)
+            {
+                std::string audioPath = resourcePathPrefix + oggFiles[i];
+                Audio::ID audioId;
+                
+                // Map filenames to Audio IDs
+                if (oggFiles[i].find("generate.ogg") != std::string::npos)
+                {
+                    audioId = Audio::ID::GENERATE;
+                }
+                else if (oggFiles[i].find("sfx_select.ogg") != std::string::npos)
+                {
+                    audioId = Audio::ID::SFX_SELECT;
+                }
+                else if (oggFiles[i].find("sfx_throw.ogg") != std::string::npos)
+                {
+                    audioId = Audio::ID::SFX_THROW;
+                }
+                else
+                {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "Unknown OGG file: %s, skipping", 
+                               oggFiles[i].c_str());
+                    continue;
+                }
+                
+                audioManager.load(nullptr, audioId, audioPath);
+                SDL_Log("Loaded audio: %s", audioPath.c_str());
+            }
+        }
+
+        // Load WAV files
+        if (auto wavFilesKey = resources.find(std::string{JSONKeys::WAV_FILES}); 
+            wavFilesKey != resources.cend())
+        {
+            JSONUtils jsonUtils{};
+            auto wavFiles = jsonUtils.parseJsonArray(wavFilesKey->second);
+            
+            SDL_Log("Loading %zu WAV audio files...\n", wavFiles.size());
+            
+            for (size_t i = 0; i < wavFiles.size(); ++i)
+            {
+                std::string audioPath = resourcePathPrefix + wavFiles[i];
+                Audio::ID audioId;
+                
+                // Map filenames to Audio IDs
+                if (wavFiles[i].find("loading.wav") != std::string::npos)
+                {
+                    audioId = Audio::ID::LOADING;
+                }
+                else
+                {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "Unknown WAV file: %s, skipping", 
+                               wavFiles[i].c_str());
+                    continue;
+                }
+                
+                audioManager.load(nullptr, audioId, audioPath);
+                SDL_Log("Loaded audio: %s", audioPath.c_str());
+            }
+        }
+
+        SDL_Log("All audio files loaded successfully\n");
+    }
+    catch (const std::exception& e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Audio loading failed: %s", e.what());
     }
 }

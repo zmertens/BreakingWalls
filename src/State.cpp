@@ -6,11 +6,12 @@
 
 State::Context::Context(RenderWindow& window, FontManager& fonts,
     ShaderManager& shaders,
-    TextureManager& textures, Player& player)
+    TextureManager& textures, AudioManager& audio, Player& player)
     : window{ &window }
     , fonts{ &fonts }
     , shaders{ &shaders }
     , textures{ &textures }
+    , audio{ &audio }
     , player{ &player }
 {
 }

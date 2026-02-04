@@ -49,6 +49,7 @@ struct PhysicsGame::PhysicsGameImpl
     FontManager fonts;
     ShaderManager shaders;
     TextureManager textures;
+    AudioManager audio;
 
     // FPS smoothing variables
     mutable double fpsUpdateTimer = 0.0;
@@ -88,6 +89,7 @@ struct PhysicsGame::PhysicsGameImpl
             std::ref(fonts),
             std::ref(shaders),
             std::ref(textures),
+            std::ref(audio),
             std::ref(p1)
             });
 
@@ -105,6 +107,7 @@ struct PhysicsGame::PhysicsGameImpl
             this->fonts.clear();
             this->shaders.clear();
             this->textures.clear();
+            this->audio.clear();
 
             ImGui_ImplOpenGL3_Shutdown();
             ImGui_ImplSDL3_Shutdown();

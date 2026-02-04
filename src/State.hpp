@@ -20,12 +20,13 @@ public:
     {
         explicit Context(RenderWindow& window, FontManager& fonts,
             ShaderManager& shaders,
-            TextureManager& textures, Player& player);
+            TextureManager& textures, AudioManager& audio, Player& player);
 
         RenderWindow* window;
         FontManager* fonts;
         ShaderManager* shaders;
         TextureManager* textures;
+        AudioManager* audio;
         Player* player;
     };
 

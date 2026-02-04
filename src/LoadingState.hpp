@@ -35,6 +35,8 @@ private:
 
     void loadShaders() noexcept;
 
+    void loadAudio() noexcept;
+
     void setCompletion(float percent) noexcept;
 
     //Sprite mLoadingSprite;
