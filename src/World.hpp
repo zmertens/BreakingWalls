@@ -8,6 +8,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
+#include <future>
+#include <atomic>
+#include <memory>
+#include <queue>
+#include <mutex>
 #include <glm/glm.hpp>
 
 #include "CommandQueue.hpp"
@@ -16,7 +21,7 @@
 #include "ResourceIdentifiers.hpp"
 #include "SceneNode.hpp"
 #include "View.hpp"
-#include "Material.hpp"  // For MaterialType enum
+#include "Material.hpp"
 
 class Ball;
 class Pathfinder;
@@ -30,41 +35,24 @@ public:
     explicit World(RenderWindow& window, FontManager& fonts, TextureManager& textures);
 
     void init() noexcept;
-
-    // Update the world (update physics and entities)
     void update(float dt);
-
-    // Draw the world (render entities) - pass renderer for drawing
     void draw() const noexcept;
-
     CommandQueue& getCommandQueue() noexcept;
-
-    // Destroy the world
     void destroyWorld();
-
     void handleEvent(const SDL_Event& event);
-
     void setPlayer(Player* player);
     
-    // Access to 3D spheres for rendering
     const std::vector<Sphere>& getSpheres() const noexcept { return mSpheres; }
     std::vector<Sphere>& getSpheres() noexcept { return mSpheres; }
     
-    // Update sphere chunks based on camera position
     void updateSphereChunks(const glm::vec3& cameraPosition) noexcept;
-    
-    // Get spawn position from maze (position "0")
     glm::vec3 getMazeSpawnPosition() const noexcept { return mPlayerSpawnPosition; }
 
 private:
     
-    // Initialize 3D path tracer scene with spheres
     void initPathTracerScene() noexcept;
-    
-    // Sync physics bodies to sphere positions
     void syncPhysicsToSpheres() noexcept;
     
-    // Chunk-based sphere management with maze integration
     struct ChunkCoord {
         int x, z;
         
@@ -79,26 +67,37 @@ private:
         }
     };
     
-    // Maze cell data for sphere spawning
     struct MazeCell {
         int row, col;
-        int distance;        // Base-10 distance from start
-        float worldX, worldZ; // 3D world position
+        int distance;
+        float worldX, worldZ;
     };
+    
+    struct ChunkWorkItem {
+        ChunkCoord coord;
+        std::vector<MazeCell> cells;
+        std::vector<Sphere> spheres;
+        glm::vec3 spawnPosition;  // Track spawn in work item instead of const_cast
+        bool hasSpawnPosition{false};
+    };
+    
+    // Worker management
+    void initWorkerPool() noexcept;
+    void shutdownWorkerPool() noexcept;
+    void submitChunkForGeneration(const ChunkCoord& coord) noexcept;
+    void processCompletedChunks() noexcept;
+    ChunkWorkItem generateChunkAsync(const ChunkCoord& coord) const noexcept;
     
     ChunkCoord getChunkCoord(const glm::vec3& position) const noexcept;
     void loadChunk(const ChunkCoord& coord) noexcept;
     void unloadChunk(const ChunkCoord& coord) noexcept;
     
-    // Maze-based sphere generation
-    void generateSpheresInChunkFromMaze(const ChunkCoord& coord) noexcept;
+    // Thread-safe maze generation helpers
     std::string generateMazeForChunk(const ChunkCoord& coord) const noexcept;
-    std::vector<MazeCell> parseMazeCells(const std::string& mazeStr, const ChunkCoord& coord) const noexcept;
+    std::vector<MazeCell> parseMazeCells(const std::string& mazeStr, const ChunkCoord& coord, 
+                                        glm::vec3& outSpawnPosition, bool& outHasSpawn) const noexcept;
     int parseBase36(const std::string& str) const noexcept;
     MaterialType getMaterialForDistance(int distance) const noexcept;
-    
-    // Helper to generate random float
-    static float getRandomFloat(float low, float high) noexcept;
 
     enum class Layer
     {
@@ -110,7 +109,7 @@ private:
         LAYER_COUNT = 5
     };
 
-    static constexpr auto FORCE_DUE_TO_GRAVITY = 9.8f;  // Positive Y is down in Box2D
+    static constexpr auto FORCE_DUE_TO_GRAVITY = 9.8f;
 
     RenderWindow& mWindow;
     View mWorldView;
@@ -124,10 +123,8 @@ private:
     b2BodyId mMazeWallsBodyId;
 
     CommandQueue mCommandQueue;
-
     Pathfinder* mPlayerPathfinder;
 
-    // Ball pointers for testing launch mechanics
     Ball* mBallNormal;
     Ball* mBallHeavy;
     Ball* mBallLight;
@@ -138,24 +135,40 @@ private:
 
     std::unique_ptr<PostProcessingManager> mPostProcessingManager;
     
-    // 3D Path tracer scene data
     std::vector<Sphere> mSpheres;
-    std::vector<b2BodyId> mSphereBodyIds;  // Physics bodies for each sphere
+    std::vector<b2BodyId> mSphereBodyIds;
     
-    // Chunk management with maze integration
+    // Modern C++ worker pool - INCREASED spawn rate to 1% for better performance
+    static constexpr size_t NUM_WORKER_THREADS = 4;
+    static constexpr float SPHERE_SPAWN_RATE = 0.01f;  // 1% = ~200 total spheres
+    std::atomic<bool> mWorkersShouldStop{false};
+    std::vector<std::future<void>> mWorkerThreads;
+    
+    mutable std::mutex mWorkQueueMutex;
+    std::queue<std::packaged_task<ChunkWorkItem()>> mWorkQueue;
+    std::condition_variable mWorkAvailable;
+    
+    mutable std::mutex mCompletedChunksMutex;
+    std::vector<std::pair<ChunkCoord, std::future<ChunkWorkItem>>> mPendingChunks;
+    
+    // Chunk management - REDUCED radius for better performance
     static constexpr float CHUNK_SIZE = 100.0f;
-    static constexpr int CHUNK_LOAD_RADIUS = 3;
-    static constexpr int MAZE_ROWS = 20;    // Rows per chunk maze
-    static constexpr int MAZE_COLS = 20;    // Columns per chunk maze
-    static constexpr float CELL_SIZE = CHUNK_SIZE / static_cast<float>(MAZE_COLS); // 5 units per cell
+    static constexpr int CHUNK_LOAD_RADIUS = 2;  // Reduced from 3 (25 chunks instead of 49)
+    static constexpr int MAZE_ROWS = 20;
+    static constexpr int MAZE_COLS = 20;
+    static constexpr float CELL_SIZE = CHUNK_SIZE / static_cast<float>(MAZE_COLS);
     
     std::unordered_set<ChunkCoord, ChunkCoordHash> mLoadedChunks;
     std::unordered_map<ChunkCoord, std::vector<size_t>, ChunkCoordHash> mChunkSphereIndices;
-    std::unordered_map<ChunkCoord, std::string, ChunkCoordHash> mChunkMazes; // Cache generated mazes
-    glm::vec3 mLastChunkUpdatePosition;
-    glm::vec3 mPlayerSpawnPosition;  // Spawn at maze position "0"
     
-    static constexpr int TOTAL_SPHERES = 200;  // Initial reserved capacity
+    // Thread-safe maze cache with mutex
+    mutable std::mutex mMazeCacheMutex;
+    mutable std::unordered_map<ChunkCoord, std::string, ChunkCoordHash> mChunkMazes;
+    
+    glm::vec3 mLastChunkUpdatePosition;
+    glm::vec3 mPlayerSpawnPosition;
+    
+    static constexpr int TOTAL_SPHERES = 200;
 };
 
 #endif // WORLD_HPP
