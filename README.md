@@ -17,13 +17,12 @@ A cozy float-in-space game with cutting edge graphics.
 
 These exteneral dependencies are downloaded with CMake and Git:
 
-  * `git clone https://github.com/zmertens/BreakingWalls.git --shallow-submodules`
+- [box2d](https://box2d.org/documentation/hello.html)
+- [glm](https://github.com/g-truc/glm)
+- [Maze Builder](https://zmertens.github.io/mazebuilder.github.io/index.html)
+- [SDL](https://libsdl.org)
+- [SFML](https://sfml-dev.org)
 
-  * `cmake --preset="platform: build-msvc"` **(this will automatically download the following dependencies)**
+* `git clone https://github.com/zmertens/BreakingWalls.git --shallow-submodules`
 
-    - [box2d](https://box2d.org/documentation/hello.html)
-    - [glm](https://github.com/g-truc/glm)
-    - [Maze Builder](https://zmertens.github.io/mazebuilder.github.io/index.html)
-    - [SDL](https://libsdl.org)
-    - [SFML](https://sfml-dev.org)
-
+* `cmake --preset="platform: build-msvc"` **(this will automatically download the following dependencies)**
