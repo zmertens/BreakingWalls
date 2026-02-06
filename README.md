@@ -15,7 +15,7 @@ A cozy float-in-space game with cutting edge graphics.
 
 [CMake](https://cmake.org) is used for project configuration.
 
-These exteneral dependencies are downloaded with CMake and Git:
+These exteneral dependencies are downloaded automatically with CMake and Git:
 
 - [box2d](https://box2d.org/documentation/hello.html)
 - [glm](https://github.com/g-truc/glm)
@@ -23,6 +23,9 @@ These exteneral dependencies are downloaded with CMake and Git:
 - [SDL](https://libsdl.org)
 - [SFML](https://sfml-dev.org)
 
-* `git clone https://github.com/zmertens/BreakingWalls.git --shallow-submodules`
 
-* `cmake --preset="platform: build-msvc"` **(this will automatically download the following dependencies)**
+Clone the repository:
+`git clone https://github.com/zmertens/BreakingWalls.git --shallow-submodules`
+
+Configure the project on Windows:
+`cmake --preset="platform: build-msvc"`
