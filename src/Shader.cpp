@@ -29,8 +29,7 @@ void Shader::compileAndAttachShader(ShaderType shaderType, const std::string& fi
         shaderStrStream << shaderFileStream.rdbuf();
         shaderFileStream.close();
         shaderCode = shaderStrStream.str();
-    }
-    catch(const std::ifstream::failure& e)
+    } catch (const std::ifstream::failure& e)
     {
         std::cout << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: " << filename << std::endl;
         return;
@@ -97,7 +96,7 @@ std::string Shader::getGlslUniforms() const
 {
     GLint numUniforms = 0;
     glGetProgramInterfaceiv(mProgram, GL_UNIFORM, GL_ACTIVE_RESOURCES, &numUniforms);
-    GLenum properties[] = {GL_NAME_LENGTH, GL_TYPE, GL_LOCATION, GL_BLOCK_INDEX};
+    GLenum properties[] = { GL_NAME_LENGTH, GL_TYPE, GL_LOCATION, GL_BLOCK_INDEX };
 
     std::string retString = "\t(Active) GLSL Uniforms:\n";
 
@@ -127,7 +126,7 @@ std::string Shader::getGlslAttribs() const
 {
     GLint numAttribs;
     glGetProgramInterfaceiv(mProgram, GL_PROGRAM_INPUT, GL_ACTIVE_RESOURCES, &numAttribs);
-    GLenum properties[] = {GL_NAME_LENGTH, GL_TYPE, GL_LOCATION};
+    GLenum properties[] = { GL_NAME_LENGTH, GL_TYPE, GL_LOCATION };
 
     std::string retString = "\t(Active) GLSL Attributes:\n";
 
@@ -243,20 +242,20 @@ GLenum Shader::getShaderType(ShaderType shaderType) const
 {
     switch (shaderType)
     {
-        case ShaderType::VERTEX:
-            return GL_VERTEX_SHADER;
-        case ShaderType::FRAGMENT:
-            return GL_FRAGMENT_SHADER;
-        case ShaderType::GEOMETRY:
-            return GL_GEOMETRY_SHADER;
-        case ShaderType::TESSELATION_CONTROL:
-            return GL_TESS_CONTROL_SHADER;
-        case ShaderType::TESSELATION_EVAL:
-            return GL_TESS_EVALUATION_SHADER;
-        case ShaderType::COMPUTE:
-            return GL_COMPUTE_SHADER;
-        default:
-            return GL_VERTEX_SHADER;
+    case ShaderType::VERTEX:
+        return GL_VERTEX_SHADER;
+    case ShaderType::FRAGMENT:
+        return GL_FRAGMENT_SHADER;
+    case ShaderType::GEOMETRY:
+        return GL_GEOMETRY_SHADER;
+    case ShaderType::TESSELATION_CONTROL:
+        return GL_TESS_CONTROL_SHADER;
+    case ShaderType::TESSELATION_EVAL:
+        return GL_TESS_EVALUATION_SHADER;
+    case ShaderType::COMPUTE:
+        return GL_COMPUTE_SHADER;
+    default:
+        return GL_VERTEX_SHADER;
     }
 }
 
@@ -292,8 +291,7 @@ GLuint Shader::compile(ShaderType shaderType, const std::string& shaderCode)
         glGetShaderInfoLog(shaderId, 512, nullptr, infoLog);
         printf("%s -- Shader Compilation Failed: %s\n", mFileNames.at(shaderType).c_str(), infoLog);
         return 0;
-    }
-    else
+    } else
     {
         printf("%s compiled successfully\n", mFileNames.at(shaderType).c_str());
     }
@@ -322,8 +320,7 @@ GLuint Shader::compile(ShaderType shaderType, const GLchar* shaderCode)
         glGetShaderInfoLog(shaderId, 512, nullptr, infoLog);
         printf("%s -- Shader Compilation Failed: %s\n", mFileNames.at(shaderType).c_str(), infoLog);
         return 0;
-    }
-    else
+    } else
     {
         printf("%s compiled successfully\n", mFileNames.at(shaderType).c_str());
     }
@@ -360,15 +357,13 @@ GLint Shader::getUniformLocation(const std::string& str)
         if (loc == -1)
         {
             printf("%s does not exist in the shader\n", str.c_str());
-        }
-        else
+        } else
         {
             mGlslLocations.emplace(str, loc);
         }
 
         return loc;
-    }
-    else
+    } else
     {
         return mGlslLocations.at(str);
     }
@@ -388,17 +383,17 @@ std::string Shader::getStringFromType(GLenum type) const
 {
     switch (type)
     {
-        case GL_FLOAT: return "float";
-        case GL_FLOAT_VEC2: return "vec2";
-        case GL_FLOAT_VEC3: return "vec3";
-        case GL_FLOAT_VEC4: return "vec4";
-        case GL_DOUBLE: return "double";
-        case GL_INT: return "int";
-        case GL_UNSIGNED_INT: return "unsigned int";
-        case GL_BOOL: return "bool";
-        case GL_FLOAT_MAT2: return "mat2";
-        case GL_FLOAT_MAT3: return "mat3";
-        case GL_FLOAT_MAT4: return "mat4";
-        default: return "Unknown GLenum type.";
+    case GL_FLOAT: return "float";
+    case GL_FLOAT_VEC2: return "vec2";
+    case GL_FLOAT_VEC3: return "vec3";
+    case GL_FLOAT_VEC4: return "vec4";
+    case GL_DOUBLE: return "double";
+    case GL_INT: return "int";
+    case GL_UNSIGNED_INT: return "unsigned int";
+    case GL_BOOL: return "bool";
+    case GL_FLOAT_MAT2: return "mat2";
+    case GL_FLOAT_MAT3: return "mat3";
+    case GL_FLOAT_MAT4: return "mat4";
+    default: return "Unknown GLenum type.";
     }
 }

@@ -30,46 +30,46 @@ public:
 private:
     World mWorld;  // Manages both 2D physics and 3D sphere scene
     Player& mPlayer;
-    
+
     // Path tracer camera (for 3D scene navigation)
     Camera mCamera;
-    
+
     // Shader references from context
-    Shader* mDisplayShader{nullptr};
-    Shader* mComputeShader{nullptr};
-    
+    Shader* mDisplayShader{ nullptr };
+    Shader* mComputeShader{ nullptr };
+
     // GPU resources
-    GLuint mShapeSSBO{0};     // Shader Storage Buffer Object for spheres
-    GLuint mVAO{0};           // Vertex Array Object for fullscreen quad
-    GLuint mAccumTex{0};      // Accumulation texture for progressive rendering
-    GLuint mDisplayTex{0};    // Display texture for final output
-    
+    GLuint mShapeSSBO{ 0 };     // Shader Storage Buffer Object for spheres
+    GLuint mVAO{ 0 };           // Vertex Array Object for fullscreen quad
+    GLuint mAccumTex{ 0 };      // Accumulation texture for progressive rendering
+    GLuint mDisplayTex{ 0 };    // Display texture for final output
+
     // Progressive rendering state
-    mutable uint32_t mCurrentBatch{0};
-    uint32_t mSamplesPerBatch{4};
-    uint32_t mTotalBatches{250};
-    
+    mutable uint32_t mCurrentBatch{ 0 };
+    uint32_t mSamplesPerBatch{ 4 };
+    uint32_t mTotalBatches{ 250 };
+
     // Camera movement tracking for accumulation reset
     mutable glm::vec3 mLastCameraPosition;
-    mutable float mLastCameraYaw{0.0f};
-    mutable float mLastCameraPitch{0.0f};
-    
-    bool mShadersInitialized{false};
-    int mWindowWidth{1280};
-    int mWindowHeight{720};
-    
+    mutable float mLastCameraYaw{ 0.0f };
+    mutable float mLastCameraPitch{ 0.0f };
+
+    bool mShadersInitialized{ false };
+    int mWindowWidth{ 1280 };
+    int mWindowHeight{ 720 };
+
     /// Initialize GPU graphics resources for compute shader rendering
     void initializeGraphicsResources() noexcept;
-    
+
     /// Create textures for path tracing (accumulation + display)
     void createPathTracerTextures() noexcept;
-    
+
     /// Render using compute shaders (path tracing)
     void renderWithComputeShaders() const noexcept;
-    
+
     /// Check if camera moved and reset accumulation if needed
     bool checkCameraMovement() const noexcept;
-    
+
     /// Clean up OpenGL resources
     void cleanupResources() noexcept;
 };

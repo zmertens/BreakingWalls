@@ -16,18 +16,18 @@
 #include "Sphere.hpp"
 
 GameState::GameState(StateStack& stack, Context context)
-    : State{stack, context}
-      , mWorld{*context.window, *context.fonts, *context.textures}
-      , mPlayer{*context.player}
-      , mDisplayShader{nullptr}
-      , mComputeShader{nullptr}
-      // Initialize camera at maze spawn position (will be updated after first chunk loads)
-      , mCamera{glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f}
+    : State{ stack, context }
+    , mWorld{ *context.window, *context.fonts, *context.textures }
+    , mPlayer{ *context.player }
+    , mDisplayShader{ nullptr }
+    , mComputeShader{ nullptr }
+    // Initialize camera at maze spawn position (will be updated after first chunk loads)
+    , mCamera{ glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f }
 {
     mPlayer.setActive(true);
     mWorld.init();  // This now initializes both 2D physics and 3D path tracer scene
     mWorld.setPlayer(context.player);
-    
+
     // Get shaders from context
     auto& shaders = *context.shaders;
     try
@@ -36,29 +36,28 @@ GameState::GameState(StateStack& stack, Context context)
         mComputeShader = &shaders.get(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE);
         mShadersInitialized = true;
         SDL_Log("GameState: Shaders loaded from context");
-    }
-    catch (const std::exception& e)
+    } catch (const std::exception& e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
         mShadersInitialized = false;
     }
-    
+
     // Trigger initial chunk load to get maze spawn position
     mWorld.updateSphereChunks(mCamera.getPosition());
-    
+
     // Update camera to maze spawn position (position "0" in the maze)
     glm::vec3 spawnPos = mWorld.getMazeSpawnPosition();
     spawnPos.y += 50.0f;  // Place camera above spawn
     spawnPos.z += 50.0f;  // Move back a bit
     mCamera.setPosition(spawnPos);
-    SDL_Log("GameState: Camera positioned at maze spawn (%.1f, %.1f, %.1f)", 
-            spawnPos.x, spawnPos.y, spawnPos.z);
-    
+    SDL_Log("GameState: Camera positioned at maze spawn (%.1f, %.1f, %.1f)",
+        spawnPos.x, spawnPos.y, spawnPos.z);
+
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
     mLastCameraYaw = mCamera.getYaw();
     mLastCameraPitch = mCamera.getPitch();
-    
+
     // Initialize GPU graphics pipeline following Compute.cpp approach
     if (mShadersInitialized)
     {
@@ -78,7 +77,7 @@ void GameState::draw() const noexcept
         // Use compute shader rendering pipeline
         renderWithComputeShaders();
     }
-    
+
     // Always draw the world (physics objects, sprites, etc.)
     mWorld.draw();
 }
@@ -86,44 +85,44 @@ void GameState::draw() const noexcept
 void GameState::initializeGraphicsResources() noexcept
 {
     SDL_Log("GameState: Initializing OpenGL 4.3 graphics pipeline...");
-    
+
     // Enable OpenGL features (following Compute.cpp)
     glEnable(GL_MULTISAMPLE);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
-    
+
     // Create VAO for fullscreen quad (like Compute.cpp)
     glGenVertexArrays(1, &mVAO);
     glBindVertexArray(mVAO);
-        
+
     // Create SSBO for sphere data
     glGenBuffers(1, &mShapeSSBO);
-        
+
     // Create textures for path tracing
     createPathTracerTextures();
-        
+
     // Upload sphere data from World to GPU with extra capacity for dynamic spawning
     const auto& spheres = mWorld.getSpheres();
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
-    
+
     // Allocate buffer with 4x capacity to handle chunk-based spawning
     // This reduces frequent reallocations as spheres are loaded/unloaded
     size_t initialCapacity = std::max(spheres.size() * 4, size_t(1000));
     size_t bufferSize = initialCapacity * sizeof(Sphere);
-    
+
     glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, nullptr, GL_DYNAMIC_DRAW);
-    
+
     // Upload initial sphere data
     if (!spheres.empty())
     {
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheres.size() * sizeof(Sphere), spheres.data());
     }
 
-    SDL_Log("GameState: Uploaded %zu spheres to GPU (buffer capacity: %zu spheres)", 
-            spheres.size(), initialCapacity);       
+    SDL_Log("GameState: Uploaded %zu spheres to GPU (buffer capacity: %zu spheres)",
+        spheres.size(), initialCapacity);
     SDL_Log("GameState: Graphics pipeline initialization complete");
 }
-  
+
 void GameState::createPathTracerTextures() noexcept
 {
     // Create accumulation texture for progressive rendering (following Compute.cpp)
@@ -134,8 +133,8 @@ void GameState::createPathTracerTextures() noexcept
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F,
-                   static_cast<GLsizei>(mWindowWidth),
-                   static_cast<GLsizei>(mWindowHeight));
+        static_cast<GLsizei>(mWindowWidth),
+        static_cast<GLsizei>(mWindowHeight));
 
     // Create display texture for final output
     glGenTextures(1, &mDisplayTex);
@@ -145,8 +144,8 @@ void GameState::createPathTracerTextures() noexcept
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F,
-                   static_cast<GLsizei>(mWindowWidth),
-                   static_cast<GLsizei>(mWindowHeight));
+        static_cast<GLsizei>(mWindowWidth),
+        static_cast<GLsizei>(mWindowHeight));
 
     SDL_Log("GameState: Path tracer textures created (%dx%d)", mWindowWidth, mWindowHeight);
 }
@@ -180,51 +179,50 @@ void GameState::renderWithComputeShaders() const noexcept
     {
         return;
     }
-    
+
     // Check if camera has moved - if so, reset accumulation
     checkCameraMovement();
-    
+
     // Update sphere data on GPU every frame (physics may have changed positions)
     const auto& spheres = mWorld.getSpheres();
-    
+
     // Safety check: ensure we have spheres to render
     if (spheres.empty())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "No spheres to render");
         return;
     }
-    
+
     // Calculate required buffer size
     size_t requiredSize = spheres.size() * sizeof(Sphere);
-    
+
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
-    
+
     // Check if we need to reallocate the buffer (sphere count changed)
     GLint currentBufferSize = 0;
-    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &currentBufferSize);   
-    
+    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &currentBufferSize);
+
     if (static_cast<size_t>(currentBufferSize) < requiredSize)
     {
         // Reallocate buffer with new size (add some headroom to avoid frequent reallocations)
         size_t newSize = requiredSize * 2;
         glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, spheres.data(), GL_DYNAMIC_DRAW);
-        SDL_Log("GameState: Reallocated SSBO for %zu spheres (buffer size: %zu bytes)", 
-                spheres.size(), newSize);
-    }
-    else
+        SDL_Log("GameState: Reallocated SSBO for %zu spheres (buffer size: %zu bytes)",
+            spheres.size(), newSize);
+    } else
     {
         // Update existing buffer
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, requiredSize, spheres.data());
     }
-    
+
     // Only compute if we haven't finished all batches
     if (mCurrentBatch < mTotalBatches)
     {
         mComputeShader->bind();
-        
+
         // Calculate aspect ratio
         float ar = static_cast<float>(mWindowWidth) / static_cast<float>(mWindowHeight);
-        
+
         // Set camera uniforms (following Compute.cpp renderPathTracer)
         mComputeShader->setUniform("uCamera.eye", mCamera.getPosition());
         mComputeShader->setUniform("uCamera.far", mCamera.getFar());
@@ -232,41 +230,41 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uCamera.ray01", mCamera.getFrustumEyeRay(ar, -1, 1));
         mComputeShader->setUniform("uCamera.ray10", mCamera.getFrustumEyeRay(ar, 1, -1));
         mComputeShader->setUniform("uCamera.ray11", mCamera.getFrustumEyeRay(ar, 1, 1));
-        
+
         // Set batch uniforms for progressive rendering
         mComputeShader->setUniform("uBatch", mCurrentBatch);
         mComputeShader->setUniform("uSamplesPerBatch", mSamplesPerBatch);
-        
+
         // Set sphere count uniform (NEW - tells shader how many spheres to check)
         mComputeShader->setUniform("uSphereCount", static_cast<uint32_t>(spheres.size()));
-        
+
         // Bind both textures as images for compute shader
         glBindImageTexture(0, mAccumTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
         glBindImageTexture(1, mDisplayTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
-        
+
         // Dispatch compute shader with work groups (using 20x20 local work group size)
         GLuint groupsX = (mWindowWidth + 19) / 20;
         GLuint groupsY = (mWindowHeight + 19) / 20;
         glDispatchCompute(groupsX, groupsY, 1);
-        
+
         // Memory barrier to ensure compute shader writes are visible
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-        
+
         mCurrentBatch++;
-        
+
         // Log progress periodically
         if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches) {
             uint32_t totalSamples = mCurrentBatch * mSamplesPerBatch;
             float progress = static_cast<float>(mCurrentBatch) / static_cast<float>(mTotalBatches) * 100.0f;
             SDL_Log("Path tracing progress: %.1f%% (%u/%u batches, %u samples, %zu spheres)",
-                    progress, mCurrentBatch, mTotalBatches, totalSamples, spheres.size());
+                progress, mCurrentBatch, mTotalBatches, totalSamples, spheres.size());
         }
     }
-    
+
     // Display the current result
     mDisplayShader->bind();
     mDisplayShader->setUniform("uTexture2D", 0);
-    
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mDisplayTex);
     glBindVertexArray(mVAO);
@@ -280,29 +278,29 @@ void GameState::cleanupResources() noexcept
         glDeleteVertexArrays(1, &mVAO);
         mVAO = 0;
     }
-    
+
     if (mShapeSSBO != 0)
     {
         glDeleteBuffers(1, &mShapeSSBO);
         mShapeSSBO = 0;
     }
-    
+
     if (mAccumTex != 0)
     {
         glDeleteTextures(1, &mAccumTex);
         mAccumTex = 0;
     }
-    
+
     if (mDisplayTex != 0)
     {
         glDeleteTextures(1, &mDisplayTex);
         mDisplayTex = 0;
     }
-    
+
     // Shaders are now managed by ShaderManager - don't delete them here
     mDisplayShader = nullptr;
     mComputeShader = nullptr;
-    
+
     SDL_Log("GameState: OpenGL resources cleaned up");
 }
 
@@ -312,19 +310,19 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     auto& commands = mWorld.getCommandQueue();
     mPlayer.handleRealtimeInput(std::ref(commands));
-    
+
     // Update sphere chunks based on camera position for dynamic spawning
     mWorld.updateSphereChunks(mCamera.getPosition());
 
     // Handle camera movement with WASD for 3D path tracer scene
     int numKeys = 0;
     const auto* keyState = SDL_GetKeyboardState(&numKeys);
-    
+
     if (keyState)
     {
         const float cameraMoveSpeed = 50.0f * dt;  // 50 units per second
         glm::vec3 movement(0.0f);
-        
+
         // WASD controls camera position
         if (keyState[SDL_SCANCODE_W])
         {
@@ -342,7 +340,7 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
         {
             movement += mCamera.getRight() * cameraMoveSpeed;   // Right
         }
-        
+
         // Q/E for vertical movement
         if (keyState[SDL_SCANCODE_Q])
         {
@@ -352,19 +350,19 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
         {
             movement.y -= cameraMoveSpeed;  // Down
         }
-        
+
         // Apply movement if any key was pressed
         if (glm::length(movement) > 0.001f)
         {
             glm::vec3 newPos = mCamera.getPosition() + movement;
             mCamera.setPosition(newPos);
         }
-        
+
         // Arrow keys for camera rotation - INCREASED SPEED
         const float rotateSpeed = 180.0f * dt;  // 180 degrees per second (doubled from 90)
         float yawDelta = 0.0f;
         float pitchDelta = 0.0f;
-        
+
         if (keyState[SDL_SCANCODE_LEFT])
         {
             yawDelta -= rotateSpeed;
@@ -381,7 +379,7 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
         {
             pitchDelta -= rotateSpeed;
         }
-        
+
         if (std::abs(yawDelta) > 0.001f || std::abs(pitchDelta) > 0.001f)
         {
             mCamera.rotate(yawDelta, pitchDelta);
@@ -405,7 +403,7 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
         {
             requestStackPush(States::ID::PAUSE);
         }
-        
+
         // Reset camera to initial position with R key
         if (event.key.scancode == SDL_SCANCODE_R)
         {
@@ -413,7 +411,7 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
             mCamera.rotate(0.0f, 0.0f);  // Reset to default angles
             SDL_Log("Camera reset to initial position");
         }
-        
+
         // Toggle progressive rendering reset with SPACE
         if (event.key.scancode == SDL_SCANCODE_SPACE)
         {
@@ -421,7 +419,7 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
             SDL_Log("Path tracing accumulation reset");
         }
     }
-    
+
     // Handle mouse motion for camera rotation (right mouse button) - INCREASED SENSITIVITY
     if (event.type == SDL_EVENT_MOUSE_MOTION)
     {
@@ -432,7 +430,7 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
             mCamera.rotate(event.motion.xrel * sensitivity, -event.motion.yrel * sensitivity);
         }
     }
-    
+
     // Handle mouse wheel for field of view adjustment
     if (event.type == SDL_EVENT_MOUSE_WHEEL)
     {

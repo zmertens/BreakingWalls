@@ -5,7 +5,11 @@
 #include <string>
 #include <unordered_map>
 
-#include <SFML/Audio.hpp>
+namespace sf
+{
+    class Sound;
+    class Music;
+}
 
 class AudioHelper
 {

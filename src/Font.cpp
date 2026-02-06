@@ -10,7 +10,7 @@
 bool Font::loadFromMemoryCompressedTTF(const void* compressedData, std::size_t compressedSize, float pixelSize)
 {
     mFont = ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(compressedData, static_cast<int>(compressedSize),
-                                                                 pixelSize);
+        pixelSize);
 
     IM_ASSERT(mFont != nullptr);
 

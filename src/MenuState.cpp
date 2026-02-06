@@ -2,6 +2,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <glad/glad.h>
+
 #include <array>
 #include <string>
 
@@ -127,6 +129,9 @@ void MenuState::draw() const noexcept
 
     ImGui::PopFont();
 
+    glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     // Draw the game background first so ImGui renders on top of it
     auto& window = *getContext().window;
     window.draw(mBackgroundSprite);
@@ -170,6 +175,7 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
 
         case MenuItem::SPLASH:
             mShowMainMenu = false;
+            requestStateClear();
             requestStackPush(States::ID::SPLASH);
             return true;
 

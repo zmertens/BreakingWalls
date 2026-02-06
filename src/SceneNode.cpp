@@ -79,7 +79,7 @@ void SceneNode::drawChildren(RenderStates states) const noexcept
 
 b2Vec2 SceneNode::getWorldPosition() const
 {
-    return {getWorldTransform().getPosition().x, getWorldTransform().getPosition().y};
+    return { getWorldTransform().getPosition().x, getWorldTransform().getPosition().y };
 }
 
 Transformable SceneNode::getWorldTransform() const

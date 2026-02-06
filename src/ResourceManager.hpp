@@ -95,7 +95,7 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
 
     if (!resource->loadFromFile(filename, channelOffset))
     {
-        throw std::runtime_error("ResourceManager::load - Failed to load " + std::string{filename});
+        throw std::runtime_error("ResourceManager::load - Failed to load " + std::string{ filename });
     }
 
     // If loading successful, insert resource to map

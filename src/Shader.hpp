@@ -32,16 +32,16 @@ public:
 
     /// Compile and attach a shader from file
     void compileAndAttachShader(ShaderType shaderType, const std::string& filename);
-    
+
     /// Compile and attach a shader from memory
     void compileAndAttachShader(ShaderType shaderType, const std::string& codeId, const GLchar* code);
-    
+
     /// Link the shader program
     void linkProgram();
-    
+
     /// Bind this shader program for use
     void bind() const;
-    
+
     /// Release the current shader program
     void release() const;
 
@@ -50,7 +50,7 @@ public:
 
     /// Get introspection info about active uniforms
     std::string getGlslUniforms() const;
-    
+
     /// Get introspection info about active attributes
     std::string getGlslAttribs() const;
 
@@ -80,14 +80,14 @@ public:
     [[nodiscard]] std::unordered_map<ShaderType, std::string> getFileNames() const;
 
 private:
-    GLint mProgram{0};
+    GLint mProgram{ 0 };
     std::unordered_map<std::string, GLint> mGlslLocations;
     std::unordered_map<ShaderType, std::string> mFileNames;
 
 private:
     Shader(const Shader& other) = delete;
     Shader& operator=(const Shader& other) = delete;
-    
+
     GLuint compile(ShaderType shaderType, const std::string& shaderCode);
     GLuint compile(ShaderType shaderType, const GLchar* shaderCode);
     void attach(GLuint shaderId);

@@ -1,5 +1,7 @@
 #include "AudioHelper.hpp"
 
+#include <SFML/Audio.hpp>
+
 class AudioHelper::Impl
 {
     const std::unique_ptr<sf::Sound>& mSound;

@@ -61,13 +61,13 @@ struct PhysicsGame::PhysicsGameImpl
     const int INIT_WINDOW_W, INIT_WINDOW_H;
 
     PhysicsGameImpl(std::string_view title, int w, int h, std::string_view resourcePath = "")
-        : windowTitle{title}
-          , resourcePath{resourcePath}
-          , INIT_WINDOW_W{w}, INIT_WINDOW_H{h}
-          , window{nullptr}
-          , sdlHelper{}
-          , stateStack{nullptr}
-    {        
+        : windowTitle{ title }
+        , resourcePath{ resourcePath }
+        , INIT_WINDOW_W{ w }, INIT_WINDOW_H{ h }
+        , window{ nullptr }
+        , sdlHelper{}
+        , stateStack{ nullptr }
+    {
         initSDL();
 
         // Check if SDL initialization succeeded
@@ -92,7 +92,7 @@ struct PhysicsGame::PhysicsGameImpl
             });
 
         registerStates();
-       
+
         stateStack->pushState(States::ID::LOADING);
         stateStack->pushState(States::ID::SPLASH);
     }
@@ -219,18 +219,18 @@ struct PhysicsGame::PhysicsGameImpl
 
         // Create ImGui overlay window positioned at top-right corner
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 10.0f), ImGuiCond_Always,
-                                ImVec2(1.0f, 0.0f));
+            ImVec2(1.0f, 0.0f));
 
         // Set window background to be semi-transparent
         ImGui::SetNextWindowBgAlpha(0.65f);
 
         // Create window with no title bar, no resize, no move, auto-resize
         constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDecoration |
-                                                 ImGuiWindowFlags_AlwaysAutoResize |
-                                                 ImGuiWindowFlags_NoSavedSettings |
-                                                 ImGuiWindowFlags_NoFocusOnAppearing |
-                                                 ImGuiWindowFlags_NoNav |
-                                                 ImGuiWindowFlags_NoMove;
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoNav |
+            ImGuiWindowFlags_NoMove;
 
         if (ImGui::Begin("FPS Overlay", nullptr, windowFlags))
         {
@@ -243,7 +243,7 @@ struct PhysicsGame::PhysicsGameImpl
 
 // resourcePath = ""
 PhysicsGame::PhysicsGame(std::string_view title, int w, int h, std::string_view resourcePath)
-    : mImpl{std::make_unique<PhysicsGameImpl>(title, w, h, resourcePath)}
+    : mImpl{ std::make_unique<PhysicsGameImpl>(title, w, h, resourcePath) }
 {
 }
 
@@ -287,7 +287,7 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
             currentTimeStep += FIXED_TIME_STEP;
 
             gamePtr->update(static_cast<float>(FIXED_TIME_STEP) / 1000.f);
-            
+
             // Check if state stack became empty during update
             if (gamePtr->stateStack->isEmpty())
             {

@@ -43,12 +43,12 @@ namespace
     }
 } // anonymous namespace
 
-Texture::~Texture() noexcept 
-{ 
-    free(); 
+Texture::~Texture() noexcept
+{
+    free();
 }
 
-Texture::Texture(Texture&& other) noexcept 
+Texture::Texture(Texture&& other) noexcept
     : mTextureId(other.mTextureId), mWidth(other.mWidth), mHeight(other.mHeight), mBytes(other.mBytes)
 {
     other.mTextureId = 0;
@@ -150,7 +150,7 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
     if (data == nullptr)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "stbi_load %s failed: %s\n",
-                     filepath.data(), stbi_failure_reason());
+            filepath.data(), stbi_failure_reason());
         return false;
     }
 
@@ -166,7 +166,7 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
 
     // Upload texture data - now we know it's always RGBA
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
-                 GL_UNSIGNED_BYTE, data);
+        GL_UNSIGNED_BYTE, data);
 
     // Generate mipmaps for better quality
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -175,7 +175,7 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
     if (const GLenum error = glGetError(); error != GL_NO_ERROR)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error after loading %s: 0x%x\n",
-                     filepath.data(), error);
+            filepath.data(), error);
         stbi_image_free(data);
         return false;
     }
@@ -189,8 +189,8 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
 }
 
 bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const int height,
-                               const std::uint32_t channelOffset, const bool rotate_180) noexcept
-{   
+    const std::uint32_t channelOffset, const bool rotate_180) noexcept
+{
     if (data == nullptr || width <= 0 || height <= 0)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for loadFromMemory\n");
@@ -228,7 +228,7 @@ bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const in
 
     // Upload texture data - RGBA format (potentially rotated)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, upload_data);
+        GL_RGBA, GL_UNSIGNED_BYTE, upload_data);
 
     // Generate mipmaps
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -247,7 +247,7 @@ bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const in
 }
 
 bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const int height,
-                                 const std::uint32_t channelOffset, const bool rotate_180) noexcept
+    const std::uint32_t channelOffset, const bool rotate_180) noexcept
 {
     if (data == nullptr || width <= 0 || height <= 0)
     {
@@ -259,8 +259,8 @@ bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const 
     if (width > MAX_TEXTURE_WIDTH || height > MAX_TEXTURE_HEIGHT)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                     "Texture dimensions %dx%d exceed maximum %dx%d\n",
-                     width, height, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
+            "Texture dimensions %dx%d exceed maximum %dx%d\n",
+            width, height, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
         return false;
     }
 
@@ -291,7 +291,7 @@ bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const 
     glActiveTexture(GL_TEXTURE0 + channelOffset);
     glBindTexture(GL_TEXTURE_2D, mTextureId);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA,
-                    GL_UNSIGNED_BYTE, upload_data);
+        GL_UNSIGNED_BYTE, upload_data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     if (const GLenum error = glGetError(); error != GL_NO_ERROR)
@@ -314,7 +314,7 @@ bool Texture::loadBmpIcon(SDL_Window* window, const std::string_view filepath) n
     }
 
     SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load window icon from %s: %s",
-                 filepath.data(), SDL_GetError());
+        filepath.data(), SDL_GetError());
     return false;
 }
 
@@ -340,8 +340,7 @@ bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cell
             maxCols = std::max(maxCols, currentCol);
             currentCol = 0;
             ++rows;
-        }
-        else
+        } else
         {
             ++currentCol;
         }
@@ -361,7 +360,7 @@ bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cell
     if (pixelWidth > MAX_TEXTURE_WIDTH || pixelHeight > MAX_TEXTURE_HEIGHT)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze texture %dx%d exceeds maximum %dx%d\n",
-                     pixelWidth, pixelHeight, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
+            pixelWidth, pixelHeight, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
         return false;
     }
 
@@ -369,10 +368,10 @@ bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cell
     std::vector<std::uint8_t> pixels(pixelWidth * pixelHeight * 4, 0);
 
     // Define colors (RGBA)
-    constexpr std::uint8_t WALL_COLOR[4] = {40, 40, 40, 255};       // Dark gray for walls
-    constexpr std::uint8_t PATH_COLOR[4] = {200, 200, 200, 255};   // Light gray for paths
-    constexpr std::uint8_t START_COLOR[4] = {0, 255, 0, 255};      // Green for start
-    constexpr std::uint8_t END_COLOR[4] = {255, 0, 0, 255};        // Red for end
+    constexpr std::uint8_t WALL_COLOR[4] = { 40, 40, 40, 255 };       // Dark gray for walls
+    constexpr std::uint8_t PATH_COLOR[4] = { 200, 200, 200, 255 };   // Light gray for paths
+    constexpr std::uint8_t START_COLOR[4] = { 0, 255, 0, 255 };      // Green for start
+    constexpr std::uint8_t END_COLOR[4] = { 255, 0, 0, 255 };        // Red for end
 
     // Render maze to pixel buffer
     int row = 0;
