@@ -23,7 +23,6 @@
 #include "View.hpp"
 #include "Material.hpp"
 
-class Ball;
 class Pathfinder;
 class Player;
 class RenderWindow;
@@ -125,11 +124,6 @@ private:
 
     CommandQueue mCommandQueue;
     Pathfinder* mPlayerPathfinder;
-
-    Ball* mBallNormal;
-    Ball* mBallHeavy;
-    Ball* mBallLight;
-    Ball* mBallExplosive;
 
     bool mIsPanning;
     SDL_FPoint mLastMousePosition;

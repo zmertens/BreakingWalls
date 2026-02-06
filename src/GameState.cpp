@@ -35,7 +35,7 @@ GameState::GameState(StateStack& stack, Context context)
         mDisplayShader = &shaders.get(Shaders::ID::DISPLAY_QUAD_VERTEX);
         mComputeShader = &shaders.get(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE);
         mShadersInitialized = true;
-        SDL_Log("GameState: Shaders loaded from context");
+        log("GameState: Shaders loaded from context");
     } catch (const std::exception& e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
@@ -50,7 +50,7 @@ GameState::GameState(StateStack& stack, Context context)
     spawnPos.y += 50.0f;  // Place camera above spawn
     spawnPos.z += 50.0f;  // Move back a bit
     mCamera.setPosition(spawnPos);
-    SDL_Log("GameState: Camera positioned at maze spawn (%.1f, %.1f, %.1f)",
+    log("GameState: Camera positioned at maze spawn (%.1f, %.1f, %.1f)",
         spawnPos.x, spawnPos.y, spawnPos.z);
 
     // Initialize camera tracking

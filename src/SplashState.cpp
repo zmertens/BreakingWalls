@@ -32,7 +32,7 @@ SplashState::SplashState(StateStack& stack, Context context)
         mDisplayShader = &shaders.get(Shaders::ID::DISPLAY_QUAD_VERTEX);
         mComputeShader = &shaders.get(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE);
         mShadersInitialized = true;
-        SDL_Log("SplashState: Shaders loaded from context");
+        log("SplashState: Shaders loaded from context");
     }
     catch (const std::exception& e)
     {
@@ -49,7 +49,7 @@ SplashState::SplashState(StateStack& stack, Context context)
     spawnPos.z += 80.0f;  // Back for a wider perspective
     mCamera.setPosition(spawnPos);
 
-    SDL_Log("SplashState: Camera positioned at (%.1f, %.1f, %.1f)",
+    log("SplashState: Camera positioned at (%.1f, %.1f, %.1f)",
         spawnPos.x, spawnPos.y, spawnPos.z);
 
     // Initialize camera tracking
@@ -82,7 +82,7 @@ void SplashState::draw() const noexcept
 
 void SplashState::initializeGraphicsResources() noexcept
 {
-    SDL_Log("SplashState: Initializing OpenGL graphics pipeline...");
+    log("SplashState: Initializing OpenGL graphics pipeline...");
 
     glEnable(GL_MULTISAMPLE);
     glEnable(GL_DEPTH_TEST);
@@ -109,8 +109,8 @@ void SplashState::initializeGraphicsResources() noexcept
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheres.size() * sizeof(Sphere), spheres.data());
     }
 
-    SDL_Log("SplashState: Uploaded %zu spheres to GPU", spheres.size());
-    SDL_Log("SplashState: Graphics pipeline initialization complete");
+    log("SplashState: Uploaded %zu spheres to GPU", spheres.size());
+    log("SplashState: Graphics pipeline initialization complete");
 }
 
 void SplashState::createPathTracerTextures() noexcept
@@ -135,7 +135,7 @@ void SplashState::createPathTracerTextures() noexcept
         static_cast<GLsizei>(mWindowWidth),
         static_cast<GLsizei>(mWindowHeight));
 
-    SDL_Log("SplashState: Path tracer textures created (%dx%d)", mWindowWidth, mWindowHeight);
+    log("SplashState: Path tracer textures created (%dx%d)", mWindowWidth, mWindowHeight);
 }
 
 bool SplashState::checkCameraMovement() const noexcept
@@ -260,7 +260,7 @@ void SplashState::cleanupResources() noexcept
     mDisplayShader = nullptr;
     mComputeShader = nullptr;
 
-    SDL_Log("SplashState: OpenGL resources cleaned up");
+    log("SplashState: OpenGL resources cleaned up");
 }
 
 bool SplashState::update(float dt, unsigned int subSteps) noexcept

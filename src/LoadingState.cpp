@@ -56,7 +56,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     {
         // Loading is complete - get the loaded resources
         const auto resources = mForeman.getResources();
-        SDL_Log("Loading complete! Loaded %zu resources. Loading textures...\n", resources.size());
+        log("Loading complete! Loaded %zu resources. Loading textures...\n", resources.size());
 
         // Now actually load the textures from the worker-collected texture requests
         loadTexturesFromWorkerRequests();
@@ -65,7 +65,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
         loadWindowIcon(resources);
 
         mHasFinished = true;
-        SDL_Log("All textures loaded! Press any key to continue...\n");
+        log("All textures loaded! Press any key to continue...\n");
         
         // Note: State transition is handled by SplashState when user presses a key
         // SplashState checks isFinished() before allowing transition to MENU
@@ -92,7 +92,7 @@ void LoadingState::setCompletion(float percent) noexcept
     }
 
     // Update loading sprite or progress bar based on percent
-    SDL_Log("Loading progress: %.2f%%", percent * 100.f);
+    log("Loading progress: %.2f%%", percent * 100.f);
 }
 
 bool LoadingState::isFinished() const noexcept { return mHasFinished; }
@@ -101,7 +101,7 @@ bool LoadingState::isFinished() const noexcept { return mHasFinished; }
 /// @param resourcePath Path to the JSON resource configuration
 void LoadingState::loadResources() noexcept
 {
-    SDL_Log("LoadingState::loadResources - Loading from: %s\n", mResourcePath.data());
+    log("LoadingState::loadResources - Loading from: %s\n", mResourcePath.data());
 
     // This would be called by the application to trigger resource loading
     // The resources would be loaded by the worker threads and stored
@@ -146,9 +146,9 @@ void LoadingState::loadShaders() noexcept
         displayShader->compileAndAttachShader(ShaderType::FRAGMENT, "./shaders/raytracer.frag.glsl");
         displayShader->linkProgram();
 
-        SDL_Log("LoadingState: Display shader compiled and linked");
-        SDL_Log("%s", displayShader->getGlslUniforms().c_str());
-        SDL_Log("%s", displayShader->getGlslAttribs().c_str());
+        log("LoadingState: Display shader compiled and linked");
+        log("%s", displayShader->getGlslUniforms().c_str());
+        log("%s", displayShader->getGlslAttribs().c_str());
 
         // Insert display shader into manager (using vertex ID as the combined shader program ID)
         shaders.insert(Shaders::ID::DISPLAY_QUAD_VERTEX, std::move(displayShader));
@@ -158,13 +158,13 @@ void LoadingState::loadShaders() noexcept
         computeShader->compileAndAttachShader(ShaderType::COMPUTE, "./shaders/pathtracer.cs.glsl");
         computeShader->linkProgram();
 
-        SDL_Log("LoadingState: Compute shader compiled and linked");
-        SDL_Log("%s", computeShader->getGlslUniforms().c_str());
+        log("LoadingState: Compute shader compiled and linked");
+        log("%s", computeShader->getGlslUniforms().c_str());
 
         // Insert compute shader into manager
         shaders.insert(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE, std::move(computeShader));
 
-        SDL_Log("LoadingState: All shaders loaded successfully");
+        log("LoadingState: All shaders loaded successfully");
     }
     catch (const std::exception& e)
     {
@@ -232,7 +232,7 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
             {
                 SDL_SetWindowIcon(renderWindow->getSDLWindow(), icon);
                 SDL_DestroySurface(icon);
-                SDL_Log("DEBUG: Loading window icon from: %s\n", windowIconPath.c_str());
+                log("DEBUG: Loading window icon from: %s\n", windowIconPath.c_str());
             }
         }
         else

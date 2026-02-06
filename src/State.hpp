@@ -2,7 +2,10 @@
 #define STATE_HPP
 
 #include <memory>
+#include <string>
+#include <string_view>
 
+#include "Loggable.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "StateIdentifiers.hpp"
@@ -11,7 +14,7 @@ class Player;
 class StateStack;
 union SDL_Event;
 
-class State
+class State : public Loggable
 {
 public:
     typedef std::unique_ptr<State> Ptr;
@@ -46,6 +49,9 @@ public:
     virtual bool update(float dt, unsigned int subSteps) noexcept = 0;
     virtual bool handleEvent(const SDL_Event& event) noexcept = 0;
 
+    virtual void log(std::string_view formatStr, ...) noexcept override;
+    virtual std::string_view view() const noexcept override;
+
 protected:
     void requestStackPush(States::ID stateID);
     void requestStackPop();
@@ -54,6 +60,8 @@ protected:
     Context getContext() const noexcept;
     
     StateStack& getStack() const noexcept;
+
+    std::string mLogs;
 
 private:
     StateStack* mStack;
