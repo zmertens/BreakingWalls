@@ -1,5 +1,5 @@
-#ifndef SDLHELPER_HPP
-#define SDLHELPER_HPP
+#ifndef GLSDLHELPER_HPP
+#define GLSDLHELPER_HPP
 
 #include <mutex>
 #include <string_view>
@@ -10,7 +10,7 @@
 
 struct SDL_Window;
 
-class SDLHelper
+class GLSDLHelper
 {
 public:
     SDL_Window* window{nullptr};
@@ -23,6 +23,6 @@ public:
     void init(std::string_view title, int width, int height) noexcept;
 
     void destroyAndQuit() noexcept;
-}; // SDLHelper class
+}; // GLSDLHelper class
 
-#endif // SDLHELPER_HPP
+#endif // GLSDLHELPER_HPP

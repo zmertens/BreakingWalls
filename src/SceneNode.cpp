@@ -6,9 +6,6 @@
 
 #include <box2d/math_functions.h>
 
-#include <SDL3/SDL.h>
-#include "SDLHelper.hpp"
-
 #include <algorithm>
 #include <cassert>
 

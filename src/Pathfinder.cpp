@@ -2,7 +2,6 @@
 
 #include "ResourceManager.hpp"
 #include "Texture.hpp"
-#include "Wall.hpp"
 #include "Player.hpp"
 
 Pathfinder::Pathfinder(Type type, const TextureManager& textures)

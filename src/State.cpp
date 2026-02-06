@@ -6,10 +6,12 @@
 #include <cstdio>
 
 State::Context::Context(RenderWindow& window, FontManager& fonts,
+    MusicManager& music,
     ShaderManager& shaders,
     TextureManager& textures, Player& player)
     : window{ &window }
     , fonts{ &fonts }
+    , music{ &music }
     , shaders{ &shaders }
     , textures{ &textures }
     , player{ &player }

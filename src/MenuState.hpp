@@ -6,6 +6,8 @@
 
 #include <array>
 
+class MusicPlayer;
+
 class MenuState : public State
 {
 public:
@@ -25,6 +27,8 @@ private:
         QUIT = 4,
         COUNT = 5
     };
+
+    MusicPlayer* mMusic;
 
     Sprite mBackgroundSprite;
 

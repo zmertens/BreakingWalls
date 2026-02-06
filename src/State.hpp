@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <string>
-#include <string_view>
+#include <string_view>.
 
 #include "Loggable.hpp"
 #include "RenderWindow.hpp"
@@ -21,12 +21,15 @@ public:
 
     struct Context
     {
-        explicit Context(RenderWindow& window, FontManager& fonts,
+        explicit Context(RenderWindow& window,
+            FontManager& fonts,
+            MusicManager& music,
             ShaderManager& shaders,
             TextureManager& textures, Player& player);
 
         RenderWindow* window;
         FontManager* fonts;
+        MusicManager* music;
         ShaderManager* shaders;
         TextureManager* textures;
         Player* player;

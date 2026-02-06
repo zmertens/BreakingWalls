@@ -7,7 +7,6 @@
 #include "ResourceManager.hpp"
 #include "SpriteNode.hpp"
 #include "Texture.hpp"
-#include "Wall.hpp"
 
 #include "Physics.hpp"
 #include "Sphere.hpp"

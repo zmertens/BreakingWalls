@@ -45,7 +45,6 @@ message(STATUS "Fetching MazeBuilder from ${MAZE_BUILDER_REPO_URL} at tag ${MAZE
 FetchGitRepo(MazeBuilder ${MAZE_BUILDER_REPO_URL} ${MAZE_BUILDER_GIT_TAG})
 
 set(BREAKING_WALLS_SRC_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/AudioHelper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Camera.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CommandQueue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Entity.cpp
@@ -55,6 +54,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/LoadingState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MenuState.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MusicPlayer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Pathfinder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PauseState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PhysicsGame.cpp
@@ -64,7 +64,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/RenderTexture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/RenderWindow.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SceneNode.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SDLHelper.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/GLSDLHelper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SettingsState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Shader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SplashState.cpp
@@ -74,7 +74,6 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/StateStack.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Texture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Transformable.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/Wall.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/WorkerConcurrent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/World.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/View.cpp)

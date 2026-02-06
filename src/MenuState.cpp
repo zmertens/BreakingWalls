@@ -10,6 +10,8 @@
 #include <dearimgui/imgui.h>
 
 #include "Font.hpp"
+#include "GameState.hpp"
+#include "MusicPlayer.hpp"
 #include "PauseState.hpp"
 #include "Player.hpp"
 #include "ResourceIdentifiers.hpp"
@@ -144,20 +146,32 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
         return true;
     }
 
+    static bool startBackgroundMusic = true;
+    if (startBackgroundMusic)
+    {
+        auto& music = getContext().music->get(Music::ID::GAME_MUSIC);
+        if (!music.isPlaying())
+        {
+            music.play();
+            SDL_Log("MenuState: Started background music");
+        }
+        startBackgroundMusic = false;
+    }
+
     // Menu was closed by user - process the selected action
     switch (mSelectedMenuItem) {
         case MenuItem::CONTINUE:
-            // Only pop if we're not the only state
-            if (getStack().peekState<PauseState*>() || !getStack().isEmpty())
+            // Only pop if there's a GameState to return to
+            if (getStack().peekState<GameState*>() != nullptr)
             {
-                // Pop menu state, returning to previous state
+                // Pop menu state, returning to game
                 requestStackPop();
             }
             else
             {
-                // If menu is the only state, start a new game
+                // If no game state exists, start a new game
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, 
-                           "MenuState: Cannot continue - no previous state. Starting new game.");
+                           "MenuState: Cannot continue - no game in progress. Starting new game.");
                 requestStackPop();
                 requestStackPush(States::ID::GAME);
             }

@@ -12,24 +12,18 @@
 
 #include <dearimgui/imgui.h>
 
-struct SDL_Window;
-
 template <typename Resource, typename Identifier>
 class ResourceManager
 {
 public:
-
+    // Shader loading
     void load(Identifier id, std::string_view filename);
 
-    void load(SDL_Window* window, Identifier id, std::string_view filename);
+    // Music loading
+    void load(Identifier id, std::string_view filename, float volume, bool loop);
 
+    // Texture loading
     void load(Identifier id, std::string_view filename, std::uint32_t channelOffset = 0);
-
-    /// Load texture from maze string with cell size
-    void loadFromStr(Identifier id, std::string_view mazeStr, int cellSize);
-
-    template <typename Parameter>
-    void load(SDL_Window* window, Identifier id, std::string_view filename, const Parameter& secondParam);
 
     template <typename Parameter1, typename Parameter2, typename PixelSize = float>
     void load(Identifier id, const Parameter1& param1, const Parameter2& param2, const PixelSize& pixelSize);
@@ -73,15 +67,18 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
 }
 
 template <typename Resource, typename Identifier>
-void ResourceManager<Resource, Identifier>::load(SDL_Window* window, Identifier id, std::string_view filename)
+void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view filename, float volume, bool loop)
 {
     // Create and load resource
     auto resource = std::make_unique<Resource>();
 
-    if (!resource->loadFromFile(filename))
+    if (!resource->openFromFile(filename))
     {
         throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
     }
+
+    resource->setVolume(volume);
+    resource->setLoop(loop);
 
     // If loading successful, insert resource to map
     insertResource(id, std::move(resource));
@@ -99,19 +96,6 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
     }
 
     // If loading successful, insert resource to map
-    insertResource(id, std::move(resource));
-}
-
-template <typename Resource, typename Identifier>
-void ResourceManager<Resource, Identifier>::loadFromStr(Identifier id, std::string_view mazeStr, int cellSize)
-{
-    auto resource = std::make_unique<Resource>();
-
-    if (!resource->loadFromStr(mazeStr, cellSize))
-    {
-        throw std::runtime_error("ResourceManager::loadFromStr - Failed to load from maze string");
-    }
-
     insertResource(id, std::move(resource));
 }
 

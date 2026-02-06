@@ -9,6 +9,7 @@
 #include <glad/glad.h>
 
 #include "CommandQueue.hpp"
+#include "MusicPlayer.hpp"
 #include "Player.hpp"
 #include "ResourceManager.hpp"
 #include "Shader.hpp"
@@ -19,6 +20,7 @@ GameState::GameState(StateStack& stack, Context context)
     : State{ stack, context }
     , mWorld{ *context.window, *context.fonts, *context.textures }
     , mPlayer{ *context.player }
+    , mGameMusic{ nullptr }
     , mDisplayShader{ nullptr }
     , mComputeShader{ nullptr }
     // Initialize camera at maze spawn position (will be updated after first chunk loads)
@@ -40,6 +42,20 @@ GameState::GameState(StateStack& stack, Context context)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
         mShadersInitialized = false;
+    }
+
+    // Get and play game music from context
+    auto& music = *context.music;
+    try
+    {
+        mGameMusic = &music.get(Music::ID::GAME_MUSIC);
+        mGameMusic->play();
+        log("GameState: Game music started");
+    }
+    catch (const std::exception& e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get game music: %s", e.what());
+        mGameMusic = nullptr;
     }
 
     // Trigger initial chunk load to get maze spawn position
@@ -67,6 +83,12 @@ GameState::GameState(StateStack& stack, Context context)
 
 GameState::~GameState()
 {
+    // Stop game music when leaving GameState
+    if (mGameMusic)
+    {
+        mGameMusic->stop();
+    }
+    
     cleanupResources();
 }
 

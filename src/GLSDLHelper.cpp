@@ -1,4 +1,4 @@
-#include "SDLHelper.hpp"
+#include "GLSDLHelper.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -121,7 +121,7 @@ namespace
 }
 
 
-void SDLHelper::init(std::string_view title, int width, int height) noexcept
+void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 {
     auto initFunc = [this, title, width, height]()
         {
@@ -200,7 +200,7 @@ void SDLHelper::init(std::string_view title, int width, int height) noexcept
     }
 }
 
-void SDLHelper::destroyAndQuit() noexcept
+void GLSDLHelper::destroyAndQuit() noexcept
 {
     // Prevent double-destruction
     if (!this->window && !this->glContext)

@@ -12,6 +12,7 @@
 
 class Player;
 class StateStack;
+class MusicPlayer;
 union SDL_Event;
 
 /// @brief Main game state managing physics, rendering, and input
@@ -30,6 +31,9 @@ public:
 private:
     World mWorld;  // Manages both 2D physics and 3D sphere scene
     Player& mPlayer;
+
+    // Music player reference for game music
+    MusicPlayer* mGameMusic{ nullptr };
 
     // Path tracer camera (for 3D scene navigation)
     Camera mCamera;

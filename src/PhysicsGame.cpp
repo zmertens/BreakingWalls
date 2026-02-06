@@ -25,13 +25,14 @@
 #include "GameState.hpp"
 #include "LoadingState.hpp"
 #include "MenuState.hpp"
+#include "MusicPlayer.hpp"
 #include "Player.hpp"
 #include "PauseState.hpp"
 #include "SettingsState.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
-#include "SDLHelper.hpp"
+#include "GLSDLHelper.hpp"
 #include "SplashState.hpp"
 #include "State.hpp"
 #include "StateStack.hpp"
@@ -44,9 +45,10 @@ struct PhysicsGame::PhysicsGameImpl
     std::unique_ptr<RenderWindow> window;
     std::unique_ptr<StateStack> stateStack;
 
-    SDLHelper sdlHelper;
+    GLSDLHelper glSdlHelper;
 
     FontManager fonts;
+    MusicManager music;
     ShaderManager shaders;
     TextureManager textures;
 
@@ -65,27 +67,25 @@ struct PhysicsGame::PhysicsGameImpl
         , resourcePath{ resourcePath }
         , INIT_WINDOW_W{ w }, INIT_WINDOW_H{ h }
         , window{ nullptr }
-        , sdlHelper{}
+        , glSdlHelper{}
         , stateStack{ nullptr }
     {
         initSDL();
-
-        // Check if SDL initialization succeeded
-        if (!sdlHelper.window)
+        if (!glSdlHelper.window)
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL window - cannot continue");
             // Don't initialize further objects if SDL failed
             return;
         }
 
-        window = std::make_unique<RenderWindow>(sdlHelper.window);
+        window = std::make_unique<RenderWindow>(glSdlHelper.window);
 
-        SDL_Log("Initializing ImGui...");
         initDearImGui();
 
         stateStack = std::make_unique<StateStack>(State::Context{
             *window,
             std::ref(fonts),
+            std::ref(music),
             std::ref(shaders),
             std::ref(textures),
             std::ref(p1)
@@ -99,7 +99,7 @@ struct PhysicsGame::PhysicsGameImpl
 
     ~PhysicsGameImpl()
     {
-        if (auto& sdl = this->sdlHelper; sdl.window)
+        if (auto& sdl = this->glSdlHelper; sdl.window)
         {
             this->stateStack->clearStates();
             this->fonts.clear();
@@ -117,7 +117,7 @@ struct PhysicsGame::PhysicsGameImpl
     void initSDL() noexcept
     {
         auto title = windowTitle.empty() ? "Breaking Walls" : windowTitle.c_str();
-        sdlHelper.init(title, INIT_WINDOW_W, INIT_WINDOW_H);
+        glSdlHelper.init(title, INIT_WINDOW_W, INIT_WINDOW_H);
     }
 
     void initDearImGui() const noexcept
@@ -132,7 +132,7 @@ struct PhysicsGame::PhysicsGameImpl
         ImGui::StyleColorsDark();
 
         // Initialize ImGui SDL3 and OpenGL3 backends
-        ImGui_ImplSDL3_InitForOpenGL(this->sdlHelper.window, this->sdlHelper.glContext);
+        ImGui_ImplSDL3_InitForOpenGL(this->glSdlHelper.window, this->glSdlHelper.glContext);
         ImGui_ImplOpenGL3_Init("#version 430");
     }
 
@@ -163,8 +163,6 @@ struct PhysicsGame::PhysicsGameImpl
 
     void update(const float dt, int subSteps = 4) const noexcept
     {
-        // Always call update - StateStack handles empty stack internally
-        // and MUST apply pending changes even when stack is empty
         stateStack->update(dt, subSteps);
     }
 

@@ -35,6 +35,16 @@ namespace Fonts
     };
 }
 
+namespace Music
+{
+    enum class ID : unsigned int
+    {
+        GAME_MUSIC = 0,
+        MENU_MUSIC = 1,
+        SPLASH_MUSIC = 2,
+    };
+}
+
 namespace Shaders
 {
     enum class ID : unsigned int
@@ -67,6 +77,7 @@ namespace Textures
     };
 }
 
+class MusicPlayer;
 class Font;
 class Shader;
 class Texture;
@@ -75,8 +86,9 @@ class Texture;
 template <typename Resource, typename Identifier>
 class ResourceManager;
 
-typedef ResourceManager<Texture, Textures::ID> TextureManager;
+typedef ResourceManager<MusicPlayer, Music::ID> MusicManager;
 typedef ResourceManager<Font, Fonts::ID> FontManager;
 typedef ResourceManager<Shader, Shaders::ID> ShaderManager;
+typedef ResourceManager<Texture, Textures::ID> TextureManager;
 
 #endif // RESOURCE_IDENTIFIERS_HPP

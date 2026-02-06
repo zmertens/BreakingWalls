@@ -27,18 +27,9 @@ SplashState::SplashState(StateStack& stack, Context context)
 
     // Get shaders from context
     auto& shaders = *context.shaders;
-    try
-    {
-        mDisplayShader = &shaders.get(Shaders::ID::DISPLAY_QUAD_VERTEX);
-        mComputeShader = &shaders.get(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE);
-        mShadersInitialized = true;
-        log("SplashState: Shaders loaded from context");
-    }
-    catch (const std::exception& e)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SplashState: Failed to get shaders: %s", e.what());
-        mShadersInitialized = false;
-    }
+    mDisplayShader = &shaders.get(Shaders::ID::DISPLAY_QUAD_VERTEX);
+    mComputeShader = &shaders.get(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE);
+    mShadersInitialized = true;
 
     // Trigger initial chunk load
     mWorld.updateSphereChunks(mCamera.getPosition());

@@ -1,14 +1,14 @@
 #include "LoadingState.hpp"
 
 #include <SDL3/SDL.h>
+
 #include <filesystem>
 
 #include <MazeBuilder/io_utils.h>
-#include <MazeBuilder/create2.h>
-#include <MazeBuilder/configurator.h>
 
 #include "Font.hpp"
 #include "JsonUtils.hpp"
+#include "MusicPlayer.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
 #include "Shader.hpp"
@@ -110,6 +110,8 @@ void LoadingState::loadResources() noexcept
     loadFonts();
 
     loadShaders();
+    
+    loadMusic();
 }
 
 void LoadingState::loadFonts() noexcept
@@ -132,6 +134,26 @@ void LoadingState::loadFonts() noexcept
         Cousine_Regular_compressed_data,
         Cousine_Regular_compressed_size,
         FONT_PIXEL_SIZE);
+}
+
+void LoadingState::loadMusic() noexcept
+{
+    auto& music = *getContext().music;
+    
+    try
+    {
+        // Load music tracks through the MusicManager
+        // Adjust paths as needed for your audio files
+        music.load(Music::ID::GAME_MUSIC, std::string_view("./audio/loading.wav"), 50.f, true);
+        //music.load(Music::ID::MENU_MUSIC, std::string_view("./audio/menu_music.ogg"), 50.f, true);
+        //music.load(Music::ID::SPLASH_MUSIC, std::string_view("./audio/splash_music.ogg"), 50.f, false);
+        
+        log("LoadingState: Music loaded successfully");
+    }
+    catch (const std::exception& e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load music: %s", e.what());
+    }
 }
 
 void LoadingState::loadShaders() noexcept

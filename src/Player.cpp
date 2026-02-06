@@ -3,7 +3,6 @@
 #include "CommandQueue.hpp"
 #include "Entity.hpp"
 #include "Pathfinder.hpp"
-#include "Wall.hpp"
 
 #include <box2d/box2d.h>
 
@@ -170,29 +169,6 @@ std::uint32_t Player::getAssignedKey(Action action) const
 
     return SDL_SCANCODE_UNKNOWN;
 }
-
-void Player::onBeginContact(Entity* other) noexcept
-{
-    if (const auto* wall = dynamic_cast<Wall*>(other))
-    {
-        if (wall->getOrientation() == Wall::Orientation::HORIZONTAL)
-        {
-            this->setGroundContact(true);
-        }
-    }
-}
-
-void Player::onEndContact(Entity* other) noexcept
-{
-    if (const auto* wall = dynamic_cast<Wall*>(other))
-    {
-        if (wall->getOrientation() == Wall::Orientation::HORIZONTAL)
-        {
-            this->setGroundContact(false);
-        }
-    }
-}
-
 
 void Player::setGroundContact(bool contact)
 {
