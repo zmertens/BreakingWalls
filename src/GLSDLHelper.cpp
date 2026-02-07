@@ -233,3 +233,76 @@ void GLSDLHelper::destroyAndQuit() noexcept
         SDL_Quit();
     }
 }
+
+void GLSDLHelper::enableRenderingFeatures() noexcept
+{
+    glEnable(GL_MULTISAMPLE);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+}
+
+GLuint GLSDLHelper::createAndBindVAO() noexcept
+{
+    GLuint vao = 0;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+    return vao;
+}
+
+GLuint GLSDLHelper::createAndBindSSBO(GLuint bindingPoint) noexcept
+{
+    GLuint ssbo = 0;
+    glGenBuffers(1, &ssbo);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, ssbo);
+    return ssbo;
+}
+
+void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void* data) noexcept
+{
+    glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, data, GL_DYNAMIC_DRAW);
+}
+
+void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void* data) noexcept
+{
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, offset, size, data);
+}
+
+GLuint GLSDLHelper::createPathTracerTexture(GLsizei width, GLsizei height) noexcept
+{
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, width, height);
+    return texture;
+}
+
+void GLSDLHelper::deleteVAO(GLuint& vao) noexcept
+{
+    if (vao != 0)
+    {
+        glDeleteVertexArrays(1, &vao);
+        vao = 0;
+    }
+}
+
+void GLSDLHelper::deleteBuffer(GLuint& buffer) noexcept
+{
+    if (buffer != 0)
+    {
+        glDeleteBuffers(1, &buffer);
+        buffer = 0;
+    }
+}
+
+void GLSDLHelper::deleteTexture(GLuint& texture) noexcept
+{
+    if (texture != 0)
+    {
+        glDeleteTextures(1, &texture);
+        texture = 0;
+    }
+}

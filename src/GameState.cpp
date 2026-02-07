@@ -9,6 +9,7 @@
 #include <glad/glad.h>
 
 #include "CommandQueue.hpp"
+#include "GLSDLHelper.hpp"
 #include "MusicPlayer.hpp"
 #include "Player.hpp"
 #include "ResourceManager.hpp"
@@ -110,61 +111,45 @@ void GameState::initializeGraphicsResources() noexcept
 {
     log("GameState: Initializing OpenGL 4.3 graphics pipeline...");
 
-    // Enable OpenGL features (following Compute.cpp)
-    glEnable(GL_MULTISAMPLE);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
+    // Enable OpenGL features using helper
+    GLSDLHelper::enableRenderingFeatures();
 
-    // Create VAO for fullscreen quad (like Compute.cpp)
-    glGenVertexArrays(1, &mVAO);
-    glBindVertexArray(mVAO);
+    // Create VAO for fullscreen quad using helper
+    mVAO = GLSDLHelper::createAndBindVAO();
 
-    // Create SSBO for sphere data
-    glGenBuffers(1, &mShapeSSBO);
+    // Create SSBO for sphere data using helper
+    mShapeSSBO = GLSDLHelper::createAndBindSSBO(1);
 
     // Create textures for path tracing
     createPathTracerTextures();
 
     // Upload sphere data from World to GPU with extra capacity for dynamic spawning
     const auto& spheres = mWorld.getSpheres();
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
 
     // Allocate buffer with 4x capacity to handle chunk-based spawning
     // This reduces frequent reallocations as spheres are loaded/unloaded
     size_t initialCapacity = std::max(spheres.size() * 4, size_t(1000));
     size_t bufferSize = initialCapacity * sizeof(Sphere);
 
-    glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, nullptr, GL_DYNAMIC_DRAW);
+    GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(bufferSize), nullptr);
 
     // Upload initial sphere data
     if (!spheres.empty())
     {
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheres.size() * sizeof(Sphere), spheres.data());
+        GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(spheres.size() * sizeof(Sphere)), spheres.data());
     }
     log("GameState: Graphics pipeline initialization complete");
 }
 
 void GameState::createPathTracerTextures() noexcept
 {
-    // Create accumulation texture for progressive rendering (following Compute.cpp)
-    glGenTextures(1, &mAccumTex);
-    glBindTexture(GL_TEXTURE_2D, mAccumTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F,
+    // Create accumulation texture for progressive rendering using helper
+    mAccumTex = GLSDLHelper::createPathTracerTexture(
         static_cast<GLsizei>(mWindowWidth),
         static_cast<GLsizei>(mWindowHeight));
 
-    // Create display texture for final output
-    glGenTextures(1, &mDisplayTex);
-    glBindTexture(GL_TEXTURE_2D, mDisplayTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F,
+    // Create display texture for final output using helper
+    mDisplayTex = GLSDLHelper::createPathTracerTexture(
         static_cast<GLsizei>(mWindowWidth),
         static_cast<GLsizei>(mWindowHeight));
 
@@ -228,11 +213,11 @@ void GameState::renderWithComputeShaders() const noexcept
     {
         // Reallocate buffer with new size (add some headroom to avoid frequent reallocations)
         size_t newSize = requiredSize * 2;
-        glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, spheres.data(), GL_DYNAMIC_DRAW);
+        GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(newSize), spheres.data());
     } else
     {
         // Update existing buffer
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, requiredSize, spheres.data());
+        GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(requiredSize), spheres.data());
     }
 
     // Only compute if we haven't finished all batches
@@ -293,29 +278,10 @@ void GameState::renderWithComputeShaders() const noexcept
 
 void GameState::cleanupResources() noexcept
 {
-    if (mVAO != 0)
-    {
-        glDeleteVertexArrays(1, &mVAO);
-        mVAO = 0;
-    }
-
-    if (mShapeSSBO != 0)
-    {
-        glDeleteBuffers(1, &mShapeSSBO);
-        mShapeSSBO = 0;
-    }
-
-    if (mAccumTex != 0)
-    {
-        glDeleteTextures(1, &mAccumTex);
-        mAccumTex = 0;
-    }
-
-    if (mDisplayTex != 0)
-    {
-        glDeleteTextures(1, &mDisplayTex);
-        mDisplayTex = 0;
-    }
+    GLSDLHelper::deleteVAO(mVAO);
+    GLSDLHelper::deleteBuffer(mShapeSSBO);
+    GLSDLHelper::deleteTexture(mAccumTex);
+    GLSDLHelper::deleteTexture(mDisplayTex);
 
     // Shaders are now managed by ShaderManager - don't delete them here
     mDisplayShader = nullptr;

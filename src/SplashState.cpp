@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 
+#include "GLSDLHelper.hpp"
 #include "LoadingState.hpp"
 #include "Player.hpp"
 #include "ResourceIdentifiers.hpp"
@@ -60,6 +61,7 @@ SplashState::SplashState(StateStack& stack, Context context)
 SplashState::~SplashState()
 {
     cleanupResources();
+    SDL_Log("%s\n", view().data());
 }
 
 void SplashState::draw() const noexcept
@@ -77,51 +79,40 @@ void SplashState::initializeGraphicsResources() noexcept
 {
     log("SplashState: Initializing OpenGL graphics pipeline...");
 
-    glEnable(GL_MULTISAMPLE);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
+    // Enable OpenGL features using helper
+    GLSDLHelper::enableRenderingFeatures();
 
-    glGenVertexArrays(1, &mVAO);
-    glBindVertexArray(mVAO);
+    // Create VAO for fullscreen quad using helper
+    mVAO = GLSDLHelper::createAndBindVAO();
 
-    glGenBuffers(1, &mShapeSSBO);
+    // Create SSBO for sphere data using helper
+    mShapeSSBO = GLSDLHelper::createAndBindSSBO(1);
 
     createPathTracerTextures();
 
     // Upload sphere data from World to GPU
     const auto& spheres = mWorld.getSpheres();
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
 
     size_t initialCapacity = std::max(spheres.size() * 4, size_t(1000));
     size_t bufferSize = initialCapacity * sizeof(Sphere);
 
-    glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, nullptr, GL_DYNAMIC_DRAW);
+    GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(bufferSize), nullptr);
 
     if (!spheres.empty())
     {
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheres.size() * sizeof(Sphere), spheres.data());
+        GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(spheres.size() * sizeof(Sphere)), spheres.data());
     }
 }
 
 void SplashState::createPathTracerTextures() noexcept
 {
-    glGenTextures(1, &mAccumTex);
-    glBindTexture(GL_TEXTURE_2D, mAccumTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F,
+    // Create accumulation texture for progressive rendering using helper
+    mAccumTex = GLSDLHelper::createPathTracerTexture(
         static_cast<GLsizei>(mWindowWidth),
         static_cast<GLsizei>(mWindowHeight));
 
-    glGenTextures(1, &mDisplayTex);
-    glBindTexture(GL_TEXTURE_2D, mDisplayTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F,
+    // Create display texture for final output using helper
+    mDisplayTex = GLSDLHelper::createPathTracerTexture(
         static_cast<GLsizei>(mWindowWidth),
         static_cast<GLsizei>(mWindowHeight));
 
@@ -176,11 +167,11 @@ void SplashState::renderWithComputeShaders() const noexcept
     if (static_cast<size_t>(currentBufferSize) < requiredSize)
     {
         size_t newSize = requiredSize * 2;
-        glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, spheres.data(), GL_DYNAMIC_DRAW);
+        GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(newSize), spheres.data());
     }
     else
     {
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, requiredSize, spheres.data());
+        GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(requiredSize), spheres.data());
     }
 
     if (mCurrentBatch < mTotalBatches)
@@ -223,29 +214,10 @@ void SplashState::renderWithComputeShaders() const noexcept
 
 void SplashState::cleanupResources() noexcept
 {
-    if (mVAO != 0)
-    {
-        glDeleteVertexArrays(1, &mVAO);
-        mVAO = 0;
-    }
-
-    if (mShapeSSBO != 0)
-    {
-        glDeleteBuffers(1, &mShapeSSBO);
-        mShapeSSBO = 0;
-    }
-
-    if (mAccumTex != 0)
-    {
-        glDeleteTextures(1, &mAccumTex);
-        mAccumTex = 0;
-    }
-
-    if (mDisplayTex != 0)
-    {
-        glDeleteTextures(1, &mDisplayTex);
-        mDisplayTex = 0;
-    }
+    GLSDLHelper::deleteVAO(mVAO);
+    GLSDLHelper::deleteBuffer(mShapeSSBO);
+    GLSDLHelper::deleteTexture(mAccumTex);
+    GLSDLHelper::deleteTexture(mDisplayTex);
 
     mDisplayShader = nullptr;
     mComputeShader = nullptr;
