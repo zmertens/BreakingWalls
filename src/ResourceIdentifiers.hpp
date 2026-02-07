@@ -37,6 +37,20 @@ namespace Fonts
     };
 }
 
+namespace GUIOptions
+{
+    enum class ID : unsigned int
+    {
+        FULLSCREEN = 0,
+        VSYNC = 1,
+        ANTIALIASING = 2,
+        SHOW_DEBUG_OVERLAY = 3,
+        ENABLE_MUSIC = 4,
+        ENABLE_SOUNDS = 5,
+        TOTAL_OPTIONS = 6
+    };
+}
+
 namespace Music
 {
     enum class ID : unsigned int
@@ -89,8 +103,9 @@ namespace Textures
     };
 }
 
-class MusicPlayer;
 class Font;
+class MusicPlayer;
+class Options;
 class Shader;
 class Texture;
 
@@ -98,8 +113,9 @@ class Texture;
 template <typename Resource, typename Identifier>
 class ResourceManager;
 
-typedef ResourceManager<MusicPlayer, Music::ID> MusicManager;
 typedef ResourceManager<Font, Fonts::ID> FontManager;
+typedef ResourceManager<Options, GUIOptions::ID> OptionsManager;
+typedef ResourceManager<MusicPlayer, Music::ID> MusicManager;
 typedef ResourceManager<Shader, Shaders::ID> ShaderManager;
 typedef ResourceManager<sf::SoundBuffer, SoundEffect::ID> SoundBufferManager;
 typedef ResourceManager<Texture, Textures::ID> TextureManager;

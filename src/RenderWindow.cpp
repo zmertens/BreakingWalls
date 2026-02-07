@@ -100,3 +100,13 @@ bool RenderWindow::isFullscreen() const noexcept
     const auto flags = SDL_GetWindowFlags(mWindow);
     return (flags & SDL_WINDOW_FULLSCREEN) != 0;
 }
+
+void RenderWindow::setVsync(bool enabled) const noexcept
+{
+    if (!mWindow)
+    {
+        return;
+    }
+    // SDL3: 1 = vsync enabled, 0 = vsync disabled
+    SDL_GL_SetSwapInterval(enabled ? 1 : 0);
+}

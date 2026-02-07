@@ -30,6 +30,18 @@ public:
     void setListenerPosition(sf::Vector2f position);
     sf::Vector2f getListenerPosition() const;
 
+    /// @brief Set the volume for all sound effects (0-100)
+    void setVolume(float volume);
+
+    /// @brief Get the current volume (0-100)
+    float getVolume() const;
+
+    /// @brief Enable or disable sound effects
+    void setEnabled(bool enabled);
+
+    /// @brief Check if sound effects are enabled
+    bool isEnabled() const;
+
 private:
     class Impl;
     std::unique_ptr<Impl> mImpl;

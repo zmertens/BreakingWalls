@@ -31,6 +31,8 @@ public:
     explicit Impl(SoundBufferManager& soundBuffers)
         : mSoundBuffers{ soundBuffers }
         , mSounds{}
+        , mVolume{ 100.0f }
+        , mEnabled{ true }
     {
     }
 
@@ -45,6 +47,11 @@ public:
     // Play spatialized sound at a 2D position in the game world
     void play(SoundEffect::ID effect, sf::Vector2f position)
     {
+        if (!mEnabled)
+        {
+            return;
+        }
+
         mSounds.emplace_back(sf::Sound{ mSoundBuffers.get(effect) });
         sf::Sound& sound = mSounds.back();
 
@@ -52,6 +59,7 @@ public:
         sound.setPosition(sf::Vector3f{ position.x, -position.y, 0.f });
         sound.setAttenuation(ATTENUATION);
         sound.setMinDistance(MIN_DISTANCE_3D);
+        sound.setVolume(mVolume);
 
         sound.play();
     }
@@ -79,9 +87,44 @@ public:
         return sf::Vector2f{ pos.x, -pos.y };
     }
 
+    void setVolume(float volume)
+    {
+        mVolume = std::clamp(volume, 0.0f, 100.0f);
+        // Update volume for all currently playing sounds
+        for (auto& sound : mSounds)
+        {
+            sound.setVolume(mVolume);
+        }
+    }
+
+    float getVolume() const
+    {
+        return mVolume;
+    }
+
+    void setEnabled(bool enabled)
+    {
+        mEnabled = enabled;
+        if (!mEnabled)
+        {
+            // Stop all currently playing sounds when disabled
+            for (auto& sound : mSounds)
+            {
+                sound.stop();
+            }
+        }
+    }
+
+    bool isEnabled() const
+    {
+        return mEnabled;
+    }
+
 private:
     SoundBufferManager& mSoundBuffers;
     std::list<sf::Sound> mSounds;
+    float mVolume;
+    bool mEnabled;
 };
 
 // SoundPlayer public API
@@ -119,4 +162,24 @@ void SoundPlayer::setListenerPosition(sf::Vector2f position)
 sf::Vector2f SoundPlayer::getListenerPosition() const
 {
     return mImpl->getListenerPosition();
+}
+
+void SoundPlayer::setVolume(float volume)
+{
+    mImpl->setVolume(volume);
+}
+
+float SoundPlayer::getVolume() const
+{
+    return mImpl->getVolume();
+}
+
+void SoundPlayer::setEnabled(bool enabled)
+{
+    mImpl->setEnabled(enabled);
+}
+
+bool SoundPlayer::isEnabled() const
+{
+    return mImpl->isEnabled();
 }

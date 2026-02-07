@@ -5,16 +5,24 @@
 #include <dearimgui/imgui.h>
 
 #include "Font.hpp"
+#include "MusicPlayer.hpp"
+#include "Options.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
+#include "SoundPlayer.hpp"
 #include "StateStack.hpp"
 
 SettingsState::SettingsState(StateStack& stack, Context context)
     : State(stack, context)
-      , mShowText{true}
-      , mShowSettingsWindow(true)
-      , mBackgroundSprite{context.textures->get(Textures::ID::SPLASH_TITLE_IMAGE)}
+    , mShowText{ true }
+    , mShowSettingsWindow(true)
+    , mBackgroundSprite{ context.textures->get(Textures::ID::SPLASH_TITLE_IMAGE) }
 {
+}
+
+SettingsState::~SettingsState()
+{
+    SDL_Log("%s\n", view().data());
 }
 
 void SettingsState::draw() const noexcept
@@ -40,6 +48,44 @@ void SettingsState::draw() const noexcept
     ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(500, 600), ImGuiCond_FirstUseEver);
 
+    // Get current options from global OptionsManager
+    auto& optionsManager = *getContext().options;
+
+    // Use static variables to persist UI state between frames
+    // Initialize from options on first access using a flag
+    static bool initialized = false;
+    static float masterVolume = 100.0f;
+    static float musicVolume = 80.0f;
+    static float sfxVolume = 90.0f;
+    static bool vsync = true;
+    static bool fullscreen = false;
+    static bool antialiasing = true;
+    static bool enableMusic = true;
+    static bool enableSound = true;
+    static bool showDebugOverlay = false;
+
+    if (!initialized)
+    {
+        // Load values from OptionsManager (using default option ID)
+        try
+        {
+            const auto& opts = optionsManager.get(GUIOptions::ID::FULLSCREEN);
+            masterVolume = opts.mMasterVolume;
+            musicVolume = opts.mMusicVolume;
+            sfxVolume = opts.mSfxVolume;
+            vsync = opts.mVsync;
+            fullscreen = opts.mFullscreen;
+            antialiasing = opts.mAntiAliasing;
+            enableMusic = opts.mEnableMusic;
+            enableSound = opts.mEnableSound;
+            showDebugOverlay = opts.mShowDebugOverlay;
+        } catch (const std::exception&)
+        {
+            // Options not loaded yet, use defaults
+        }
+        initialized = true;
+    }
+
     bool windowOpen = mShowSettingsWindow;
     if (ImGui::Begin("Settings", &windowOpen, ImGuiWindowFlags_NoCollapse))
     {
@@ -51,10 +97,8 @@ void SettingsState::draw() const noexcept
         ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "Audio Settings:");
         ImGui::Spacing();
 
-        static float masterVolume = 100.0f;
-        static float musicVolume = 80.0f;
-        static float sfxVolume = 90.0f;
-
+        ImGui::Checkbox("Enable Music", &enableMusic);
+        ImGui::Checkbox("Enable Sound Effects", &enableSound);
         ImGui::SliderFloat("Master Volume", &masterVolume, 0.0f, 100.0f, "%.0f%%");
         ImGui::SliderFloat("Music Volume", &musicVolume, 0.0f, 100.0f, "%.0f%%");
         ImGui::SliderFloat("SFX Volume", &sfxVolume, 0.0f, 100.0f, "%.0f%%");
@@ -67,30 +111,19 @@ void SettingsState::draw() const noexcept
         ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "Graphics Settings:");
         ImGui::Spacing();
 
-        static bool vsync = true;
-        static bool fullscreen = false;
-        static int selectedResolution = 0;
-        const char* resolutions[] = {"800x600", "1024x768", "1280x720", "1920x1080"};
-
         ImGui::Checkbox("VSync", &vsync);
         ImGui::Checkbox("Fullscreen", &fullscreen);
-        ImGui::Combo("Resolution", &selectedResolution, resolutions, IM_ARRAYSIZE(resolutions));
+        ImGui::Checkbox("Anti-Aliasing", &antialiasing);
 
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
 
-        // Gameplay Settings Section
-        ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "Gameplay Settings:");
+        // Debug Settings Section
+        ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "Debug Settings:");
         ImGui::Spacing();
 
-        static float difficulty = 50.0f;
-        static bool showFPS = true;
-        static bool showDebugInfo = false;
-
-        ImGui::SliderFloat("Difficulty", &difficulty, 0.0f, 100.0f, "%.0f%%");
-        ImGui::Checkbox("Show FPS", &showFPS);
-        ImGui::Checkbox("Show Debug Info", &showDebugInfo);
+        ImGui::Checkbox("Show Debug Overlay", &showDebugOverlay);
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -99,32 +132,32 @@ void SettingsState::draw() const noexcept
         // Action buttons
         if (ImGui::Button("Apply Settings", ImVec2(150, 40)))
         {
-            SDL_Log("Settings applied");
-            // Add logic to apply settings
-            window.setFullscreen(fullscreen);
+            log("Settings applied");
+            applySettings(masterVolume, musicVolume, sfxVolume, vsync, fullscreen,
+                antialiasing, enableMusic, enableSound, showDebugOverlay);
         }
 
         ImGui::SameLine();
 
         if (ImGui::Button("Reset to Default", ImVec2(150, 40)))
         {
-            SDL_Log("Settings reset to default");
+            log("Settings reset to default");
             masterVolume = 100.0f;
             musicVolume = 80.0f;
             sfxVolume = 90.0f;
             vsync = true;
             fullscreen = false;
-            selectedResolution = 0;
-            difficulty = 50.0f;
-            showFPS = true;
-            showDebugInfo = false;
+            antialiasing = true;
+            enableMusic = true;
+            enableSound = true;
+            showDebugOverlay = false;
         }
 
         ImGui::SameLine();
 
         if (ImGui::Button("Back to Menu", ImVec2(150, 40)))
         {
-            SDL_Log("Returning to menu");
+            log("Returning to menu");
             mShowSettingsWindow = false;
         }
     }
@@ -139,6 +172,77 @@ void SettingsState::draw() const noexcept
     ImGui::PopStyleColor(10);
 
     ImGui::PopFont();
+}
+
+void SettingsState::applySettings(float masterVolume, float musicVolume, float sfxVolume,
+    bool vsync, bool fullscreen, bool antialiasing,
+    bool enableMusic, bool enableSound, bool showDebugOverlay) const noexcept
+{
+    auto* window = getContext().window;
+    auto* sounds = getContext().sounds;
+    auto* musicManager = getContext().music;
+
+    // Apply fullscreen
+    if (window)
+    {
+        window->setFullscreen(fullscreen);
+        window->setVsync(vsync);
+    }
+
+    // Apply sound settings
+    if (sounds)
+    {
+        sounds->setEnabled(enableSound);
+        // Apply master volume * sfx volume
+        sounds->setVolume(masterVolume * sfxVolume / 100.0f);
+    }
+
+    // Apply music settings to all music players
+    if (musicManager)
+    {
+        try
+        {
+            // Apply to game music
+            auto& gameMusic = musicManager->get(Music::ID::GAME_MUSIC);
+            if (enableMusic)
+            {
+                gameMusic.setVolume(masterVolume * musicVolume / 100.0f);
+            } else
+            {
+                gameMusic.setVolume(0.0f);
+            }
+        } catch (const std::exception&)
+        {
+            // Music not loaded yet
+        }
+    }
+
+    // Store settings in OptionsManager for persistence
+    auto* optionsManager = getContext().options;
+    if (optionsManager)
+    {
+        try
+        {
+            auto& opts = optionsManager->get(GUIOptions::ID::FULLSCREEN);
+            opts.mMasterVolume = masterVolume;
+            opts.mMusicVolume = musicVolume;
+            opts.mSfxVolume = sfxVolume;
+            opts.mVsync = vsync;
+            opts.mFullscreen = fullscreen;
+            opts.mAntiAliasing = antialiasing;
+            opts.mEnableMusic = enableMusic;
+            opts.mEnableSound = enableSound;
+            opts.mShowDebugOverlay = showDebugOverlay;
+        } catch (const std::exception&)
+        {
+            // Options not available
+        }
+    }
+
+    log("Applied settings: Fullscreen=" + std::to_string(fullscreen) +
+        ", VSync=" + std::to_string(vsync) +
+        ", Music=" + std::to_string(enableMusic) +
+        ", Sound=" + std::to_string(enableSound));
 }
 
 bool SettingsState::update(float dt, unsigned int subSteps) noexcept

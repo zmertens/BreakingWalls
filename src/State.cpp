@@ -8,6 +8,7 @@
 State::Context::Context(RenderWindow& window,
     FontManager& fonts,
     MusicManager& music,
+    OptionsManager& options,
     SoundBufferManager& soundBuffers,
     SoundPlayer& sounds,
     ShaderManager& shaders,
@@ -15,6 +16,7 @@ State::Context::Context(RenderWindow& window,
     : window{ &window }
     , fonts{ &fonts }
     , music{ &music }
+    , options{ &options }
     , soundBuffers{ &soundBuffers }
     , sounds{ &sounds }
     , shaders{ &shaders }
@@ -58,7 +60,7 @@ StateStack& State::getStack() const noexcept
 /// @brief 
 /// @param message
 /// @param delimiter '\n'
-void State::log(std::string_view message, const char delimiter) noexcept
+void State::log(std::string_view message, const char delimiter) const noexcept
 {
     mLogs += std::string{ message } + delimiter;
 }

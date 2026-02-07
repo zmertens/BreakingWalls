@@ -23,21 +23,22 @@
 
 #include "Font.hpp"
 #include "GameState.hpp"
+#include "GLSDLHelper.hpp"
 #include "LoadingState.hpp"
 #include "MenuState.hpp"
 #include "MusicPlayer.hpp"
-#include "Player.hpp"
+#include "Options.hpp"
 #include "PauseState.hpp"
-#include "SettingsState.hpp"
+#include "Player.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
-#include "GLSDLHelper.hpp"
+#include "SettingsState.hpp"
+#include "SoundPlayer.hpp"
 #include "SplashState.hpp"
 #include "State.hpp"
 #include "StateStack.hpp"
 #include "Texture.hpp"
-#include "SoundPlayer.hpp"
 
 struct PhysicsGame::PhysicsGameImpl
 {
@@ -50,6 +51,7 @@ struct PhysicsGame::PhysicsGameImpl
 
     FontManager fonts;
     MusicManager music;
+    OptionsManager options;
     SoundBufferManager soundBuffers;
     std::unique_ptr<SoundPlayer> sounds;
     ShaderManager shaders;
@@ -72,6 +74,7 @@ struct PhysicsGame::PhysicsGameImpl
         , window{ nullptr }
         , glSdlHelper{}
         , stateStack{ nullptr }
+        , options{ }
         , sounds{ nullptr }
     {
         initSDL();
@@ -86,6 +89,9 @@ struct PhysicsGame::PhysicsGameImpl
 
         initDearImGui();
 
+        // Initialize default options
+        initOptions();
+
         // Create SoundPlayer with reference to soundBuffers
         sounds = std::make_unique<SoundPlayer>(soundBuffers);
 
@@ -93,6 +99,7 @@ struct PhysicsGame::PhysicsGameImpl
             *window,
             std::ref(fonts),
             std::ref(music),
+            std::ref(options),
             std::ref(soundBuffers),
             *sounds,
             std::ref(shaders),
@@ -146,6 +153,16 @@ struct PhysicsGame::PhysicsGameImpl
         // Initialize ImGui SDL3 and OpenGL3 backends
         ImGui_ImplSDL3_InitForOpenGL(this->glSdlHelper.mWindow, this->glSdlHelper.mGLContext);
         ImGui_ImplOpenGL3_Init("#version 430");
+    }
+
+    void initOptions() noexcept
+    {
+        // Create default options and insert into manager
+        // We use a single Options object keyed by FULLSCREEN for simplicity
+        // All settings are stored in this one Options instance
+        auto defaultOptions = std::make_unique<Options>();
+        options.insert(GUIOptions::ID::FULLSCREEN, std::move(defaultOptions));
+        SDL_Log("Default options initialized");
     }
 
     void processInput() const noexcept

@@ -25,14 +25,17 @@ public:
         explicit Context(RenderWindow& window,
             FontManager& fonts,
             MusicManager& music,
+            OptionsManager& options,
             SoundBufferManager& soundBuffers,
             SoundPlayer& sounds,
             ShaderManager& shaders,
-            TextureManager& textures, Player& player);
+            TextureManager& textures,
+            Player& player);
 
         RenderWindow* window;
         FontManager* fonts;
         MusicManager* music;
+        OptionsManager* options;
         SoundBufferManager* soundBuffers;
         SoundPlayer* sounds;
         ShaderManager* shaders;
@@ -57,7 +60,7 @@ public:
     virtual bool update(float dt, unsigned int subSteps) noexcept = 0;
     virtual bool handleEvent(const SDL_Event& event) noexcept = 0;
 
-    virtual void log(std::string_view message, const char delimiter = '\n') noexcept override;
+    virtual void log(std::string_view message, const char delimiter = '\n') const noexcept override;
     virtual std::string_view view() const noexcept override;
 
 protected:
@@ -69,7 +72,7 @@ protected:
     
     StateStack& getStack() const noexcept;
 
-    std::string mLogs;
+    mutable std::string mLogs;
 
 private:
     StateStack* mStack;

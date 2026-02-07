@@ -50,6 +50,8 @@ public:
 
     [[nodiscard]] bool isFullscreen() const noexcept;
 
+    void setVsync(bool enabled) const noexcept;
+
     /// @brief Get the SDL window for direct access
     [[nodiscard]] SDL_Window* getSDLWindow() const noexcept { return mWindow; }
 
