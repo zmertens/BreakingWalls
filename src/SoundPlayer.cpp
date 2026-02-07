@@ -1,5 +1,6 @@
 #include "SoundPlayer.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <list>
 #include <ranges>
@@ -14,14 +15,14 @@
 namespace
 {
     // Spatial audio constants following SFML pattern
-    // ListenerZ: Distance from listener to the 2D sound plane
-    const float ListenerZ = 300.f;
-    // Attenuation: How fast sound volume decreases with distance
-    const float Attenuation = 8.f;
-    // MinDistance2D: Distance in 2D at which sound is at full volume
-    const float MinDistance2D = 200.f;
-    // MinDistance3D: Actual 3D minimum distance calculated with Pythagorean theorem
-    const float MinDistance3D = std::sqrt(MinDistance2D * MinDistance2D + ListenerZ * ListenerZ);
+    // LISTENER_Z: Distance from listener to the 2D sound plane
+    const float LISTENER_Z = 300.f;
+    // ATTENUATION: How fast sound volume decreases with distance
+    const float ATTENUATION = 8.f;
+    // MIN_DISTANCE_2D: Distance in 2D at which sound is at full volume
+    const float MIN_DISTANCE_2D = 200.f;
+    // MIN_DISTANCE_3D: Actual 3D minimum distance calculated with Pythagorean theorem
+    const float MIN_DISTANCE_3D = std::sqrt(MIN_DISTANCE_2D * MIN_DISTANCE_2D + LISTENER_Z * LISTENER_Z);
 }
 
 class SoundPlayer::Impl
@@ -49,19 +50,17 @@ public:
 
         // Set 3D position: X same, Y negated (audio Y is up), Z=0 (sound in 2D plane)
         sound.setPosition(sf::Vector3f{ position.x, -position.y, 0.f });
-        sound.setAttenuation(Attenuation);
-        sound.setMinDistance(MinDistance3D);
+        sound.setAttenuation(ATTENUATION);
+        sound.setMinDistance(MIN_DISTANCE_3D);
 
         sound.play();
     }
 
     void removeStoppedSounds()
     {
-        // Use erase-remove idiom with ranges
-        auto removed = std::ranges::remove_if(mSounds, [](const sf::Sound& sound) {
+        std::erase_if(mSounds, [](const sf::Sound& sound) {
             return sound.getStatus() == sf::Sound::Status::Stopped;
             });
-        mSounds.erase(removed.begin(), removed.end());
     }
 
     // Set listener position in 2D game coordinates
@@ -69,7 +68,7 @@ public:
     {
         // Convert 2D position to 3D listener position
         // X stays the same, Y is negated (audio Y is up), Z is listener distance from sound plane
-        sf::Listener::setPosition(sf::Vector3f{ position.x, -position.y, ListenerZ });
+        sf::Listener::setPosition(sf::Vector3f{ position.x, -position.y, LISTENER_Z });
     }
 
     // Get listener position in 2D game coordinates
