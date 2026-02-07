@@ -16,7 +16,7 @@
 
 #include <box2d/box2d.h>
 
-#include <SDL3/SDL.h>
+#include <SDL3/SDL_log.h>
 
 #include <SFML/Network.hpp>
 
@@ -42,12 +42,13 @@ World::World(RenderWindow& window, FontManager& fonts, TextureManager& textures)
     , mPlayerPathfinder{ nullptr }
     , mIsPanning{ false }
     , mLastMousePosition{ 0.f, 0.f }
+    , mLastChunkUpdatePosition{}
+    , mPlayerSpawnPosition{}
 {
 }
 
 World::~World()
 {
-    SDL_Log("World: Destructor called");
     destroyWorld();
 }
 
@@ -72,8 +73,6 @@ void World::init() noexcept
 
     // Initialize modern worker pool
     initWorkerPool();
-
-    SDL_Log("World: Initialization complete - modern async chunk system ready");
 }
 
 void World::initWorkerPool() noexcept
@@ -85,8 +84,6 @@ void World::initWorkerPool() noexcept
     {
         mWorkerThreads.push_back(std::async(std::launch::async, [this, i]()
             {
-                SDL_Log("Worker thread %zu started", i);
-
                 while (!mWorkersShouldStop.load(std::memory_order_acquire))
                 {
                     std::packaged_task<ChunkWorkItem()> task;
@@ -117,18 +114,12 @@ void World::initWorkerPool() noexcept
                         task();
                     }
                 }
-
-                SDL_Log("Worker thread %zu shutting down", i);
             }));
     }
-
-    SDL_Log("World: Worker pool initialized with %zu threads", NUM_WORKER_THREADS);
 }
 
 void World::shutdownWorkerPool() noexcept
 {
-    SDL_Log("World: Shutting down worker pool...");
-
     // Signal stop FIRST
     mWorkersShouldStop.store(true, std::memory_order_release);
 
@@ -149,8 +140,6 @@ void World::shutdownWorkerPool() noexcept
         mPendingChunks.clear();
     }
 
-    SDL_Log("World: Waiting for %zu worker threads to finish...", mWorkerThreads.size());
-
     // Wait for all workers with timeout
     for (size_t i = 0; i < mWorkerThreads.size(); ++i)
     {
@@ -164,9 +153,6 @@ void World::shutdownWorkerPool() noexcept
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "Worker thread %zu timed out waiting for shutdown", i);
-                } else
-                {
-                    SDL_Log("Worker thread %zu stopped", i);
                 }
             } catch (const std::exception& e) {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR,
@@ -182,8 +168,6 @@ void World::shutdownWorkerPool() noexcept
         std::lock_guard<std::mutex> lock(mMazeCacheMutex);
         mChunkMazes.clear();
     }
-
-    SDL_Log("World: Worker pool shutdown complete");
 }
 
 void World::submitChunkForGeneration(const ChunkCoord& coord) noexcept
@@ -281,9 +265,6 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord& coord) const no
 
             result.spheres.emplace_back(center, radius, albedo, matType, fuzz, refractIdx);
         }
-
-        SDL_Log("Worker: Generated %zu spheres for chunk (%d, %d)",
-            result.spheres.size(), coord.x, coord.z);
     } catch (const std::exception& e) {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR,
             "Worker: Exception generating chunk (%d, %d): %s",
@@ -311,8 +292,6 @@ void World::processCompletedChunks() noexcept
                 if (workItem.hasSpawnPosition)
                 {
                     mPlayerSpawnPosition = workItem.spawnPosition;
-                    SDL_Log("World: Player spawn updated to (%.1f, %.1f, %.1f)",
-                        workItem.spawnPosition.x, workItem.spawnPosition.y, workItem.spawnPosition.z);
                 }
 
                 std::vector<size_t> sphereIndices;
@@ -368,9 +347,6 @@ void World::processCompletedChunks() noexcept
                 // This prevents race condition where unloadChunk is called before we're done
                 mLoadedChunks.insert(coord);
                 mChunkSphereIndices[coord] = sphereIndices;
-
-                SDL_Log("World: Integrated %zu spheres from chunk (%d, %d)",
-                    sphereIndices.size(), coord.x, coord.z);
             } catch (const std::exception& e) {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR,
                     "World: Exception integrating chunk (%d, %d): %s",
@@ -408,15 +384,6 @@ void World::update(float dt)
     if (b2World_IsValid(mWorldId))
     {
         b2World_Step(mWorldId, dt, 4);
-
-#if defined(MAZE_DEBUG)
-        static int stepCounter = 0;
-        if (stepCounter++ % 60 == 0)
-        {
-            b2Counters counters = b2World_GetCounters(mWorldId);
-            SDL_Log("Physics step #%d: bodies=%d, contacts=%d", stepCounter, counters.bodyCount, counters.contactCount);
-        }
-#endif
 
         // Poll contact events after stepping
         b2ContactEvents events = b2World_GetContactEvents(mWorldId);
@@ -531,12 +498,8 @@ void World::handleEvent(const SDL_Event& event)
 
 void World::destroyWorld()
 {
-    SDL_Log("World: Destroying world...");
-
     // Shutdown worker pool FIRST - this clears all pending work
     shutdownWorkerPool();
-
-    SDL_Log("World: Workers stopped, cleaning up %zu physics bodies...", mSphereBodyIds.size());
 
     // Destroy all physics bodies BEFORE destroying world
     // Do this in reverse order to be safe
@@ -555,14 +518,11 @@ void World::destroyWorld()
     }
     mSphereBodyIds.clear();
 
-    SDL_Log("World: Physics bodies cleared, destroying physics world...");
-
     // Destroy physics world
     if (b2World_IsValid(mWorldId))
     {
         try {
             b2DestroyWorld(mWorldId);
-            SDL_Log("World: Physics world destroyed successfully");
         } catch (const std::exception& e) {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Error destroying physics world: %s", e.what());
         } catch (...) {
@@ -575,8 +535,6 @@ void World::destroyWorld()
     mSpheres.clear();
     mChunkSphereIndices.clear();
     mLoadedChunks.clear();
-
-    SDL_Log("World: Cleanup complete - all resources freed");
 }
 
 void World::initPathTracerScene() noexcept
@@ -695,9 +653,6 @@ void World::initPathTracerScene() noexcept
 
         mSphereBodyIds.push_back(bodyId);
     }
-
-    SDL_Log("World: Path tracer scene initialized with %zu hero spheres (chunk-based spawning enabled)",
-        mSpheres.size());
 }
 
 void World::syncPhysicsToSpheres() noexcept
@@ -742,14 +697,6 @@ void World::updateSphereChunks(const glm::vec3& cameraPosition) noexcept
         return; // Still in same chunk, no update needed
     }
 
-    if (firstCall) {
-        SDL_Log("World: First chunk update at camera position (%.1f, %.1f, %.1f)",
-            cameraPosition.x, cameraPosition.y, cameraPosition.z);
-    } else {
-        SDL_Log("World: Camera moved to new chunk (%d, %d) from (%d, %d)",
-            currentChunk.x, currentChunk.z, lastChunk.x, lastChunk.z);
-    }
-
     mLastChunkUpdatePosition = cameraPosition;
 
     // Determine chunks that should be loaded
@@ -782,9 +729,6 @@ void World::updateSphereChunks(const glm::vec3& cameraPosition) noexcept
             loadedCount++;
         }
     }
-
-    SDL_Log("World: Chunk update complete - Loaded: %d, Unloaded: %d, Total chunks: %zu, Total spheres: %zu",
-        loadedCount, unloadedCount, mLoadedChunks.size(), mSpheres.size());
 }
 
 void World::loadChunk(const ChunkCoord& coord) noexcept
@@ -873,9 +817,6 @@ void World::unloadChunk(const ChunkCoord& coord) noexcept
     // Remove this chunk's entry
     mChunkSphereIndices.erase(it);
     mLoadedChunks.erase(coord);
-
-    SDL_Log("World: Unloaded chunk (%d, %d), removed %zu spheres, %zu spheres remaining",
-        coord.x, coord.z, indicesToRemove.size(), mSpheres.size());
 }
 
 std::string World::generateMazeForChunk(const ChunkCoord& coord) const noexcept

@@ -256,14 +256,6 @@ void GameState::renderWithComputeShaders() const noexcept
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         mCurrentBatch++;
-
-        // Log progress periodically
-        if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches) {
-            uint32_t totalSamples = mCurrentBatch * mSamplesPerBatch;
-            float progress = static_cast<float>(mCurrentBatch) / static_cast<float>(mTotalBatches) * 100.0f;
-            SDL_Log("Path tracing progress: %.1f%% (%u/%u batches, %u samples, %zu spheres)",
-                progress, mCurrentBatch, mTotalBatches, totalSamples, spheres.size());
-        }
     }
 
     // Display the current result
@@ -392,6 +384,15 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
         {
             mCamera.rotate(yawDelta, pitchDelta);
         }
+    }
+
+    // Log progress periodically
+    if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches) {
+        uint32_t totalSamples = mCurrentBatch * mSamplesPerBatch;
+        float progress = static_cast<float>(mCurrentBatch) / static_cast<float>(mTotalBatches) * 100.0f;
+        log("Path tracing progress: " + std::to_string(progress) + " | " +
+            std::to_string(mCurrentBatch) + " / " + std::to_string(mTotalBatches) + " batches | " +
+            std::to_string(totalSamples) + " samples.");
     }
 
     return true;
