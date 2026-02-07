@@ -2,6 +2,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <string>
+
 #include <glad/glad.h>
 
 namespace
