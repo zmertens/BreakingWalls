@@ -40,8 +40,10 @@ SplashState::SplashState(StateStack& stack, Context context)
     spawnPos.z += 80.0f;  // Back for a wider perspective
     mCamera.setPosition(spawnPos);
 
-    log("SplashState: Camera positioned at (%.1f, %.1f, %.1f)",
-        spawnPos.x, spawnPos.y, spawnPos.z);
+    log("SplashState: Camera positioned at " +
+        std::to_string(spawnPos.x) +
+        std::to_string(spawnPos.y) +
+        std::to_string(spawnPos.z));
 
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
@@ -99,9 +101,6 @@ void SplashState::initializeGraphicsResources() noexcept
     {
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheres.size() * sizeof(Sphere), spheres.data());
     }
-
-    log("SplashState: Uploaded %zu spheres to GPU", spheres.size());
-    log("SplashState: Graphics pipeline initialization complete");
 }
 
 void SplashState::createPathTracerTextures() noexcept
@@ -126,7 +125,7 @@ void SplashState::createPathTracerTextures() noexcept
         static_cast<GLsizei>(mWindowWidth),
         static_cast<GLsizei>(mWindowHeight));
 
-    log("SplashState: Path tracer textures created (%dx%d)", mWindowWidth, mWindowHeight);
+    log("SplashState: Path tracer textures created " + std::to_string(mWindowWidth) + ", " + std::to_string(mWindowHeight));
 }
 
 bool SplashState::checkCameraMovement() const noexcept

@@ -57,7 +57,7 @@ public:
     virtual bool update(float dt, unsigned int subSteps) noexcept = 0;
     virtual bool handleEvent(const SDL_Event& event) noexcept = 0;
 
-    virtual void log(std::string_view formatStr, ...) noexcept override;
+    virtual void log(std::string_view message, const char delimiter = '\n') noexcept override;
     virtual std::string_view view() const noexcept override;
 
 protected:

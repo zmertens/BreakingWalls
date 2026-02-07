@@ -38,7 +38,6 @@ GameState::GameState(StateStack& stack, Context context)
         mDisplayShader = &shaders.get(Shaders::ID::DISPLAY_QUAD_VERTEX);
         mComputeShader = &shaders.get(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE);
         mShadersInitialized = true;
-        log("GameState: Shaders loaded from context");
     } catch (const std::exception& e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
@@ -51,7 +50,6 @@ GameState::GameState(StateStack& stack, Context context)
     {
         mGameMusic = &music.get(Music::ID::GAME_MUSIC);
         mGameMusic->play();
-        log("GameState: Game music started");
     } catch (const std::exception& e)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get game music: %s", e.what());
@@ -66,8 +64,10 @@ GameState::GameState(StateStack& stack, Context context)
     spawnPos.y += 50.0f;  // Place camera above spawn
     spawnPos.z += 50.0f;  // Move back a bit
     mCamera.setPosition(spawnPos);
-    log("GameState: Camera positioned at maze spawn (%.1f, %.1f, %.1f)",
-        spawnPos.x, spawnPos.y, spawnPos.z);
+    log("GameState: Camera spawned at:\t" +
+        std::to_string(spawnPos.x) + ", " +
+        std::to_string(spawnPos.y) + ", " +
+        std::to_string(spawnPos.z));
 
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
@@ -106,7 +106,7 @@ void GameState::draw() const noexcept
 
 void GameState::initializeGraphicsResources() noexcept
 {
-    SDL_Log("GameState: Initializing OpenGL 4.3 graphics pipeline...");
+    log("GameState: Initializing OpenGL 4.3 graphics pipeline...");
 
     // Enable OpenGL features (following Compute.cpp)
     glEnable(GL_MULTISAMPLE);
@@ -139,10 +139,7 @@ void GameState::initializeGraphicsResources() noexcept
     {
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheres.size() * sizeof(Sphere), spheres.data());
     }
-
-    SDL_Log("GameState: Uploaded %zu spheres to GPU (buffer capacity: %zu spheres)",
-        spheres.size(), initialCapacity);
-    SDL_Log("GameState: Graphics pipeline initialization complete");
+    log("GameState: Graphics pipeline initialization complete");
 }
 
 void GameState::createPathTracerTextures() noexcept
@@ -169,7 +166,8 @@ void GameState::createPathTracerTextures() noexcept
         static_cast<GLsizei>(mWindowWidth),
         static_cast<GLsizei>(mWindowHeight));
 
-    SDL_Log("GameState: Path tracer textures created (%dx%d)", mWindowWidth, mWindowHeight);
+    log("GameState: Path tracer textures created:\t" +
+        std::to_string(mWindowWidth) + ", " + std::to_string(mWindowHeight));
 }
 
 bool GameState::checkCameraMovement() const noexcept
@@ -229,8 +227,6 @@ void GameState::renderWithComputeShaders() const noexcept
         // Reallocate buffer with new size (add some headroom to avoid frequent reallocations)
         size_t newSize = requiredSize * 2;
         glBufferData(GL_SHADER_STORAGE_BUFFER, newSize, spheres.data(), GL_DYNAMIC_DRAW);
-        SDL_Log("GameState: Reallocated SSBO for %zu spheres (buffer size: %zu bytes)",
-            spheres.size(), newSize);
     } else
     {
         // Update existing buffer
@@ -323,7 +319,7 @@ void GameState::cleanupResources() noexcept
     mDisplayShader = nullptr;
     mComputeShader = nullptr;
 
-    SDL_Log("GameState: OpenGL resources cleaned up");
+    log("GameState: OpenGL resources cleaned up");
 }
 
 void GameState::updateSounds() noexcept
@@ -460,7 +456,7 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
             {
                 sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{ resetPos.x, resetPos.z });
             }
-            SDL_Log("Camera reset to initial position");
+            log("Camera reset to initial position");
         }
 
         // Toggle progressive rendering reset with SPACE
@@ -473,17 +469,17 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
             {
                 sounds->play(SoundEffect::ID::SELECT);
             }
-            SDL_Log("Path tracing accumulation reset");
+            log("Path tracing accumulation reset");
         }
     }
 
-    // Handle mouse motion for camera rotation (right mouse button) - INCREASED SENSITIVITY
+    // Handle mouse motion for camera rotation (right mouse button)
     if (event.type == SDL_EVENT_MOUSE_MOTION)
     {
         Uint32 mouseState = SDL_GetMouseState(nullptr, nullptr);
         if (mouseState & SDL_BUTTON_RMASK)
         {
-            const float sensitivity = 0.2f;  // Increased from 0.1f to 0.2f
+            const float sensitivity = 0.35f;
             mCamera.rotate(event.motion.xrel * sensitivity, -event.motion.yrel * sensitivity);
         }
     }
