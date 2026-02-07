@@ -15,7 +15,6 @@ public:
 
     bool openFromFile(std::string_view filename)
     {
-        mFilename = filename;
         return mMusic.openFromFile(std::string(filename));
     }
 
@@ -60,7 +59,6 @@ public:
 
 private:
     sf::Music mMusic;
-    std::string mFilename;
     float mVolume;
     bool mLoop;
 };

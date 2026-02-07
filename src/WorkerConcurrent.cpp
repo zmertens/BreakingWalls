@@ -44,12 +44,12 @@ WorkerConcurrent::WorkerConcurrent()
           {JSONKeys::SFML_LOGO, Textures::ID::SFML_LOGO},
           {JSONKeys::WALL_HORIZONTAL, Textures::ID::WALL_HORIZONTAL},
           {JSONKeys::WINDOW_ICON, Textures::ID::WINDOW_ICON}
-      }), mGameMtx(SDL_CreateMutex())
-      , mGameCond(SDL_CreateCondition())
-      , mPendingWorkCount(0)
-      , mShouldExit{}
-      , mResources{}
-      , mTotalWorkItems(0)
+        }), mGameMtx(SDL_CreateMutex())
+    , mGameCond(SDL_CreateCondition())
+    , mPendingWorkCount(0)
+    , mShouldExit{}
+    , mResources{}
+    , mTotalWorkItems(0)
 {
     // Initialize atomic int to 0 (false)
     SDL_SetAtomicInt(&mShouldExit, 0);
@@ -123,70 +123,70 @@ void WorkerConcurrent::initThreads() noexcept
     using std::vector;
 
     auto threadFunc = [](void* data) -> int
-    {
-        if (const auto workerPtr = static_cast<WorkerConcurrent*>(data))
         {
-            while (SDL_GetAtomicInt(&workerPtr->mShouldExit) == 0)
+            if (const auto workerPtr = static_cast<WorkerConcurrent*>(data))
             {
-                SDL_LockMutex(workerPtr->mGameMtx);
-
-                while (workerPtr->mWorkQueue.empty() && SDL_GetAtomicInt(&workerPtr->mShouldExit) == 0)
+                while (SDL_GetAtomicInt(&workerPtr->mShouldExit) == 0)
                 {
-                    SDL_WaitCondition(workerPtr->mGameCond, workerPtr->mGameMtx);
-                }
+                    SDL_LockMutex(workerPtr->mGameMtx);
 
-                // Check if we should exit before processing
-                if (SDL_GetAtomicInt(&workerPtr->mShouldExit) != 0)
-                {
-                    SDL_UnlockMutex(workerPtr->mGameMtx);
-                    break;
-                }
-
-                optional<WorkItem> tempWorker;
-                bool hasWork = false;
-
-                if (!workerPtr->mWorkQueue.empty())
-                {
-                    tempWorker = workerPtr->mWorkQueue.front();
-                    workerPtr->mWorkQueue.pop_front();
-                    hasWork = true;
-                }
-
-                SDL_UnlockMutex(workerPtr->mGameMtx);
-
-                // Process work outside the lock
-                if (hasWork && SDL_GetAtomicInt(&workerPtr->mShouldExit) == 0 && tempWorker.has_value())
-                {
-                    workerPtr->doWork(cref(tempWorker.value()));
-                }
-
-                // Update pending work count
-                SDL_LockMutex(workerPtr->mGameMtx);
-                if (hasWork)
-                {
-                    workerPtr->mPendingWorkCount -= 1;
-
-                    if (workerPtr->mPendingWorkCount <= 0)
+                    while (workerPtr->mWorkQueue.empty() && SDL_GetAtomicInt(&workerPtr->mShouldExit) == 0)
                     {
-                        SDL_SignalCondition(workerPtr->mGameCond);
+                        SDL_WaitCondition(workerPtr->mGameCond, workerPtr->mGameMtx);
                     }
+
+                    // Check if we should exit before processing
+                    if (SDL_GetAtomicInt(&workerPtr->mShouldExit) != 0)
+                    {
+                        SDL_UnlockMutex(workerPtr->mGameMtx);
+                        break;
+                    }
+
+                    optional<WorkItem> tempWorker;
+                    bool hasWork = false;
+
+                    if (!workerPtr->mWorkQueue.empty())
+                    {
+                        tempWorker = workerPtr->mWorkQueue.front();
+                        workerPtr->mWorkQueue.pop_front();
+                        hasWork = true;
+                    }
+
+                    SDL_UnlockMutex(workerPtr->mGameMtx);
+
+                    // Process work outside the lock
+                    if (hasWork && SDL_GetAtomicInt(&workerPtr->mShouldExit) == 0 && tempWorker.has_value())
+                    {
+                        workerPtr->doWork(cref(tempWorker.value()));
+                    }
+
+                    // Update pending work count
+                    SDL_LockMutex(workerPtr->mGameMtx);
+                    if (hasWork)
+                    {
+                        workerPtr->mPendingWorkCount -= 1;
+
+                        if (workerPtr->mPendingWorkCount <= 0)
+                        {
+                            SDL_SignalCondition(workerPtr->mGameCond);
+                        }
+                    }
+                    SDL_UnlockMutex(workerPtr->mGameMtx);
                 }
-                SDL_UnlockMutex(workerPtr->mGameMtx);
+
+                return 0;
             }
 
-            return 0;
-        }
-
-        // Cast failed
-        return -1;
-    }; // lambda
+            // Cast failed
+            return -1;
+        }; // lambda
 
     static constexpr auto NUM_WORKERS = 4;
 
     // Create worker mThreads
-    for (auto w{0}; w < NUM_WORKERS; w++)
+    for (auto w{ 0 }; w < NUM_WORKERS; w++)
     {
-        string name = {"thread: " + to_string(w)};
+        string name = { "thread: " + to_string(w) };
         SDL_Thread* t = SDL_CreateThread(threadFunc, name.data(), this);
 
         if (!t)
@@ -221,21 +221,20 @@ void WorkerConcurrent::generate(std::string_view resourcePath) noexcept
     SDL_UnlockMutex(mGameMtx);
 
     // Store the resource path prefix for use in worker mThreads
-    mResourcePathPrefix = mazes::io_utils::getDirectoryPath(string{resourcePath}) + "/";
+    mResourcePathPrefix = mazes::io_utils::getDirectoryPath(string{ resourcePath }) + "/";
 
     // Load JSON configuration
     unordered_map<string, string> resources{};
 
     try
     {
-        JSONUtils::loadConfiguration(string{resourcePath}, ref(resources));
+        JSONUtils::loadConfiguration(string{ resourcePath }, ref(resources));
 
 #if defined(BREAKING_WALLS_DEBUG)
 
         SDL_Log("Loaded %zu resources from %s\n", resources.size(), resourcePath.data());
 #endif
-    }
-    catch (const exception& e)
+    } catch (const exception& e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load resources: %s\n", e.what());
         return;
@@ -332,8 +331,7 @@ void WorkerConcurrent::doWork(WorkItem const& workItem) noexcept
                                     config.columns(static_cast<unsigned int>(intValue));
                                 else if (key == "seed")
                                     config.seed(static_cast<unsigned int>(intValue));
-                            }
-                            catch (...)
+                            } catch (...)
                             {
                                 SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to parse %s from level config %zu\n", key.c_str(), i);
                             }
@@ -379,8 +377,7 @@ void WorkerConcurrent::doWork(WorkItem const& workItem) noexcept
                         SDL_Log("Generated maze %zu: %zu characters\n", i, mazeStr.size());
 #endif
                     }
-                }
-                catch (const std::exception& e)
+                } catch (const std::exception& e)
                 {
                     SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create maze from config %zu: %s\n", i, e.what());
                 }
@@ -399,31 +396,25 @@ void WorkerConcurrent::doWork(WorkItem const& workItem) noexcept
 
                 SDL_UnlockMutex(mGameMtx);
             }
-        }
-        else
+        } else
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to parse level_defaults array\n");
         }
 
         SDL_LockMutex(mGameMtx);
-    }
-    else if (workItem.key == JSONKeys::PLAYER_HITPOINTS_DEFAULT)
+    } else if (workItem.key == JSONKeys::PLAYER_HITPOINTS_DEFAULT)
     {
 
-    }
-    else if (workItem.key == JSONKeys::PLAYER_SPEED_DEFAULT)
+    } else if (workItem.key == JSONKeys::PLAYER_SPEED_DEFAULT)
     {
 
-    }
-    else if (workItem.key == JSONKeys::ENEMY_HITPOINTS_DEFAULT)
+    } else if (workItem.key == JSONKeys::ENEMY_HITPOINTS_DEFAULT)
     {
 
-    }
-    else if (workItem.key == JSONKeys::ENEMY_SPEED_DEFAULT)
+    } else if (workItem.key == JSONKeys::ENEMY_SPEED_DEFAULT)
     {
 
-    }
-    else
+    } else
     {
         // Regular texture path handling
         for (const auto& [key, id] : mConfigMappings)

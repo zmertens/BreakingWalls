@@ -13,6 +13,7 @@
 #include "Player.hpp"
 #include "ResourceManager.hpp"
 #include "Shader.hpp"
+#include "SoundPlayer.hpp"
 #include "StateStack.hpp"
 #include "Sphere.hpp"
 
@@ -51,8 +52,7 @@ GameState::GameState(StateStack& stack, Context context)
         mGameMusic = &music.get(Music::ID::GAME_MUSIC);
         mGameMusic->play();
         log("GameState: Game music started");
-    }
-    catch (const std::exception& e)
+    } catch (const std::exception& e)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get game music: %s", e.what());
         mGameMusic = nullptr;
@@ -88,7 +88,7 @@ GameState::~GameState()
     {
         mGameMusic->stop();
     }
-    
+
     cleanupResources();
 }
 
@@ -326,6 +326,25 @@ void GameState::cleanupResources() noexcept
     SDL_Log("GameState: OpenGL resources cleaned up");
 }
 
+void GameState::updateSounds() noexcept
+{
+    // Get sound player from context
+    auto* sounds = getContext().sounds;
+    if (!sounds)
+    {
+        return;
+    }
+
+    // Set listener position based on camera position
+    // Convert 3D camera position to 2D for the sound system
+    // Using camera X and Z as the 2D position (Y is up in 3D, but we use X/Z plane)
+    glm::vec3 camPos = mCamera.getPosition();
+    sounds->setListenerPosition(sf::Vector2f{ camPos.x, camPos.z });
+
+    // Remove sounds that have finished playing
+    sounds->removeStoppedSounds();
+}
+
 bool GameState::update(float dt, unsigned int subSteps) noexcept
 {
     mWorld.update(dt);
@@ -335,6 +354,9 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     // Update sphere chunks based on camera position for dynamic spawning
     mWorld.updateSphereChunks(mCamera.getPosition());
+
+    // Update sounds: set listener position based on camera and remove stopped sounds
+    updateSounds();
 
     // Handle camera movement with WASD for 3D path tracer scene
     int numKeys = 0;
@@ -429,8 +451,15 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
         // Reset camera to initial position with R key
         if (event.key.scancode == SDL_SCANCODE_R)
         {
-            mCamera.setPosition(glm::vec3(0.0f, 50.0f, 200.0f));
+            glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
+            mCamera.setPosition(resetPos);
             mCamera.rotate(0.0f, 0.0f);  // Reset to default angles
+
+            // Play spatialized sound at the reset position
+            if (auto* sounds = getContext().sounds)
+            {
+                sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{ resetPos.x, resetPos.z });
+            }
             SDL_Log("Camera reset to initial position");
         }
 
@@ -438,6 +467,12 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
         if (event.key.scancode == SDL_SCANCODE_SPACE)
         {
             mCurrentBatch = 0;
+
+            // Play non-spatialized UI sound (at listener position)
+            if (auto* sounds = getContext().sounds)
+            {
+                sounds->play(SoundEffect::ID::SELECT);
+            }
             SDL_Log("Path tracing accumulation reset");
         }
     }

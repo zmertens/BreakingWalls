@@ -16,13 +16,14 @@
 #include "Player.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
+#include "SoundPlayer.hpp"
 #include "StateStack.hpp"
 
 MenuState::MenuState(StateStack& stack, Context context)
     : State(stack, context)
-      , mBackgroundSprite{context.textures->get(Textures::ID::SPLASH_TITLE_IMAGE)}
-      , mSelectedMenuItem(MenuItem::NEW_GAME)
-      , mShowMainMenu(true), mItemSelectedFlags{}
+    , mBackgroundSprite{ context.textures->get(Textures::ID::SPLASH_TITLE_IMAGE) }
+    , mSelectedMenuItem(MenuItem::NEW_GAME)
+    , mShowMainMenu(true), mItemSelectedFlags{}
 {
     // initialize selection flags so UI shows correct selected item
     mItemSelectedFlags.fill(false);
@@ -77,7 +78,7 @@ void MenuState::draw() const noexcept
 
         // Use Selectable with bool* overload so ImGui keeps a consistent toggled state
         const auto active = static_cast<size_t>(getContext().player->isActive());
-        for (size_t i{static_cast<size_t>(active ? 0 : 1)}; i < menuItems.size(); ++i)
+        for (size_t i{ static_cast<size_t>(active ? 0 : 1) }; i < menuItems.size(); ++i)
         {
             if (bool* flag = &mItemSelectedFlags[i]; ImGui::Selectable(menuItems[i].c_str(), flag))
             {
@@ -111,19 +112,12 @@ void MenuState::draw() const noexcept
         // Action buttons
         if (ImGui::Button("Confirm Selection", ImVec2(180, 40))) {
             SDL_Log("Confirmed selection: %u", static_cast<unsigned int>(mSelectedMenuItem));
+            getContext().sounds->play(SoundEffect::ID::SELECT);
             // Close the menu window to trigger state transition in update()
             mShowMainMenu = false;
         }
 
         ImGui::SameLine();
-
-#if defined(MAZE_DEBUG)
-
-        if (ImGui::Button("Toggle Demo", ImVec2(180, 40))) {
-            showDemoWindow = !showDemoWindow;
-        }
-#endif
-
     }
     ImGui::End();
 
@@ -160,45 +154,44 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
 
     // Menu was closed by user - process the selected action
     switch (mSelectedMenuItem) {
-        case MenuItem::CONTINUE:
-            // Only pop if there's a GameState to return to
-            if (getStack().peekState<GameState*>() != nullptr)
-            {
-                // Pop menu state, returning to game
-                requestStackPop();
-            }
-            else
-            {
-                // If no game state exists, start a new game
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, 
-                           "MenuState: Cannot continue - no game in progress. Starting new game.");
-                requestStackPop();
-                requestStackPush(States::ID::GAME);
-            }
-            break;
-
-        case MenuItem::NEW_GAME:
-            // Clear all states and start fresh game
-            requestStateClear();
+    case MenuItem::CONTINUE:
+        // Only pop if there's a GameState to return to
+        if (getStack().peekState<GameState*>() != nullptr)
+        {
+            // Pop menu state, returning to game
+            requestStackPop();
+        } else
+        {
+            // If no game state exists, start a new game
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "MenuState: Cannot continue - no game in progress. Starting new game.");
+            requestStackPop();
             requestStackPush(States::ID::GAME);
-            break;
+        }
+        break;
 
-        case MenuItem::SETTINGS:
-            requestStackPush(States::ID::SETTINGS);
-            break;
+    case MenuItem::NEW_GAME:
+        // Clear all states and start fresh game
+        requestStateClear();
+        requestStackPush(States::ID::GAME);
+        break;
 
-        case MenuItem::SPLASH:
-            mShowMainMenu = false;
-            requestStateClear();
-            requestStackPush(States::ID::SPLASH);
-            return true;
+    case MenuItem::SETTINGS:
+        requestStackPush(States::ID::SETTINGS);
+        break;
 
-        case MenuItem::QUIT:
-            requestStateClear();
-            break;
+    case MenuItem::SPLASH:
+        mShowMainMenu = false;
+        requestStateClear();
+        requestStackPush(States::ID::SPLASH);
+        return true;
 
-        default:
-            break;
+    case MenuItem::QUIT:
+        requestStateClear();
+        break;
+
+    default:
+        break;
     }
 
     mShowMainMenu = true;

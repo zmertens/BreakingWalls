@@ -3,6 +3,8 @@
 
 #include <string_view>
 
+#include <SFML/Audio/SoundBuffer.hpp>
+
 // Resource Keys
 namespace JSONKeys
 {
@@ -55,6 +57,16 @@ namespace Shaders
     };
 }
 
+namespace SoundEffect
+{
+    enum ID : unsigned int
+    {
+        GENERATE = 0,
+        SELECT = 1,
+        THROW = 2
+    };
+}
+
 namespace Textures
 {
     enum class ID : unsigned int
@@ -89,6 +101,7 @@ class ResourceManager;
 typedef ResourceManager<MusicPlayer, Music::ID> MusicManager;
 typedef ResourceManager<Font, Fonts::ID> FontManager;
 typedef ResourceManager<Shader, Shaders::ID> ShaderManager;
+typedef ResourceManager<sf::SoundBuffer, SoundEffect::ID> SoundBufferManager;
 typedef ResourceManager<Texture, Textures::ID> TextureManager;
 
 #endif // RESOURCE_IDENTIFIERS_HPP

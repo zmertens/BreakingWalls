@@ -37,6 +37,7 @@
 #include "State.hpp"
 #include "StateStack.hpp"
 #include "Texture.hpp"
+#include "SoundPlayer.hpp"
 
 struct PhysicsGame::PhysicsGameImpl
 {
@@ -49,6 +50,8 @@ struct PhysicsGame::PhysicsGameImpl
 
     FontManager fonts;
     MusicManager music;
+    SoundBufferManager soundBuffers;
+    std::unique_ptr<SoundPlayer> sounds;
     ShaderManager shaders;
     TextureManager textures;
 
@@ -69,6 +72,7 @@ struct PhysicsGame::PhysicsGameImpl
         , window{ nullptr }
         , glSdlHelper{}
         , stateStack{ nullptr }
+        , sounds{ nullptr }
     {
         initSDL();
         if (!glSdlHelper.window)
@@ -82,10 +86,15 @@ struct PhysicsGame::PhysicsGameImpl
 
         initDearImGui();
 
+        // Create SoundPlayer with reference to soundBuffers
+        sounds = std::make_unique<SoundPlayer>(soundBuffers);
+
         stateStack = std::make_unique<StateStack>(State::Context{
             *window,
             std::ref(fonts),
             std::ref(music),
+            std::ref(soundBuffers),
+            *sounds,
             std::ref(shaders),
             std::ref(textures),
             std::ref(p1)
@@ -103,6 +112,9 @@ struct PhysicsGame::PhysicsGameImpl
         {
             this->stateStack->clearStates();
             this->fonts.clear();
+            this->music.clear();
+            this->soundBuffers.clear();
+            this->sounds.reset();
             this->shaders.clear();
             this->textures.clear();
 

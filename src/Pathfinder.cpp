@@ -6,7 +6,7 @@
 
 Pathfinder::Pathfinder(Type type, const TextureManager& textures)
     : mType(type)
-      , mSprite(textures.get(Pathfinder::getTextureID()))
+    , mSprite(textures.get(Pathfinder::getTextureID()))
 {
 }
 
@@ -15,17 +15,17 @@ Category::Type Pathfinder::getCategory() const noexcept
     switch (mType)
     {
     case Type::ALLY:
-        {
-            return Category::Type::PLAYER;
-        }
+    {
+        return Category::Type::PLAYER;
+    }
     case Type::ENEMY:
-        {
-            return Category::Type::ENEMY;
-        }
+    {
+        return Category::Type::ENEMY;
+    }
     default:
-        {
-            return Category::Type::NONE;
-        }
+    {
+        return Category::Type::NONE;
+    }
     }
 }
 
@@ -47,16 +47,16 @@ Textures::ID Pathfinder::getTextureID() const noexcept
     switch (mType)
     {
     case Type::ALLY:
-        {
-            return Textures::ID::CHARACTER;
-        }
+    {
+        return Textures::ID::CHARACTER;
+    }
     case Type::ENEMY:
-        {
-            return Textures::ID::CHARACTER;
-        }
+    {
+        return Textures::ID::CHARACTER;
+    }
     default:
-        {
-            return Textures::ID::CHARACTER;
-        }
+    {
+        return Textures::ID::CHARACTER;
+    }
     }
 }

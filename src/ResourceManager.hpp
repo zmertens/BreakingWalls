@@ -16,15 +16,16 @@ template <typename Resource, typename Identifier>
 class ResourceManager
 {
 public:
-    // Shader loading
+    // SoundBuffer loading
     void load(Identifier id, std::string_view filename);
 
     // Music loading
     void load(Identifier id, std::string_view filename, float volume, bool loop);
 
     // Texture loading
-    void load(Identifier id, std::string_view filename, std::uint32_t channelOffset = 0);
+    void load(Identifier id, std::string_view filename, std::uint32_t channelOffset);
 
+    // Font loading
     template <typename Parameter1, typename Parameter2, typename PixelSize = float>
     void load(Identifier id, const Parameter1& param1, const Parameter2& param2, const PixelSize& pixelSize);
 
@@ -57,7 +58,7 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
     // Create and load resource
     auto resource = std::make_unique<Resource>();
 
-    if (!resource->compileAndAttachShader(filename))
+    if (!resource->loadFromFile(filename))
     {
         throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
     }

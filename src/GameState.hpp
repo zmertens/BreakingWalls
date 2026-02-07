@@ -74,6 +74,9 @@ private:
     /// Check if camera moved and reset accumulation if needed
     bool checkCameraMovement() const noexcept;
 
+    /// Update listener position and remove stopped sounds
+    void updateSounds() noexcept;
+
     /// Clean up OpenGL resources
     void cleanupResources() noexcept;
 };

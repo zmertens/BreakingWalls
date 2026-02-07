@@ -5,17 +5,23 @@
 #include <cstdarg>
 #include <cstdio>
 
-State::Context::Context(RenderWindow& window, FontManager& fonts,
+State::Context::Context(RenderWindow& window,
+    FontManager& fonts,
     MusicManager& music,
+    SoundBufferManager& soundBuffers,
+    SoundPlayer& sounds,
     ShaderManager& shaders,
     TextureManager& textures, Player& player)
     : window{ &window }
     , fonts{ &fonts }
     , music{ &music }
+    , soundBuffers{ &soundBuffers }
+    , sounds{ &sounds }
     , shaders{ &shaders }
     , textures{ &textures }
     , player{ &player }
 {
+
 }
 
 State::State(StateStack& stack, Context context)

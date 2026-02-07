@@ -11,6 +11,7 @@
 #include "StateIdentifiers.hpp"
 
 class Player;
+class SoundPlayer;
 class StateStack;
 union SDL_Event;
 
@@ -24,12 +25,16 @@ public:
         explicit Context(RenderWindow& window,
             FontManager& fonts,
             MusicManager& music,
+            SoundBufferManager& soundBuffers,
+            SoundPlayer& sounds,
             ShaderManager& shaders,
             TextureManager& textures, Player& player);
 
         RenderWindow* window;
         FontManager* fonts;
         MusicManager* music;
+        SoundBufferManager* soundBuffers;
+        SoundPlayer* sounds;
         ShaderManager* shaders;
         TextureManager* textures;
         Player* player;

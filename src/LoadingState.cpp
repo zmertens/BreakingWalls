@@ -25,9 +25,9 @@
 /// @param resourcePath ""
 LoadingState::LoadingState(StateStack& stack, Context context, std::string_view resourcePath)
     : State(stack, context)
-      , mForeman{}
-      , mHasFinished{false}
-      , mResourcePath{resourcePath}
+    , mForeman{}
+    , mHasFinished{ false }
+    , mResourcePath{ resourcePath }
 {
     mForeman.initThreads();
 
@@ -35,8 +35,7 @@ LoadingState::LoadingState(StateStack& stack, Context context, std::string_view 
     if (!mResourcePath.empty())
     {
         loadResources();
-    }
-    else
+    } else
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: No resource path provided\n");
         mHasFinished = true;
@@ -66,7 +65,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
 
         mHasFinished = true;
         log("All textures loaded! Press any key to continue...\n");
-        
+
         // Note: State transition is handled by SplashState when user presses a key
         // SplashState checks isFinished() before allowing transition to MENU
     }
@@ -107,11 +106,11 @@ void LoadingState::loadResources() noexcept
     // The resources would be loaded by the worker threads and stored
     mForeman.generate(mResourcePath);
 
+    loadAudio();
+
     loadFonts();
 
     loadShaders();
-    
-    loadMusic();
 }
 
 void LoadingState::loadFonts() noexcept
@@ -136,10 +135,10 @@ void LoadingState::loadFonts() noexcept
         FONT_PIXEL_SIZE);
 }
 
-void LoadingState::loadMusic() noexcept
+void LoadingState::loadAudio() noexcept
 {
     auto& music = *getContext().music;
-    
+
     try
     {
         // Load music tracks through the MusicManager
@@ -147,12 +146,27 @@ void LoadingState::loadMusic() noexcept
         music.load(Music::ID::GAME_MUSIC, std::string_view("./audio/loading.wav"), 50.f, true);
         //music.load(Music::ID::MENU_MUSIC, std::string_view("./audio/menu_music.ogg"), 50.f, true);
         //music.load(Music::ID::SPLASH_MUSIC, std::string_view("./audio/splash_music.ogg"), 50.f, false);
-        
+
         log("LoadingState: Music loaded successfully");
-    }
-    catch (const std::exception& e)
+    } catch (const std::exception& e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load music: %s", e.what());
+    }
+
+    auto& soundBuffers = *getContext().soundBuffers;
+
+    try
+    {
+        // Load sound effects through the SoundBufferManager
+        // Adjust paths as needed for your audio files
+        soundBuffers.load(SoundEffect::ID::GENERATE, "./audio/generate.ogg");
+        soundBuffers.load(SoundEffect::ID::SELECT, "./audio/sfx_select.ogg");
+        soundBuffers.load(SoundEffect::ID::THROW, "./audio/sfx_throw.ogg");
+
+        log("LoadingState: Sound effects loaded successfully");
+    } catch (const std::exception& e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load sound effects: %s", e.what());
     }
 }
 
@@ -187,8 +201,7 @@ void LoadingState::loadShaders() noexcept
         shaders.insert(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE, std::move(computeShader));
 
         log("LoadingState: All shaders loaded successfully");
-    }
-    catch (const std::exception& e)
+    } catch (const std::exception& e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Shader initialization failed: %s", e.what());
     }
@@ -212,25 +225,23 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
         {
             // Construct full path: if request.path is relative, prepend resource directory
             std::string fullPath = request.path;
-            
+
             // If path starts with '/' or is not absolute, treat as relative to resource directory
             if (!fullPath.empty() && fullPath[0] == '/')
             {
                 // Remove leading slash and prepend resource directory
                 fullPath = resourcePathPrefix + fullPath.substr(1);
-            }
-            else if (!std::filesystem::path(fullPath).is_absolute())
+            } else if (!std::filesystem::path(fullPath).is_absolute())
             {
                 // Path is relative, prepend resource directory
                 fullPath = resourcePathPrefix + fullPath;
             }
-            
+
             // Use string_view to avoid ambiguity with the overloaded load methods
             textures.load(request.id, std::string_view(fullPath), 0u);
             SDL_Log("DEBUG: Loaded texture ID %d from: %s\n", static_cast<int>(request.id), fullPath.c_str());
         }
-    }
-    catch (const std::exception& e)
+    } catch (const std::exception& e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load textures: %s\n", e.what());
     }
@@ -244,7 +255,7 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
     auto resourcePathPrefix = mazes::io_utils::getDirectoryPath(mResourcePath);
 
     // Window icon is special case, no need to save the texture in the manager
-    if (auto windowIconKey = resources.find(string{JSONKeys::WINDOW_ICON}); windowIconKey != resources.cend())
+    if (auto windowIconKey = resources.find(string{ JSONKeys::WINDOW_ICON }); windowIconKey != resources.cend())
     {
         string windowIconPath = resourcePathPrefix + JSONUtils::extractJsonValue(windowIconKey->second);
 
@@ -256,11 +267,10 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
                 SDL_DestroySurface(icon);
                 log("DEBUG: Loading window icon from: %s\n", windowIconPath.c_str());
             }
-        }
-        else
+        } else
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load icon: %s - %s\n", windowIconPath.c_str(),
-                         SDL_GetError());
+                SDL_GetError());
         }
     }
 }

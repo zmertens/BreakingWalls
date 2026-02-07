@@ -67,6 +67,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/GLSDLHelper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SettingsState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Shader.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SoundPlayer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SplashState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Sprite.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SpriteNode.cpp
