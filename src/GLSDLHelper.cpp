@@ -35,7 +35,9 @@ namespace
                 message = "Unknown error";
             }
 
-            SDL_Log("glError in file %s @ line %d, error message: %s\n", file.c_str(), line, message.c_str());
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "OpenGL error in file %s at line %d, error message: %s\n",
+                file.c_str(), line, message.c_str());
             glErr = glGetError();
             error = true;
         }
@@ -114,12 +116,12 @@ namespace
             severityStr = "UNKNOWN";
         }
 
-        SDL_Log("GL DEBUG - Source: %s, Type: %s, Severity: %s, Message: %s\n",
+        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION,
+            "OpenGL - Source: %s, Type: %s, Severity: %s, Message: %s\n",
             sourceStr.c_str(), typeStr.c_str(), severityStr.c_str(), message);
     }
 
 }
-
 
 void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 {
@@ -142,36 +144,37 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
             SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
             SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
 #if defined(BREAKING_WALLS_DEBUG)
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
 #endif
 
-            this->window = SDL_CreateWindow(title.data(), width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_INPUT_FOCUS);
+            this->mWindow = SDL_CreateWindow(title.data(), width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_INPUT_FOCUS);
 
-            if (!this->window)
+            if (!this->mWindow)
             {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_CreateWindow failed: %s\n", SDL_GetError());
                 return;
             }
 
             // Create OpenGL context
-            this->glContext = SDL_GL_CreateContext(this->window);
-            if (!this->glContext)
+            this->mGLContext = SDL_GL_CreateContext(this->mWindow);
+            if (!this->mGLContext)
             {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
-                SDL_DestroyWindow(this->window);
+                SDL_DestroyWindow(this->mWindow);
                 return;
             }
 
             // Make context current
-            SDL_GL_MakeCurrent(this->window, this->glContext);
+            SDL_GL_MakeCurrent(this->mWindow, this->mGLContext);
 
             // Initialize GLAD
             if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
             {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to initialize GLAD\n");
-                SDL_GL_DestroyContext(this->glContext);
-                SDL_DestroyWindow(this->window);
+                SDL_GL_DestroyContext(this->mGLContext);
+                SDL_DestroyWindow(this->mWindow);
                 return;
             }
 
@@ -193,7 +196,7 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
     // SDL_Init returns true on SUCCESS (SDL3 behavior)
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
     {
-        std::call_once(sdlInitializedFlag, initFunc);
+        std::call_once(mInitializedFlag, initFunc);
     } else
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_Init failed: %s\n", SDL_GetError());
@@ -203,24 +206,24 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 void GLSDLHelper::destroyAndQuit() noexcept
 {
     // Prevent double-destruction
-    if (!this->window && !this->glContext)
+    if (!this->mWindow && !this->mGLContext)
     {
         SDL_Log("SDLHelper::destroyAndQuit() - Already destroyed, skipping\n");
         return;
     }
 
-    if (glContext)
+    if (mGLContext)
     {
         SDL_Log("SDLHelper::destroyAndQuit() - Destroying OpenGL context\n");
-        SDL_GL_DestroyContext(glContext);
-        glContext = nullptr;
+        SDL_GL_DestroyContext(mGLContext);
+        mGLContext = nullptr;
     }
 
-    if (window)
+    if (mWindow)
     {
-        SDL_Log("SDLHelper::destroyAndQuit() - Destroying window %p\n", static_cast<void*>(window));
-        SDL_DestroyWindow(window);
-        window = nullptr;
+        SDL_Log("SDLHelper::destroyAndQuit() - Destroying window %p\n", static_cast<void*>(mWindow));
+        SDL_DestroyWindow(mWindow);
+        mWindow = nullptr;
     }
 
     // Only call SDL_Quit() if we actually destroyed something

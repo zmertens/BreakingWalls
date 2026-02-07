@@ -6,18 +6,16 @@
 
 #include <SDL3/SDL.h>
 
-#include "State.hpp"
-
 struct SDL_Window;
 
 class GLSDLHelper
 {
 public:
-    SDL_Window* window{nullptr};
-    SDL_GLContext glContext{};
+    SDL_GLContext mGLContext{};
+    SDL_Window* mWindow{ nullptr };
 
 private:
-    std::once_flag sdlInitializedFlag;
+    std::once_flag mInitializedFlag;
 
 public:
     void init(std::string_view title, int width, int height) noexcept;

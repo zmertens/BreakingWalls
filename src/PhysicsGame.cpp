@@ -75,14 +75,14 @@ struct PhysicsGame::PhysicsGameImpl
         , sounds{ nullptr }
     {
         initSDL();
-        if (!glSdlHelper.window)
+        if (!glSdlHelper.mWindow)
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL window - cannot continue");
             // Don't initialize further objects if SDL failed
             return;
         }
 
-        window = std::make_unique<RenderWindow>(glSdlHelper.window);
+        window = std::make_unique<RenderWindow>(glSdlHelper.mWindow);
 
         initDearImGui();
 
@@ -108,7 +108,7 @@ struct PhysicsGame::PhysicsGameImpl
 
     ~PhysicsGameImpl()
     {
-        if (auto& sdl = this->glSdlHelper; sdl.window)
+        if (auto& sdl = this->glSdlHelper; sdl.mWindow)
         {
             this->stateStack->clearStates();
             this->fonts.clear();
@@ -144,7 +144,7 @@ struct PhysicsGame::PhysicsGameImpl
         ImGui::StyleColorsDark();
 
         // Initialize ImGui SDL3 and OpenGL3 backends
-        ImGui_ImplSDL3_InitForOpenGL(this->glSdlHelper.window, this->glSdlHelper.glContext);
+        ImGui_ImplSDL3_InitForOpenGL(this->glSdlHelper.mWindow, this->glSdlHelper.mGLContext);
         ImGui_ImplOpenGL3_Init("#version 430");
     }
 
