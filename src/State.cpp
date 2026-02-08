@@ -1,5 +1,6 @@
 #include "State.hpp"
 
+#include "ResourceIdentifiers.hpp"
 #include "StateStack.hpp"
 
 #include <cstdarg>
@@ -7,6 +8,7 @@
 
 State::Context::Context(RenderWindow& window,
     FontManager& fonts,
+    LevelsManager& levels,
     MusicManager& music,
     OptionsManager& options,
     SoundBufferManager& soundBuffers,
@@ -15,6 +17,7 @@ State::Context::Context(RenderWindow& window,
     TextureManager& textures, Player& player)
     : window{ &window }
     , fonts{ &fonts }
+    , levels{ &levels }
     , music{ &music }
     , options{ &options }
     , soundBuffers{ &soundBuffers }

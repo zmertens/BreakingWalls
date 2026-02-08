@@ -24,6 +24,7 @@
 #include "Font.hpp"
 #include "GameState.hpp"
 #include "GLSDLHelper.hpp"
+#include "Level.hpp"
 #include "LoadingState.hpp"
 #include "MenuState.hpp"
 #include "MusicPlayer.hpp"
@@ -51,6 +52,7 @@ struct PhysicsGame::PhysicsGameImpl
     GLSDLHelper glSdlHelper;
 
     FontManager fonts;
+    LevelsManager levels;
     MusicManager music;
     OptionsManager options;
     SoundBufferManager soundBuffers;
@@ -99,6 +101,7 @@ struct PhysicsGame::PhysicsGameImpl
         stateStack = std::make_unique<StateStack>(State::Context{
             *window,
             std::ref(fonts),
+            std::ref(levels),
             std::ref(music),
             std::ref(options),
             std::ref(soundBuffers),

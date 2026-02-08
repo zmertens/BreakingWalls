@@ -6,13 +6,15 @@
 #include <string_view>.
 
 #include "Loggable.hpp"
+#include "Player.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
+#include "ResourceManager.hpp"
+#include "SoundPlayer.hpp"
 #include "StateIdentifiers.hpp"
 
-class Player;
-class SoundPlayer;
 class StateStack;
+
 union SDL_Event;
 
 class State : public Loggable
@@ -24,6 +26,7 @@ public:
     {
         explicit Context(RenderWindow& window,
             FontManager& fonts,
+            LevelsManager& levels,
             MusicManager& music,
             OptionsManager& options,
             SoundBufferManager& soundBuffers,
@@ -34,6 +37,7 @@ public:
 
         RenderWindow* window;
         FontManager* fonts;
+        LevelsManager* levels;
         MusicManager* music;
         OptionsManager* options;
         SoundBufferManager* soundBuffers;

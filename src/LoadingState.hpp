@@ -9,6 +9,7 @@
 #include "WorkerConcurrent.hpp"
 
 class StateStack;
+
 union SDL_Event;
 
 class LoadingState : public State
@@ -30,8 +31,9 @@ private:
 
     void loadWindowIcon(const std::unordered_map<std::string, std::string>& resources) noexcept;
 
-    void loadFonts() noexcept;
     void loadAudio() noexcept;
+    void loadFonts() noexcept;
+    void loadLevels() noexcept;
     void loadShaders() noexcept;
 
     void setCompletion(float percent) noexcept;

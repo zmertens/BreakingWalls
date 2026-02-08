@@ -48,6 +48,19 @@ namespace GUIOptions
     };
 }
 
+namespace Levels
+{
+    enum class ID : unsigned int
+    {
+        LEVEL_ONE = 0,
+        LEVEL_TWO = 1,
+        LEVEL_THREE = 2,
+        LEVEL_FOUR = 3,
+        LEVEL_FIVE = 4,
+        LEVEL_SIX = 5
+    };
+}
+
 namespace Music
 {
     enum class ID : unsigned int
@@ -102,6 +115,7 @@ namespace Textures
 }
 
 class Font;
+class Level;
 class MusicPlayer;
 class Options;
 class Shader;
@@ -113,6 +127,7 @@ class ResourceManager;
 
 typedef ResourceManager<Font, Fonts::ID> FontManager;
 typedef ResourceManager<Options, GUIOptions::ID> OptionsManager;
+typedef ResourceManager<Level, Levels::ID> LevelsManager;
 typedef ResourceManager<MusicPlayer, Music::ID> MusicManager;
 typedef ResourceManager<Shader, Shaders::ID> ShaderManager;
 typedef ResourceManager<sf::SoundBuffer, SoundEffect::ID> SoundBufferManager;

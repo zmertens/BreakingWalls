@@ -8,6 +8,7 @@
 
 #include "Font.hpp"
 #include "JsonUtils.hpp"
+#include "Level.hpp"
 #include "MusicPlayer.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
@@ -112,6 +113,8 @@ void LoadingState::loadResources() noexcept
 
     loadFonts();
 
+    loadLevels();
+
     loadShaders();
 }
 
@@ -169,6 +172,21 @@ void LoadingState::loadAudio() noexcept
     } catch (const std::exception& e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load sound effects: %s", e.what());
+    }
+}
+
+void LoadingState::loadLevels() noexcept
+{
+    auto& levels = *getContext().levels;
+    try
+    {
+        using mazes::configurator;
+
+        levels.load(Levels::ID::LEVEL_ONE, configurator().rows(50).columns(50), false);
+        log("LoadingState: Levels loaded successfully");
+    } catch (const std::exception& e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load levels: %s", e.what());
     }
 }
 

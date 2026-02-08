@@ -10,12 +10,22 @@
 #include <type_traits>
 #include <utility>
 
+#include <MazeBuilder/configurator.h>
+
 #include <dearimgui/imgui.h>
+
+namespace mazes
+{
+    class configurator;
+}
 
 template <typename Resource, typename Identifier>
 class ResourceManager
 {
 public:
+    // Level loading
+    void load(Identifier id, const mazes::configurator& config, bool network);
+
     // SoundBuffer loading
     void load(Identifier id, std::string_view filename);
 
@@ -51,6 +61,29 @@ private:
 private:
     std::map<Identifier, std::unique_ptr<Resource>> mResourceMap;
 };
+
+template <typename Resource, typename Identifier>
+void ResourceManager<Resource, Identifier>::load(Identifier id, const mazes::configurator& config, bool network)
+{
+    // Create and load resource
+    auto resource = std::make_unique<Resource>();
+
+    if (network)
+    {
+        if (!resource->loadFromNetwork(config))
+        {
+            throw std::runtime_error("ResourceManager::load - Failed to load from network.");
+        }
+    } else {
+        if (!resource->load(config))
+        {
+            throw std::runtime_error("ResourceManager::load - Failed to load from config.");
+        }
+    }
+
+    // If loading successful, insert resource to map
+    insertResource(id, std::move(resource));
+}
 
 template <typename Resource, typename Identifier>
 void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view filename)
