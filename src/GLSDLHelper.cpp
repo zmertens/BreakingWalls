@@ -1,10 +1,20 @@
 #include "GLSDLHelper.hpp"
 
+#include "Shader.hpp"
+
 #include <SDL3/SDL.h>
 
 #include <string>
 
 #include <glad/glad.h>
+
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+// Static member initialization for billboard rendering
+GLuint GLSDLHelper::sBillboardVAO = 0;
+GLuint GLSDLHelper::sBillboardVBO = 0;
+bool GLSDLHelper::sBillboardInitialized = false;
 
 namespace
 {
@@ -123,14 +133,13 @@ namespace
             sourceStr.c_str(), typeStr.c_str(), severityStr.c_str(), message);
     }
 
-}
+} // anonymous namespace
 
 void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 {
     auto initFunc = [this, title, width, height]()
         {
             if (!SDL_SetAppMetadata("Maze builder with physics", title.data(), "physics;maze;c++;sdl")) {
-
                 return;
             }
 
@@ -140,7 +149,6 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
             SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "simulation;game;voxel");
             SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, title.data());
 
-            // Set OpenGL attributes before window creation
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -159,7 +167,6 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
                 return;
             }
 
-            // Create OpenGL context
             this->mGLContext = SDL_GL_CreateContext(this->mWindow);
             if (!this->mGLContext)
             {
@@ -168,10 +175,8 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
                 return;
             }
 
-            // Make context current
             SDL_GL_MakeCurrent(this->mWindow, this->mGLContext);
 
-            // Initialize GLAD
             if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
             {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to initialize GLAD\n");
@@ -183,11 +188,9 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
             SDL_Log("OpenGL Version: %s\n", glGetString(GL_VERSION));
             SDL_Log("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
 
-            // Enable VSync for OpenGL
             SDL_GL_SetSwapInterval(1);
 
 #if defined(BREAKING_WALLS_DEBUG)
-            // Register debug callback if available (OpenGL 4.3+)
             glDebugMessageCallback(debugCallbackForOpenGL, nullptr);
             glEnable(GL_DEBUG_OUTPUT);
             glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
@@ -195,11 +198,11 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 #endif
         };
 
-    // SDL_Init returns true on SUCCESS (SDL3 behavior)
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
     {
         std::call_once(mInitializedFlag, initFunc);
-    } else
+    }
+    else
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_Init failed: %s\n", SDL_GetError());
     }
@@ -207,7 +210,9 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 
 void GLSDLHelper::destroyAndQuit() noexcept
 {
-    // Prevent double-destruction
+    // Cleanup billboard rendering resources
+    cleanupBillboardRendering();
+
     if (!this->mWindow && !this->mGLContext)
     {
         SDL_Log("SDLHelper::destroyAndQuit() - Already destroyed, skipping\n");
@@ -228,7 +233,6 @@ void GLSDLHelper::destroyAndQuit() noexcept
         mWindow = nullptr;
     }
 
-    // Only call SDL_Quit() if we actually destroyed something
     if (SDL_WasInit(0) != 0)
     {
         SDL_Log("SDLHelper::destroyAndQuit() - Calling SDL_Quit()\n");
@@ -307,4 +311,176 @@ void GLSDLHelper::deleteTexture(GLuint& texture) noexcept
         glDeleteTextures(1, &texture);
         texture = 0;
     }
+}
+
+// ============================================================================
+// Billboard sprite rendering (geometry shader point sprites)
+// ============================================================================
+
+void GLSDLHelper::initializeBillboardRendering() noexcept
+{
+    if (sBillboardInitialized)
+    {
+        return;
+    }
+
+    // Create VAO for point sprite (single point per character)
+    glGenVertexArrays(1, &sBillboardVAO);
+    glGenBuffers(1, &sBillboardVBO);
+
+    glBindVertexArray(sBillboardVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, sBillboardVBO);
+
+    // Single point at origin - the model matrix will position it
+    float pointData[3] = { 0.0f, 0.0f, 0.0f };
+    glBufferData(GL_ARRAY_BUFFER, sizeof(pointData), pointData, GL_STATIC_DRAW);
+
+    // Position attribute (location 0)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+
+    sBillboardInitialized = true;
+    SDL_Log("Billboard rendering initialized successfully");
+}
+
+void GLSDLHelper::cleanupBillboardRendering() noexcept
+{
+    if (!sBillboardInitialized)
+    {
+        return;
+    }
+
+    if (sBillboardVAO != 0)
+    {
+        glDeleteVertexArrays(1, &sBillboardVAO);
+        sBillboardVAO = 0;
+    }
+
+    if (sBillboardVBO != 0)
+    {
+        glDeleteBuffers(1, &sBillboardVBO);
+        sBillboardVBO = 0;
+    }
+
+    sBillboardInitialized = false;
+    SDL_Log("Billboard rendering cleaned up");
+}
+
+void GLSDLHelper::renderBillboardSprite(
+    Shader& billboardShader,
+    GLuint textureId,
+    const AnimationRect& frameRect,
+    const glm::vec3& worldPosition,
+    float halfSize,
+    const glm::mat4& viewMatrix,
+    const glm::mat4& projMatrix,
+    int sheetWidth,
+    int sheetHeight) noexcept
+{
+    if (!sBillboardInitialized)
+    {
+        initializeBillboardRendering();
+    }
+
+    if (textureId == 0)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "Billboard: Invalid texture ID");
+        return;
+    }
+
+    // Debug: Log shader program ID on first render
+    static bool firstCall = true;
+    if (firstCall)
+    {
+        SDL_Log("Billboard: Using shader program %u", billboardShader.getProgramHandle());
+        SDL_Log("Billboard: VAO=%u, VBO=%u", sBillboardVAO, sBillboardVBO);
+        firstCall = false;
+    }
+
+    // Save current OpenGL state
+    GLboolean depthTestEnabled;
+    GLboolean blendEnabled;
+    GLboolean cullFaceEnabled;
+    glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
+    glGetBooleanv(GL_BLEND, &blendEnabled);
+    glGetBooleanv(GL_CULL_FACE, &cullFaceEnabled);
+
+    // Enable blending for transparency
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Disable face culling for billboards
+    glDisable(GL_CULL_FACE);
+
+    // Enable depth testing
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    // Bind and use the billboard shader
+    billboardShader.bind();
+
+    // Calculate ModelView matrix - position the point in world space
+    glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), worldPosition);
+    glm::mat4 modelViewMatrix = viewMatrix * modelMatrix;
+
+    // Calculate UV rect for sprite sheet (normalized 0-1 coordinates)
+    float u = static_cast<float>(frameRect.left) / static_cast<float>(sheetWidth);
+    float v = static_cast<float>(frameRect.top) / static_cast<float>(sheetHeight);
+    float uWidth = static_cast<float>(frameRect.width) / static_cast<float>(sheetWidth);
+    float vHeight = static_cast<float>(frameRect.height) / static_cast<float>(sheetHeight);
+
+    // Set uniforms using Shader class methods
+    billboardShader.setUniform("ModelViewMatrix", modelViewMatrix);
+    billboardShader.setUniform("ProjectionMatrix", projMatrix);
+    billboardShader.setUniform("Size2", halfSize);
+    billboardShader.setUniform("TexRect", glm::vec4(u, v, uWidth, vHeight));
+    billboardShader.setUniform("SpriteTex", static_cast<GLint>(0));
+
+    // Debug log first few renders
+    static int renderCount = 0;
+    if (renderCount < 5)
+    {
+        SDL_Log("Billboard render #%d: pos=(%.1f,%.1f,%.1f) size=%.1f uv=(%.3f,%.3f,%.3f,%.3f) tex=%u",
+            renderCount, worldPosition.x, worldPosition.y, worldPosition.z,
+            halfSize, u, v, uWidth, vHeight, textureId);
+        
+        // Log the position in view space (should give us an idea if it's visible)
+        glm::vec4 viewPos = modelViewMatrix * glm::vec4(0, 0, 0, 1);
+        SDL_Log("  View space pos: (%.1f, %.1f, %.1f)", viewPos.x, viewPos.y, viewPos.z);
+        
+        // Log clip space position
+        glm::vec4 clipPos = projMatrix * viewPos;
+        SDL_Log("  Clip space pos: (%.1f, %.1f, %.1f, %.1f)", clipPos.x, clipPos.y, clipPos.z, clipPos.w);
+        
+        // NDC position
+        if (clipPos.w != 0) {
+            glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
+            SDL_Log("  NDC pos: (%.2f, %.2f, %.2f) - should be in [-1,1]", ndc.x, ndc.y, ndc.z);
+        }
+        
+        renderCount++;
+    }
+
+    // Bind texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, textureId);
+
+    // Draw single point - geometry shader expands to quad
+    glBindVertexArray(sBillboardVAO);
+    glDrawArrays(GL_POINTS, 0, 1);
+    glBindVertexArray(0);
+
+    // Check for OpenGL errors
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Billboard: OpenGL error after draw: 0x%x", err);
+    }
+
+    // Restore previous OpenGL state
+    if (!blendEnabled) glDisable(GL_BLEND);
+    if (cullFaceEnabled) glEnable(GL_CULL_FACE);
+    if (!depthTestEnabled) glDisable(GL_DEPTH_TEST);
 }

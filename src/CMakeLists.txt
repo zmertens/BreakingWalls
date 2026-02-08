@@ -45,6 +45,7 @@ message(STATUS "Fetching MazeBuilder from ${MAZE_BUILDER_REPO_URL} at tag ${MAZE
 FetchGitRepo(MazeBuilder ${MAZE_BUILDER_REPO_URL} ${MAZE_BUILDER_GIT_TAG})
 
 set(BREAKING_WALLS_SRC_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/Animation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Camera.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Font.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GameState.cpp
@@ -161,4 +162,5 @@ if(WIN32)
         VERBATIM
     )
 endif()
+
 

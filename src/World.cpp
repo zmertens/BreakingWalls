@@ -25,11 +25,12 @@
 #include <sstream>
 #include <cctype>
 
-World::World(RenderWindow& window, FontManager& fonts, TextureManager& textures)
+World::World(RenderWindow& window, FontManager& fonts, TextureManager& textures, ShaderManager& shaders)
     : mWindow{ window }
     , mWorldView{ window.getView() }
     , mFonts{ fonts }
     , mTextures{ textures }
+    , mShaders{ shaders }
     , mWorldId{ b2_nullWorldId }
     , mMazeWallsBodyId{ b2_nullBodyId }
     , mIsPanning{ false }
@@ -823,6 +824,121 @@ MaterialType World::getMaterialForDistance(int distance) const noexcept
         return MaterialType::DIELECTRIC;
     } else {
         return MaterialType::LAMBERTIAN;
+    }
+}
+
+// ============================================================================
+// Character rendering for third-person mode
+// ============================================================================
+
+#include "Player.hpp"
+#include "Camera.hpp"
+#include "GLSDLHelper.hpp"
+#include "Shader.hpp"
+
+void World::renderPlayerCharacter(const Player& player, const Camera& camera) const noexcept
+{
+    // Only render in third-person mode
+    if (camera.getMode() != CameraMode::THIRD_PERSON)
+    {
+        return;
+    }
+
+    // Get the character sprite sheet texture
+    const Texture* spriteSheet = getCharacterSpriteSheet();
+    if (!spriteSheet || spriteSheet->get() == 0)
+    {
+        static bool loggedOnce = false;
+        if (!loggedOnce)
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "World: Character sprite sheet not loaded (ID: %d)",
+                static_cast<int>(Textures::ID::CHARACTER_SPRITE_SHEET));
+            loggedOnce = true;
+        }
+        return;
+    }
+
+    // Get billboard shader
+    Shader* billboardShader = nullptr;
+    try
+    {
+        billboardShader = &mShaders.get(Shaders::ID::BILLBOARD_SPRITE);
+    }
+    catch (const std::exception& e)
+    {
+        static bool loggedOnce = false;
+        if (!loggedOnce)
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "World: Billboard shader not available: %s", e.what());
+            loggedOnce = true;
+        }
+        return;
+    }
+
+    // Get animation frame from player
+    AnimationRect frame = player.getCurrentAnimationFrame();
+
+    // Get player position - this is where the character sprite will be rendered
+    glm::vec3 playerPos = player.getPosition();
+
+    // Offset the billboard slightly in front of the player position 
+    // so it's visible when camera is looking at player
+    // The camera looks at mFollowTarget + (0,1,0), so render at same position
+    
+    // Billboard half-size (character size in world units)
+    float halfSize = 3.0f;
+
+    // Get window dimensions from SDL
+    int windowWidth = 1280;
+    int windowHeight = 720;
+    SDL_Window* sdlWindow = mWindow.getSDLWindow();
+    if (sdlWindow)
+    {
+        SDL_GetWindowSize(sdlWindow, &windowWidth, &windowHeight);
+    }
+
+    // Get view and projection matrices from camera
+    float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+    glm::mat4 viewMatrix = camera.getLookAt();
+    glm::mat4 projMatrix = camera.getPerspective(aspectRatio);
+
+    // Debug log first render
+    static bool firstRender = true;
+    if (firstRender)
+    {
+        glm::vec3 camPos = camera.getActualPosition();
+        SDL_Log("World: Rendering player billboard:");
+        SDL_Log("  Player pos: (%.1f, %.1f, %.1f)", playerPos.x, playerPos.y, playerPos.z);
+        SDL_Log("  Camera pos: (%.1f, %.1f, %.1f)", camPos.x, camPos.y, camPos.z);
+        SDL_Log("  Frame: %d,%d,%d,%d, texture: %u (%dx%d)",
+            frame.left, frame.top, frame.width, frame.height,
+            spriteSheet->get(), spriteSheet->getWidth(), spriteSheet->getHeight());
+        firstRender = false;
+    }
+
+    // Render the character as a billboard sprite using geometry shader
+    GLSDLHelper::renderBillboardSprite(
+        *billboardShader,
+        spriteSheet->get(),
+        frame,
+        playerPos,
+        halfSize,
+        viewMatrix,
+        projMatrix,
+        spriteSheet->getWidth(),
+        spriteSheet->getHeight()
+    );
+}
+
+const Texture* World::getCharacterSpriteSheet() const noexcept
+{
+    try
+    {
+        return &mTextures.get(Textures::ID::CHARACTER_SPRITE_SHEET);
+    }
+    catch (const std::exception&)
+    {
+        return nullptr;
     }
 }
 

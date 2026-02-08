@@ -18,13 +18,19 @@
 #include "View.hpp"
 #include "Material.hpp"
 
+class Camera;
+class Player;
 class RenderWindow;
+class Shader;
 class Sphere;
 
 class World final
 {
+    // Allow Player to access World internals for animation rendering
+    friend class Player;
+
 public:
-    explicit World(RenderWindow& window, FontManager& fonts, TextureManager& textures);
+    explicit World(RenderWindow& window, FontManager& fonts, TextureManager& textures, ShaderManager& shaders);
     ~World();  // Defined in .cpp to avoid incomplete type issues
 
     void init() noexcept;
@@ -38,6 +44,18 @@ public:
 
     void updateSphereChunks(const glm::vec3& cameraPosition) noexcept;
     glm::vec3 getMazeSpawnPosition() const noexcept { return mPlayerSpawnPosition; }
+
+    // ========================================================================
+    // Character rendering for third-person mode
+    // ========================================================================
+
+    /// Render player character as a billboard sprite using geometry shader
+    /// @param player Player with animation state
+    /// @param camera Camera for view/projection matrices
+    void renderPlayerCharacter(const Player& player, const Camera& camera) const noexcept;
+
+    /// Get the character sprite sheet texture (for external rendering)
+    [[nodiscard]] const Texture* getCharacterSpriteSheet() const noexcept;
 
 private:
 
@@ -68,7 +86,7 @@ private:
         ChunkCoord coord;
         std::vector<MazeCell> cells;
         std::vector<Sphere> spheres;
-        glm::vec3 spawnPosition;  // Track spawn in work item instead of const_cast
+        glm::vec3 spawnPosition;
         bool hasSpawnPosition{ false };
     };
 
@@ -95,6 +113,7 @@ private:
     View mWorldView;
     FontManager& mFonts;
     TextureManager& mTextures;
+    ShaderManager& mShaders;  // Added for billboard shader access
 
     b2WorldId mWorldId;
     b2BodyId mMazeWallsBodyId;
@@ -105,9 +124,9 @@ private:
     std::vector<Sphere> mSpheres;
     std::vector<b2BodyId> mSphereBodyIds;
 
-    // Modern C++ worker pool - INCREASED spawn rate to 1% for better performance
+    // Modern C++ worker pool
     static constexpr size_t NUM_WORKER_THREADS = 4;
-    static constexpr float SPHERE_SPAWN_RATE = 0.01f;  // 1% = ~200 total spheres
+    static constexpr float SPHERE_SPAWN_RATE = 0.01f;
     std::atomic<bool> mWorkersShouldStop{ false };
     std::vector<std::future<void>> mWorkerThreads;
 
@@ -118,9 +137,9 @@ private:
     mutable std::mutex mCompletedChunksMutex;
     std::vector<std::pair<ChunkCoord, std::future<ChunkWorkItem>>> mPendingChunks;
 
-    // Chunk management - REDUCED radius for better performance
+    // Chunk management
     static constexpr float CHUNK_SIZE = 100.0f;
-    static constexpr int CHUNK_LOAD_RADIUS = 2;  // Reduced from 3 (25 chunks instead of 49)
+    static constexpr int CHUNK_LOAD_RADIUS = 2;
     static constexpr int MAZE_ROWS = 20;
     static constexpr int MAZE_COLS = 20;
     static constexpr float CELL_SIZE = CHUNK_SIZE / static_cast<float>(MAZE_COLS);
@@ -136,6 +155,10 @@ private:
     glm::vec3 mPlayerSpawnPosition;
 
     static constexpr int TOTAL_SPHERES = 200;
+
+    // Character sprite sheet dimensions (for animation rendering)
+    static constexpr int CHARACTER_TILE_SIZE = 128;
+    static constexpr int CHARACTER_FRAMES_PER_ROW = 9;
 };
 
 #endif // WORLD_HPP

@@ -25,8 +25,12 @@ Player::Player() : mIsActive(true), mIsOnGround(false)
     // Special actions (discrete events)
     mKeyBinding[SDL_SCANCODE_R] = Action::RESET_CAMERA;
     mKeyBinding[SDL_SCANCODE_SPACE] = Action::RESET_ACCUMULATION;
+    mKeyBinding[SDL_SCANCODE_V] = Action::TOGGLE_PERSPECTIVE;
 
     initializeActions();
+
+    // Initialize animator with default character (index 0)
+    initializeAnimator(0);
 }
 
 void Player::handleEvent(const SDL_Event& event, Camera& camera)
@@ -58,6 +62,13 @@ void Player::handleRealtimeInput(Camera& camera, float dt)
     if (!keyState)
         return;
 
+    // Reset movement flags
+    mMovingForward = false;
+    mMovingBackward = false;
+    mMovingLeft = false;
+    mMovingRight = false;
+    mIsMoving = false;
+
     for (auto& pair : mKeyBinding)
     {
         if (isRealtimeAction(pair.second))
@@ -69,9 +80,47 @@ void Player::handleRealtimeInput(Camera& camera, float dt)
                 {
                     actionIt->second(camera, dt);
                 }
+
+                // Track movement for animation
+                switch (pair.second)
+                {
+                case Action::MOVE_FORWARD:
+                    mMovingForward = true;
+                    mIsMoving = true;
+                    break;
+                case Action::MOVE_BACKWARD:
+                    mMovingBackward = true;
+                    mIsMoving = true;
+                    break;
+                case Action::MOVE_LEFT:
+                    mMovingLeft = true;
+                    mIsMoving = true;
+                    break;
+                case Action::MOVE_RIGHT:
+                    mMovingRight = true;
+                    mIsMoving = true;
+                    break;
+                default:
+                    break;
+                }
             }
         }
     }
+
+    // Update player position to match camera (for third person, player IS the focus)
+    if (camera.getMode() == CameraMode::FIRST_PERSON)
+    {
+        mPosition = camera.getPosition();
+    }
+    // In third person, player position is updated separately
+    // and camera follows the player
+
+    // Update facing direction based on camera yaw
+    mFacingDirection = camera.getYaw();
+    mAnimator.setRotation(mFacingDirection);
+
+    // Update animation state
+    updateAnimationState();
 }
 
 bool Player::isRealtimeAction(Action action)
@@ -100,75 +149,162 @@ void Player::initializeActions()
     static constexpr float cameraRotateSpeed = 180.0f;  // Degrees per second
 
     // Movement actions (continuous)
-    mCameraActions[Action::MOVE_FORWARD] = [](Camera& camera, float dt)
+    mCameraActions[Action::MOVE_FORWARD] = [this](Camera& camera, float dt)
     {
         glm::vec3 movement = camera.getTarget() * cameraMoveSpeed * dt;
-        glm::vec3 newPos = camera.getPosition() + movement;
-        camera.setPosition(newPos);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            // Move player, camera follows
+            mPosition += movement;
+            mAnimator.setPosition(mPosition);
+            camera.setFollowTarget(mPosition);
+            camera.updateThirdPersonPosition();
+        }
+        else
+        {
+            glm::vec3 newPos = camera.getPosition() + movement;
+            camera.setPosition(newPos);
+        }
     };
 
-    mCameraActions[Action::MOVE_BACKWARD] = [](Camera& camera, float dt)
+    mCameraActions[Action::MOVE_BACKWARD] = [this](Camera& camera, float dt)
     {
         glm::vec3 movement = camera.getTarget() * cameraMoveSpeed * dt;
-        glm::vec3 newPos = camera.getPosition() - movement;
-        camera.setPosition(newPos);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            mPosition -= movement;
+            mAnimator.setPosition(mPosition);
+            camera.setFollowTarget(mPosition);
+            camera.updateThirdPersonPosition();
+        }
+        else
+        {
+            glm::vec3 newPos = camera.getPosition() - movement;
+            camera.setPosition(newPos);
+        }
     };
 
-    mCameraActions[Action::MOVE_LEFT] = [](Camera& camera, float dt)
+    mCameraActions[Action::MOVE_LEFT] = [this](Camera& camera, float dt)
     {
         glm::vec3 movement = camera.getRight() * cameraMoveSpeed * dt;
-        glm::vec3 newPos = camera.getPosition() - movement;
-        camera.setPosition(newPos);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            mPosition -= movement;
+            mAnimator.setPosition(mPosition);
+            camera.setFollowTarget(mPosition);
+            camera.updateThirdPersonPosition();
+        }
+        else
+        {
+            glm::vec3 newPos = camera.getPosition() - movement;
+            camera.setPosition(newPos);
+        }
     };
 
-    mCameraActions[Action::MOVE_RIGHT] = [](Camera& camera, float dt)
+    mCameraActions[Action::MOVE_RIGHT] = [this](Camera& camera, float dt)
     {
         glm::vec3 movement = camera.getRight() * cameraMoveSpeed * dt;
-        glm::vec3 newPos = camera.getPosition() + movement;
-        camera.setPosition(newPos);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            mPosition += movement;
+            mAnimator.setPosition(mPosition);
+            camera.setFollowTarget(mPosition);
+            camera.updateThirdPersonPosition();
+        }
+        else
+        {
+            glm::vec3 newPos = camera.getPosition() + movement;
+            camera.setPosition(newPos);
+        }
     };
 
-    mCameraActions[Action::MOVE_UP] = [](Camera& camera, float dt)
+    mCameraActions[Action::MOVE_UP] = [this](Camera& camera, float dt)
     {
-        glm::vec3 newPos = camera.getPosition();
-        newPos.y += cameraMoveSpeed * dt;
-        camera.setPosition(newPos);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            mPosition.y += cameraMoveSpeed * dt;
+            mAnimator.setPosition(mPosition);
+            camera.setFollowTarget(mPosition);
+            camera.updateThirdPersonPosition();
+        }
+        else
+        {
+            glm::vec3 newPos = camera.getPosition();
+            newPos.y += cameraMoveSpeed * dt;
+            camera.setPosition(newPos);
+        }
     };
 
-    mCameraActions[Action::MOVE_DOWN] = [](Camera& camera, float dt)
+    mCameraActions[Action::MOVE_DOWN] = [this](Camera& camera, float dt)
     {
-        glm::vec3 newPos = camera.getPosition();
-        newPos.y -= cameraMoveSpeed * dt;
-        camera.setPosition(newPos);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            mPosition.y -= cameraMoveSpeed * dt;
+            mAnimator.setPosition(mPosition);
+            camera.setFollowTarget(mPosition);
+            camera.updateThirdPersonPosition();
+        }
+        else
+        {
+            glm::vec3 newPos = camera.getPosition();
+            newPos.y -= cameraMoveSpeed * dt;
+            camera.setPosition(newPos);
+        }
     };
 
     // Rotation actions (continuous)
     mCameraActions[Action::ROTATE_LEFT] = [](Camera& camera, float dt)
     {
         camera.rotate(-cameraRotateSpeed * dt, 0.0f);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            camera.updateThirdPersonPosition();
+        }
     };
 
     mCameraActions[Action::ROTATE_RIGHT] = [](Camera& camera, float dt)
     {
         camera.rotate(cameraRotateSpeed * dt, 0.0f);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            camera.updateThirdPersonPosition();
+        }
     };
 
     mCameraActions[Action::ROTATE_UP] = [](Camera& camera, float dt)
     {
         camera.rotate(0.0f, cameraRotateSpeed * dt);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            camera.updateThirdPersonPosition();
+        }
     };
 
     mCameraActions[Action::ROTATE_DOWN] = [](Camera& camera, float dt)
     {
         camera.rotate(0.0f, -cameraRotateSpeed * dt);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            camera.updateThirdPersonPosition();
+        }
     };
 
     // Special actions (discrete events)
-    mCameraActions[Action::RESET_CAMERA] = [](Camera& camera, float)
+    mCameraActions[Action::RESET_CAMERA] = [this](Camera& camera, float)
     {
         glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
         camera.setPosition(resetPos);
         camera.rotate(0.0f, 0.0f);  // Reset yaw/pitch to defaults
+
+        // Also reset player position
+        mPosition = resetPos;
+        mAnimator.setPosition(mPosition);
+
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            camera.setFollowTarget(mPosition);
+            camera.updateThirdPersonPosition();
+        }
     };
 
     mCameraActions[Action::RESET_ACCUMULATION] = [](Camera&, float)
@@ -176,6 +312,27 @@ void Player::initializeActions()
         // This action needs to be handled in GameState (resetting mCurrentBatch)
         // We'll just mark it as a valid action here
         // GameState will need to detect when this key is pressed
+    };
+
+    mCameraActions[Action::TOGGLE_PERSPECTIVE] = [this](Camera& camera, float)
+    {
+        // Toggle between first and third person
+        if (camera.getMode() == CameraMode::FIRST_PERSON)
+        {
+            camera.setMode(CameraMode::THIRD_PERSON);
+            camera.setFollowTarget(mPosition);
+            camera.setThirdPersonDistance(15.0f);  // Set distance behind player
+            camera.setThirdPersonHeight(8.0f);     // Set height above player
+            camera.updateThirdPersonPosition();
+            SDL_Log("Player: Switched to THIRD-PERSON camera (pos: %.1f, %.1f, %.1f)",
+                mPosition.x, mPosition.y, mPosition.z);
+        }
+        else
+        {
+            camera.setMode(CameraMode::FIRST_PERSON);
+            camera.setPosition(mPosition);
+            SDL_Log("Player: Switched to FIRST-PERSON camera");
+        }
     };
 }
 
@@ -223,4 +380,58 @@ bool Player::isActive() const noexcept
 void Player::setActive(bool active) noexcept
 {
     mIsActive = active;
+}
+
+// ============================================================================
+// Animation system
+// ============================================================================
+
+void Player::initializeAnimator(int characterIndex)
+{
+    mAnimator.initialize(characterIndex);
+    mAnimator.setPosition(mPosition);
+}
+
+void Player::updateAnimation(float dt)
+{
+    // Update the animation (advances frames based on timing)
+    mAnimator.update();
+}
+
+AnimationRect Player::getCurrentAnimationFrame() const
+{
+    return mAnimator.getCurrentFrame();
+}
+
+void Player::setPosition(const glm::vec3& position) noexcept
+{
+    mPosition = position;
+    mAnimator.setPosition(position);
+}
+
+void Player::updateAnimationState()
+{
+    CharacterAnimState newState = CharacterAnimState::IDLE;
+
+    if (mIsMoving)
+    {
+        if (mMovingForward)
+        {
+            newState = CharacterAnimState::WALK_FORWARD;
+        }
+        else if (mMovingBackward)
+        {
+            newState = CharacterAnimState::WALK_BACKWARD;
+        }
+        else if (mMovingLeft)
+        {
+            newState = CharacterAnimState::WALK_LEFT;
+        }
+        else if (mMovingRight)
+        {
+            newState = CharacterAnimState::WALK_RIGHT;
+        }
+    }
+
+    mAnimator.setState(newState);
 }

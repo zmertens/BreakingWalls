@@ -18,7 +18,7 @@
 
 GameState::GameState(StateStack& stack, Context context)
     : State{ stack, context }
-    , mWorld{ *context.window, *context.fonts, *context.textures }
+    , mWorld{ *context.window, *context.fonts, *context.textures, *context.shaders }
     , mPlayer{ *context.player }
     , mGameMusic{ nullptr }
     , mDisplayShader{ nullptr }
@@ -28,6 +28,9 @@ GameState::GameState(StateStack& stack, Context context)
 {
     mPlayer.setActive(true);
     mWorld.init();  // This now initializes both 2D physics and 3D path tracer scene
+
+    // Initialize player animator with character index 0
+    mPlayer.initializeAnimator(0);
 
     // Get shaders from context
     auto& shaders = *context.shaders;
@@ -62,6 +65,10 @@ GameState::GameState(StateStack& stack, Context context)
     spawnPos.y += 50.0f;  // Place camera above spawn
     spawnPos.z += 50.0f;  // Move back a bit
     mCamera.setPosition(spawnPos);
+
+    // Set initial player position
+    mPlayer.setPosition(spawnPos);
+
     log("GameState: Camera spawned at:\t" +
         std::to_string(spawnPos.x) + ", " +
         std::to_string(spawnPos.y) + ", " +
@@ -76,6 +83,9 @@ GameState::GameState(StateStack& stack, Context context)
     if (mShadersInitialized)
     {
         initializeGraphicsResources();
+
+        // Initialize billboard rendering for character sprites
+        GLSDLHelper::initializeBillboardRendering();
     }
 }
 
@@ -96,8 +106,12 @@ void GameState::draw() const noexcept
 {
     if (mShadersInitialized)
     {
-        // Use compute shader rendering pipeline
+        // Use compute shader rendering pipeline (path tracing)
         renderWithComputeShaders();
+
+        // Render player character in third-person mode AFTER path tracer
+        // The billboard uses depth testing so it will appear in front
+        renderPlayerCharacter();
     }
 
     // REMOVED: mWorld.draw() - World no longer handles rendering
@@ -311,6 +325,9 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     // Handle camera input through Player (using action bindings)
     mPlayer.handleRealtimeInput(mCamera, dt);
 
+    // Update player animation
+    mPlayer.updateAnimation(dt);
+
     // Log progress periodically
     if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches) {
         uint32_t totalSamples = mCurrentBatch * mSamplesPerBatch;
@@ -381,4 +398,27 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
     }
 
     return true;
+}
+
+void GameState::renderPlayerCharacter() const noexcept
+{
+    // Only render in third-person mode
+    if (mCamera.getMode() != CameraMode::THIRD_PERSON)
+    {
+        return;
+    }
+
+    // The path tracer draws a fullscreen 2D quad which doesn't use depth properly.
+    // Clear the depth buffer so our 3D billboard can render.
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    // Reset depth function to default
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    
+    // Also ensure we have proper 3D projection set up
+    glEnable(GL_DEPTH_TEST);
+
+    // Delegate to World for actual rendering
+    mWorld.renderPlayerCharacter(mPlayer, mCamera);
 }

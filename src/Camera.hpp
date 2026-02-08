@@ -5,8 +5,16 @@
 
 #include <glm/glm.hpp>
 
+/// @brief Camera perspective mode (matches Options enum)
+enum class CameraMode : unsigned int
+{
+    FIRST_PERSON = 0,
+    THIRD_PERSON = 1
+};
+
 /// @brief 3D camera with spherical coordinate system (yaw/pitch)
 /// @details Provides perspective matrix, look-at matrix, and frustum ray generation for raytracing
+/// Supports both first-person and third-person camera modes
 class Camera
 {
 public:
@@ -60,6 +68,43 @@ public:
     [[nodiscard]] float getYaw() const;
     [[nodiscard]] float getPitch() const;
 
+    // ========================================================================
+    // Third-person camera support
+    // ========================================================================
+
+    /// Set camera mode (first person or third person)
+    void setMode(CameraMode mode) noexcept { mMode = mode; }
+
+    /// Get current camera mode
+    [[nodiscard]] CameraMode getMode() const noexcept { return mMode; }
+
+    /// Set the target position to follow (for third person)
+    void setFollowTarget(const glm::vec3& targetPos) noexcept { mFollowTarget = targetPos; }
+
+    /// Get the follow target position
+    [[nodiscard]] glm::vec3 getFollowTarget() const noexcept { return mFollowTarget; }
+
+    /// Set third person camera distance
+    void setThirdPersonDistance(float distance) noexcept { mThirdPersonDistance = distance; }
+
+    /// Get third person camera distance
+    [[nodiscard]] float getThirdPersonDistance() const noexcept { return mThirdPersonDistance; }
+
+    /// Set third person camera height offset
+    void setThirdPersonHeight(float height) noexcept { mThirdPersonHeight = height; }
+
+    /// Get third person camera height offset
+    [[nodiscard]] float getThirdPersonHeight() const noexcept { return mThirdPersonHeight; }
+
+    /// Update third person camera position based on follow target
+    void updateThirdPersonPosition();
+
+    /// Get the actual camera position (accounts for third person offset)
+    [[nodiscard]] glm::vec3 getActualPosition() const;
+
+    /// Get the look-at matrix for third person (looks at follow target)
+    [[nodiscard]] glm::mat4 getThirdPersonLookAt() const;
+
 private:
     static const float scMaxYawValue;
     static const float scMaxPitchValue;
@@ -75,6 +120,12 @@ private:
     float mFieldOfView;
     float mNear;
     float mFar;
+
+    // Third-person camera support
+    CameraMode mMode{ CameraMode::FIRST_PERSON };
+    glm::vec3 mFollowTarget{ 0.0f };    ///< Position to follow in third person
+    float mThirdPersonDistance{ 10.0f }; ///< Distance behind target
+    float mThirdPersonHeight{ 5.0f };    ///< Height above target
 
 private:
     /// Update target, right, and up vectors based on yaw/pitch Euler angles

@@ -17,7 +17,7 @@
 
 SplashState::SplashState(StateStack& stack, Context context)
     : State(stack, context)
-    , mWorld{ *context.window, *context.fonts, *context.textures }
+    , mWorld{ *context.window, *context.fonts, *context.textures, *context.shaders }
     // Start camera at a pleasant vantage point looking at the scene
     , mCamera{ glm::vec3(0.0f, 30.0f, 100.0f), -90.0f, -5.0f, 65.0f, 0.1f, 500.0f }
 {

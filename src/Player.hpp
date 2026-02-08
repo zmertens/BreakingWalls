@@ -5,12 +5,18 @@
 #include <map>
 #include <functional>
 
+#include "Animation.hpp"
+
 union SDL_Event;
 
 class Camera;
+class World;
 
 class Player
 {
+    // Allow World to access player's animator for rendering
+    friend class World;
+
 public:
     enum class Action
     {
@@ -29,6 +35,7 @@ public:
         // Special actions
         RESET_CAMERA,
         RESET_ACCUMULATION,
+        TOGGLE_PERSPECTIVE,
         ACTION_COUNT
     };
 
@@ -46,14 +53,58 @@ public:
     bool isActive() const noexcept;
     void setActive(bool active) noexcept;
 
+    // ========================================================================
+    // Animation system
+    // ========================================================================
+
+    /// Initialize animator for a specific character in the sprite sheet
+    void initializeAnimator(int characterIndex);
+
+    /// Update animation state based on movement
+    void updateAnimation(float dt);
+
+    /// Get the current animation frame rectangle
+    [[nodiscard]] AnimationRect getCurrentAnimationFrame() const;
+
+    /// Get the character animator
+    [[nodiscard]] const CharacterAnimator& getAnimator() const noexcept { return mAnimator; }
+    [[nodiscard]] CharacterAnimator& getAnimator() noexcept { return mAnimator; }
+
+    /// Get player's 3D position
+    [[nodiscard]] glm::vec3 getPosition() const noexcept { return mPosition; }
+
+    /// Set player's 3D position
+    void setPosition(const glm::vec3& position) noexcept;
+
+    /// Get player's facing direction (yaw in degrees)
+    [[nodiscard]] float getFacingDirection() const noexcept { return mFacingDirection; }
+
+    /// Check if player is moving
+    [[nodiscard]] bool isMoving() const noexcept { return mIsMoving; }
+
 private:
     void initializeActions();
     static bool isRealtimeAction(Action action);
+
+    // Update animation state based on current movement flags
+    void updateAnimationState();
 
     std::map<std::uint32_t, Action> mKeyBinding;
     std::map<Action, std::function<void(Camera&, float)>> mCameraActions;
     bool mIsActive;
     bool mIsOnGround;
+
+    // Animation system
+    CharacterAnimator mAnimator;
+    glm::vec3 mPosition{ 0.0f };
+    float mFacingDirection{ 0.0f };
+    bool mIsMoving{ false };
+
+    // Movement tracking for animation state
+    bool mMovingForward{ false };
+    bool mMovingBackward{ false };
+    bool mMovingLeft{ false };
+    bool mMovingRight{ false };
 };
 
 #endif // PLAYER_HPP

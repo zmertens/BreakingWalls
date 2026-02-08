@@ -1,5 +1,7 @@
 #include "Camera.hpp"
 
+#include <SDL3/SDL_log.h>
+
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/transform.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -53,6 +55,10 @@ void Camera::rotate(float yaw, float pitch, bool holdPitch, bool holdYaw)
 
 glm::mat4 Camera::getLookAt() const
 {
+    if (mMode == CameraMode::THIRD_PERSON)
+    {
+        return getThirdPersonLookAt();
+    }
     return glm::lookAt(mPosition, mPosition + mTarget, mUp);
 }
 
@@ -69,12 +75,13 @@ glm::mat4 Camera::getInfPerspective(const float aspectRatio) const
 glm::vec3 Camera::getFrustumEyeRay(float ar, int x, int y) const
 {
     // Transform from NDC space to world space using inverse view-projection
+    glm::vec3 actualPos = getActualPosition();
     glm::mat4 invViewProj = glm::inverse(getPerspective(ar) * getLookAt());
     glm::vec4 eyeVec = invViewProj * glm::vec4(static_cast<float>(x), static_cast<float>(y), 1.0f, 1.0f);
     eyeVec /= eyeVec.w;
 
     // Return ray direction from camera position to the frustum corner point
-    return glm::normalize(glm::vec3(eyeVec) - mPosition);
+    return glm::normalize(glm::vec3(eyeVec) - actualPos);
 }
 
 void Camera::updateFieldOfView(float dy)
@@ -170,4 +177,66 @@ void Camera::updateVectors()
     mTarget = glm::normalize(target);
     mRight = glm::normalize(glm::cross(mTarget, yAxis));
     mUp = glm::normalize(glm::cross(mRight, mTarget));
+}
+
+// ============================================================================
+// Third-person camera support
+// ============================================================================
+
+void Camera::updateThirdPersonPosition()
+{
+    if (mMode != CameraMode::THIRD_PERSON)
+    {
+        return;
+    }
+
+    // Calculate camera position behind and above the follow target
+    // Use the camera's yaw to determine the orbit position around the target
+    float horizontalDistance = mThirdPersonDistance * std::cos(glm::radians(mPitch));
+    float verticalDistance = mThirdPersonDistance * std::sin(glm::radians(mPitch));
+
+    // Calculate offset from target
+    float offsetX = horizontalDistance * std::cos(glm::radians(mYaw + 180.0f));
+    float offsetZ = horizontalDistance * std::sin(glm::radians(mYaw + 180.0f));
+    float offsetY = mThirdPersonHeight + verticalDistance;
+
+    // Update position
+    mPosition = mFollowTarget + glm::vec3(offsetX, offsetY, offsetZ);
+}
+
+glm::vec3 Camera::getActualPosition() const
+{
+    if (mMode == CameraMode::THIRD_PERSON)
+    {
+        // Return the calculated third-person camera position
+        float horizontalDistance = mThirdPersonDistance * std::cos(glm::radians(mPitch));
+        float verticalDistance = mThirdPersonDistance * std::sin(glm::radians(mPitch));
+
+        float offsetX = horizontalDistance * std::cos(glm::radians(mYaw + 180.0f));
+        float offsetZ = horizontalDistance * std::sin(glm::radians(mYaw + 180.0f));
+        float offsetY = mThirdPersonHeight + verticalDistance;
+
+        return mFollowTarget + glm::vec3(offsetX, offsetY, offsetZ);
+    }
+    return mPosition;
+}
+
+glm::mat4 Camera::getThirdPersonLookAt() const
+{
+    glm::vec3 cameraPos = getActualPosition();
+    // Look at the follow target (player position) plus a slight height offset
+    glm::vec3 lookAtPoint = mFollowTarget + glm::vec3(0.0f, 1.0f, 0.0f);
+    
+    // Debug log on first call
+    static bool firstCall = true;
+    if (firstCall)
+    {
+        SDL_Log("Camera 3rd person: cam=(%.1f,%.1f,%.1f) lookAt=(%.1f,%.1f,%.1f) followTarget=(%.1f,%.1f,%.1f)",
+            cameraPos.x, cameraPos.y, cameraPos.z,
+            lookAtPoint.x, lookAtPoint.y, lookAtPoint.z,
+            mFollowTarget.x, mFollowTarget.y, mFollowTarget.z);
+        firstCall = false;
+    }
+    
+    return glm::lookAt(cameraPos, lookAtPoint, glm::vec3(0.0f, 1.0f, 0.0f));
 }

@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <unordered_set>
 
 #include <glm/gtc/type_ptr.hpp>
 
@@ -356,7 +357,14 @@ GLint Shader::getUniformLocation(const std::string& str)
         GLint loc = glGetUniformLocation(mProgram, str.c_str());
         if (loc == -1)
         {
-            printf("%s does not exist in the shader\n", str.c_str());
+            // Only warn once per uniform name per shader program
+            static std::unordered_set<std::string> warnedUniforms;
+            std::string key = std::to_string(mProgram) + ":" + str;
+            if (warnedUniforms.find(key) == warnedUniforms.end())
+            {
+                printf("%s does not exist in the shader (program %d)\n", str.c_str(), mProgram);
+                warnedUniforms.insert(key);
+            }
         } else
         {
             mGlslLocations.emplace(str, loc);

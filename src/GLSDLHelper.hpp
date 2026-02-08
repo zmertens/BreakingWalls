@@ -1,13 +1,18 @@
-#ifndef GLSDLHELPER_HPP
-#define GLSDLHELPER_HPP
+#ifndef GLSDL_HELPER_HPP
+#define GLSDL_HELPER_HPP
 
 #include <mutex>
 #include <string_view>
 
-#include <SDL3/SDL.h>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
+#include <SDL3/SDL.h>
+
+#include "Animation.hpp"
 
 struct SDL_Window;
+
+class Shader;
 
 class GLSDLHelper
 {
@@ -17,6 +22,11 @@ public:
 
 private:
     std::once_flag mInitializedFlag;
+
+    // Billboard sprite rendering resources
+    static GLuint sBillboardVAO;
+    static GLuint sBillboardVBO;
+    static bool sBillboardInitialized;
 
 public:
     void init(std::string_view title, int width, int height) noexcept;
@@ -66,6 +76,39 @@ public:
     /// @param texture Reference to texture handle (will be set to 0 after deletion)
     static void deleteTexture(GLuint& texture) noexcept;
 
-}; // GLSDLHelper class
+    // ========================================================================
+    // Billboard sprite rendering for characters (uses geometry shader)
+    // ========================================================================
 
-#endif // GLSDLHELPER_HPP
+    /// Initialize billboard rendering resources (VAO/VBO for point sprites)
+    static void initializeBillboardRendering() noexcept;
+
+    /// Cleanup billboard rendering resources
+    static void cleanupBillboardRendering() noexcept;
+
+    /// Render a sprite from a sprite sheet as a 3D billboard using geometry shader
+    /// @param billboardShader The billboard shader program to use
+    /// @param textureId OpenGL texture ID of the sprite sheet
+    /// @param frameRect Current animation frame rectangle
+    /// @param worldPosition 3D position in world space
+    /// @param size Half-size of the billboard
+    /// @param viewMatrix Camera view matrix
+    /// @param projMatrix Camera projection matrix
+    /// @param sheetWidth Total width of sprite sheet in pixels
+    /// @param sheetHeight Total height of sprite sheet in pixels
+    static void renderBillboardSprite(
+        Shader& billboardShader,
+        GLuint textureId,
+        const AnimationRect& frameRect,
+        const glm::vec3& worldPosition,
+        float halfSize,
+        const glm::mat4& viewMatrix,
+        const glm::mat4& projMatrix,
+        int sheetWidth,
+        int sheetHeight) noexcept;
+
+    /// Check if billboard rendering is initialized
+    [[nodiscard]] static bool isBillboardInitialized() noexcept { return sBillboardInitialized; }
+};
+
+#endif // GLSDL_HELPER_HPP

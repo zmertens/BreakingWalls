@@ -205,6 +205,20 @@ void LoadingState::loadShaders() noexcept
         // Insert compute shader into manager
         shaders.insert(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE, std::move(computeShader));
 
+        // Load billboard shader for character sprites (vertex + geometry + fragment)
+        auto billboardShader = std::make_unique<Shader>();
+        billboardShader->compileAndAttachShader(ShaderType::VERTEX, "./shaders/billboard.vert.glsl");
+        billboardShader->compileAndAttachShader(ShaderType::GEOMETRY, "./shaders/billboard.geom.glsl");
+        billboardShader->compileAndAttachShader(ShaderType::FRAGMENT, "./shaders/billboard.frag.glsl");
+        billboardShader->linkProgram();
+
+        log("LoadingState: Billboard shader compiled and linked");
+        log(billboardShader->getGlslUniforms().c_str());
+        log("\n");
+
+        // Insert billboard shader into manager
+        shaders.insert(Shaders::ID::BILLBOARD_SPRITE, std::move(billboardShader));
+
         log("LoadingState: All shaders loaded successfully");
     } catch (const std::exception& e)
     {

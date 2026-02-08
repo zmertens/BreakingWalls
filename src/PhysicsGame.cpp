@@ -33,6 +33,7 @@
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
+#include "Shader.hpp"
 #include "SettingsState.hpp"
 #include "SoundPlayer.hpp"
 #include "SplashState.hpp"

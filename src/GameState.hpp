@@ -16,7 +16,7 @@ union SDL_Event;
 
 /// @brief Main game state managing physics, rendering, and input
 /// @details Orchestrates World updates, player input, and GPU-accelerated graphics pipeline
-/// World now manages both 2D physics entities and 3D path tracer spheres with physics
+/// Supports both first-person and third-person camera modes with character animation
 class GameState : public State
 {
 public:
@@ -35,6 +35,7 @@ private:
     MusicPlayer* mGameMusic{ nullptr };
 
     // Path tracer camera (for 3D scene navigation)
+    // Supports both first-person and third-person modes
     Camera mCamera;
 
     // Shader references from context
@@ -69,6 +70,9 @@ private:
 
     /// Render using compute shaders (path tracing)
     void renderWithComputeShaders() const noexcept;
+
+    /// Render player character (third-person mode only)
+    void renderPlayerCharacter() const noexcept;
 
     /// Check if camera moved and reset accumulation if needed
     bool checkCameraMovement() const noexcept;
