@@ -16,7 +16,6 @@ SettingsState::SettingsState(StateStack& stack, Context context)
     : State(stack, context)
     , mShowText{ true }
     , mShowSettingsWindow(true)
-    , mBackgroundSprite{ context.textures->get(Textures::ID::SPLASH_TITLE_IMAGE) }
 {
 }
 
@@ -29,7 +28,6 @@ void SettingsState::draw() const noexcept
 {
     // Draw the game background FIRST, before any ImGui calls
     const auto& window = *getContext().window;
-    window.draw(mBackgroundSprite);
 
     ImGui::PushFont(getContext().fonts->get(Fonts::ID::LIMELIGHT).get());
 

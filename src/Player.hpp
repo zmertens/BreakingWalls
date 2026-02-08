@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <map>
+#include <functional>
 
 #include "Command.hpp"
 
@@ -10,24 +11,35 @@ union SDL_Event;
 
 class CommandQueue;
 class Entity;
+class Camera;
 
 class Player
 {
 public:
     enum class Action
     {
+        // Camera movement actions
+        MOVE_FORWARD,
+        MOVE_BACKWARD,
         MOVE_LEFT,
         MOVE_RIGHT,
         MOVE_UP,
         MOVE_DOWN,
-        JUMP,
+        // Camera rotation actions
+        ROTATE_LEFT,
+        ROTATE_RIGHT,
+        ROTATE_UP,
+        ROTATE_DOWN,
+        // Special actions
+        RESET_CAMERA,
+        RESET_ACCUMULATION,
         ACTION_COUNT
     };
 
     explicit Player();
 
-    void handleEvent(const SDL_Event& event, CommandQueue& commands);
-    void handleRealtimeInput(CommandQueue& commands);
+    void handleEvent(const SDL_Event& event, Camera& camera);
+    void handleRealtimeInput(Camera& camera, float dt);
 
     void assignKey(Action action, std::uint32_t key);
     [[nodiscard]] std::uint32_t getAssignedKey(Action action) const;
@@ -46,7 +58,7 @@ private:
     static bool isRealtimeAction(Action action);
 
     std::map<std::uint32_t, Action> mKeyBinding;
-    std::map<Action, Command> mActionBinding;
+    std::map<Action, std::function<void(Camera&, float)>> mCameraActions;
     bool mIsActive;
     bool mIsOnGround;
 };

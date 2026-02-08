@@ -9,6 +9,7 @@
 
 #include "GLSDLHelper.hpp"
 #include "MusicPlayer.hpp"
+#include "Player.hpp"
 #include "ResourceManager.hpp"
 #include "Shader.hpp"
 #include "SoundPlayer.hpp"
@@ -18,12 +19,14 @@
 GameState::GameState(StateStack& stack, Context context)
     : State{ stack, context }
     , mWorld{ *context.window, *context.fonts, *context.textures }
+    , mPlayer{ *context.player }
     , mGameMusic{ nullptr }
     , mDisplayShader{ nullptr }
     , mComputeShader{ nullptr }
     // Initialize camera at maze spawn position (will be updated after first chunk loads)
     , mCamera{ glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f }
 {
+    mPlayer.setActive(true);
     mWorld.init();  // This now initializes both 2D physics and 3D path tracer scene
 
     // Get shaders from context
@@ -305,77 +308,8 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     // Update sounds: set listener position based on camera and remove stopped sounds
     updateSounds();
 
-    // Handle camera movement with WASD for 3D path tracer scene
-    int numKeys = 0;
-    const auto* keyState = SDL_GetKeyboardState(&numKeys);
-
-    if (keyState)
-    {
-        const float cameraMoveSpeed = 50.0f * dt;  // 50 units per second
-        glm::vec3 movement(0.0f);
-
-        // WASD controls camera position
-        if (keyState[SDL_SCANCODE_W])
-        {
-            movement += mCamera.getTarget() * cameraMoveSpeed;  // Forward
-        }
-        if (keyState[SDL_SCANCODE_S])
-        {
-            movement -= mCamera.getTarget() * cameraMoveSpeed;  // Backward
-        }
-        if (keyState[SDL_SCANCODE_A])
-        {
-            movement -= mCamera.getRight() * cameraMoveSpeed;   // Left
-        }
-        if (keyState[SDL_SCANCODE_D])
-        {
-            movement += mCamera.getRight() * cameraMoveSpeed;   // Right
-        }
-
-        // Q/E for vertical movement
-        if (keyState[SDL_SCANCODE_Q])
-        {
-            movement.y += cameraMoveSpeed;  // Up
-        }
-        if (keyState[SDL_SCANCODE_E])
-        {
-            movement.y -= cameraMoveSpeed;  // Down
-        }
-
-        // Apply movement if any key was pressed
-        if (glm::length(movement) > 0.001f)
-        {
-            glm::vec3 newPos = mCamera.getPosition() + movement;
-            mCamera.setPosition(newPos);
-        }
-
-        // Arrow keys for camera rotation - INCREASED SPEED
-        const float rotateSpeed = 180.0f * dt;  // 180 degrees per second (doubled from 90)
-        float yawDelta = 0.0f;
-        float pitchDelta = 0.0f;
-
-        if (keyState[SDL_SCANCODE_LEFT])
-        {
-            yawDelta -= rotateSpeed;
-        }
-        if (keyState[SDL_SCANCODE_RIGHT])
-        {
-            yawDelta += rotateSpeed;
-        }
-        if (keyState[SDL_SCANCODE_UP])
-        {
-            pitchDelta += rotateSpeed;
-        }
-        if (keyState[SDL_SCANCODE_DOWN])
-        {
-            pitchDelta -= rotateSpeed;
-        }
-
-        if (std::abs(yawDelta) > 0.001f || std::abs(pitchDelta) > 0.001f)
-        {
-            mCamera.rotate(yawDelta, pitchDelta);
-        }
-    }
+    // Handle camera input through Player (using action bindings)
+    mPlayer.handleRealtimeInput(mCamera, dt);
 
     // Log progress periodically
     if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches) {
@@ -391,8 +325,11 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
 bool GameState::handleEvent(const SDL_Event& event) noexcept
 {
-    // World still handles mouse panning for the 2D view (though this may also be unused)
+    // World still handles mouse panning for the 2D view
     mWorld.handleEvent(event);
+
+    // Handle camera discrete events through Player
+    mPlayer.handleEvent(event, mCamera);
 
     if (event.type == SDL_EVENT_KEY_DOWN)
     {
@@ -401,32 +338,28 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
             requestStackPush(States::ID::PAUSE);
         }
 
-        // Reset camera to initial position with R key
-        if (event.key.scancode == SDL_SCANCODE_R)
-        {
-            glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
-            mCamera.setPosition(resetPos);
-            mCamera.rotate(0.0f, 0.0f);  // Reset to default angles
-
-            // Play spatialized sound at the reset position
-            if (auto* sounds = getContext().sounds)
-            {
-                sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{ resetPos.x, resetPos.z });
-            }
-            log("Camera reset to initial position");
-        }
-
-        // Toggle progressive rendering reset with SPACE
+        // Reset accumulation with SPACE (handled separately since it's not a camera action)
         if (event.key.scancode == SDL_SCANCODE_SPACE)
         {
             mCurrentBatch = 0;
 
-            // Play non-spatialized UI sound (at listener position)
+            // Play non-spatialized UI sound
             if (auto* sounds = getContext().sounds)
             {
                 sounds->play(SoundEffect::ID::SELECT);
             }
             log("Path tracing accumulation reset");
+        }
+
+        // Play sound when camera is reset (R key handled by Player now)
+        if (event.key.scancode == SDL_SCANCODE_R)
+        {
+            glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
+            if (auto* sounds = getContext().sounds)
+            {
+                sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{ resetPos.x, resetPos.z });
+            }
+            log("Camera reset to initial position");
         }
     }
 

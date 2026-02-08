@@ -1,7 +1,6 @@
 #ifndef MENU_STATE_HPP
 #define MENU_STATE_HPP
 
-#include "Sprite.hpp"
 #include "State.hpp"
 
 #include <array>
@@ -29,8 +28,6 @@ private:
     };
 
     MusicPlayer* mMusic;
-
-    Sprite mBackgroundSprite;
 
     // Navigation state variables
     mutable MenuItem mSelectedMenuItem;

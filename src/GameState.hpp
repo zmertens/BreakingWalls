@@ -29,6 +29,7 @@ public:
 
 private:
     World mWorld;  // Manages both 2D physics and 3D sphere scene
+    Player& mPlayer;  // Restored for camera input handling
 
     // Music player reference for game music
     MusicPlayer* mGameMusic{ nullptr };

@@ -21,7 +21,6 @@
 
 MenuState::MenuState(StateStack& stack, Context context)
     : State(stack, context)
-    , mBackgroundSprite{ context.textures->get(Textures::ID::SPLASH_TITLE_IMAGE) }
     , mSelectedMenuItem(MenuItem::NEW_GAME)
     , mShowMainMenu(true), mItemSelectedFlags{}
 {
@@ -130,7 +129,6 @@ void MenuState::draw() const noexcept
 
     // Draw the game background first so ImGui renders on top of it
     auto& window = *getContext().window;
-    window.draw(mBackgroundSprite);
 }
 
 bool MenuState::update(float dt, unsigned int subSteps) noexcept
