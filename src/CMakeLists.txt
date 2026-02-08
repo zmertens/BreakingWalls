@@ -56,9 +56,6 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/PauseState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PhysicsGame.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Player.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PostProcessing.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PostProcessingManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/RenderTexture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/RenderWindow.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GLSDLHelper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SettingsState.cpp
