@@ -3,6 +3,8 @@
 
 #include "State.hpp"
 
+struct Options;
+
 class SettingsState : public State
 {
 public:
@@ -24,10 +26,8 @@ public:
     bool handleEvent(const SDL_Event& event) noexcept override;
 
 private:
-    /// Apply all settings to the game systems
-    void applySettings(float masterVolume, float musicVolume, float sfxVolume,
-                       bool vsync, bool fullscreen, bool antialiasing,
-                       bool enableMusic, bool enableSound, bool showDebugOverlay) const noexcept;
+    // Apply all settings to the game systems
+    void applySettings(const Options& options) const noexcept;
 
     bool mShowText;
 
