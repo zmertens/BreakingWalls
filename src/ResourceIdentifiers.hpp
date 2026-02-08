@@ -41,13 +41,10 @@ namespace GUIOptions
 {
     enum class ID : unsigned int
     {
-        FULLSCREEN = 0,
-        VSYNC = 1,
-        ANTIALIASING = 2,
-        SHOW_DEBUG_OVERLAY = 3,
-        ENABLE_MUSIC = 4,
-        ENABLE_SOUNDS = 5,
-        TOTAL_OPTIONS = 6
+        DE_FACTO = 0,
+        ZEN_MODE = 1,
+        TIME_TRIAL_MODE = 2,
+        TOTAL_OPTIONS = 3
     };
 }
 

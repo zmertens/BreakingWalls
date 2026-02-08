@@ -145,7 +145,7 @@ void LoadingState::loadAudio() noexcept
     {
         // Load music tracks through the MusicManager
         // Adjust paths as needed for your audio files
-        music.load(Music::ID::GAME_MUSIC, std::string_view("./audio/loading.wav"), 50.f, true);
+        music.load(Music::ID::GAME_MUSIC, std::string_view("./audio/loading.wav"), 70.f, true);
         //music.load(Music::ID::MENU_MUSIC, std::string_view("./audio/menu_music.ogg"), 50.f, true);
         //music.load(Music::ID::SPLASH_MUSIC, std::string_view("./audio/splash_music.ogg"), 50.f, false);
 

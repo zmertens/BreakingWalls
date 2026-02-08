@@ -162,7 +162,7 @@ struct PhysicsGame::PhysicsGameImpl
         // We use a single Options object keyed by FULLSCREEN for simplicity
         // All settings are stored in this one Options instance
         auto defaultOptions = std::make_unique<Options>();
-        options.insert(GUIOptions::ID::FULLSCREEN, std::move(defaultOptions));
+        options.insert(GUIOptions::ID::DE_FACTO, std::move(defaultOptions));
         SDL_Log("Default options initialized");
     }
 

@@ -52,9 +52,9 @@ void SettingsState::draw() const noexcept
     // Use static variables to persist UI state between frames
     // Initialize from options on first access using a flag
     static bool initialized = false;
-    static float masterVolume = 100.0f;
-    static float musicVolume = 80.0f;
-    static float sfxVolume = 90.0f;
+    static float masterVolume = 50.0f;
+    static float musicVolume = 75.0f;
+    static float sfxVolume = 10.0f;
     static bool vsync = true;
     static bool fullscreen = false;
     static bool antialiasing = true;
@@ -67,7 +67,7 @@ void SettingsState::draw() const noexcept
         // Load values from OptionsManager (using default option ID)
         try
         {
-            const auto& opts = optionsManager.get(GUIOptions::ID::FULLSCREEN);
+            const auto& opts = optionsManager.get(GUIOptions::ID::DE_FACTO);
             masterVolume = opts.mMasterVolume;
             musicVolume = opts.mMusicVolume;
             sfxVolume = opts.mSfxVolume;
@@ -228,7 +228,7 @@ void SettingsState::applySettings(const Options& options) const noexcept
     {
         try
         {
-            auto& opts = optionsManager->get(GUIOptions::ID::FULLSCREEN);
+            auto& opts = optionsManager->get(GUIOptions::ID::DE_FACTO);
             opts.mMasterVolume = options.mMasterVolume;
             opts.mMusicVolume = options.mMusicVolume;
             opts.mSfxVolume = options.mSfxVolume;

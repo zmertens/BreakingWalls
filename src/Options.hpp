@@ -17,9 +17,9 @@ struct Options
     bool mShowDebugOverlay{ false };
     bool mVsync{ true };
 
-    float mMasterVolume{ 100.0f };
-    float mMusicVolume{ 80.0f };
-    float mSfxVolume{ 90.0f };
+    float mMasterVolume{ 25.0f };
+    float mMusicVolume{ 100.0f };
+    float mSfxVolume{ 10.0f };
 
     // Camera settings
     CameraPerspective mCameraPerspective{ CameraPerspective::FIRST_PERSON };

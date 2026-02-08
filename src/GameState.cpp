@@ -50,7 +50,23 @@ GameState::GameState(StateStack& stack, Context context)
     try
     {
         mGameMusic = &music.get(Music::ID::GAME_MUSIC);
-        mGameMusic->play();
+        if (mGameMusic)
+        {
+            // Ensure reasonable volume
+            mGameMusic->setVolume(50.0f);
+            mGameMusic->setLoop(true);
+            
+            // Check if music is already playing (MenuState may have started it)
+            if (!mGameMusic->isPlaying())
+            {
+                mGameMusic->play();
+                SDL_Log("GameState: Started game music (volume: 50%%)");
+            }
+            else
+            {
+                SDL_Log("GameState: Game music already playing");
+            }
+        }
     } catch (const std::exception& e)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get game music: %s", e.what());

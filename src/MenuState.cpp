@@ -138,18 +138,6 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
         return true;
     }
 
-    static bool startBackgroundMusic = true;
-    if (startBackgroundMusic)
-    {
-        auto& music = getContext().music->get(Music::ID::GAME_MUSIC);
-        if (!music.isPlaying())
-        {
-            music.play();
-            SDL_Log("MenuState: Started background music");
-        }
-        startBackgroundMusic = false;
-    }
-
     // Menu was closed by user - process the selected action
     switch (mSelectedMenuItem) {
     case MenuItem::CONTINUE:
@@ -170,6 +158,7 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
 
     case MenuItem::NEW_GAME:
         // Clear all states and start fresh game
+        // GameState will handle starting its own music
         requestStateClear();
         requestStackPush(States::ID::GAME);
         break;
