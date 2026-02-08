@@ -20,7 +20,7 @@ set_property(DIRECTORY "${CMAKE_BINARY_DIR}/_deps/sdl-src" PROPERTY EXCLUDE_FROM
 
 # Get SFML with Emscripten-specific settings
 set(SFML_REPO_URL "https://github.com/zmertens/SFML.git")
-set(SFML_GIT_TAG "almostv3")
+set(SFML_GIT_TAG "sfml3_with_tls")
 message(STATUS "Fetching SFML from ${SFML_REPO_URL} at tag ${SFML_GIT_TAG}")
 set(SFML_BUILD_AUDIO ON)
 set(SFML_BUILD_NETWORK ON)
