@@ -5,12 +5,8 @@
 #include <map>
 #include <functional>
 
-#include "Command.hpp"
-
 union SDL_Event;
 
-class CommandQueue;
-class Entity;
 class Camera;
 
 class Player
@@ -43,9 +39,6 @@ public:
 
     void assignKey(Action action, std::uint32_t key);
     [[nodiscard]] std::uint32_t getAssignedKey(Action action) const;
-
-    void onBeginContact(Entity* other) noexcept;
-    void onEndContact(Entity* other) noexcept;
 
     void setGroundContact(bool contact);
     bool hasGroundContact() const;

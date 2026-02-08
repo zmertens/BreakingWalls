@@ -2,8 +2,6 @@
 
 #include "Camera.hpp"
 
-#include <box2d/box2d.h>
-
 #include <SDL3/SDL.h>
 
 #include <glm/glm.hpp>
@@ -225,14 +223,4 @@ bool Player::isActive() const noexcept
 void Player::setActive(bool active) noexcept
 {
     mIsActive = active;
-}
-
-void Player::onBeginContact(Entity* /*other*/) noexcept
-{
-    // Reserved for future entity-based collision handling
-}
-
-void Player::onEndContact(Entity* /*other*/) noexcept
-{
-    // Reserved for future entity-based collision handling
 }

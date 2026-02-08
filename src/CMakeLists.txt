@@ -46,7 +46,6 @@ FetchGitRepo(MazeBuilder ${MAZE_BUILDER_REPO_URL} ${MAZE_BUILDER_GIT_TAG})
 
 set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/Camera.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/CommandQueue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Font.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GameState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HttpClient.cpp
@@ -165,3 +164,4 @@ if(WIN32)
         VERBATIM
     )
 endif()
+
