@@ -5,7 +5,6 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "Sprite.hpp"
 #include "State.hpp"
 #include "WorkerConcurrent.hpp"
 

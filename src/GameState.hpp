@@ -10,7 +10,6 @@
 #include <glm/glm.hpp>
 #include <memory>
 
-class Player;
 class StateStack;
 class MusicPlayer;
 union SDL_Event;
@@ -30,7 +29,6 @@ public:
 
 private:
     World mWorld;  // Manages both 2D physics and 3D sphere scene
-    Player& mPlayer;
 
     // Music player reference for game music
     MusicPlayer* mGameMusic{ nullptr };

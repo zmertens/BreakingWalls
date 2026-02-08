@@ -1,14 +1,10 @@
 #include "World.hpp"
 
-#include "Entity.hpp"
 #include "JsonUtils.hpp"
-#include "Pathfinder.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceManager.hpp"
-#include "SpriteNode.hpp"
 #include "Texture.hpp"
 
-#include "Physics.hpp"
 #include "Sphere.hpp"
 #include "Material.hpp"
 
@@ -34,12 +30,8 @@ World::World(RenderWindow& window, FontManager& fonts, TextureManager& textures)
     , mWorldView{ window.getView() }
     , mFonts{ fonts }
     , mTextures{ textures }
-    , mSceneGraph{}
-    , mSceneLayers{}
     , mWorldId{ b2_nullWorldId }
     , mMazeWallsBodyId{ b2_nullBodyId }
-    , mCommandQueue{}
-    , mPlayerPathfinder{ nullptr }
     , mIsPanning{ false }
     , mLastMousePosition{ 0.f, 0.f }
     , mLastChunkUpdatePosition{}
@@ -58,9 +50,6 @@ void World::init() noexcept
     worldDef.gravity = { 0.0f, FORCE_DUE_TO_GRAVITY };
 
     mWorldId = b2CreateWorld(&worldDef);
-
-    mPostProcessingManager = nullptr;
-    mPlayerPathfinder = nullptr;
 
     mPlayerSpawnPosition = glm::vec3(0.0f, 10.0f, 0.0f);
 
@@ -366,86 +355,22 @@ void World::update(float dt)
     // Process any completed chunk generation work
     processCompletedChunks();
 
-    // Reset player velocity before processing commands
-    if (mPlayerPathfinder)
-    {
-        mPlayerPathfinder->setVelocity(0.f, 0.f);
-        mWorldView.setCenter(mPlayerPathfinder->getPosition().x, mPlayerPathfinder->getPosition().y);
-    }
-
     mWindow.setView(mWorldView);
-
-    while (!mCommandQueue.isEmpty())
-    {
-        Command command = mCommandQueue.pop();
-        mSceneGraph.onCommand(command, dt);
-    }
 
     if (b2World_IsValid(mWorldId))
     {
         b2World_Step(mWorldId, dt, 4);
 
-        // Poll contact events after stepping
-        b2ContactEvents events = b2World_GetContactEvents(mWorldId);
-
-        // Process begin contact events
-        for (int i = 0; i < events.beginCount; ++i)
-        {
-            b2ContactBeginTouchEvent* beginEvent = events.beginEvents + i;
-            b2BodyId bodyIdA = b2Shape_GetBody(beginEvent->shapeIdA);
-            b2BodyId bodyIdB = b2Shape_GetBody(beginEvent->shapeIdB);
-
-            if (b2Body_IsValid(bodyIdA) && b2Body_IsValid(bodyIdB))
-            {
-                void* userDataA = b2Body_GetUserData(bodyIdA);
-                void* userDataB = b2Body_GetUserData(bodyIdB);
-
-                auto* entityA = static_cast<Entity*>(userDataA);
-                auto* entityB = static_cast<Entity*>(userDataB);
-
-                if (entityA) entityA->onBeginContact(entityB);
-                if (entityB) entityB->onBeginContact(entityA);
-            }
-        }
-
-        // Process end contact events
-        for (int i = 0; i < events.endCount; ++i)
-        {
-            b2ContactEndTouchEvent* endEvent = events.endEvents + i;
-            b2BodyId bodyIdA = b2Shape_GetBody(endEvent->shapeIdA);
-            b2BodyId bodyIdB = b2Shape_GetBody(endEvent->shapeIdB);
-
-            if (b2Body_IsValid(bodyIdA) && b2Body_IsValid(bodyIdB))
-            {
-                void* userDataA = b2Body_GetUserData(bodyIdA);
-                void* userDataB = b2Body_GetUserData(bodyIdB);
-
-                Entity* entityA = static_cast<Entity*>(userDataA);
-                Entity* entityB = static_cast<Entity*>(userDataB);
-
-                if (entityA) entityA->onEndContact(entityB);
-                if (entityB) entityB->onEndContact(entityA);
-            }
-        }
-
         // Sync physics body positions to 3D sphere positions for path tracer
         syncPhysicsToSpheres();
     }
-
-
-    // Update scene graph (this calls Entity::updateCurrent which syncs transforms)
-    mSceneGraph.update(dt, std::ref(mCommandQueue));
 }
 
 void World::draw() const noexcept
 {
-    // Post-processing disabled - render directly with OpenGL
-    mWindow.draw(mSceneGraph);
-}
-
-CommandQueue& World::getCommandQueue() noexcept
-{
-    return mCommandQueue;
+    // REMOVED: Scene graph drawing - not used
+    // Rendering is now fully handled in GameState via compute shaders
+    // World only manages physics and sphere data
 }
 
 void World::handleEvent(const SDL_Event& event)
@@ -898,14 +823,6 @@ MaterialType World::getMaterialForDistance(int distance) const noexcept
         return MaterialType::DIELECTRIC;
     } else {
         return MaterialType::LAMBERTIAN;
-    }
-}
-
-void World::setPlayer(Player* player)
-{
-    if (mPlayerPathfinder)
-    {
-        // mPlayerPathfinder->setPosition(player->)
     }
 }
 

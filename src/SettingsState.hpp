@@ -1,7 +1,6 @@
 #ifndef SETTINGS_STATE_HPP
 #define SETTINGS_STATE_HPP
 
-#include "Sprite.hpp"
 #include "State.hpp"
 
 class SettingsState : public State
@@ -29,8 +28,6 @@ private:
     void applySettings(float masterVolume, float musicVolume, float sfxVolume,
                        bool vsync, bool fullscreen, bool antialiasing,
                        bool enableMusic, bool enableSound, bool showDebugOverlay) const noexcept;
-
-    Sprite mBackgroundSprite;
 
     bool mShowText;
 

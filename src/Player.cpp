@@ -1,8 +1,6 @@
 #include "Player.hpp"
 
 #include "CommandQueue.hpp"
-#include "Entity.hpp"
-#include "Pathfinder.hpp"
 
 #include <box2d/box2d.h>
 

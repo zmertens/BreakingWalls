@@ -3,15 +3,12 @@
 #include <SDL3/SDL.h>
 
 #include <cmath>
-#include <functional>
 
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 
-#include "CommandQueue.hpp"
 #include "GLSDLHelper.hpp"
 #include "MusicPlayer.hpp"
-#include "Player.hpp"
 #include "ResourceManager.hpp"
 #include "Shader.hpp"
 #include "SoundPlayer.hpp"
@@ -21,16 +18,13 @@
 GameState::GameState(StateStack& stack, Context context)
     : State{ stack, context }
     , mWorld{ *context.window, *context.fonts, *context.textures }
-    , mPlayer{ *context.player }
     , mGameMusic{ nullptr }
     , mDisplayShader{ nullptr }
     , mComputeShader{ nullptr }
     // Initialize camera at maze spawn position (will be updated after first chunk loads)
     , mCamera{ glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f }
 {
-    mPlayer.setActive(true);
     mWorld.init();  // This now initializes both 2D physics and 3D path tracer scene
-    mWorld.setPlayer(context.player);
 
     // Get shaders from context
     auto& shaders = *context.shaders;
@@ -103,8 +97,8 @@ void GameState::draw() const noexcept
         renderWithComputeShaders();
     }
 
-    // Always draw the world (physics objects, sprites, etc.)
-    mWorld.draw();
+    // REMOVED: mWorld.draw() - World no longer handles rendering
+    // All rendering is now done via compute shaders above
 }
 
 void GameState::initializeGraphicsResources() noexcept
@@ -211,7 +205,7 @@ void GameState::renderWithComputeShaders() const noexcept
 
     if (static_cast<size_t>(currentBufferSize) < requiredSize)
     {
-        // Reallocate buffer with new size (add some headroom to avoid frequent reallocations)
+        // Reallocating buffer with new size (add some headroom to avoid frequent reallocations)
         size_t newSize = requiredSize * 2;
         GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(newSize), spheres.data());
     } else
@@ -305,9 +299,6 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 {
     mWorld.update(dt);
 
-    auto& commands = mWorld.getCommandQueue();
-    mPlayer.handleRealtimeInput(std::ref(commands));
-
     // Update sphere chunks based on camera position for dynamic spawning
     mWorld.updateSphereChunks(mCamera.getPosition());
 
@@ -400,10 +391,7 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
 bool GameState::handleEvent(const SDL_Event& event) noexcept
 {
-    auto& commands = mWorld.getCommandQueue();
-
-    // Let player handle events for 2D physics (if needed)
-    mPlayer.handleEvent(event, std::ref(commands));
+    // World still handles mouse panning for the 2D view (though this may also be unused)
     mWorld.handleEvent(event);
 
     if (event.type == SDL_EVENT_KEY_DOWN)
