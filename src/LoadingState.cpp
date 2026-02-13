@@ -1,4 +1,4 @@
-#include "LoadingState.hpp"
+﻿#include "LoadingState.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -23,6 +23,7 @@
 #include "MusicPlayer.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
+#include "SDLAudioStream.hpp"
 #include "Shader.hpp"
 #include "StateStack.hpp"
 #include "Texture.hpp"
@@ -560,31 +561,124 @@ void LoadingState::loadAudio() noexcept
     try
     {
         // Load music tracks through the MusicManager
-        // Adjust paths as needed for your audio files
-        music.load(Music::ID::GAME_MUSIC, std::string_view("./audio/loading.wav"), 70.f, true);
-        //music.load(Music::ID::MENU_MUSIC, std::string_view("./audio/menu_music.ogg"), 50.f, true);
-        //music.load(Music::ID::SPLASH_MUSIC, std::string_view("./audio/splash_music.ogg"), 50.f, false);
-
-        log("LoadingState: Music loaded successfully");
-    } catch (const std::exception& e)
+        SDL_Log("LoadingState: Attempting to load music from: ./audio/loading.wav");
+        
+        // Set volume to 100% for maximum audibility during testing
+        music.load(Music::ID::GAME_MUSIC, std::string_view("./audio/loading.wav"), 100.f, true);
+        
+        SDL_Log("LoadingState: Music resource loaded into manager");
+        
+        // Get reference to the loaded music
+        auto& loadedMusic = music.get(Music::ID::GAME_MUSIC);
+        
+        // Verify volume and loop were set correctly
+        SDL_Log("LoadingState: Music volume: 100%%, Loop: true");
+        
+        // Play the music
+        loadedMusic.play();
+        
+        // Small delay to allow SFML audio to start
+        SDL_Delay(50);
+        
+        // Check if it's actually playing
+        if (loadedMusic.isPlaying())
+        {
+            SDL_Log("LoadingState: ? Music is now playing!");
+            log("LoadingState: Music loaded and playing successfully");
+        }
+        else
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
+                "LoadingState: ? Music loaded but not playing");
+            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
+                "  Possible causes:");
+            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
+                "  - Audio file './audio/loading.wav' doesn't exist or is corrupt");
+            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
+                "  - Audio file format not supported (WAV should work)");
+            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
+                "  - System audio device not available");
+            
+            log("LoadingState: Music loaded but not playing - check audio file");
+        }
+    } 
+    catch (const std::exception& e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load music: %s", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
+            "LoadingState: Failed to load music: %s", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
+            "  Make sure './audio/loading.wav' exists relative to executable");
     }
 
+    // ========================================================================
+    // SDL3 Audio Streaming Test (Proof of Concept)
+    // ========================================================================
+    SDL_Log("\n=== SDL3 Audio Streaming Test ===");
+    
+    try
+    {
+        // Create an SDL audio stream for testing
+        SDLAudioStream sdlAudioTest;
+        
+        // Configure sine wave generation BEFORE initializing
+        // This sets up the callback that will be used
+        sdlAudioTest.generateSineWave(440.0f, 3.5f, 0.3f);
+        
+        // Initialize with 8kHz, mono (matches official SDL3 example for simplicity)
+        // Pass nullptr for callback since generateSineWave already set it up
+        if (sdlAudioTest.initialize(8000, 1, nullptr))
+        {
+            SDL_Log("SDL3 Audio: ✓ Audio stream initialized successfully");
+            SDL_Log("SDL3 Audio: ✓ Sine wave callback configured (440 Hz, 0.5s)");
+            
+            // Play the sine wave
+            sdlAudioTest.play();
+            SDL_Log("SDL3 Audio: ✓ Playing test sine wave");
+            
+            // Let it play for a moment
+            SDL_Delay(600);
+            
+            // Stop the test
+            sdlAudioTest.stop();
+            SDL_Log("SDL3 Audio: ✓ Test completed successfully");
+            SDL_Log("SDL3 Audio: SDL3 audio streaming is working alongside SFML!");
+        }
+        else
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "SDL3 Audio: Failed to initialize (this is okay - SFML still works)");
+        }
+    }
+    catch (const std::exception& e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "SDL3 Audio: Test failed: %s", e.what());
+        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "SDL3 Audio: This is okay - SFML audio still works!");
+    }
+    
+    SDL_Log("=== End SDL3 Audio Test ===\n");
+
+    // Continue with existing sound effects loading...
     auto& soundBuffers = *getContext().soundBuffers;
 
     try
     {
         // Load sound effects through the SoundBufferManager
-        // Adjust paths as needed for your audio files
+        SDL_Log("LoadingState: Loading sound effects...");
+        
         soundBuffers.load(SoundEffect::ID::GENERATE, "./audio/generate.ogg");
+        SDL_Log("  - Loaded: generate.ogg");
+        
         soundBuffers.load(SoundEffect::ID::SELECT, "./audio/sfx_select.ogg");
+        SDL_Log("  - Loaded: sfx_select.ogg");
+        
         soundBuffers.load(SoundEffect::ID::THROW, "./audio/sfx_throw.ogg");
+        SDL_Log("  - Loaded: sfx_throw.ogg");
 
         log("LoadingState: Sound effects loaded successfully");
-    } catch (const std::exception& e)
+    } 
+    catch (const std::exception& e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load sound effects: %s", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
+            "LoadingState: Failed to load sound effects: %s", e.what());
     }
 }
 

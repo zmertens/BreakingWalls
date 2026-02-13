@@ -201,6 +201,35 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
     {
         std::call_once(mInitializedFlag, initFunc);
+        
+        // Verify audio subsystem initialized successfully
+        if (SDL_WasInit(SDL_INIT_AUDIO))
+        {
+            SDL_Log("SDL Audio subsystem initialized successfully");
+            
+            // Log available audio drivers
+            int numDrivers = SDL_GetNumAudioDrivers();
+            SDL_Log("Available audio drivers: %d", numDrivers);
+            for (int i = 0; i < numDrivers; ++i)
+            {
+                SDL_Log("  [%d] %s", i, SDL_GetAudioDriver(i));
+            }
+            
+            // Log current audio driver
+            const char* currentDriver = SDL_GetCurrentAudioDriver();
+            if (currentDriver)
+            {
+                SDL_Log("Current audio driver: %s", currentDriver);
+            }
+            else
+            {
+                SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "No audio driver initialized");
+            }
+        }
+        else
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "SDL Audio subsystem failed to initialize");
+        }
     }
     else
     {

@@ -37,8 +37,8 @@ SplashState::SplashState(StateStack& stack, Context context)
 
     // Position camera at a nice vantage point above the spawn
     glm::vec3 spawnPos = mWorld.getMazeSpawnPosition();
-    spawnPos.y += 40.0f;  // Higher up for a sweeping view
-    spawnPos.z += 80.0f;  // Back for a wider perspective
+    spawnPos.y += 40.0f;
+    spawnPos.z += 80.0f;
     mCamera.setPosition(spawnPos);
 
     log("SplashState: Camera positioned at " +

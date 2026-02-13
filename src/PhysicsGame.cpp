@@ -46,8 +46,8 @@ struct PhysicsGame::PhysicsGameImpl
 {
     Player p1;
 
-    std::unique_ptr<RenderWindow> window;
-    std::unique_ptr<StateStack> stateStack;
+    std::unique_ptr<RenderWindow> mRenderWindow;
+    std::unique_ptr<StateStack> mStateStack;
 
     GLSDLHelper glSdlHelper;
 
@@ -74,21 +74,21 @@ struct PhysicsGame::PhysicsGameImpl
         : windowTitle{ title }
         , resourcePath{ resourcePath }
         , INIT_WINDOW_W{ w }, INIT_WINDOW_H{ h }
-        , window{ nullptr }
+        , mRenderWindow{ nullptr }
         , glSdlHelper{}
-        , stateStack{ nullptr }
+        , mStateStack{ nullptr }
         , options{ }
         , sounds{ nullptr }
     {
         initSDL();
         if (!glSdlHelper.mWindow)
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL window - cannot continue");
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL mRenderWindow - cannot continue");
             // Don't initialize further objects if SDL failed
             return;
         }
 
-        window = std::make_unique<RenderWindow>(glSdlHelper.mWindow);
+        mRenderWindow = std::make_unique<RenderWindow>(glSdlHelper.mWindow);
 
         initDearImGui();
 
@@ -98,8 +98,8 @@ struct PhysicsGame::PhysicsGameImpl
         // Create SoundPlayer with reference to soundBuffers
         sounds = std::make_unique<SoundPlayer>(soundBuffers);
 
-        stateStack = std::make_unique<StateStack>(State::Context{
-            *window,
+        mStateStack = std::make_unique<StateStack>(State::Context{
+            *mRenderWindow,
             std::ref(fonts),
             std::ref(levels),
             std::ref(music),
@@ -113,15 +113,15 @@ struct PhysicsGame::PhysicsGameImpl
 
         registerStates();
 
-        stateStack->pushState(States::ID::LOADING);
-        stateStack->pushState(States::ID::SPLASH);
+        mStateStack->pushState(States::ID::LOADING);
+        mStateStack->pushState(States::ID::SPLASH);
     }
 
     ~PhysicsGameImpl()
     {
         if (auto& sdl = this->glSdlHelper; sdl.mWindow)
         {
-            this->stateStack->clearStates();
+            this->mStateStack->clearStates();
             this->fonts.clear();
             this->music.clear();
             this->soundBuffers.clear();
@@ -181,15 +181,15 @@ struct PhysicsGame::PhysicsGameImpl
             if (event.type == SDL_EVENT_QUIT)
             {
                 SDL_Log("SDL_EVENT_QUIT received - clearing state stack");
-                stateStack->clearStates();
+                mStateStack->clearStates();
                 // Don't process any more events after quit
                 return;
             }
 
             // Only handle events if state stack is not empty
-            if (!stateStack->isEmpty())
+            if (!mStateStack->isEmpty())
             {
-                stateStack->handleEvent(event);
+                mStateStack->handleEvent(event);
             }
         }
     }
@@ -198,48 +198,48 @@ struct PhysicsGame::PhysicsGameImpl
     {
 #if defined(BREAKING_WALLS_DEBUG)
         static State* lastState{ nullptr };
-        if (const auto statePtr = stateStack->peekState<State*>(); statePtr != lastState)
+        if (const auto statePtr = mStateStack->peekState<State*>(); statePtr != lastState)
         {
             lastState = statePtr;
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, statePtr->view().data());
         }
 #endif
 
-        stateStack->update(dt, subSteps);
+        mStateStack->update(dt, subSteps);
     }
 
     void render(const double elapsed) const noexcept
     {
         // Only render if state stack has states
-        if (stateStack->isEmpty())
+        if (mStateStack->isEmpty())
         {
             return;
         }
 
         // Clear, draw, and present (like SFML)
-        window->clear();
-        window->beginFrame();
-        stateStack->draw();
+        mRenderWindow->clear();
+        mRenderWindow->beginFrame();
+        mStateStack->draw();
 
 #if defined(BREAKING_WALLS_DEBUG)
         // Window might be closed during draw calls/events
-        if (window->isOpen())
+        if (mRenderWindow->isOpen())
         {
             this->handleFPS(elapsed);
         }
 #endif
 
-        window->display();
+        mRenderWindow->display();
     }
 
     void registerStates() noexcept
     {
-        stateStack->registerState<GameState>(States::ID::GAME);
-        stateStack->registerState<LoadingState>(States::ID::LOADING, resourcePath);
-        stateStack->registerState<MenuState>(States::ID::MENU);
-        stateStack->registerState<PauseState>(States::ID::PAUSE);
-        stateStack->registerState<SettingsState>(States::ID::SETTINGS);
-        stateStack->registerState<SplashState>(States::ID::SPLASH);
+        mStateStack->registerState<GameState>(States::ID::GAME);
+        mStateStack->registerState<LoadingState>(States::ID::LOADING, resourcePath);
+        mStateStack->registerState<MenuState>(States::ID::MENU);
+        mStateStack->registerState<PauseState>(States::ID::PAUSE);
+        mStateStack->registerState<SettingsState>(States::ID::SETTINGS);
+        mStateStack->registerState<SplashState>(States::ID::SPLASH);
     }
 
     void handleFPS(const double elapsed) const noexcept
@@ -257,14 +257,14 @@ struct PhysicsGame::PhysicsGameImpl
             fpsUpdateTimer = 0.0;
         }
 
-        // Create ImGui overlay window positioned at top-right corner
+        // Create ImGui overlay mRenderWindow positioned at top-right corner
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 10.0f), ImGuiCond_Always,
             ImVec2(1.0f, 0.0f));
 
-        // Set window background to be semi-transparent
+        // Set mRenderWindow background to be semi-transparent
         ImGui::SetNextWindowBgAlpha(0.65f);
 
-        // Create window with no title bar, no resize, no move, auto-resize
+        // Create mRenderWindow with no title bar, no resize, no move, auto-resize
         constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDecoration |
             ImGuiWindowFlags_AlwaysAutoResize |
             ImGuiWindowFlags_NoSavedSettings |
@@ -295,7 +295,7 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
     auto&& gamePtr = this->mImpl;
 
     // Check if initialization succeeded before entering game loop
-    if (!gamePtr->window || !gamePtr->stateStack)
+    if (!gamePtr->mRenderWindow || !gamePtr->mStateStack)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Game initialization failed - cannot run");
         return false;
@@ -308,7 +308,7 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
 
     // States already pushed in constructor - no need to push again
 
-    while (gamePtr->window && gamePtr->window->isOpen())
+    while (gamePtr->mRenderWindow && gamePtr->mRenderWindow->isOpen())
     {
         // Expected milliseconds per frame (16.67ms)
         static constexpr auto FIXED_TIME_STEP = 1000.0 / 60.0;
@@ -329,16 +329,16 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
             gamePtr->update(static_cast<float>(FIXED_TIME_STEP) / 1000.f);
 
             // Check if state stack became empty during update
-            if (gamePtr->stateStack->isEmpty())
+            if (gamePtr->mStateStack->isEmpty())
             {
                 SDL_Log("State stack is empty after update - closing application");
-                gamePtr->window->close();
+                gamePtr->mRenderWindow->close();
                 break;
             }
         }
 
-        // Exit outer loop if window was closed in update loop
-        if (!gamePtr->window->isOpen())
+        // Exit outer loop if mRenderWindow was closed in update loop
+        if (!gamePtr->mRenderWindow->isOpen())
         {
             break;
         }

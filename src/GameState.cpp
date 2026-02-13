@@ -52,19 +52,40 @@ GameState::GameState(StateStack& stack, Context context)
         mGameMusic = &music.get(Music::ID::GAME_MUSIC);
         if (mGameMusic)
         {
-            // Ensure reasonable volume
-            mGameMusic->setVolume(50.0f);
+            SDL_Log("GameState: Got music reference from manager");
+            
+            // Set volume to 100% to ensure it's audible
+            mGameMusic->setVolume(100.0f);
             mGameMusic->setLoop(true);
             
-            // Check if music is already playing (MenuState may have started it)
+            // Check if music is already playing (LoadingState/MenuState may have started it)
             if (!mGameMusic->isPlaying())
             {
+                SDL_Log("GameState: Music not playing, starting it now...");
                 mGameMusic->play();
-                SDL_Log("GameState: Started game music (volume: 50%%)");
             }
             else
             {
-                SDL_Log("GameState: Game music already playing");
+                SDL_Log("GameState: Music already playing - keeping it running");
+            }
+            
+            // Add a small delay then check again
+            SDL_Delay(100);
+            
+            if (mGameMusic->isPlaying())
+            {
+                SDL_Log("GameState: ? Music confirmed playing after delay (volume=100%%)");
+            }
+            else
+            {
+                SDL_LogError(SDL_LOG_CATEGORY_AUDIO, 
+                    "GameState: ? Music STOPPED after delay! This is the problem!");
+                SDL_LogError(SDL_LOG_CATEGORY_AUDIO,
+                    "  The music was playing but stopped during GameState initialization");
+                
+                // Try to restart it
+                SDL_Log("GameState: Attempting to restart music...");
+                mGameMusic->play();
             }
         }
     } catch (const std::exception& e)
@@ -330,6 +351,25 @@ void GameState::updateSounds() noexcept
 
 bool GameState::update(float dt, unsigned int subSteps) noexcept
 {
+    // Periodic music health check
+    static float musicCheckTimer = 0.0f;
+    musicCheckTimer += dt;
+    
+    if (musicCheckTimer >= 5.0f) // Check every 5 seconds
+    {
+        musicCheckTimer = 0.0f;
+        
+        if (mGameMusic)
+        {
+            if (!mGameMusic->isPlaying())
+            {
+                SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
+                    "GameState: Music stopped unexpectedly! Attempting restart...");
+                mGameMusic->play();
+            }
+        }
+    }
+
     mWorld.update(dt);
 
     // Update sphere chunks based on camera position for dynamic spawning

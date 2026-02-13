@@ -3,28 +3,78 @@
 #include <string>
 
 #include <SFML/Audio.hpp>
+#include <SFML/Audio/Listener.hpp>
+
+#include <SDL3/SDL.h>
 
 class MusicPlayer::Impl
 {
 public:
     Impl() : mVolume{100.f}, mLoop{false}
     {
+        SDL_Log("MusicPlayer::Impl constructed");
+        
+        // Ensure SFML global volume is at maximum
+        sf::Listener::setGlobalVolume(100.f);
+        SDL_Log("SFML global audio volume set to 100%%");
     }
 
-    ~Impl() = default;
+    ~Impl()
+    {
+        SDL_Log("MusicPlayer::Impl destroyed");
+    }
 
     bool openFromFile(std::string_view filename)
     {
-        return mMusic.openFromFile(std::string(filename));
+        SDL_Log("MusicPlayer: Attempting to open file: %s", filename.data());
+        bool result = mMusic.openFromFile(std::string(filename));
+
+        if (result)
+        {
+            SDL_Log("MusicPlayer: ? Successfully opened: %s", filename.data());
+            SDL_Log("  Duration: %.2f seconds", mMusic.getDuration().asSeconds());
+        }
+        else
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_AUDIO,
+                "MusicPlayer: ? Failed to open: %s", filename.data());
+        }
+
+        return result;
     }
 
     void play() noexcept
     {
+        SDL_Log("MusicPlayer: play() called");
+        SDL_Log("  Status before play: %d", static_cast<int>(mMusic.getStatus()));
+        SDL_Log("  Sample rate: %u Hz", mMusic.getSampleRate());
+        SDL_Log("  Channel count: %u", mMusic.getChannelCount());
+
         mMusic.play();
+
+        // Check status immediately after
+        auto status = mMusic.getStatus();
+        SDL_Log("  Status after play: %d (0=Stopped, 1=Paused, 2=Playing)",
+            static_cast<int>(status));
+
+        if (status != sf::Music::Status::Playing)
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
+                "MusicPlayer: Music did not start playing!");
+            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
+                "  Possible causes: audio device unavailable or audio system stopped");
+        }
+        else
+        {
+            SDL_Log("MusicPlayer: ? Music playback confirmed (loop=%s, volume=%.1f%%)",
+                mMusic.isLooping() ? "true" : "false",
+                mMusic.getVolume());
+        }
     }
 
     void stop() noexcept
     {
+        SDL_Log("MusicPlayer: stop() called");
         mMusic.stop();
     }
 
@@ -32,12 +82,14 @@ public:
     {
         mVolume = volume;
         mMusic.setVolume(volume);
+        SDL_Log("MusicPlayer: Volume set to %.1f%%", volume);
     }
 
     void setLoop(bool loop) noexcept
     {
         mLoop = loop;
         mMusic.setLooping(loop);
+        SDL_Log("MusicPlayer: Loop set to %s", loop ? "true" : "false");
     }
 
     void setPaused(bool paused) noexcept
@@ -54,7 +106,17 @@ public:
 
     bool isPlaying() const noexcept
     {
-        return mMusic.getStatus() == sf::Music::Status::Playing;
+        auto status = mMusic.getStatus();
+        bool playing = (status == sf::Music::Status::Playing);
+        // Only log on state changes to reduce spam
+        static sf::Music::Status lastLoggedStatus = sf::Music::Status::Stopped;
+        if (status != lastLoggedStatus)
+        {
+            SDL_Log("MusicPlayer: isPlaying() = %s (status=%d)",
+                playing ? "true" : "false", static_cast<int>(status));
+            lastLoggedStatus = status;
+        }
+        return playing;
     }
 
 private:
