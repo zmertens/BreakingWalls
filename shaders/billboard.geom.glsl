@@ -11,8 +11,8 @@ out vec2 TexCoord;
 
 void main()
 {
-    mat4 m = ProjectionMatrix;
-    vec4 pos = gl_in[0].gl_Position;
+    // gl_in[0].gl_Position is in view space (from vertex shader)
+    vec4 viewPos = gl_in[0].gl_Position;
 
     // Flip horizontally by swapping left/right UV coordinates
     float uLeft = TexRect.x + TexRect.z;   // Right edge becomes left
@@ -23,22 +23,22 @@ void main()
     float vBottom = TexRect.y;               // Top becomes bottom
 
     // Bottom-left vertex
-    gl_Position = m * (pos + vec4(-Size2, -Size2, 0.0, 0.0));
+    gl_Position = ProjectionMatrix * (viewPos + vec4(-Size2, -Size2, 0.0, 0.0));
     TexCoord = vec2(uLeft, vBottom);
     EmitVertex();
 
     // Bottom-right vertex
-    gl_Position = m * (pos + vec4(Size2, -Size2, 0.0, 0.0));
+    gl_Position = ProjectionMatrix * (viewPos + vec4(Size2, -Size2, 0.0, 0.0));
     TexCoord = vec2(uRight, vBottom);
     EmitVertex();
 
     // Top-left vertex
-    gl_Position = m * (pos + vec4(-Size2, Size2, 0.0, 0.0));
+    gl_Position = ProjectionMatrix * (viewPos + vec4(-Size2, Size2, 0.0, 0.0));
     TexCoord = vec2(uLeft, vTop);
     EmitVertex();
 
     // Top-right vertex
-    gl_Position = m * (pos + vec4(Size2, Size2, 0.0, 0.0));
+    gl_Position = ProjectionMatrix * (viewPos + vec4(Size2, Size2, 0.0, 0.0));
     TexCoord = vec2(uRight, vTop);
     EmitVertex();
 

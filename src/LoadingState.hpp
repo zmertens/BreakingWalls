@@ -6,16 +6,16 @@
 #include <unordered_map>
 
 #include "State.hpp"
-#include "WorkerConcurrent.hpp"
 
 class StateStack;
-
 union SDL_Event;
+namespace Textures { enum class ID : unsigned int; }
 
 class LoadingState : public State
 {
 public:
     explicit LoadingState(StateStack& stack, State::Context context, std::string_view resourcePath = "");
+    ~LoadingState();
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
@@ -38,7 +38,7 @@ private:
 
     void setCompletion(float percent) noexcept;
 
-    WorkerConcurrent mForeman;
+    class ResourceLoader* mResourceLoader;
 
     bool mHasFinished;
 
