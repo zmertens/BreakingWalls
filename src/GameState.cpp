@@ -347,10 +347,10 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     // Log progress periodically
     if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches) {
         uint32_t totalSamples = mCurrentBatch * mSamplesPerBatch;
-        float progress = static_cast<float>(mCurrentBatch) / static_cast<float>(mTotalBatches) * 100.0f;
-        log("Path tracing progress: " + std::to_string(progress) + " | " +
-            std::to_string(mCurrentBatch) + " / " + std::to_string(mTotalBatches) + " batches | " +
-            std::to_string(totalSamples) + " samples.");
+        // stats
+        // auto progress = static_cast<float>(mCurrentBatch) / static_cast<float>(mTotalBatches) * 100.0f;
+        //log("Progress: " + std::to_string(totalSamples) + " samples (" +
+            //std::to_string(mCurrentBatch) + "/" + std::to_string(mTotalBatches) + " batches)");
     }
 
     return true;

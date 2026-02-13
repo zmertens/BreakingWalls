@@ -196,6 +196,15 @@ struct PhysicsGame::PhysicsGameImpl
 
     void update(const float dt, int subSteps = 4) const noexcept
     {
+#if defined(BREAKING_WALLS_DEBUG)
+        static State* lastState{ nullptr };
+        if (const auto statePtr = stateStack->peekState<State*>(); statePtr != lastState)
+        {
+            lastState = statePtr;
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, statePtr->view().data());
+        }
+#endif
+
         stateStack->update(dt, subSteps);
     }
 

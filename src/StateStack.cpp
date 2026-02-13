@@ -24,8 +24,6 @@ void StateStack::update(float dt, unsigned int subSteps) noexcept
         }
     }
 
-    // ALWAYS apply pending changes, even if stack is currently empty
-    // This is crucial for initial state pushes during startup
     applyPendingChanges();
 }
 

@@ -436,12 +436,10 @@ private:
 /// @param resourcePath ""
 LoadingState::LoadingState(StateStack& stack, Context context, std::string_view resourcePath)
     : State(stack, context)
-    , mResourceLoader(nullptr)
+    , mResourceLoader{ std::make_unique<ResourceLoader>() }
     , mHasFinished{ false }
     , mResourcePath{ resourcePath }
 {
-    // Allocate the ResourceLoader on the heap (will be deleted in destructor or moved to unique_ptr)
-    mResourceLoader = new ResourceLoader();
     mResourceLoader->initThreads();
 
     // Start loading resources in background if path is provided
@@ -452,16 +450,6 @@ LoadingState::LoadingState(StateStack& stack, Context context, std::string_view 
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: No resource path provided\n");
         mHasFinished = true;
-    }
-}
-
-// Destructor
-LoadingState::~LoadingState()
-{
-    if (mResourceLoader)
-    {
-        delete mResourceLoader;
-        mResourceLoader = nullptr;
     }
 }
 
