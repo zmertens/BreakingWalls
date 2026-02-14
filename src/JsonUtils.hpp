@@ -67,6 +67,72 @@ public:
         return result;
     }
 
+    /// @brief Resolve full path for a resource by combining base directory with relative path
+    /// @param basePath Base directory path (may or may not have trailing slash)
+    /// @param relativePath Relative file path (may or may not have leading slash)
+    /// @return Full resolved path
+    [[nodiscard]] static std::string resolveResourcePath(const std::string& basePath, const std::string& relativePath)
+    {
+        if (relativePath.empty())
+        {
+            return "";
+        }
+
+        // If path is already absolute, return as-is
+        if (relativePath.find(":\\") != std::string::npos || 
+            (relativePath.length() >= 2 && relativePath[0] == '/' && relativePath[1] == '/'))
+        {
+            return relativePath;
+        }
+
+        // Build the full path, handling slashes properly
+        std::string result = basePath;
+        
+        // Remove trailing slash from base if present
+        if (!result.empty() && result.back() == '/')
+        {
+            result.pop_back();
+        }
+
+        // Add separator if needed
+        if (relativePath[0] != '/')
+        {
+            result += '/';
+        }
+
+        // Append relative path, removing leading slash if present
+        if (relativePath[0] == '/')
+        {
+            result += relativePath.substr(1);
+        }
+        else
+        {
+            result += relativePath;
+        }
+
+        return result;
+    }
+
+    /// @brief Look up and resolve a resource path from configuration
+    /// @param key Resource key to look up
+    /// @param resources Resource map
+    /// @param resourcePathPrefix Base directory path
+    /// @return Full resolved path, or empty string if key not found
+    [[nodiscard]] static std::string getResourcePath(
+        const std::string& key,
+        const std::unordered_map<std::string, std::string>& resources,
+        const std::string& resourcePathPrefix)
+    {
+        auto it = resources.find(key);
+        if (it == resources.end())
+        {
+            return "";
+        }
+
+        const std::string extractedValue = extractJsonValue(it->second);
+        return resolveResourcePath(resourcePathPrefix, extractedValue);
+    }
+
     static void loadConfiguration(const std::string& configPath, std::unordered_map<std::string, std::string>& resourceMap)
     {
         using std::runtime_error;

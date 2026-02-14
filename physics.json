@@ -2,7 +2,7 @@
 	"window_icon": "textures/icon2.bmp",
     "splash_image": "textures/title.png",
     "ogg_files": ["audio/generate.ogg", "audio/sfx_select.ogg", "audio/sfx_throw.ogg"],
-    "wav_files": ["audio/loading.wav"],
+    "loading_music": "audio/loading.wav",
     "SDL_logo": "textures/SDL_logo.png",
 	"SFML_logo": "textures/SFML_logo.png",
 	"network_url": "http://localhost:3000",

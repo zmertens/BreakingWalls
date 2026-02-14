@@ -41,7 +41,7 @@ namespace JSONKeys
     constexpr std::string_view ENEMY_HITPOINTS_DEFAULT = "enemy_hitpoints_default";
     constexpr std::string_view ENEMY_SPEED_DEFAULT = "enemy_speed_default";
     constexpr std::string_view EXPLOSIONS_SPRITE_SHEET = "explosion_spritesheet";
-    constexpr std::string_view LOADING_WAV = "loading.wav";
+    constexpr std::string_view LOADING_MUSIC = "loading_music";
     constexpr std::string_view LEVEL_DEFAULTS = "level_defaults";
     constexpr std::string_view NETWORK_URL = "network_url";
     constexpr std::string_view OGG_FILES = "ogg_files";
@@ -51,7 +51,6 @@ namespace JSONKeys
     constexpr std::string_view SFML_LOGO = "SFML_logo";
     constexpr std::string_view SPLASH_IMAGE = "splash_image";
     constexpr std::string_view WALL_HORIZONTAL = "wall_horizontal";
-    constexpr std::string_view WAV_FILES = "wav_files";
     constexpr std::string_view WINDOW_ICON = "window_icon";
 }
 
@@ -159,13 +158,31 @@ public:
             mComposedMazeStrings.clear();
         }
 
-        mResourcePathPrefix = mazes::io_utils::getDirectoryPath(std::string(resourcePath)) + "/";
+        // Convert relative path to absolute if needed
+        std::string absolutePath = std::string(resourcePath);
+        if (!std::filesystem::path(absolutePath).is_absolute())
+        {
+            try
+            {
+                absolutePath = std::filesystem::absolute(absolutePath).string();
+            }
+            catch (const std::exception& e)
+            {
+                SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to resolve absolute path: %s\n", e.what());
+                absolutePath = std::string(resourcePath);
+            }
+        }
+
+        mResourcePathPrefix = mazes::io_utils::getDirectoryPath(absolutePath) + "/";
+        
+        SDL_Log("ResourceLoader: Resource path: %s, absolute: %s, prefix: %s\n", 
+            resourcePath.data(), absolutePath.c_str(), mResourcePathPrefix.c_str());
 
         std::unordered_map<std::string, std::string> resources{};
 
         try
         {
-            JSONUtils::loadConfiguration(std::string(resourcePath), resources);
+            JSONUtils::loadConfiguration(absolutePath, resources);
         } catch (const std::exception& e)
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "ResourceLoader: Failed to load resources: %s\n", e.what());
@@ -174,7 +191,7 @@ public:
 
         if (resources.empty())
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "ResourceLoader: No resources found in %s\n", resourcePath.data());
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "ResourceLoader: No resources found in %s\n", absolutePath.c_str());
             return;
         }
 
@@ -219,6 +236,13 @@ public:
     {
         std::unique_lock<std::mutex> lock(mQueueMutex);
         return mResources;
+    }
+
+    /// @brief Get the resource path prefix used by the loader (thread-safe)
+    std::string getResourcePathPrefix() const noexcept
+    {
+        std::unique_lock<std::mutex> lock(mQueueMutex);
+        return mResourcePathPrefix;
     }
 
     /// @brief Get all texture load requests (thread-safe copy)
@@ -425,11 +449,11 @@ private:
             mCondVar.notify_all();
         }
 
-        for (auto& thread : mWorkerThreads)
+        for (auto& t : mWorkerThreads)
         {
-            if (thread.joinable())
+            if (t.joinable())
             {
-                thread.join();
+                t.join();
             }
         }
 
@@ -488,21 +512,19 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
 {
     if (mResourceLoader && !mHasFinished && mResourceLoader->isDone())
     {
-        // Loading is complete - get the loaded resources
-        const auto resources = mResourceLoader->getResources();
-        log("Loading complete! Loaded %zu resources. Loading textures... " +  std::to_string(resources.size()));
+        if (const auto resources = mResourceLoader->getResources(); !resources.empty())
+        {
+            log("Loading complete! Loaded %zu resources. Loading textures... " + std::to_string(resources.size()));
 
-        // Now actually load the textures from the worker-collected texture requests
-        loadTexturesFromWorkerRequests();
+            // Now actually load the textures from the worker-collected texture requests
+            loadTexturesFromWorkerRequests();
+            // Handle window icon separately (special case, not managed by TextureManager)
+            loadWindowIcon(resources);
 
-        // Handle window icon separately (special case, not managed by TextureManager)
-        loadWindowIcon(resources);
+            loadAudio();
+        }
 
         mHasFinished = true;
-        log("All textures loaded! Press any key to continue...\n");
-
-        // Note: State transition is handled by SplashState when user presses a key
-        // SplashState checks isFinished() before allowing transition to MENU
     }
 
     if (mResourceLoader && !mHasFinished)
@@ -535,23 +557,15 @@ bool LoadingState::isFinished() const noexcept { return mHasFinished; }
 /// @param resourcePath Path to the JSON resource configuration
 void LoadingState::loadResources() noexcept
 {
-    log("Loading resources from:\t");
-    log(mResourcePath.c_str());
+    log("Loading resources from:\t" + mResourcePath);
 
-    // This would be called by the application to trigger resource loading
-    // The resources would be loaded by the worker threads and stored
     if (mResourceLoader)
     {
         mResourceLoader->load(mResourcePath);
+        loadFonts();
+        loadLevels();
+        loadShaders();
     }
-
-    loadAudio();
-
-    loadFonts();
-
-    loadLevels();
-
-    loadShaders();
 }
 
 void LoadingState::loadFonts() noexcept
@@ -579,52 +593,52 @@ void LoadingState::loadFonts() noexcept
 void LoadingState::loadAudio() noexcept
 {
     auto& music = *getContext().music;
+    // Use the same resource path prefix that was computed by the ResourceLoader
+    auto resourcePathPrefix = mResourceLoader->getResourcePathPrefix();
+    
+    SDL_Log("LoadingState::loadAudio - resourcePathPrefix: %s\n", resourcePathPrefix.c_str());
 
     try
     {
-        // Load music tracks through the MusicManager
-        // Set volume to 100% for maximum audibility during testing
-        music.load(Music::ID::GAME_MUSIC, std::string_view{"./audio/" + std::string(JSONKeys::LOADING_WAV)}, 100.f, true);
+        const auto resources = mResourceLoader->getResources();
+        const std::string musicPath = JSONUtils::getResourcePath(
+            std::string(JSONKeys::LOADING_MUSIC), resources, resourcePathPrefix);
         
-        SDL_Log("LoadingState: Music resource loaded into manager");
-        
-        // Get reference to the loaded music
-        auto& loadedMusic = music.get(Music::ID::GAME_MUSIC);
-        
-        // Play the music
-        loadedMusic.play();
-        
-        // Small delay to allow SFML audio to start
-        SDL_Delay(50);
-        
-        // Check if it's actually playing
-        if (loadedMusic.isPlaying())
+        if (musicPath.empty())
         {
-            SDL_Log("LoadingState: ? Music is now playing!");
-            log("LoadingState: Music loaded and playing successfully");
+            log("LoadingState: LOADING_MUSIC resource key not found in configuration");
         }
         else
         {
-            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
-                "LoadingState: ? Music loaded but not playing");
-            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
-                "  Possible causes:");
-            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
-                "  - Audio file './audio/loading.wav' doesn't exist or is corrupt");
-            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
-                "  - Audio file format not supported (WAV should work)");
-            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
-                "  - System audio device not available");
+            music.load(Music::ID::GAME_MUSIC,
+                std::string_view{ musicPath },
+                100.f, true);
             
-            log("LoadingState: Music loaded but not playing - check audio file");
+            log("LoadingState: Music resource loaded into manager");
+            
+            // Get reference to the loaded music
+            auto& loadedMusic = music.get(Music::ID::GAME_MUSIC);
+            
+            // Play the music
+            loadedMusic.play();
+            
+            // Small delay to allow SFML audio to start
+            SDL_Delay(50);
+            
+            // Check if it's actually playing
+            if (loadedMusic.isPlaying())
+            {
+                log("LoadingState: Music loaded and playing successfully");
+            }
+            else
+            {
+                log("LoadingState: Music loaded but not playing - check audio file");
+            }
         }
     } 
     catch (const std::exception& e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
-            "LoadingState: Failed to load music: %s", e.what());
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
-            "  Make sure './audio/loading.wav' exists relative to executable");
+        log("LoadingState: Failed to load music: " + std::string(e.what()));
     }
 
     try
@@ -665,8 +679,6 @@ void LoadingState::loadAudio() noexcept
         SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "SDL3 Audio: Test failed: %s", e.what());
         SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "SDL3 Audio: This is okay - SFML audio still works!");
     }
-    
-    SDL_Log("=== End SDL3 Audio Test ===\n");
 
     // Continue with existing sound effects loading...
     auto& soundBuffers = *getContext().soundBuffers;
@@ -767,40 +779,18 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
 {
     auto& textures = *getContext().textures;
 
-    // Get the texture load requests that were collected by worker threads
-    if (!mResourceLoader)
-    {
-        return;
-    }
-
     auto textureRequests = mResourceLoader->getTextureLoadRequests();
 
     SDL_Log("Loading %zu textures on main thread...\n", textureRequests.size());
-
-    // Get the resource directory prefix (same as used for window icon)
-    auto resourcePathPrefix = mazes::io_utils::getDirectoryPath(mResourcePath);
 
     try
     {
         for (const auto& request : textureRequests)
         {
-            // Construct full path: if request.path is relative, prepend resource directory
-            std::string fullPath = request.path;
-
-            // If path starts with '/' or is not absolute, treat as relative to resource directory
-            if (!fullPath.empty() && fullPath[0] == '/')
-            {
-                // Remove leading slash and prepend resource directory
-                fullPath = resourcePathPrefix + fullPath.substr(1);
-            } else if (!std::filesystem::path(fullPath).is_absolute())
-            {
-                // Path is relative, prepend resource directory
-                fullPath = resourcePathPrefix + fullPath;
-            }
-
-            // Use string_view to avoid ambiguity with the overloaded load methods
-            textures.load(request.id, std::string_view(fullPath), 0u);
-            SDL_Log("DEBUG: Loaded texture ID %d from: %s\n", static_cast<int>(request.id), fullPath.c_str());
+            // TextureLoadRequest already has the full path constructed by processTextureRequest
+            // Just use it directly without additional path resolution
+            textures.load(request.id, std::string_view(request.path), 0u);
+            log("Loaded texture ID %d from: " + std::to_string(static_cast<int>(request.id)) + " " + request.path);
         }
     } catch (const std::exception& e)
     {
@@ -812,27 +802,36 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
 {
     using std::string;
 
-    JSONUtils jsonUtils{};
-    auto resourcePathPrefix = mazes::io_utils::getDirectoryPath(mResourcePath);
+    // Use the same resource path prefix that was computed by the ResourceLoader
+    auto resourcePathPrefix = mResourceLoader->getResourcePathPrefix();
+    
+    SDL_Log("LoadingState::loadWindowIcon - resourcePathPrefix: %s\n", resourcePathPrefix.c_str());
 
-    // Window icon is special case, no need to save the texture in the manager
-    if (auto windowIconKey = resources.find(string{ JSONKeys::WINDOW_ICON }); windowIconKey != resources.cend())
+    const string windowIconPath = JSONUtils::getResourcePath(
+        std::string(JSONKeys::WINDOW_ICON), resources, resourcePathPrefix);
+
+    SDL_Log("LoadingState: Window icon lookup - prefix: %s, result path: %s\n", 
+        resourcePathPrefix.c_str(), windowIconPath.c_str());
+
+    if (windowIconPath.empty())
     {
-        string windowIconPath = resourcePathPrefix + JSONUtils::extractJsonValue(windowIconKey->second);
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Window icon resource not found in configuration\n");
+        return;
+    }
 
-        if (SDL_Surface* icon = SDL_LoadBMP(windowIconPath.c_str()); icon != nullptr)
+    if (SDL_Surface* icon = SDL_LoadBMP(windowIconPath.c_str()); icon != nullptr)
+    {
+        if (auto* renderWindow = getContext().window; renderWindow != nullptr)
         {
-            if (auto* renderWindow = getContext().window; renderWindow != nullptr)
-            {
-                SDL_SetWindowIcon(renderWindow->getSDLWindow(), icon);
-                SDL_DestroySurface(icon);
-                log("Loading window icon from:\t");
-                log(windowIconPath.c_str());
-            }
-        } else
-        {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load icon: %s - %s\n", windowIconPath.c_str(),
-                SDL_GetError());
+            SDL_SetWindowIcon(renderWindow->getSDLWindow(), icon);
+            SDL_DestroySurface(icon);
+            log("Loading window icon from:\t");
+            log(windowIconPath.c_str());
+            SDL_Log("LoadingState: Window icon loaded successfully\n");
         }
+    } else
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load icon: %s - %s\n", windowIconPath.c_str(),
+            SDL_GetError());
     }
 }

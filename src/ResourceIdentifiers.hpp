@@ -56,7 +56,7 @@ namespace Shaders
         DISPLAY_QUAD_VERTEX = 0,
         DISPLAY_QUAD_FRAGMENT = 1,
         COMPUTE_PATH_TRACER_COMPUTE = 2,
-        BILLBOARD_SPRITE = 3,  // Billboard shader program (vert + geom + frag)
+        BILLBOARD_SPRITE = 3,
     };
 }
 
