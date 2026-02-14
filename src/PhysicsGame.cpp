@@ -14,6 +14,7 @@
 #include <string_view>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <SDL3/SDL.h>
 
@@ -24,6 +25,8 @@
 #include "Font.hpp"
 #include "GameState.hpp"
 #include "GLSDLHelper.hpp"
+#include "HttpClient.hpp"
+#include "JsonUtils.hpp"
 #include "Level.hpp"
 #include "LoadingState.hpp"
 #include "MenuState.hpp"
@@ -46,6 +49,7 @@
 struct PhysicsGame::PhysicsGameImpl
 {
     Player mPlayer1;
+    HttpClient mHttpClient;
 
     std::unique_ptr<RenderWindow> mRenderWindow;
     std::unique_ptr<StateStack> mStateStack;
@@ -71,15 +75,37 @@ struct PhysicsGame::PhysicsGameImpl
     std::string mResourcePath;
     const int INIT_WINDOW_W, INIT_WINDOW_H;
 
-    PhysicsGameImpl(std::string_view title, int w, int h, std::string_view mResourcePath = "")
-        : mWindowTitle{ title }
-        , mResourcePath{ mResourcePath }
-        , INIT_WINDOW_W{ w }, INIT_WINDOW_H{ h }
-        , mRenderWindow{ nullptr }
-        , mGLSDLHelper{}
-        , mStateStack{ nullptr }
-        , mOptions{ }
-        , mSounds{ nullptr }
+    static std::string resolveNetworkUrl(std::string_view resourcePath)
+    {
+        static constexpr std::string_view fallbackUrl = "http://localhost:3000";
+
+        if (resourcePath.empty())
+        {
+            return std::string{fallbackUrl};
+        }
+
+        std::unordered_map<std::string, std::string> resources;
+        try
+        {
+            JSONUtils::loadConfiguration(std::string(resourcePath), resources);
+        }
+        catch (...)
+        {
+            return std::string{fallbackUrl};
+        }
+
+        auto it = resources.find("network_url");
+        if (it == resources.end())
+        {
+            return std::string{fallbackUrl};
+        }
+
+        const auto url = JSONUtils::extractJsonValue(it->second);
+        return url.empty() ? std::string{fallbackUrl} : url;
+    }
+
+    PhysicsGameImpl(std::string_view title, int w, int h, std::string_view resourcePath = "")
+        : mWindowTitle{title}, mResourcePath{resourcePath}, INIT_WINDOW_W{w}, INIT_WINDOW_H{h}, mRenderWindow{nullptr}, mGLSDLHelper{}, mStateStack{nullptr}, mOptions{}, mSounds{nullptr}, mPlayer1{}, mHttpClient{resolveNetworkUrl(resourcePath)}
     {
         initSDL();
         if (!mGLSDLHelper.mWindow)
@@ -106,8 +132,7 @@ struct PhysicsGame::PhysicsGameImpl
             std::ref(mShaders),
             std::ref(mTextures),
             std::ref(mPlayer1),
-            mResourcePath
-            });
+            std::ref(mHttpClient)});
 
         registerStates();
 
@@ -117,7 +142,7 @@ struct PhysicsGame::PhysicsGameImpl
 
     ~PhysicsGameImpl()
     {
-        if (auto&& sdl = mGLSDLHelper; sdl.mWindow)
+        if (auto &&sdl = mGLSDLHelper; sdl.mWindow)
         {
             mStateStack->clearStates();
 
@@ -148,7 +173,7 @@ struct PhysicsGame::PhysicsGameImpl
         // Initialize ImGui
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
+        ImGuiIO &io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
         // Setup ImGui style
@@ -193,8 +218,8 @@ struct PhysicsGame::PhysicsGameImpl
     void update(const float dt, int subSteps = 4) const noexcept
     {
 #if defined(BREAKING_WALLS_DEBUG)
-        static State* lastState{ nullptr };
-        if (const auto statePtr = mStateStack->peekState<State*>(); statePtr != lastState)
+        static State *lastState{nullptr};
+        if (const auto statePtr = mStateStack->peekState<State *>(); statePtr != lastState)
         {
             lastState = statePtr;
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, statePtr->view().data());
@@ -256,18 +281,18 @@ struct PhysicsGame::PhysicsGameImpl
 
         // Create ImGui overlay mRenderWindow positioned at top-right corner
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 10.0f), ImGuiCond_Always,
-            ImVec2(1.0f, 0.0f));
+                                ImVec2(1.0f, 0.0f));
 
         // Set mRenderWindow background to be semi-transparent
         ImGui::SetNextWindowBgAlpha(0.65f);
 
         // Create mRenderWindow with no title bar, no resize, no move, auto-resize
         constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDecoration |
-            ImGuiWindowFlags_AlwaysAutoResize |
-            ImGuiWindowFlags_NoSavedSettings |
-            ImGuiWindowFlags_NoFocusOnAppearing |
-            ImGuiWindowFlags_NoNav |
-            ImGuiWindowFlags_NoMove;
+                                                 ImGuiWindowFlags_AlwaysAutoResize |
+                                                 ImGuiWindowFlags_NoSavedSettings |
+                                                 ImGuiWindowFlags_NoFocusOnAppearing |
+                                                 ImGuiWindowFlags_NoNav |
+                                                 ImGuiWindowFlags_NoMove;
 
         if (ImGui::Begin("FPS Overlay", nullptr, windowFlags))
         {
@@ -280,16 +305,16 @@ struct PhysicsGame::PhysicsGameImpl
 
 // mResourcePath = ""
 PhysicsGame::PhysicsGame(std::string_view title, int w, int h, std::string_view mResourcePath)
-    : mImpl{ std::make_unique<PhysicsGameImpl>(title, w, h, mResourcePath) }
+    : mImpl{std::make_unique<PhysicsGameImpl>(title, w, h, mResourcePath)}
 {
 }
 
 PhysicsGame::~PhysicsGame() = default;
 
 // Main game loop
-bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomizer& rng) const noexcept
+bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomizer &rng) const noexcept
 {
-    auto&& gamePtr = mImpl;
+    auto &&gamePtr = mImpl;
 
     // Check if initialization succeeded before entering game loop
     if (!gamePtr->mRenderWindow || !gamePtr->mStateStack)
@@ -342,4 +367,3 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
     SDL_Log("Exiting game loop...");
     return true;
 }
-

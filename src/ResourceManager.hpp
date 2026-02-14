@@ -9,6 +9,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <MazeBuilder/configurator.h>
 
@@ -24,7 +25,7 @@ class ResourceManager
 {
 public:
     // Level loading
-    void load(Identifier id, const mazes::configurator& config, bool network);
+    void load(Identifier id, const std::vector<mazes::configurator>& configs, bool appendResults);
 
     // SoundBuffer loading
     void load(Identifier id, std::string_view filename);
@@ -63,22 +64,14 @@ private:
 };
 
 template <typename Resource, typename Identifier>
-void ResourceManager<Resource, Identifier>::load(Identifier id, const mazes::configurator& config, bool network)
+void ResourceManager<Resource, Identifier>::load(Identifier id, const std::vector<mazes::configurator>& configs, bool appendResults)
 {
     // Create and load resource
     auto resource = std::make_unique<Resource>();
 
-    if (network)
+    if (!resource->load(configs, appendResults))
     {
-        if (!resource->loadFromNetwork(config))
-        {
-            throw std::runtime_error("ResourceManager::load - Failed to load from network.");
-        }
-    } else {
-        if (!resource->load(config))
-        {
-            throw std::runtime_error("ResourceManager::load - Failed to load from config.");
-        }
+        throw std::runtime_error("ResourceManager::load - Failed to load from config.");
     }
 
     // If loading successful, insert resource to map

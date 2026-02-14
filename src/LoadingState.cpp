@@ -693,7 +693,9 @@ void LoadingState::loadLevels() noexcept
     {
         using mazes::configurator;
 
-        levels.load(Levels::ID::LEVEL_ONE, configurator().rows(50).columns(50), false);
+        std::vector<configurator> levelConfigs;
+        levelConfigs.push_back(configurator().rows(50).columns(50));
+        levels.load(Levels::ID::LEVEL_ONE, std::cref(levelConfigs), false);
         log("LoadingState: Levels loaded successfully");
     } catch (const std::exception& e)
     {

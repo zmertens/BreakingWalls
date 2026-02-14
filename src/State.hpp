@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include "HttpClient.hpp"
 #include "Loggable.hpp"
 #include "Player.hpp"
 #include "RenderWindow.hpp"
@@ -34,7 +35,7 @@ public:
             ShaderManager& shaders,
             TextureManager& textures,
             Player& player,
-            std::string_view resourcePath);
+            HttpClient& httpClient);
 
         RenderWindow* window;
         FontManager* fonts;
@@ -46,7 +47,7 @@ public:
         ShaderManager* shaders;
         TextureManager* textures;
         Player* player;
-        std::string_view resourcePath;
+        HttpClient* httpClient;
     };
 
     explicit State(StateStack& stack, Context context);

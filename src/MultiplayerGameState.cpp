@@ -6,6 +6,9 @@
 
 #include <cstdint>
 #include <regex>
+#include <future>
+#include <chrono>
+#include <sstream>
 
 #include "GameState.hpp"
 #include "HttpClient.hpp"
@@ -58,6 +61,14 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
         mLocalGame->update(dt, subSteps);
     }
 
+    if (mNetworkReady)
+    {
+        startRegistration();
+        pollRegistration();
+        startDiscovery();
+        pollDiscovery();
+    }
+
     pollNetwork();
     sendLocalState(dt);
 
@@ -93,7 +104,6 @@ void MultiplayerGameState::initializeNetwork()
     }
 
     startListener();
-    discoverPeers();
     mNetworkReady = true;
 }
 
@@ -114,11 +124,92 @@ void MultiplayerGameState::startListener()
     SDL_Log("MultiplayerGameState: Listening on port %u", mLocalPort);
 }
 
-void MultiplayerGameState::discoverPeers()
+void MultiplayerGameState::startRegistration()
 {
-    HttpClient client(mNetworkUrl);
-    const std::string response = client.get("/mazes/networks/data");
+    if (mRegistrationStarted || !getContext().httpClient)
+    {
+        return;
+    }
 
+    mRegistrationStarted = true;
+
+    const std::string playerName = mLocalPlayerName;
+    const unsigned short playerPort = mLocalPort;
+
+    mRegistrationFuture = std::async(std::launch::async,
+        [client = getContext().httpClient, playerName, playerPort]() {
+            if (!client)
+            {
+                return std::string{};
+            }
+
+            std::ostringstream payload;
+            payload << "{"
+                    << "\"player_name\":\"" << playerName << "\""
+                    << ",\"port\":" << playerPort
+                    << "}";
+
+            return client->post("/mazes/networks/data", payload.str());
+        });
+}
+
+void MultiplayerGameState::pollRegistration()
+{
+    if (!mRegistrationStarted || mRegistrationFinished)
+    {
+        return;
+    }
+
+    if (mRegistrationFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+    {
+        return;
+    }
+
+    mRegistrationFinished = true;
+    const std::string response = mRegistrationFuture.get();
+    if (response.empty())
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "MultiplayerGameState: Registration POST returned no data");
+    }
+    else
+    {
+        SDL_Log("MultiplayerGameState: Registration POST succeeded");
+    }
+}
+
+void MultiplayerGameState::startDiscovery()
+{
+    if (mDiscoveryStarted || !getContext().httpClient)
+    {
+        return;
+    }
+
+    mDiscoveryStarted = true;
+    mDiscoveryFuture = std::async(std::launch::async, [client = getContext().httpClient]() {
+        return client ? client->get("/mazes/networks/data") : std::string{};
+    });
+}
+
+void MultiplayerGameState::pollDiscovery()
+{
+    if (!mDiscoveryStarted || mDiscoveryFinished)
+    {
+        return;
+    }
+
+    if (mDiscoveryFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+    {
+        return;
+    }
+
+    mDiscoveryFinished = true;
+    const std::string response = mDiscoveryFuture.get();
+    discoverPeers(response);
+}
+
+void MultiplayerGameState::discoverPeers(const std::string& response)
+{
     if (response.empty())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: No peer data received");
@@ -128,7 +219,7 @@ void MultiplayerGameState::discoverPeers()
     const auto peers = parseActivePlayers(response);
     for (const auto& peer : peers)
     {
-        if (peer.port == 0 || peer.ip == sf::IpAddress::LocalHost)
+        if (peer.port == 0)
         {
             continue;
         }
@@ -282,31 +373,13 @@ void MultiplayerGameState::sendLocalState(float dt)
 
 std::string MultiplayerGameState::loadNetworkUrl() const
 {
-    const auto resourcePath = getContext().resourcePath;
-    if (resourcePath.empty())
+    if (!getContext().httpClient)
     {
         return {};
     }
 
-    std::unordered_map<std::string, std::string> resources;
-    try
-    {
-        JSONUtils::loadConfiguration(std::string(resourcePath), resources);
-    }
-    catch (const std::exception& e)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-            "MultiplayerGameState: Failed to load resource config: %s", e.what());
-        return {};
-    }
-
-    auto it = resources.find(std::string(NETWORK_URL_KEY));
-    if (it == resources.end())
-    {
-        return {};
-    }
-
-    return JSONUtils::extractJsonValue(it->second);
+    const auto hostUrl = getContext().httpClient->getHostURL();
+    return std::string(hostUrl);
 }
 
 std::vector<MultiplayerGameState::PeerInfo> MultiplayerGameState::parseActivePlayers(
@@ -336,10 +409,6 @@ std::vector<MultiplayerGameState::PeerInfo> MultiplayerGameState::parseActivePla
         }
 
         peer.ip = sf::IpAddress::resolve(ipStr).value_or(sf::IpAddress::LocalHost);
-        if (peer.ip == sf::IpAddress::LocalHost)
-        {
-            continue;
-        }
 
         try
         {

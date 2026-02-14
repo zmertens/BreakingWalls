@@ -15,7 +15,7 @@ State::Context::Context(RenderWindow& window,
     SoundPlayer& sounds,
     ShaderManager& shaders,
     TextureManager& textures, Player& player,
-    std::string_view resourcePath)
+    HttpClient& httpClient)
     : window{ &window }
     , fonts{ &fonts }
     , levels{ &levels }
@@ -26,7 +26,7 @@ State::Context::Context(RenderWindow& window,
     , shaders{ &shaders }
     , textures{ &textures }
     , player{ &player }
-    , resourcePath{ resourcePath }
+    , httpClient{ &httpClient }
 {
 
 }

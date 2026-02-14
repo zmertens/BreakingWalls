@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 #include <cstdint>
+#include <future>
 
 class GameState;
 class MusicPlayer;
@@ -43,7 +44,11 @@ private:
 
     void initializeNetwork();
     void startListener();
-    void discoverPeers();
+    void startRegistration();
+    void pollRegistration();
+    void startDiscovery();
+    void pollDiscovery();
+    void discoverPeers(const std::string& response);
     void connectToPeer(const PeerInfo& peer);
     void pollNetwork();
     void handlePacket(sf::Packet& packet);
@@ -59,6 +64,12 @@ private:
     unsigned short mLocalPort{ 0 };
     bool mNetworkReady{ false };
     float mSendAccumulator{ 0.0f };
+    bool mRegistrationStarted{ false };
+    bool mRegistrationFinished{ false };
+    std::future<std::string> mRegistrationFuture;
+    bool mDiscoveryStarted{ false };
+    bool mDiscoveryFinished{ false };
+    std::future<std::string> mDiscoveryFuture;
 
     sf::TcpListener mListener;
     sf::SocketSelector mSelector;

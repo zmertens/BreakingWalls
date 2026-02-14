@@ -8,35 +8,29 @@ class HttpClient
 {
 public:
     /// @brief Constructor
-    /// @param server_url Base URL of the Corners server
-    explicit HttpClient(const std::string& server_url);
-
-    /// @brief Create a new maze via HTTP POST request
-    /// @param rows Number of rows
-    /// @param columns Number of columns
-    /// @param seed Random seed
-    /// @param algorithm Algorithm to use
-    /// @return JSON response from server
-    std::string create_maze(int rows, int columns, int seed, const std::string& algorithm,
-                            const std::string& distances = {"[0:-1]"});
+    /// @param network_data Network data for initializing the HTTP client (e.g. server URL)
+    explicit HttpClient(const std::string& network_data);
 
     /// @brief Issue a GET request and return the response body (empty on failure)
     /// @param path Absolute path on server (e.g. "/mazes/networks/data")
     std::string get(const std::string& path);
 
+    /// @brief Issue a POST request and return the response body (empty on failure)
+    /// @param path Absolute path on server (e.g. "/mazes/networks/data")
+    /// @param body Request payload
+    /// @param contentType MIME type for payload
+    std::string post(
+        const std::string& path,
+        const std::string& body,
+        const std::string& contentType = "application/json");
+
+    std::string_view getHostURL() const noexcept;
+
 private:
     /// @brief Parse server URL and extract host and port
-    void parse_server_url();
+    void parseServerURL() noexcept;
 
-    /// @brief Create JSON payload for maze creation
-    /// @param rows Number of rows
-    /// @param columns Number of columns
-    /// @param seed Random seed
-    /// @param algorithm Algorithm to use
-    /// @return JSON string
-    std::string create_json_payload(int rows, int columns, int seed, const std::string& algorithm,
-                                    const std::string& distances);
-
+    std::string m_network_data;
     std::string m_server_url;
     std::string m_host;
     unsigned short m_port;
