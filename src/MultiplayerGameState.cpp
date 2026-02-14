@@ -11,6 +11,8 @@
 #include <future>
 #include <chrono>
 
+#include <dearimgui/imgui.h>
+
 #include "GameState.hpp"
 #include "HttpClient.hpp"
 #include "JsonUtils.hpp"
@@ -21,9 +23,10 @@
 namespace
 {
     constexpr std::string_view NETWORK_URL_KEY = "network_url";
-    constexpr float NETWORK_SEND_INTERVAL = 0.1f;
-    constexpr float NETWORK_REGISTRATION_INTERVAL = 5.0f;
-    constexpr float NETWORK_DISCOVERY_INTERVAL = 2.0f;
+    constexpr float NETWORK_SEND_INTERVAL = 0.25f;
+    constexpr float NETWORK_REGISTRATION_INTERVAL = 15.0f;
+    constexpr float NETWORK_DISCOVERY_INTERVAL = 5.0f;
+    constexpr float LOBBY_STATUS_INTERVAL = 1.0f;
 
     bool parseJsonStringField(const std::string& src, std::string_view key, std::string& out)
     {
@@ -67,12 +70,13 @@ namespace
         return ip.toString() + ":" + std::to_string(port);
     }
 
-    void logResponseSnippet(const char* label, const std::string& response)
+    std::string makeResponseSnippet(const char* label, const std::string& response)
     {
         const size_t maxLen = 160;
         const size_t len = std::min(response.size(), maxLen);
         const std::string snippet = response.substr(0, len);
-        SDL_Log("MultiplayerGameState: %s (%zu bytes): %s", label, response.size(), snippet.c_str());
+        return std::string("MultiplayerGameState: ") + label +
+            " (" + std::to_string(response.size()) + " bytes): " + snippet;
     }
 }
 
@@ -81,9 +85,9 @@ MultiplayerGameState::MultiplayerGameState(StateStack& stack, Context context)
     , mLocalGame(std::make_unique<GameState>(stack, context))
     , mMusic{ nullptr }
 {
-    SDL_Log("MultiplayerGameState: Constructed");
+    log("MultiplayerGameState: Constructed");
     initializeNetwork();
-    SDL_Log("MultiplayerGameState: Initialized");
+    log("MultiplayerGameState: Initialized");
 }
 
 void MultiplayerGameState::draw() const noexcept
@@ -92,22 +96,64 @@ void MultiplayerGameState::draw() const noexcept
     {
         mLocalGame->draw();
     }
+
+    // Draw lobby status overlay if not ready
+    if (!mLobbyReady)
+    {
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(350, 100), ImGuiCond_Always);
+        ImGui::Begin("Multiplayer Lobby", nullptr,
+            ImGuiWindowFlags_NoTitleBar | 
+            ImGuiWindowFlags_NoResize | 
+            ImGuiWindowFlags_NoMove | 
+            ImGuiWindowFlags_NoCollapse);
+
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "WAITING FOR PLAYERS...");
+        ImGui::Separator();
+        ImGui::Text("Connected: %d / %d", mConnectedPlayerCount, mMinimumPlayers);
+        ImGui::Text("Minimum: %d players", mMinimumPlayers);
+        
+        if (mConnectedPlayerCount < mMinimumPlayers)
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), 
+                "Need %d more player(s)", mMinimumPlayers - mConnectedPlayerCount);
+        }
+
+        ImGui::End();
+    }
 }
 
 bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
 {
     mDebugAccumulator += dt;
-    if (mDebugAccumulator >= 2.0f)
+    if (mDebugAccumulator >= 5.0f)
     {
         mDebugAccumulator = 0.0f;
-        SDL_Log("MultiplayerGameState: Update tick (peers=%zu, sockets=%zu, reg=%d, disc=%d)",
-            mRemotePlayers.size(), mPeerSockets.size(),
-            mRegistrationInFlight ? 1 : 0, mDiscoveryInFlight ? 1 : 0);
+        log("MultiplayerGameState: Update tick (peers=" +
+            std::to_string(mRemotePlayers.size()) +
+            ", sockets=" + std::to_string(mPeerSockets.size()) +
+            ", reg=" + std::to_string(mRegistrationInFlight ? 1 : 0) +
+            ", disc=" + std::to_string(mDiscoveryInFlight ? 1 : 0) + ")");
+    }
+
+    mPacketLogAccumulator += dt;
+    if (mPacketLogAccumulator >= 1.0f)
+    {
+        mPacketLogAccumulator = 0.0f;
+        if (mPacketCount > 0)
+        {
+            log("MultiplayerGameState: Packets received/s=" + std::to_string(mPacketCount));
+        }
+        mPacketCount = 0;
     }
 
     if (mLocalGame)
     {
-        mLocalGame->update(dt, subSteps);
+        // Only update the game if lobby is ready (enough players connected)
+        if (mLobbyReady)
+        {
+            mLocalGame->update(dt, subSteps);
+        }
     }
 
     if (mNetworkReady)
@@ -137,10 +183,24 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
 
         pollRegistration();
         pollDiscovery();
+
+        // Send lobby status periodically
+        mLobbyStatusAccumulator += dt;
+        if (mLobbyStatusAccumulator >= LOBBY_STATUS_INTERVAL)
+        {
+            mLobbyStatusAccumulator = 0.0f;
+            sendLobbyStatus();
+            checkLobbyReady();
+        }
     }
 
     pollNetwork();
-    sendLocalState(dt);
+    
+    // Only send position updates if lobby is ready
+    if (mLobbyReady)
+    {
+        sendLocalState(dt);
+    }
 
     return true;
 }
@@ -169,7 +229,7 @@ void MultiplayerGameState::initializeNetwork()
     mNetworkUrl = loadNetworkUrl();
     if (mNetworkUrl.empty())
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: NETWORK_URL not found");
+        log("WARN: MultiplayerGameState: NETWORK_URL not found");
         return;
     }
 
@@ -185,7 +245,7 @@ bool MultiplayerGameState::startListener()
 {
     if (mListener.listen(0) != sf::Socket::Status::Done)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "MultiplayerGameState: Failed to start listener");
+        log("WARN: MultiplayerGameState: Failed to start listener");
         return false;
     }
 
@@ -195,7 +255,7 @@ bool MultiplayerGameState::startListener()
 
     mSelector.add(mListener);
 
-    SDL_Log("MultiplayerGameState: Listening on port %u", mLocalPort);
+    log("MultiplayerGameState: Listening on port " + std::to_string(mLocalPort));
 
     return true;
 }
@@ -208,7 +268,7 @@ void MultiplayerGameState::startRegistration()
     }
 
     mRegistrationInFlight = true;
-    SDL_Log("MultiplayerGameState: Starting registration POST");
+    log("MultiplayerGameState: Starting registration POST");
 
     const std::string playerName = mLocalPlayerName;
     const unsigned short playerPort = mLocalPort;
@@ -252,25 +312,22 @@ void MultiplayerGameState::pollRegistration()
     }
     catch (const std::exception& e)
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-            "MultiplayerGameState: Registration future error: %s", e.what());
+        log("WARN: MultiplayerGameState: Registration future error: " + std::string(e.what()));
         return;
     }
     catch (...)
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-            "MultiplayerGameState: Registration future error (unknown)");
+        log("WARN: MultiplayerGameState: Registration future error (unknown)");
         return;
     }
     if (response.empty())
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-            "MultiplayerGameState: Registration POST returned no data");
+        log("WARN: MultiplayerGameState: Registration POST returned no data");
         return;
     }
 
     mRegistrationCompleteOnce = true;
-    logResponseSnippet("Registration response", response);
+    log(makeResponseSnippet("Registration response", response));
 }
 
 void MultiplayerGameState::startDiscovery()
@@ -281,7 +338,7 @@ void MultiplayerGameState::startDiscovery()
     }
 
     mDiscoveryInFlight = true;
-    SDL_Log("MultiplayerGameState: Starting discovery GET");
+    log("MultiplayerGameState: Starting discovery GET");
 
     mDiscoveryFuture = std::async(std::launch::async,
         [client = getContext().httpClient]() {
@@ -316,19 +373,17 @@ void MultiplayerGameState::pollDiscovery()
     }
     catch (const std::exception& e)
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-            "MultiplayerGameState: Discovery future error: %s", e.what());
+        log("WARN: MultiplayerGameState: Discovery future error: " + std::string(e.what()));
         return;
     }
     catch (...)
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-            "MultiplayerGameState: Discovery future error (unknown)");
+        log("WARN: MultiplayerGameState: Discovery future error (unknown)");
         return;
     }
     if (!response.empty())
     {
-        logResponseSnippet("Discovery response", response);
+        log(makeResponseSnippet("Discovery response", response));
     }
 
     discoverPeers(response);
@@ -338,13 +393,13 @@ void MultiplayerGameState::discoverPeers(const std::string& response)
 {
     if (response.empty())
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: No peer data received");
+        log("WARN: MultiplayerGameState: No peer data received");
         return;
     }
 
     const auto peers = parseActivePlayers(response);
-    SDL_Log("MultiplayerGameState: Discovery response %zu bytes, %zu peer(s)",
-        response.size(), peers.size());
+    log("MultiplayerGameState: Discovery response " + std::to_string(response.size()) +
+        " bytes, " + std::to_string(peers.size()) + " peer(s)");
     for (const auto& peer : peers)
     {
         if (peer.port == 0)
@@ -365,8 +420,8 @@ void MultiplayerGameState::discoverPeers(const std::string& response)
 
         mKnownPeers.insert(peerKey);
 
-        SDL_Log("MultiplayerGameState: Peer %s @ %s:%u",
-            peer.name.c_str(), peer.ip.toString().c_str(), peer.port);
+        log("MultiplayerGameState: Peer " + peer.name + " @ " +
+            peer.ip.toString() + ":" + std::to_string(peer.port));
         connectToPeer(peer);
     }
 }
@@ -376,14 +431,13 @@ void MultiplayerGameState::connectToPeer(const PeerInfo& peer)
     auto socket = std::make_unique<sf::TcpSocket>();
     socket->setBlocking(true);
 
-    SDL_Log("MultiplayerGameState: Connecting to %s:%u",
-        peer.ip.toString().c_str(), peer.port);
+    log("MultiplayerGameState: Connecting to " + peer.ip.toString() + ":" +
+        std::to_string(peer.port));
 
     if (socket->connect(peer.ip, peer.port, sf::seconds(0.2f)) != sf::Socket::Status::Done)
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-            "MultiplayerGameState: Failed to connect to %s:%u",
-            peer.ip.toString().c_str(), peer.port);
+        log("WARN: MultiplayerGameState: Failed to connect to " +
+            peer.ip.toString() + ":" + std::to_string(peer.port));
         return;
     }
 
@@ -391,7 +445,8 @@ void MultiplayerGameState::connectToPeer(const PeerInfo& peer)
     mSelector.add(*socket);
     mPeerSockets.push_back(std::move(socket));
 
-    SDL_Log("MultiplayerGameState: Connected to %s:%u", peer.ip.toString().c_str(), peer.port);
+    log("MultiplayerGameState: Connected to " + peer.ip.toString() + ":" +
+        std::to_string(peer.port));
 }
 
 void MultiplayerGameState::pollNetwork()
@@ -415,7 +470,7 @@ void MultiplayerGameState::pollNetwork()
         {
             socket->setBlocking(false);
             mPeerSockets.push_back(std::move(socket));
-            SDL_Log("MultiplayerGameState: Accepted incoming connection");
+            log("MultiplayerGameState: Accepted incoming connection");
             continue;
         }
 
@@ -431,7 +486,7 @@ void MultiplayerGameState::pollNetwork()
         if (status == sf::Socket::Status::Done)
         {
             handlePacket(packet);
-            SDL_Log("MultiplayerGameState: Packet received (%zu bytes)", packet.getDataSize());
+            ++mPacketCount;
         }
         else if (status == sf::Socket::Status::Disconnected)
         {
@@ -470,6 +525,22 @@ void MultiplayerGameState::handlePacket(sf::Packet& packet)
             remote.animState = animState;
         }
     }
+    else if (packetType == static_cast<std::int32_t>(Client::LobbyStatus))
+    {
+        std::int32_t playerCount = 0;
+        std::int32_t minPlayers = 0;
+        std::int32_t isReady = 0;
+
+        if (packet >> playerCount >> minPlayers >> isReady)
+        {
+            // Update our understanding of peer lobby state
+            // Could be used to synchronize lobby readiness across peers
+        }
+    }
+    else if (packetType == static_cast<std::int32_t>(Client::LobbyReady))
+    {
+        log("MultiplayerGameState: Received LobbyReady from peer");
+    }
 }
 
 void MultiplayerGameState::sendLocalState(float dt)
@@ -506,9 +577,8 @@ void MultiplayerGameState::sendLocalState(float dt)
         const auto status = socket->send(packet);
         if (status != sf::Socket::Status::Done)
         {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                "MultiplayerGameState: Failed to send packet (status=%d)",
-                static_cast<int>(status));
+            log("WARN: MultiplayerGameState: Failed to send packet (status=" +
+                std::to_string(static_cast<int>(status)) + ")");
         }
     }
 }
@@ -558,4 +628,63 @@ std::vector<MultiplayerGameState::PeerInfo> MultiplayerGameState::parseActivePla
     }
 
     return peers;
+}
+
+void MultiplayerGameState::sendLobbyStatus()
+{
+    if (!mNetworkReady || mPeerSockets.empty())
+    {
+        return;
+    }
+
+    // Count: self + connected peers
+    mConnectedPlayerCount = 1 + static_cast<int>(mPeerSockets.size());
+
+    sf::Packet packet;
+    packet << static_cast<std::int32_t>(Client::LobbyStatus)
+           << static_cast<std::int32_t>(mConnectedPlayerCount)
+           << static_cast<std::int32_t>(mMinimumPlayers)
+           << static_cast<std::int32_t>(mLobbyReady ? 1 : 0);
+
+    for (auto& socket : mPeerSockets)
+    {
+        [[maybe_unused]] auto status = socket->send(packet);
+    }
+}
+
+void MultiplayerGameState::checkLobbyReady()
+{
+    // Count: self + connected peers
+    mConnectedPlayerCount = 1 + static_cast<int>(mPeerSockets.size());
+
+    bool wasReady = mLobbyReady;
+    mLobbyReady = (mConnectedPlayerCount >= mMinimumPlayers);
+
+    if (!wasReady && mLobbyReady)
+    {
+        log("MultiplayerGameState: Lobby ready! Players: " +
+            std::to_string(mConnectedPlayerCount) + "/" +
+            std::to_string(mMinimumPlayers) + " - GAME STARTING");
+
+        // Broadcast ready status
+        sf::Packet packet;
+        packet << static_cast<std::int32_t>(Client::LobbyReady);
+        for (auto& socket : mPeerSockets)
+        {
+            [[maybe_unused]] auto status = socket->send(packet);
+        }
+    }
+    else if (wasReady && !mLobbyReady)
+    {
+        log("MultiplayerGameState: Lobby not ready (player disconnected). Players: " +
+            std::to_string(mConnectedPlayerCount) + "/" +
+            std::to_string(mMinimumPlayers));
+    }
+    else if (!mLobbyReady)
+    {
+        // Periodic waiting message (throttled above)
+        log("MultiplayerGameState: Waiting for players... (" +
+            std::to_string(mConnectedPlayerCount) + "/" +
+            std::to_string(mMinimumPlayers) + ")");
+    }
 }

@@ -54,6 +54,8 @@ private:
     void pollNetwork();
     void handlePacket(sf::Packet& packet);
     void sendLocalState(float dt);
+    void sendLobbyStatus();
+    void checkLobbyReady();
     std::string loadNetworkUrl() const;
     std::vector<PeerInfo> parseActivePlayers(const std::string& json) const;
 
@@ -69,6 +71,8 @@ private:
     float mDiscoveryAccumulator{ 0.0f };
     bool mInitialNetworkSync{ true };
     float mDebugAccumulator{ 0.0f };
+    float mPacketLogAccumulator{ 0.0f };
+    size_t mPacketCount{ 0 };
     bool mRegistrationInFlight{ false };
     bool mDiscoveryInFlight{ false };
     bool mRegistrationCompleteOnce{ false };
@@ -80,6 +84,13 @@ private:
     std::vector<std::unique_ptr<sf::TcpSocket>> mPeerSockets;
     std::unordered_map<std::string, RemotePlayerState> mRemotePlayers;
     std::unordered_set<std::string> mKnownPeers;
+
+    // Lobby state
+    bool mLobbyReady{ false };
+    int mConnectedPlayerCount{ 0 };
+    int mMinimumPlayers{ 2 };  // 2 for debugging, can be changed to 4
+    int mMaximumPlayers{ 4 };
+    float mLobbyStatusAccumulator{ 0.0f };
 
 };
 

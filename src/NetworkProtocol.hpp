@@ -36,7 +36,9 @@ namespace Client
 		RequestCoopPartner,
 		PositionUpdate,
 		GameEvent,
-		Quit
+		Quit,
+		LobbyStatus,        // format: [Int32:packetType] [Int32:playerCount] [Int32:minPlayers] [Int32:isReady]
+		LobbyReady          // format: [Int32:packetType]
 	};
 }
 
