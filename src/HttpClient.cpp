@@ -66,11 +66,16 @@ std::string HttpClient::get(const std::string &path)
         sf::Http::Request request(path, sf::Http::Request::Method::Get);
         request.setHttpVersion(1, 1);
 
-        sf::Http::Response response = http.sendRequest(request);
+        sf::Http::Response response = http.sendRequest(request, sf::seconds(2.0f));
+        const auto status = response.getStatus();
 
-        if (response.getStatus() != sf::Http::Response::Status::Ok)
+        if (status != sf::Http::Response::Status::Ok)
         {
-            return {};
+            std::cout << "HttpClient: GET " << path << " status="
+                      << static_cast<int>(status)
+                      << " bytes=" << response.getBody().size()
+                      << std::endl;
+            return response.getBody();
         }
 
         return response.getBody();
@@ -96,12 +101,16 @@ std::string HttpClient::post(
         request.setField("Content-Length", std::to_string(body.size()));
         request.setBody(body);
 
-        sf::Http::Response response = http.sendRequest(request);
+        sf::Http::Response response = http.sendRequest(request, sf::seconds(2.0f));
         const auto status = response.getStatus();
         if (status != sf::Http::Response::Status::Ok &&
             status != sf::Http::Response::Status::Created)
         {
-            return {};
+            std::cout << "HttpClient: POST " << path << " status="
+                      << static_cast<int>(status)
+                      << " bytes=" << response.getBody().size()
+                      << std::endl;
+            return response.getBody();
         }
 
         return response.getBody();

@@ -10,9 +10,9 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <cstdint>
-#include <future>
 
 class GameState;
 class MusicPlayer;
@@ -43,11 +43,9 @@ private:
     };
 
     void initializeNetwork();
-    void startListener();
-    void startRegistration();
-    void pollRegistration();
-    void startDiscovery();
-    void pollDiscovery();
+    bool startListener();
+    void runRegistration();
+    void runDiscovery();
     void discoverPeers(const std::string& response);
     void connectToPeer(const PeerInfo& peer);
     void pollNetwork();
@@ -64,17 +62,15 @@ private:
     unsigned short mLocalPort{ 0 };
     bool mNetworkReady{ false };
     float mSendAccumulator{ 0.0f };
-    bool mRegistrationStarted{ false };
-    bool mRegistrationFinished{ false };
-    std::future<std::string> mRegistrationFuture;
-    bool mDiscoveryStarted{ false };
-    bool mDiscoveryFinished{ false };
-    std::future<std::string> mDiscoveryFuture;
+    float mRegistrationAccumulator{ 0.0f };
+    float mDiscoveryAccumulator{ 0.0f };
+    bool mInitialNetworkSync{ true };
 
     sf::TcpListener mListener;
     sf::SocketSelector mSelector;
     std::vector<std::unique_ptr<sf::TcpSocket>> mPeerSockets;
     std::unordered_map<std::string, RemotePlayerState> mRemotePlayers;
+    std::unordered_set<std::string> mKnownPeers;
 
 };
 
