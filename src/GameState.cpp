@@ -36,8 +36,8 @@ GameState::GameState(StateStack& stack, Context context)
     auto& shaders = *context.shaders;
     try
     {
-        mDisplayShader = &shaders.get(Shaders::ID::DISPLAY_QUAD_VERTEX);
-        mComputeShader = &shaders.get(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE);
+        mDisplayShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD);
+        mComputeShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_COMPUTE);
         mShadersInitialized = true;
     } catch (const std::exception& e)
     {

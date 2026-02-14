@@ -862,7 +862,7 @@ void World::renderPlayerCharacter(const Player& player, const Camera& camera) co
     Shader* billboardShader = nullptr;
     try
     {
-        billboardShader = &mShaders.get(Shaders::ID::BILLBOARD_SPRITE);
+        billboardShader = &mShaders.get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
     }
     catch (const std::exception& e)
     {

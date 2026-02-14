@@ -12,10 +12,11 @@
 #include <algorithm>
 #include <cctype>
 
-#include <MazeBuilder/io_utils.h>
 #include <MazeBuilder/configurator.h>
 #include <MazeBuilder/create.h>
+#include <MazeBuilder/io_utils.h>
 #include <MazeBuilder/json_helper.h>
+#include <MazeBuilder/singleton_base.h>
 
 #include "Font.hpp"
 #include "JsonUtils.hpp"
@@ -49,6 +50,15 @@ namespace JSONKeys
     constexpr std::string_view PLAYER_SPEED_DEFAULT = "player_speed_default";
     constexpr std::string_view SDL_LOGO = "SDL_logo";
     constexpr std::string_view SFML_LOGO = "SFML_logo";
+    constexpr std::string_view SHADER_BILLBOARD_VERTEX = "shader_billboard_vert_glsl";
+    constexpr std::string_view SHADER_BILLBOARD_FRAGMENT = "shader_billboard_frag_glsl";
+    constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";
+    constexpr std::string_view SHADER_PATHTRACER_COMPUTE = "shader_pathtracer_cs_glsl";
+    constexpr std::string_view SHADER_SCREEN_VERTEX = "shader_screen_vert_glsl";
+    constexpr std::string_view SHADER_SCREEN_FRAGMENT = "shader_screen_frag_glsl";
+    constexpr std::string_view SOUND_GENERATE = "generate_ogg";
+    constexpr std::string_view SOUND_SELECT = "select_ogg";
+    constexpr std::string_view SOUND_THROW = "throw_ogg";
     constexpr std::string_view SPLASH_IMAGE = "splash_image";
     constexpr std::string_view WALL_HORIZONTAL = "wall_horizontal";
     constexpr std::string_view WINDOW_ICON = "window_icon";
@@ -83,8 +93,9 @@ namespace
 }
 
 /// @brief Concurrent resource loader for handling file I/O and configuration parsing in background threads
-class ResourceLoader
+class ResourceLoader : public mazes::singleton_base<ResourceLoader>
 {
+    friend class mazes::singleton_base<ResourceLoader>;
 public:
     /// @brief Represents a texture that needs to be loaded on the main thread
     struct TextureLoadRequest
@@ -318,7 +329,7 @@ private:
 
             mResources[item.key] = item.value;
 
-            if (mProcessedConfigs.contains(item.key))
+            if (auto k = mProcessedConfigs.find(item.key); k != mProcessedConfigs.cend() && k->second)
             {
                 return;
             }
@@ -478,17 +489,24 @@ private:
     const std::vector<std::pair<std::string_view, Textures::ID>> mConfigMappings;
 };
 
+namespace
+{
+    inline ResourceLoader& resourceLoader()
+    {
+        return *mazes::singleton_base<ResourceLoader>::instance();
+    }
+}
+
 ///
 /// @param stack
 /// @param context
 /// @param resourcePath ""
 LoadingState::LoadingState(StateStack& stack, Context context, std::string_view resourcePath)
     : State(stack, context)
-    , mResourceLoader{ std::make_unique<ResourceLoader>() }
     , mHasFinished{ false }
     , mResourcePath{ resourcePath }
 {
-    mResourceLoader->initThreads();
+    resourceLoader().initThreads();
 
     // Start loading resources in background if path is provided
     if (!mResourcePath.empty())
@@ -510,9 +528,9 @@ void LoadingState::draw() const noexcept
 
 bool LoadingState::update(float dt, unsigned int subSteps) noexcept
 {
-    if (mResourceLoader && !mHasFinished && mResourceLoader->isDone())
+    if (!mHasFinished && resourceLoader().isDone())
     {
-        if (const auto resources = mResourceLoader->getResources(); !resources.empty())
+        if (const auto resources = resourceLoader().getResources(); !resources.empty())
         {
             log("Loading complete! Loaded %zu resources. Loading textures... " + std::to_string(resources.size()));
 
@@ -527,9 +545,9 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
         mHasFinished = true;
     }
 
-    if (mResourceLoader && !mHasFinished)
+    if (!mHasFinished)
     {
-        setCompletion(mResourceLoader->getCompletion());
+        setCompletion(resourceLoader().getCompletion());
     }
 
     return true;
@@ -559,9 +577,9 @@ void LoadingState::loadResources() noexcept
 {
     log("Loading resources from:\t" + mResourcePath);
 
-    if (mResourceLoader)
+    if (resourceLoader().isDone())
     {
-        mResourceLoader->load(mResourcePath);
+        resourceLoader().load(mResourcePath);
         loadFonts();
         loadLevels();
         loadShaders();
@@ -594,13 +612,13 @@ void LoadingState::loadAudio() noexcept
 {
     auto& music = *getContext().music;
     // Use the same resource path prefix that was computed by the ResourceLoader
-    auto resourcePathPrefix = mResourceLoader->getResourcePathPrefix();
+    auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
     
     SDL_Log("LoadingState::loadAudio - resourcePathPrefix: %s\n", resourcePathPrefix.c_str());
 
     try
     {
-        const auto resources = mResourceLoader->getResources();
+        const auto resources = resourceLoader().getResources();
         const std::string musicPath = JSONUtils::getResourcePath(
             std::string(JSONKeys::LOADING_MUSIC), resources, resourcePathPrefix);
         
@@ -647,12 +665,19 @@ void LoadingState::loadAudio() noexcept
     try
     {
         log("LoadingState: Loading sound effects...");
+        const auto resources = resourceLoader().getResources();
+        const std::string generatePath = JSONUtils::getResourcePath(
+            std::string(JSONKeys::SOUND_GENERATE), resources, resourcePathPrefix);
+        const std::string selectPath = JSONUtils::getResourcePath(
+            std::string(JSONKeys::SOUND_SELECT), resources, resourcePathPrefix);
+        const std::string throwPath = JSONUtils::getResourcePath(
+            std::string(JSONKeys::SOUND_THROW), resources, resourcePathPrefix);
+
+        soundBuffers.load(SoundEffect::ID::GENERATE, generatePath);
         
-        soundBuffers.load(SoundEffect::ID::GENERATE, "./audio/generate.ogg");
+        soundBuffers.load(SoundEffect::ID::SELECT, selectPath);
         
-        soundBuffers.load(SoundEffect::ID::SELECT, "./audio/sfx_select.ogg");
-        
-        soundBuffers.load(SoundEffect::ID::THROW, "./audio/sfx_throw.ogg");
+        soundBuffers.load(SoundEffect::ID::THROW, throwPath);
     } 
     catch (const std::exception& e)
     {
@@ -682,47 +707,46 @@ void LoadingState::loadShaders() noexcept
 
     try
     {
+        auto&& resources = resourceLoader().getResources();
+        const auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
+
+        const auto shaderPath = [&](std::string_view key) {
+            return JSONUtils::getResourcePath(std::string(key), resources, resourcePathPrefix);
+        };
+
         // Load display shader (vertex + fragment)
         // @TODO connect shader filenames from mResources
         auto displayShader = std::make_unique<Shader>();
-        displayShader->compileAndAttachShader(ShaderType::VERTEX, "./shaders/raytracer.vert.glsl");
-        displayShader->compileAndAttachShader(ShaderType::FRAGMENT, "./shaders/raytracer.frag.glsl");
+        displayShader->compileAndAttachShader(ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SCREEN_VERTEX));
+        displayShader->compileAndAttachShader(ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SCREEN_FRAGMENT));
         displayShader->linkProgram();
 
         log("LoadingState: Display shader compiled and linked");
-        log(displayShader->getGlslUniforms().c_str());
-        log("\n");
-        log(displayShader->getGlslAttribs().c_str());
-        log("\n");
 
         // Insert display shader into manager (using vertex ID as the combined shader program ID)
-        shaders.insert(Shaders::ID::DISPLAY_QUAD_VERTEX, std::move(displayShader));
+        shaders.insert(Shaders::ID::GLSL_FULLSCREEN_QUAD, std::move(displayShader));
 
         // Load compute shader for path tracing
         auto computeShader = std::make_unique<Shader>();
-        computeShader->compileAndAttachShader(ShaderType::COMPUTE, "./shaders/pathtracer.cs.glsl");
+        computeShader->compileAndAttachShader(ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PATHTRACER_COMPUTE));
         computeShader->linkProgram();
 
         log("LoadingState: Compute shader compiled and linked");
-        log(computeShader->getGlslUniforms().c_str());
-        log("\n");
 
         // Insert compute shader into manager
-        shaders.insert(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE, std::move(computeShader));
+        shaders.insert(Shaders::ID::GLSL_PATH_TRACER_COMPUTE, std::move(computeShader));
 
         // Load billboard shader for character sprites (vertex + geometry + fragment)
         auto billboardShader = std::make_unique<Shader>();
-        billboardShader->compileAndAttachShader(ShaderType::VERTEX, "./shaders/billboard.vert.glsl");
-        billboardShader->compileAndAttachShader(ShaderType::GEOMETRY, "./shaders/billboard.geom.glsl");
-        billboardShader->compileAndAttachShader(ShaderType::FRAGMENT, "./shaders/billboard.frag.glsl");
+        billboardShader->compileAndAttachShader(ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_BILLBOARD_VERTEX));
+        billboardShader->compileAndAttachShader(ShaderType::GEOMETRY, shaderPath(JSONKeys::SHADER_BILLBOARD_GEOMETRY));
+        billboardShader->compileAndAttachShader(ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_BILLBOARD_FRAGMENT));
         billboardShader->linkProgram();
 
         log("LoadingState: Billboard shader compiled and linked");
-        log(billboardShader->getGlslUniforms().c_str());
-        log("\n");
 
         // Insert billboard shader into manager
-        shaders.insert(Shaders::ID::BILLBOARD_SPRITE, std::move(billboardShader));
+        shaders.insert(Shaders::ID::GLSL_BILLBOARD_SPRITE, std::move(billboardShader));
 
         log("LoadingState: All shaders loaded successfully");
     } catch (const std::exception& e)
@@ -735,7 +759,7 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
 {
     auto& textures = *getContext().textures;
 
-    auto textureRequests = mResourceLoader->getTextureLoadRequests();
+    auto textureRequests = resourceLoader().getTextureLoadRequests();
 
     SDL_Log("Loading %zu textures on main thread...\n", textureRequests.size());
 
@@ -759,7 +783,7 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
     using std::string;
 
     // Use the same resource path prefix that was computed by the ResourceLoader
-    auto resourcePathPrefix = mResourceLoader->getResourcePathPrefix();
+    auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
     
     SDL_Log("LoadingState::loadWindowIcon - resourcePathPrefix: %s\n", resourcePathPrefix.c_str());
 

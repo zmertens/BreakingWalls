@@ -28,8 +28,8 @@ SplashState::SplashState(StateStack& stack, Context context)
 
     // Get shaders from context
     auto& shaders = *context.shaders;
-    mDisplayShader = &shaders.get(Shaders::ID::DISPLAY_QUAD_VERTEX);
-    mComputeShader = &shaders.get(Shaders::ID::COMPUTE_PATH_TRACER_COMPUTE);
+    mDisplayShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD);
+    mComputeShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_COMPUTE);
     mShadersInitialized = true;
 
     // Trigger initial chunk load

@@ -7,7 +7,6 @@
 
 #include "State.hpp"
 
-class ResourceLoader;
 class StateStack;
 union SDL_Event;
 namespace Textures { enum class ID : unsigned int; }
@@ -38,11 +37,9 @@ private:
 
     void setCompletion(float percent) noexcept;
 
-    std::unique_ptr<ResourceLoader> mResourceLoader;
-
     bool mHasFinished;
 
-    std::string mResourcePath;
+    const std::string mResourcePath;
 };
 
 #endif // LOADING_STATE_HPP

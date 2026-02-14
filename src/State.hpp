@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <string>
-#include <string_view>.
+#include <string_view>
 
 #include "Loggable.hpp"
 #include "Player.hpp"
