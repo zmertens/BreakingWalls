@@ -17,6 +17,7 @@
 #include "ResourceIdentifiers.hpp"
 #include "View.hpp"
 #include "Material.hpp"
+#include "Animation.hpp"
 
 class Camera;
 class Player;
@@ -53,6 +54,14 @@ public:
     /// @param player Player with animation state
     /// @param camera Camera for view/projection matrices
     void renderPlayerCharacter(const Player& player, const Camera& camera) const noexcept;
+
+    /// Render a character from raw state data (for remote players)
+    /// @param position World position of character
+    /// @param facing Facing direction in degrees
+    /// @param frame Animation frame to render
+    /// @param camera Camera for view/projection matrices
+    void renderCharacterFromState(const glm::vec3& position, float facing, 
+                                    const AnimationRect& frame, const Camera& camera) const noexcept;
 
     /// Get the character sprite sheet texture (for external rendering)
     [[nodiscard]] const Texture* getCharacterSpriteSheet() const noexcept;

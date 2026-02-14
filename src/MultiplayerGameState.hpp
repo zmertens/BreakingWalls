@@ -2,6 +2,7 @@
 #define MULTIPLAYER_GAME_STATE_HPP
 
 #include "State.hpp"
+#include "Animation.hpp"
 
 #include <SFML/Network.hpp>
 
@@ -41,6 +42,8 @@ private:
         float facing{ 0.0f };
         bool moving{ false };
         std::uint8_t animState{ 0 };
+        CharacterAnimator animator;
+        bool initialized{ false };
     };
 
     void initializeNetwork();

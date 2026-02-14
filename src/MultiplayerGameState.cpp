@@ -95,6 +95,35 @@ void MultiplayerGameState::draw() const noexcept
     if (mLocalGame)
     {
         mLocalGame->draw();
+        
+        // Render remote players if lobby is ready
+        if (mLobbyReady && !mRemotePlayers.empty())
+        {
+            // Prepare for 3D rendering (clear depth after path tracer)
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glDepthFunc(GL_LESS);
+            glDepthMask(GL_TRUE);
+            glEnable(GL_DEPTH_TEST);
+            
+            // Get World and Camera from local game
+            auto& world = mLocalGame->getWorld();
+            const auto& camera = mLocalGame->getCamera();
+            
+            // Render each remote player
+            for (const auto& [playerName, remoteState] : mRemotePlayers)
+            {
+                if (remoteState.initialized)
+                {
+                    AnimationRect frame = remoteState.animator.getCurrentFrame();
+                    world.renderCharacterFromState(
+                        remoteState.position,
+                        remoteState.facing,
+                        frame,
+                        camera
+                    );
+                }
+            }
+        }
     }
 
     // Draw lobby status overlay if not ready
@@ -195,6 +224,15 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
     }
 
     pollNetwork();
+    
+    // Update remote player animations
+    for (auto& [playerName, remoteState] : mRemotePlayers)
+    {
+        if (remoteState.initialized)
+        {
+            remoteState.animator.update();
+        }
+    }
     
     // Only send position updates if lobby is ready
     if (mLobbyReady)
@@ -523,6 +561,36 @@ void MultiplayerGameState::handlePacket(sf::Packet& packet)
             remote.facing = facing;
             remote.moving = (moving != 0);
             remote.animState = animState;
+            
+            // Initialize animator on first packet
+            if (!remote.initialized)
+            {
+                remote.animator.initialize(0);  // Character index 0
+                remote.initialized = true;
+            }
+            
+            // Update animator state based on movement
+            if (remote.moving)
+            {
+                remote.animator.setState(CharacterAnimState::WALK_FORWARD);
+            }
+            else
+            {
+                remote.animator.setState(CharacterAnimState::IDLE);
+            }
+            
+            // Update animator position and rotation
+            remote.animator.setPosition(remote.position);
+            remote.animator.setRotation(remote.facing);
+            
+            // Debug log for first position update from each player
+            static std::unordered_set<std::string> loggedPlayers;
+            if (loggedPlayers.find(name) == loggedPlayers.end())
+            {
+                loggedPlayers.insert(name);
+                log("MultiplayerGameState: First position update from " + name + 
+                    " at (" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")");
+            }
         }
     }
     else if (packetType == static_cast<std::int32_t>(Client::LobbyStatus))

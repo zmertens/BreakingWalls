@@ -1,12 +1,13 @@
 #include "World.hpp"
 
+#include "Animation.hpp"
+#include "Camera.hpp"
 #include "JsonUtils.hpp"
+#include "Material.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceManager.hpp"
-#include "Texture.hpp"
-
 #include "Sphere.hpp"
-#include "Material.hpp"
+#include "Texture.hpp"
 
 #include <MazeBuilder/maze_builder.h>
 
@@ -922,6 +923,61 @@ void World::renderPlayerCharacter(const Player& player, const Camera& camera) co
         spriteSheet->get(),
         frame,
         playerPos,
+        halfSize,
+        viewMatrix,
+        projMatrix,
+        spriteSheet->getWidth(),
+        spriteSheet->getHeight()
+    );
+}
+
+void World::renderCharacterFromState(const glm::vec3& position, float facing, 
+                                       const AnimationRect& frame, const Camera& camera) const noexcept
+{
+    // Only render in third-person mode (or always for remote players)
+    // For remote players, we always want to render them
+    
+    // Get the character sprite sheet texture
+    const Texture* spriteSheet = getCharacterSpriteSheet();
+    if (!spriteSheet || spriteSheet->get() == 0)
+    {
+        return;
+    }
+
+    // Get billboard shader
+    Shader* billboardShader = nullptr;
+    try
+    {
+        billboardShader = &mShaders.get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
+    }
+    catch (const std::exception&)
+    {
+        return;
+    }
+
+    // Billboard half-size
+    float halfSize = 3.0f;
+
+    // Get window dimensions
+    int windowWidth = 1280;
+    int windowHeight = 720;
+    SDL_Window* sdlWindow = mWindow.getSDLWindow();
+    if (sdlWindow)
+    {
+        SDL_GetWindowSize(sdlWindow, &windowWidth, &windowHeight);
+    }
+
+    // Get view and projection matrices from camera
+    float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+    glm::mat4 viewMatrix = camera.getLookAt();
+    glm::mat4 projMatrix = camera.getPerspective(aspectRatio);
+
+    // Render the character as a billboard sprite
+    GLSDLHelper::renderBillboardSprite(
+        *billboardShader,
+        spriteSheet->get(),
+        frame,
+        position,
         halfSize,
         viewMatrix,
         projMatrix,

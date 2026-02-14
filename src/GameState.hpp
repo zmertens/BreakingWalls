@@ -27,6 +27,14 @@ public:
     bool update(float dt, unsigned int subSteps) noexcept override;
     bool handleEvent(const SDL_Event& event) noexcept override;
 
+    /// Get reference to World (for multiplayer remote player rendering)
+    World& getWorld() noexcept { return mWorld; }
+    const World& getWorld() const noexcept { return mWorld; }
+
+    /// Get reference to Camera (for multiplayer rendering)
+    Camera& getCamera() noexcept { return mCamera; }
+    const Camera& getCamera() const noexcept { return mCamera; }
+
 private:
     World mWorld;  // Manages both 2D physics and 3D sphere scene
     Player& mPlayer;  // Restored for camera input handling
