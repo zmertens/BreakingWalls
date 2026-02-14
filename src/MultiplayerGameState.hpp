@@ -13,6 +13,7 @@
 #include <unordered_set>
 #include <vector>
 #include <cstdint>
+#include <future>
 
 class GameState;
 class MusicPlayer;
@@ -44,8 +45,10 @@ private:
 
     void initializeNetwork();
     bool startListener();
-    void runRegistration();
-    void runDiscovery();
+    void startRegistration();
+    void pollRegistration();
+    void startDiscovery();
+    void pollDiscovery();
     void discoverPeers(const std::string& response);
     void connectToPeer(const PeerInfo& peer);
     void pollNetwork();
@@ -65,6 +68,12 @@ private:
     float mRegistrationAccumulator{ 0.0f };
     float mDiscoveryAccumulator{ 0.0f };
     bool mInitialNetworkSync{ true };
+    float mDebugAccumulator{ 0.0f };
+    bool mRegistrationInFlight{ false };
+    bool mDiscoveryInFlight{ false };
+    bool mRegistrationCompleteOnce{ false };
+    std::future<std::string> mRegistrationFuture;
+    std::future<std::string> mDiscoveryFuture;
 
     sf::TcpListener mListener;
     sf::SocketSelector mSelector;

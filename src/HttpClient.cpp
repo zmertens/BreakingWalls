@@ -36,6 +36,10 @@ void HttpClient::parseServerURL() noexcept
     if (regex_match(m_network_data, matches, url_regex))
     {
         m_host = matches[1].str();
+        if (m_host == "localhost")
+        {
+            m_host = "127.0.0.1";
+        }
         if (matches.size() > 2 && matches[2].matched)
         {
             try
@@ -53,6 +57,10 @@ void HttpClient::parseServerURL() noexcept
     {
         cout << "HttpClient: Invalid URL format: " << m_network_data << endl;
         m_host = m_network_data;
+        if (m_host == "localhost")
+        {
+            m_host = "127.0.0.1";
+        }
         m_port = 80;
     }
 }
@@ -61,17 +69,21 @@ std::string HttpClient::get(const std::string &path)
 {
     try
     {
+        std::cout << "HttpClient: GET http://" << m_host << ":" << m_port << path
+                  << std::endl;
         sf::Http http(m_host, m_port);
 
         sf::Http::Request request(path, sf::Http::Request::Method::Get);
-        request.setHttpVersion(1, 1);
+        request.setHttpVersion(1, 0);
+        request.setField("Connection", "close");
 
-        sf::Http::Response response = http.sendRequest(request, sf::seconds(2.0f));
+        sf::Http::Response response = http.sendRequest(request, sf::seconds(0.5f));
         const auto status = response.getStatus();
 
         if (status != sf::Http::Response::Status::Ok)
         {
-            std::cout << "HttpClient: GET " << path << " status="
+            std::cout << "HttpClient: GET http://" << m_host << ":" << m_port << path
+                      << " status="
                       << static_cast<int>(status)
                       << " bytes=" << response.getBody().size()
                       << std::endl;
@@ -93,20 +105,24 @@ std::string HttpClient::post(
 {
     try
     {
+        std::cout << "HttpClient: POST http://" << m_host << ":" << m_port << path
+                  << std::endl;
         sf::Http http(m_host, m_port);
 
         sf::Http::Request request(path, sf::Http::Request::Method::Post);
-        request.setHttpVersion(1, 1);
+        request.setHttpVersion(1, 0);
+        request.setField("Connection", "close");
         request.setField("Content-Type", contentType);
         request.setField("Content-Length", std::to_string(body.size()));
         request.setBody(body);
 
-        sf::Http::Response response = http.sendRequest(request, sf::seconds(2.0f));
+        sf::Http::Response response = http.sendRequest(request, sf::seconds(0.5f));
         const auto status = response.getStatus();
         if (status != sf::Http::Response::Status::Ok &&
             status != sf::Http::Response::Status::Created)
         {
-            std::cout << "HttpClient: POST " << path << " status="
+            std::cout << "HttpClient: POST http://" << m_host << ":" << m_port << path
+                      << " status="
                       << static_cast<int>(status)
                       << " bytes=" << response.getBody().size()
                       << std::endl;

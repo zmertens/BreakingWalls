@@ -8,6 +8,8 @@
 #include <regex>
 #include <sstream>
 #include <algorithm>
+#include <future>
+#include <chrono>
 
 #include "GameState.hpp"
 #include "HttpClient.hpp"
@@ -79,7 +81,9 @@ MultiplayerGameState::MultiplayerGameState(StateStack& stack, Context context)
     , mLocalGame(std::make_unique<GameState>(stack, context))
     , mMusic{ nullptr }
 {
+    SDL_Log("MultiplayerGameState: Constructed");
     initializeNetwork();
+    SDL_Log("MultiplayerGameState: Initialized");
 }
 
 void MultiplayerGameState::draw() const noexcept
@@ -92,6 +96,15 @@ void MultiplayerGameState::draw() const noexcept
 
 bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
 {
+    mDebugAccumulator += dt;
+    if (mDebugAccumulator >= 2.0f)
+    {
+        mDebugAccumulator = 0.0f;
+        SDL_Log("MultiplayerGameState: Update tick (peers=%zu, sockets=%zu, reg=%d, disc=%d)",
+            mRemotePlayers.size(), mPeerSockets.size(),
+            mRegistrationInFlight ? 1 : 0, mDiscoveryInFlight ? 1 : 0);
+    }
+
     if (mLocalGame)
     {
         mLocalGame->update(dt, subSteps);
@@ -102,25 +115,28 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
         if (mInitialNetworkSync)
         {
             mInitialNetworkSync = false;
-            runRegistration();
-            runDiscovery();
+            startRegistration();
         }
 
         mRegistrationAccumulator += dt;
         if (mRegistrationAccumulator >= NETWORK_REGISTRATION_INTERVAL)
         {
             mRegistrationAccumulator = 0.0f;
-            runRegistration();
+            startRegistration();
         }
 
-        mDiscoveryAccumulator += dt;
-        if (mDiscoveryAccumulator >= NETWORK_DISCOVERY_INTERVAL)
+        if (mRegistrationCompleteOnce)
         {
-            mDiscoveryAccumulator = 0.0f;
-            runDiscovery();
+            mDiscoveryAccumulator += dt;
+            if (mDiscoveryAccumulator >= NETWORK_DISCOVERY_INTERVAL)
+            {
+                mDiscoveryAccumulator = 0.0f;
+                startDiscovery();
+            }
         }
 
-        // Removed async handlers
+        pollRegistration();
+        pollDiscovery();
     }
 
     pollNetwork();
@@ -184,13 +200,14 @@ bool MultiplayerGameState::startListener()
     return true;
 }
 
-void MultiplayerGameState::runRegistration()
+void MultiplayerGameState::startRegistration()
 {
-    if (!getContext().httpClient)
+    if (mRegistrationInFlight || mDiscoveryInFlight || !getContext().httpClient)
     {
         return;
     }
 
+    mRegistrationInFlight = true;
     SDL_Log("MultiplayerGameState: Starting registration POST");
 
     const std::string playerName = mLocalPlayerName;
@@ -202,33 +219,118 @@ void MultiplayerGameState::runRegistration()
             << ",\"port\":" << playerPort
             << "}";
 
-    const std::string response = getContext().httpClient->post(
-        "/mazes/networks/data", payload.str());
-    if (response.empty())
-    {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-            "MultiplayerGameState: Registration POST returned no data");
-    }
-    else
-    {
-        logResponseSnippet("Registration response", response);
-    }
+    mRegistrationFuture = std::async(std::launch::async,
+        [client = getContext().httpClient, body = payload.str()]() {
+            try
+            {
+                return client ? client->post("/mazes/networks/data", body) : std::string{};
+            }
+            catch (...)
+            {
+                return std::string{};
+            }
+        });
 }
 
-void MultiplayerGameState::runDiscovery()
+void MultiplayerGameState::pollRegistration()
 {
-    if (!getContext().httpClient)
+    if (!mRegistrationInFlight)
     {
         return;
     }
 
+    if (mRegistrationFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+    {
+        return;
+    }
+
+    mRegistrationInFlight = false;
+    std::string response;
+    try
+    {
+        response = mRegistrationFuture.get();
+    }
+    catch (const std::exception& e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "MultiplayerGameState: Registration future error: %s", e.what());
+        return;
+    }
+    catch (...)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "MultiplayerGameState: Registration future error (unknown)");
+        return;
+    }
+    if (response.empty())
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "MultiplayerGameState: Registration POST returned no data");
+        return;
+    }
+
+    mRegistrationCompleteOnce = true;
+    logResponseSnippet("Registration response", response);
+}
+
+void MultiplayerGameState::startDiscovery()
+{
+    if (mDiscoveryInFlight || mRegistrationInFlight || !getContext().httpClient)
+    {
+        return;
+    }
+
+    mDiscoveryInFlight = true;
     SDL_Log("MultiplayerGameState: Starting discovery GET");
 
-    const std::string response = getContext().httpClient->get("/mazes/networks/data");
+    mDiscoveryFuture = std::async(std::launch::async,
+        [client = getContext().httpClient]() {
+            try
+            {
+                return client ? client->get("/mazes/networks/data") : std::string{};
+            }
+            catch (...)
+            {
+                return std::string{};
+            }
+        });
+}
+
+void MultiplayerGameState::pollDiscovery()
+{
+    if (!mDiscoveryInFlight)
+    {
+        return;
+    }
+
+    if (mDiscoveryFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+    {
+        return;
+    }
+
+    mDiscoveryInFlight = false;
+    std::string response;
+    try
+    {
+        response = mDiscoveryFuture.get();
+    }
+    catch (const std::exception& e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "MultiplayerGameState: Discovery future error: %s", e.what());
+        return;
+    }
+    catch (...)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "MultiplayerGameState: Discovery future error (unknown)");
+        return;
+    }
     if (!response.empty())
     {
         logResponseSnippet("Discovery response", response);
     }
+
     discoverPeers(response);
 }
 
@@ -304,42 +406,37 @@ void MultiplayerGameState::pollNetwork()
         return;
     }
 
-    if (!mSelector.wait(sf::milliseconds(0)))
-    {
-        return;
-    }
-
-    if (mSelector.isReady(mListener))
+    // Accept any pending connections (non-blocking listener)
+    while (true)
     {
         auto socket = std::make_unique<sf::TcpSocket>();
-        if (mListener.accept(*socket) == sf::Socket::Status::Done)
+        const auto status = mListener.accept(*socket);
+        if (status == sf::Socket::Status::Done)
         {
             socket->setBlocking(false);
-            mSelector.add(*socket);
             mPeerSockets.push_back(std::move(socket));
             SDL_Log("MultiplayerGameState: Accepted incoming connection");
+            continue;
         }
+
+        break;
     }
 
     for (auto it = mPeerSockets.begin(); it != mPeerSockets.end();)
     {
         sf::TcpSocket& socket = *(*it);
-        if (mSelector.isReady(socket))
-        {
-            sf::Packet packet;
-            const auto status = socket.receive(packet);
+        sf::Packet packet;
+        const auto status = socket.receive(packet);
 
-            if (status == sf::Socket::Status::Done)
-            {
-                handlePacket(packet);
-                SDL_Log("MultiplayerGameState: Packet received (%zu bytes)", packet.getDataSize());
-            }
-            else if (status == sf::Socket::Status::Disconnected)
-            {
-                mSelector.remove(socket);
-                it = mPeerSockets.erase(it);
-                continue;
-            }
+        if (status == sf::Socket::Status::Done)
+        {
+            handlePacket(packet);
+            SDL_Log("MultiplayerGameState: Packet received (%zu bytes)", packet.getDataSize());
+        }
+        else if (status == sf::Socket::Status::Disconnected)
+        {
+            it = mPeerSockets.erase(it);
+            continue;
         }
 
         ++it;
