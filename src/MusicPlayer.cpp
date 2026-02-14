@@ -11,53 +11,33 @@ class MusicPlayer::Impl
 {
 public:
     Impl() : mVolume{100.f}, mLoop{false}
-    {
-        SDL_Log("MusicPlayer::Impl constructed");
-        
+    {        
         // Ensure SFML global volume is at maximum
         sf::Listener::setGlobalVolume(100.f);
         SDL_Log("SFML global audio volume set to 100%%");
     }
 
-    ~Impl()
-    {
-        SDL_Log("MusicPlayer::Impl destroyed");
-    }
-
     bool openFromFile(std::string_view filename)
     {
-        SDL_Log("MusicPlayer: Attempting to open file: %s", filename.data());
-        bool result = mMusic.openFromFile(std::string(filename));
-
-        if (result)
+        if (auto result = mMusic.openFromFile(std::string(filename)))
         {
             SDL_Log("MusicPlayer: ? Successfully opened: %s", filename.data());
             SDL_Log("  Duration: %.2f seconds", mMusic.getDuration().asSeconds());
+            return true;
         }
         else
         {
             SDL_LogError(SDL_LOG_CATEGORY_AUDIO,
                 "MusicPlayer: ? Failed to open: %s", filename.data());
         }
-
-        return result;
+        return false;
     }
 
     void play() noexcept
     {
-        SDL_Log("MusicPlayer: play() called");
-        SDL_Log("  Status before play: %d", static_cast<int>(mMusic.getStatus()));
-        SDL_Log("  Sample rate: %u Hz", mMusic.getSampleRate());
-        SDL_Log("  Channel count: %u", mMusic.getChannelCount());
-
         mMusic.play();
 
-        // Check status immediately after
-        auto status = mMusic.getStatus();
-        SDL_Log("  Status after play: %d (0=Stopped, 1=Paused, 2=Playing)",
-            static_cast<int>(status));
-
-        if (status != sf::Music::Status::Playing)
+        if (mMusic.getStatus() != sf::Music::Status::Playing)
         {
             SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
                 "MusicPlayer: Music did not start playing!");

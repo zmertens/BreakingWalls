@@ -32,6 +32,29 @@
 #include <fonts/Limelight_Regular.h>
 #include <fonts/nunito_sans.h>
 
+// Resource Keys
+namespace JSONKeys
+{
+    constexpr std::string_view CHARACTER_IMAGE = "character_default_image";
+    constexpr std::string_view CHARACTERS_SPRITE_SHEET = "characters_spritesheet";
+    constexpr std::string_view BALL_NORMAL = "ball_normal";
+    constexpr std::string_view ENEMY_HITPOINTS_DEFAULT = "enemy_hitpoints_default";
+    constexpr std::string_view ENEMY_SPEED_DEFAULT = "enemy_speed_default";
+    constexpr std::string_view EXPLOSIONS_SPRITE_SHEET = "explosion_spritesheet";
+    constexpr std::string_view LOADING_WAV = "loading.wav";
+    constexpr std::string_view LEVEL_DEFAULTS = "level_defaults";
+    constexpr std::string_view NETWORK_URL = "network_url";
+    constexpr std::string_view OGG_FILES = "ogg_files";
+    constexpr std::string_view PLAYER_HITPOINTS_DEFAULT = "player_hitpoints_default";
+    constexpr std::string_view PLAYER_SPEED_DEFAULT = "player_speed_default";
+    constexpr std::string_view SDL_LOGO = "SDL_logo";
+    constexpr std::string_view SFML_LOGO = "SFML_logo";
+    constexpr std::string_view SPLASH_IMAGE = "splash_image";
+    constexpr std::string_view WALL_HORIZONTAL = "wall_horizontal";
+    constexpr std::string_view WAV_FILES = "wav_files";
+    constexpr std::string_view WINDOW_ICON = "window_icon";
+}
+
 namespace
 {
     /// @brief Represents a single resource loading work item
@@ -514,7 +537,6 @@ void LoadingState::loadResources() noexcept
 {
     log("Loading resources from:\t");
     log(mResourcePath.c_str());
-    log("\n");
 
     // This would be called by the application to trigger resource loading
     // The resources would be loaded by the worker threads and stored
@@ -561,18 +583,13 @@ void LoadingState::loadAudio() noexcept
     try
     {
         // Load music tracks through the MusicManager
-        SDL_Log("LoadingState: Attempting to load music from: ./audio/loading.wav");
-        
         // Set volume to 100% for maximum audibility during testing
-        music.load(Music::ID::GAME_MUSIC, std::string_view("./audio/loading.wav"), 100.f, true);
+        music.load(Music::ID::GAME_MUSIC, std::string_view{"./audio/" + std::string(JSONKeys::LOADING_WAV)}, 100.f, true);
         
         SDL_Log("LoadingState: Music resource loaded into manager");
         
         // Get reference to the loaded music
         auto& loadedMusic = music.get(Music::ID::GAME_MUSIC);
-        
-        // Verify volume and loop were set correctly
-        SDL_Log("LoadingState: Music volume: 100%%, Loop: true");
         
         // Play the music
         loadedMusic.play();
@@ -610,11 +627,6 @@ void LoadingState::loadAudio() noexcept
             "  Make sure './audio/loading.wav' exists relative to executable");
     }
 
-    // ========================================================================
-    // SDL3 Audio Streaming Test (Proof of Concept)
-    // ========================================================================
-    SDL_Log("\n=== SDL3 Audio Streaming Test ===");
-    
     try
     {
         // Create an SDL audio stream for testing

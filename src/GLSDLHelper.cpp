@@ -1,5 +1,6 @@
 #include "GLSDLHelper.hpp"
 
+#include "Animation.hpp"
 #include "Shader.hpp"
 
 #include <SDL3/SDL.h>
@@ -139,14 +140,15 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 {
     auto initFunc = [this, title, width, height]()
         {
-            if (!SDL_SetAppMetadata("Maze builder with physics", title.data(), "physics;maze;c++;sdl")) {
+            if (!SDL_SetAppMetadata("Maze builder with physics", title.data(),
+                "c++;cozy;game;simulation;physics")) {
                 return;
             }
 
             SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, title.data());
-            SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Flips An dAle");
+            SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Flips And Ale");
             SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "MIT License");
-            SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "simulation;game;voxel");
+            SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "csv");
             SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, title.data());
 
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -201,12 +203,12 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
     {
         std::call_once(mInitializedFlag, initFunc);
-        
+
         // Verify audio subsystem initialized successfully
         if (SDL_WasInit(SDL_INIT_AUDIO))
         {
             SDL_Log("SDL Audio subsystem initialized successfully");
-            
+
             // Log available audio drivers
             int numDrivers = SDL_GetNumAudioDrivers();
             SDL_Log("Available audio drivers: %d", numDrivers);
@@ -214,24 +216,20 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
             {
                 SDL_Log("  [%d] %s", i, SDL_GetAudioDriver(i));
             }
-            
+
             // Log current audio driver
-            const char* currentDriver = SDL_GetCurrentAudioDriver();
-            if (currentDriver)
+            if (const auto* currentDriver = SDL_GetCurrentAudioDriver())
             {
                 SDL_Log("Current audio driver: %s", currentDriver);
-            }
-            else
+            } else
             {
                 SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "No audio driver initialized");
             }
-        }
-        else
+        } else
         {
             SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "SDL Audio subsystem failed to initialize");
         }
-    }
-    else
+    } else
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_Init failed: %s\n", SDL_GetError());
     }
@@ -474,21 +472,21 @@ void GLSDLHelper::renderBillboardSprite(
         SDL_Log("Billboard render #%d: pos=(%.1f,%.1f,%.1f) size=%.1f uv=(%.3f,%.3f,%.3f,%.3f) tex=%u",
             renderCount, worldPosition.x, worldPosition.y, worldPosition.z,
             halfSize, u, v, uWidth, vHeight, textureId);
-        
+
         // Log the position in view space (should give us an idea if it's visible)
         glm::vec4 viewPos = modelViewMatrix * glm::vec4(0, 0, 0, 1);
         SDL_Log("  View space pos: (%.1f, %.1f, %.1f)", viewPos.x, viewPos.y, viewPos.z);
-        
+
         // Log clip space position
         glm::vec4 clipPos = projMatrix * viewPos;
         SDL_Log("  Clip space pos: (%.1f, %.1f, %.1f, %.1f)", clipPos.x, clipPos.y, clipPos.z, clipPos.w);
-        
+
         // NDC position
         if (clipPos.w != 0) {
             glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
             SDL_Log("  NDC pos: (%.2f, %.2f, %.2f) - should be in [-1,1]", ndc.x, ndc.y, ndc.z);
         }
-        
+
         renderCount++;
     }
 

@@ -8,8 +8,7 @@
 #include <glm/glm.hpp>
 #include <SDL3/SDL.h>
 
-#include "Animation.hpp"
-
+struct AnimationRect;
 struct SDL_Window;
 
 class Shader;

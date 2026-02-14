@@ -44,71 +44,67 @@
 
 struct PhysicsGame::PhysicsGameImpl
 {
-    Player p1;
+    Player mPlayer1;
 
     std::unique_ptr<RenderWindow> mRenderWindow;
     std::unique_ptr<StateStack> mStateStack;
 
-    GLSDLHelper glSdlHelper;
+    GLSDLHelper mGLSDLHelper;
 
-    FontManager fonts;
-    LevelsManager levels;
-    MusicManager music;
-    OptionsManager options;
-    SoundBufferManager soundBuffers;
-    std::unique_ptr<SoundPlayer> sounds;
-    ShaderManager shaders;
-    TextureManager textures;
+    FontManager mFonts;
+    LevelsManager mLevels;
+    MusicManager mMusic;
+    OptionsManager mOptions;
+    SoundBufferManager mSoundBuffers;
+    std::unique_ptr<SoundPlayer> mSounds;
+    ShaderManager mShaders;
+    TextureManager mTextures;
 
     // FPS smoothing variables
-    mutable double fpsUpdateTimer = 0.0;
-    mutable int smoothedFps = 0;
-    mutable float smoothedFrameTime = 0.0f;
+    mutable double mFPSUpdateTimer = 0.0;
+    mutable int mSmoothedFPS = 0;
+    mutable float mSmoothedFrameTime = 0.0f;
     static constexpr double FPS_UPDATE_INTERVAL = 250.0;
 
-    std::string windowTitle;
-    std::string resourcePath;
+    std::string mWindowTitle;
+    std::string mResourcePath;
     const int INIT_WINDOW_W, INIT_WINDOW_H;
 
-    PhysicsGameImpl(std::string_view title, int w, int h, std::string_view resourcePath = "")
-        : windowTitle{ title }
-        , resourcePath{ resourcePath }
+    PhysicsGameImpl(std::string_view title, int w, int h, std::string_view mResourcePath = "")
+        : mWindowTitle{ title }
+        , mResourcePath{ mResourcePath }
         , INIT_WINDOW_W{ w }, INIT_WINDOW_H{ h }
         , mRenderWindow{ nullptr }
-        , glSdlHelper{}
+        , mGLSDLHelper{}
         , mStateStack{ nullptr }
-        , options{ }
-        , sounds{ nullptr }
+        , mOptions{ }
+        , mSounds{ nullptr }
     {
         initSDL();
-        if (!glSdlHelper.mWindow)
+        if (!mGLSDLHelper.mWindow)
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL mRenderWindow - cannot continue");
             // Don't initialize further objects if SDL failed
             return;
         }
 
-        mRenderWindow = std::make_unique<RenderWindow>(glSdlHelper.mWindow);
+        mRenderWindow = std::make_unique<RenderWindow>(mGLSDLHelper.mWindow);
+        mSounds = std::make_unique<SoundPlayer>(mSoundBuffers);
 
         initDearImGui();
-
-        // Initialize default options
         initOptions();
-
-        // Create SoundPlayer with reference to soundBuffers
-        sounds = std::make_unique<SoundPlayer>(soundBuffers);
 
         mStateStack = std::make_unique<StateStack>(State::Context{
             *mRenderWindow,
-            std::ref(fonts),
-            std::ref(levels),
-            std::ref(music),
-            std::ref(options),
-            std::ref(soundBuffers),
-            *sounds,
-            std::ref(shaders),
-            std::ref(textures),
-            std::ref(p1)
+            std::ref(mFonts),
+            std::ref(mLevels),
+            std::ref(mMusic),
+            std::ref(mOptions),
+            std::ref(mSoundBuffers),
+            *mSounds,
+            std::ref(mShaders),
+            std::ref(mTextures),
+            std::ref(mPlayer1)
             });
 
         registerStates();
@@ -119,15 +115,17 @@ struct PhysicsGame::PhysicsGameImpl
 
     ~PhysicsGameImpl()
     {
-        if (auto& sdl = this->glSdlHelper; sdl.mWindow)
+        if (auto&& sdl = mGLSDLHelper; sdl.mWindow)
         {
-            this->mStateStack->clearStates();
-            this->fonts.clear();
-            this->music.clear();
-            this->soundBuffers.clear();
-            this->sounds.reset();
-            this->shaders.clear();
-            this->textures.clear();
+            mStateStack->clearStates();
+
+            mFonts.clear();
+            mLevels.clear();
+            mMusic.clear();
+            mSoundBuffers.clear();
+            mSounds.reset();
+            mShaders.clear();
+            mTextures.clear();
 
             ImGui_ImplOpenGL3_Shutdown();
             ImGui_ImplSDL3_Shutdown();
@@ -139,8 +137,8 @@ struct PhysicsGame::PhysicsGameImpl
 
     void initSDL() noexcept
     {
-        auto title = windowTitle.empty() ? "Breaking Walls" : windowTitle.c_str();
-        glSdlHelper.init(title, INIT_WINDOW_W, INIT_WINDOW_H);
+        auto title = mWindowTitle.empty() ? "Breaking Walls" : mWindowTitle.c_str();
+        mGLSDLHelper.init(title, INIT_WINDOW_W, INIT_WINDOW_H);
     }
 
     void initDearImGui() const noexcept
@@ -155,18 +153,14 @@ struct PhysicsGame::PhysicsGameImpl
         ImGui::StyleColorsDark();
 
         // Initialize ImGui SDL3 and OpenGL3 backends
-        ImGui_ImplSDL3_InitForOpenGL(this->glSdlHelper.mWindow, this->glSdlHelper.mGLContext);
+        ImGui_ImplSDL3_InitForOpenGL(mGLSDLHelper.mWindow, mGLSDLHelper.mGLContext);
         ImGui_ImplOpenGL3_Init("#version 430");
     }
 
     void initOptions() noexcept
     {
-        // Create default options and insert into manager
-        // We use a single Options object keyed by FULLSCREEN for simplicity
-        // All settings are stored in this one Options instance
         auto defaultOptions = std::make_unique<Options>();
-        options.insert(GUIOptions::ID::DE_FACTO, std::move(defaultOptions));
-        SDL_Log("Default options initialized");
+        mOptions.insert(GUIOptions::ID::DE_FACTO, std::move(defaultOptions));
     }
 
     void processInput() const noexcept
@@ -225,7 +219,7 @@ struct PhysicsGame::PhysicsGameImpl
         // Window might be closed during draw calls/events
         if (mRenderWindow->isOpen())
         {
-            this->handleFPS(elapsed);
+            handleFPS(elapsed);
         }
 #endif
 
@@ -235,7 +229,7 @@ struct PhysicsGame::PhysicsGameImpl
     void registerStates() noexcept
     {
         mStateStack->registerState<GameState>(States::ID::GAME);
-        mStateStack->registerState<LoadingState>(States::ID::LOADING, resourcePath);
+        mStateStack->registerState<LoadingState>(States::ID::LOADING, mResourcePath);
         mStateStack->registerState<MenuState>(States::ID::MENU);
         mStateStack->registerState<PauseState>(States::ID::PAUSE);
         mStateStack->registerState<SettingsState>(States::ID::SETTINGS);
@@ -249,12 +243,12 @@ struct PhysicsGame::PhysicsGameImpl
         const auto frameTime = static_cast<float>(elapsed);
 
         // Update smoothed values periodically for display
-        fpsUpdateTimer += elapsed;
-        if (fpsUpdateTimer >= FPS_UPDATE_INTERVAL)
+        mFPSUpdateTimer += elapsed;
+        if (mFPSUpdateTimer >= FPS_UPDATE_INTERVAL)
         {
-            smoothedFps = fps;
-            smoothedFrameTime = frameTime;
-            fpsUpdateTimer = 0.0;
+            mSmoothedFPS = fps;
+            mSmoothedFrameTime = frameTime;
+            mFPSUpdateTimer = 0.0;
         }
 
         // Create ImGui overlay mRenderWindow positioned at top-right corner
@@ -274,16 +268,16 @@ struct PhysicsGame::PhysicsGameImpl
 
         if (ImGui::Begin("FPS Overlay", nullptr, windowFlags))
         {
-            ImGui::Text("FPS: %d", smoothedFps);
-            ImGui::Text("Frame Time: %.2f ms", smoothedFrameTime);
+            ImGui::Text("FPS: %d", mSmoothedFPS);
+            ImGui::Text("Frame Time: %.2f ms", mSmoothedFrameTime);
             ImGui::End();
         }
     }
 }; // impl
 
-// resourcePath = ""
-PhysicsGame::PhysicsGame(std::string_view title, int w, int h, std::string_view resourcePath)
-    : mImpl{ std::make_unique<PhysicsGameImpl>(title, w, h, resourcePath) }
+// mResourcePath = ""
+PhysicsGame::PhysicsGame(std::string_view title, int w, int h, std::string_view mResourcePath)
+    : mImpl{ std::make_unique<PhysicsGameImpl>(title, w, h, mResourcePath) }
 {
 }
 
@@ -292,7 +286,7 @@ PhysicsGame::~PhysicsGame() = default;
 // Main game loop
 bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomizer& rng) const noexcept
 {
-    auto&& gamePtr = this->mImpl;
+    auto&& gamePtr = mImpl;
 
     // Check if initialization succeeded before entering game loop
     if (!gamePtr->mRenderWindow || !gamePtr->mStateStack)
@@ -336,14 +330,10 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
                 break;
             }
         }
-
-        // Exit outer loop if mRenderWindow was closed in update loop
-        if (!gamePtr->mRenderWindow->isOpen())
+        if (gamePtr->mRenderWindow->isOpen())
         {
-            break;
+            gamePtr->render(elapsed);
         }
-
-        gamePtr->render(elapsed);
     }
 
     SDL_Log("Exiting game loop...");

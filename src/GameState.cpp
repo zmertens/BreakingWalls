@@ -135,8 +135,6 @@ GameState::~GameState()
     }
 
     cleanupResources();
-
-    SDL_Log("%s\n", view().data());
 }
 
 void GameState::draw() const noexcept

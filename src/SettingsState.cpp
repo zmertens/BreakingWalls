@@ -19,11 +19,6 @@ SettingsState::SettingsState(StateStack& stack, Context context)
 {
 }
 
-SettingsState::~SettingsState()
-{
-    SDL_Log("%s\n", view().data());
-}
-
 void SettingsState::draw() const noexcept
 {
     // Draw the game background FIRST, before any ImGui calls

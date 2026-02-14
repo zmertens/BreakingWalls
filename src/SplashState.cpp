@@ -61,7 +61,6 @@ SplashState::SplashState(StateStack& stack, Context context)
 SplashState::~SplashState()
 {
     cleanupResources();
-    SDL_Log("%s\n", view().data());
 }
 
 void SplashState::draw() const noexcept
