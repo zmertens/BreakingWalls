@@ -27,6 +27,7 @@
 #include "Level.hpp"
 #include "LoadingState.hpp"
 #include "MenuState.hpp"
+#include "MultiplayerGameState.hpp"
 #include "MusicPlayer.hpp"
 #include "Options.hpp"
 #include "PauseState.hpp"
@@ -104,7 +105,8 @@ struct PhysicsGame::PhysicsGameImpl
             *mSounds,
             std::ref(mShaders),
             std::ref(mTextures),
-            std::ref(mPlayer1)
+            std::ref(mPlayer1),
+            mResourcePath
             });
 
         registerStates();
@@ -231,6 +233,7 @@ struct PhysicsGame::PhysicsGameImpl
         mStateStack->registerState<GameState>(States::ID::GAME);
         mStateStack->registerState<LoadingState>(States::ID::LOADING, mResourcePath);
         mStateStack->registerState<MenuState>(States::ID::MENU);
+        mStateStack->registerState<MultiplayerGameState>(States::ID::MULTIPLAYER_GAME);
         mStateStack->registerState<PauseState>(States::ID::PAUSE);
         mStateStack->registerState<SettingsState>(States::ID::SETTINGS);
         mStateStack->registerState<SplashState>(States::ID::SPLASH);

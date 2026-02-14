@@ -171,6 +171,30 @@ std::string HttpClient::create_maze(int rows, int columns, int seed, const std::
     }
 }
 
+std::string HttpClient::get(const std::string& path)
+{
+    try
+    {
+        sf::Http http(m_host, m_port);
+
+        sf::Http::Request request(path, sf::Http::Request::Method::Get);
+        request.setHttpVersion(1, 1);
+
+        sf::Http::Response response = http.sendRequest(request);
+
+        if (response.getStatus() != sf::Http::Response::Status::Ok)
+        {
+            return {};
+        }
+
+        return response.getBody();
+    }
+    catch (const std::exception&)
+    {
+        return {};
+    }
+}
+
 std::string HttpClient::create_json_payload(int rows, int columns, int seed, const std::string& algorithm,
                                             const std::string& distances)
 {

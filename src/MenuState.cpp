@@ -73,7 +73,7 @@ void MenuState::draw() const noexcept
         ImGui::Spacing();
 
         const array<string, static_cast<size_t>(MenuItem::COUNT)> menuItems = {
-            "Resume", "New Game", "Settings", "Splash screen", "Quit"
+            "Resume", "New Game", "Network Game", "Settings", "Splash screen", "Quit"
         };
 
         // Use Selectable with bool* overload so ImGui keeps a consistent toggled state
@@ -160,6 +160,11 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
     case MenuItem::NEW_GAME:
         requestStackPop();
         requestStackPush(States::ID::GAME);
+        break;
+
+    case MenuItem::NETWORK_GAME:
+        requestStackPop();
+        requestStackPush(States::ID::MULTIPLAYER_GAME);
         break;
 
     case MenuItem::SETTINGS:

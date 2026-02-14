@@ -14,7 +14,8 @@ State::Context::Context(RenderWindow& window,
     SoundBufferManager& soundBuffers,
     SoundPlayer& sounds,
     ShaderManager& shaders,
-    TextureManager& textures, Player& player)
+    TextureManager& textures, Player& player,
+    std::string_view resourcePath)
     : window{ &window }
     , fonts{ &fonts }
     , levels{ &levels }
@@ -25,6 +26,7 @@ State::Context::Context(RenderWindow& window,
     , shaders{ &shaders }
     , textures{ &textures }
     , player{ &player }
+    , resourcePath{ resourcePath }
 {
 
 }

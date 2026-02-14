@@ -10,10 +10,11 @@ namespace States
         GAME = 1,
         LOADING = 2,
         MENU = 3,
-        PAUSE = 4,
-        RESETTING = 5,
-        SETTINGS = 6,
-        SPLASH = 7,
+        MULTIPLAYER_GAME = 4,
+        PAUSE = 5,
+        RESETTING = 6,
+        SETTINGS = 7,
+        SPLASH = 8
     };
 }
 

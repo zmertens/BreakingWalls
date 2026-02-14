@@ -20,6 +20,10 @@ public:
     std::string create_maze(int rows, int columns, int seed, const std::string& algorithm,
                             const std::string& distances = {"[0:-1]"});
 
+    /// @brief Issue a GET request and return the response body (empty on failure)
+    /// @param path Absolute path on server (e.g. "/mazes/networks/data")
+    std::string get(const std::string& path);
+
 private:
     /// @brief Parse server URL and extract host and port
     void parse_server_url();

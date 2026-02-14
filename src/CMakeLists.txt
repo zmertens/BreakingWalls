@@ -54,6 +54,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/LoadingState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MenuState.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MultiplayerGameState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MusicPlayer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PauseState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PhysicsGame.cpp

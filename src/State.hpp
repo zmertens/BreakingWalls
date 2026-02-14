@@ -33,7 +33,8 @@ public:
             SoundPlayer& sounds,
             ShaderManager& shaders,
             TextureManager& textures,
-            Player& player);
+            Player& player,
+            std::string_view resourcePath);
 
         RenderWindow* window;
         FontManager* fonts;
@@ -45,6 +46,7 @@ public:
         ShaderManager* shaders;
         TextureManager* textures;
         Player* player;
+        std::string_view resourcePath;
     };
 
     explicit State(StateStack& stack, Context context);

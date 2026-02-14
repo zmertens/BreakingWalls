@@ -21,10 +21,11 @@ private:
     {
         CONTINUE = 0,
         NEW_GAME = 1,
-        SETTINGS = 2,
-        SPLASH = 3,
-        QUIT = 4,
-        COUNT = 5
+        NETWORK_GAME = 2,
+        SETTINGS = 3,
+        SPLASH = 4,
+        QUIT = 5,
+        COUNT = 6
     };
 
     MusicPlayer* mMusic;
