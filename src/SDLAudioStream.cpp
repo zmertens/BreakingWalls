@@ -4,6 +4,12 @@
 #include <cmath>
 #include <algorithm>
 
+// Extern declarations for Simplex noise functions from noise.c
+extern "C" {
+    float simplex2(float x, float y, int octaves, float persistence, float lacunarity);
+    float simplex3(float x, float y, float z, int octaves, float persistence, float lacunarity);
+}
+
 SDLAudioStream::SDLAudioStream() = default;
 
 SDLAudioStream::~SDLAudioStream()
@@ -21,6 +27,10 @@ SDLAudioStream::SDLAudioStream(SDLAudioStream&& other) noexcept
     , mSineVolume(other.mSineVolume)
     , mSineDuration(other.mSineDuration)
     , mSineElapsed(other.mSineElapsed)
+    , mCurrentNoiseSample(other.mCurrentNoiseSample)
+    , mNoiseVolume(other.mNoiseVolume)
+    , mNoiseDuration(other.mNoiseDuration)
+    , mNoiseScale(other.mNoiseScale)
 {
     other.mStream = nullptr;
     other.mIsPlaying = false;
@@ -41,6 +51,10 @@ SDLAudioStream& SDLAudioStream::operator=(SDLAudioStream&& other) noexcept
         mSineVolume = other.mSineVolume;
         mSineDuration = other.mSineDuration;
         mSineElapsed = other.mSineElapsed;
+        mCurrentNoiseSample = other.mCurrentNoiseSample;
+        mNoiseVolume = other.mNoiseVolume;
+        mNoiseDuration = other.mNoiseDuration;
+        mNoiseScale = other.mNoiseScale;
 
         other.mStream = nullptr;
         other.mIsPlaying = false;
@@ -209,6 +223,73 @@ void SDLAudioStream::generateSineWave(float frequency, float duration, float vol
             
             // Wrap around to avoid floating-point errors (following official example)
             mCurrentSineSample %= sample_rate;
+            
+            // Feed the new data to the stream
+            SDL_PutAudioStreamData(stream, samples, total * sizeof(float));
+            additional_amount -= total;
+        }
+    };
+}
+
+void SDLAudioStream::generateWhiteNoise(float duration, float volume, float scale)
+{
+    mNoiseVolume = std::clamp(volume, 0.0f, 1.0f);
+    mNoiseDuration = duration;
+    mNoiseScale = std::max(0.1f, scale);  // Ensure scale is positive
+    mCurrentNoiseSample = 0;
+
+    SDL_Log("SDLAudioStream: Configuring white noise - %.2f seconds, %.2f%% volume, scale: %.2f",
+        duration, volume * 100.0f, scale);
+
+    // Set up callback to generate white noise using Simplex noise
+    mCallback = [this](SDL_AudioStream* stream, int additional_amount, int total_amount) {
+        const int sample_rate = mSpec.freq;
+        
+        // Convert from bytes to samples (each sample is a float)
+        additional_amount /= sizeof(float);
+        
+        while (additional_amount > 0)
+        {
+            // Feed 128 samples at a time
+            float samples[128];
+            const int total = SDL_min(additional_amount, static_cast<int>(SDL_arraysize(samples)));
+            
+            // Calculate current time in seconds
+            const float current_time = static_cast<float>(mCurrentNoiseSample) / static_cast<float>(sample_rate);
+            
+            // Generate white noise samples using Simplex noise
+            for (int i = 0; i < total; i++)
+            {
+                // Check if we've exceeded the duration
+                const float sample_time = current_time + (static_cast<float>(i) / static_cast<float>(sample_rate));
+                if (sample_time >= mNoiseDuration)
+                {
+                    // Fill rest with silence
+                    for (int j = i; j < total; j++)
+                    {
+                        samples[j] = 0.0f;
+                    }
+                    break;
+                }
+                
+                // Use 2D simplex noise for white noise generation
+                // x varies with sample count, y is a constant for variety
+                const float x = (static_cast<float>(mCurrentNoiseSample + i) / static_cast<float>(sample_rate)) * mNoiseScale;
+                const float y = mNoiseScale * 0.5f;
+                
+                // Generate noise value (simplex2 returns value in range [0, 1])
+                // We map it to [-1, 1] by multiplying by 2 and subtracting 1
+                const float noise_value = simplex2(x, y, 1, 1.0f, 2.0f) * 2.0f - 1.0f;
+                samples[i] = noise_value * mNoiseVolume;
+            }
+            
+            mCurrentNoiseSample += total;
+            
+            // Wrap around to avoid integer overflow
+            if (mCurrentNoiseSample > sample_rate * 10)
+            {
+                mCurrentNoiseSample = 0;
+            }
             
             // Feed the new data to the stream
             SDL_PutAudioStreamData(stream, samples, total * sizeof(float));

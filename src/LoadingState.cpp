@@ -641,63 +641,18 @@ void LoadingState::loadAudio() noexcept
         log("LoadingState: Failed to load music: " + std::string(e.what()));
     }
 
-    try
-    {
-        // Create an SDL audio stream for testing
-        SDLAudioStream sdlAudioTest;
-        
-        // Configure sine wave generation BEFORE initializing
-        // This sets up the callback that will be used
-        sdlAudioTest.generateSineWave(440.0f, 3.5f, 0.3f);
-        
-        // Initialize with 8kHz, mono (matches official SDL3 example for simplicity)
-        // Pass nullptr for callback since generateSineWave already set it up
-        if (sdlAudioTest.initialize(8000, 1, nullptr))
-        {
-            SDL_Log("SDL3 Audio: ✓ Audio stream initialized successfully");
-            SDL_Log("SDL3 Audio: ✓ Sine wave callback configured (440 Hz, 0.5s)");
-            
-            // Play the sine wave
-            sdlAudioTest.play();
-            SDL_Log("SDL3 Audio: ✓ Playing test sine wave");
-            
-            // Let it play for a moment
-            SDL_Delay(600);
-            
-            // Stop the test
-            sdlAudioTest.stop();
-            SDL_Log("SDL3 Audio: ✓ Test completed successfully");
-            SDL_Log("SDL3 Audio: SDL3 audio streaming is working alongside SFML!");
-        }
-        else
-        {
-            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "SDL3 Audio: Failed to initialize (this is okay - SFML still works)");
-        }
-    }
-    catch (const std::exception& e)
-    {
-        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "SDL3 Audio: Test failed: %s", e.what());
-        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "SDL3 Audio: This is okay - SFML audio still works!");
-    }
-
     // Continue with existing sound effects loading...
     auto& soundBuffers = *getContext().soundBuffers;
 
     try
     {
-        // Load sound effects through the SoundBufferManager
-        SDL_Log("LoadingState: Loading sound effects...");
+        log("LoadingState: Loading sound effects...");
         
         soundBuffers.load(SoundEffect::ID::GENERATE, "./audio/generate.ogg");
-        SDL_Log("  - Loaded: generate.ogg");
         
         soundBuffers.load(SoundEffect::ID::SELECT, "./audio/sfx_select.ogg");
-        SDL_Log("  - Loaded: sfx_select.ogg");
         
         soundBuffers.load(SoundEffect::ID::THROW, "./audio/sfx_throw.ogg");
-        SDL_Log("  - Loaded: sfx_throw.ogg");
-
-        log("LoadingState: Sound effects loaded successfully");
     } 
     catch (const std::exception& e)
     {
@@ -728,6 +683,7 @@ void LoadingState::loadShaders() noexcept
     try
     {
         // Load display shader (vertex + fragment)
+        // @TODO connect shader filenames from mResources
         auto displayShader = std::make_unique<Shader>();
         displayShader->compileAndAttachShader(ShaderType::VERTEX, "./shaders/raytracer.vert.glsl");
         displayShader->compileAndAttachShader(ShaderType::FRAGMENT, "./shaders/raytracer.frag.glsl");

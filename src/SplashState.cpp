@@ -78,13 +78,10 @@ void SplashState::initializeGraphicsResources() noexcept
 {
     log("SplashState: Initializing OpenGL graphics pipeline...");
 
-    // Enable OpenGL features using helper
     GLSDLHelper::enableRenderingFeatures();
 
-    // Create VAO for fullscreen quad using helper
     mVAO = GLSDLHelper::createAndBindVAO();
 
-    // Create SSBO for sphere data using helper
     mShapeSSBO = GLSDLHelper::createAndBindSSBO(1);
 
     createPathTracerTextures();
@@ -267,7 +264,7 @@ bool SplashState::handleEvent(const SDL_Event& event) noexcept
             return true;
         }
 
-        requestStateClear();
+        requestStackPop();
         requestStackPush(States::ID::MENU);
     }
 

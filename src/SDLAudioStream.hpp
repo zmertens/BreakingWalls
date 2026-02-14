@@ -66,6 +66,12 @@ public:
     /// @param volume Volume (0.0 to 1.0)
     void generateSineWave(float frequency, float duration, float volume = 0.5f);
 
+    /// @brief Generate white noise using Simplex noise (procedural)
+    /// @param duration Duration in seconds
+    /// @param volume Volume (0.0 to 1.0)
+    /// @param scale Noise scale/frequency (higher = more variation)
+    void generateWhiteNoise(float duration, float volume = 0.5f, float scale = 1.0f);
+
 private:
     /// @brief Internal SDL audio callback (static wrapper)
     static void SDLCALL sdlAudioCallbackWrapper(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount);
@@ -81,6 +87,12 @@ private:
     float mSineVolume{ 0.5f };
     float mSineDuration{ 0.0f };
     float mSineElapsed{ 0.0f };
+
+    // For white noise generation
+    int mCurrentNoiseSample{ 0 };
+    float mNoiseVolume{ 0.5f };
+    float mNoiseDuration{ 0.0f };
+    float mNoiseScale{ 1.0f };
 };
 
 #endif // SDL_AUDIO_STREAM_HPP
