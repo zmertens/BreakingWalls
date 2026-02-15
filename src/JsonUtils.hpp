@@ -20,10 +20,10 @@
 class JSONUtils
 {
 public:
-    [[nodiscard]] std::string getValue(const std::string& key, const std::unordered_map<std::string, std::string>& resourceMap) const
+    [[nodiscard]] std::string getValue(const std::string &key, const std::unordered_map<std::string, std::string> &resourceMap) const
     {
         auto it = resourceMap.find(key);
-        if (it != resourceMap.end())
+        if (it != resourceMap.cend())
         {
             return extractJsonValue(it->second);
         }
@@ -31,7 +31,7 @@ public:
     }
 
     // Extract the actual filename from JSON string format (remove quotes and array brackets)
-    [[nodiscard]] static std::string extractJsonValue(const std::string& jsonStr)
+    [[nodiscard]] static std::string extractJsonValue(const std::string &jsonStr)
     {
         if (jsonStr.empty())
         {
@@ -71,7 +71,7 @@ public:
     /// @param basePath Base directory path (may or may not have trailing slash)
     /// @param relativePath Relative file path (may or may not have leading slash)
     /// @return Full resolved path
-    [[nodiscard]] static std::string resolveResourcePath(const std::string& basePath, const std::string& relativePath)
+    [[nodiscard]] static std::string resolveResourcePath(const std::string &basePath, const std::string &relativePath)
     {
         if (relativePath.empty())
         {
@@ -79,7 +79,7 @@ public:
         }
 
         // If path is already absolute, return as-is
-        if (relativePath.find(":\\") != std::string::npos || 
+        if (relativePath.find(":\\") != std::string::npos ||
             (relativePath.length() >= 2 && relativePath[0] == '/' && relativePath[1] == '/'))
         {
             return relativePath;
@@ -87,7 +87,7 @@ public:
 
         // Build the full path, handling slashes properly
         std::string result = basePath;
-        
+
         // Remove trailing slash from base if present
         if (!result.empty() && result.back() == '/')
         {
@@ -119,9 +119,9 @@ public:
     /// @param resourcePathPrefix Base directory path
     /// @return Full resolved path, or empty string if key not found
     [[nodiscard]] static std::string getResourcePath(
-        const std::string& key,
-        const std::unordered_map<std::string, std::string>& resources,
-        const std::string& resourcePathPrefix)
+        const std::string &key,
+        const std::unordered_map<std::string, std::string> &resources,
+        const std::string &resourcePathPrefix)
     {
         auto it = resources.find(key);
         if (it == resources.end())
@@ -133,7 +133,7 @@ public:
         return resolveResourcePath(resourcePathPrefix, extractedValue);
     }
 
-    static void loadConfiguration(const std::string& configPath, std::unordered_map<std::string, std::string>& resourceMap)
+    static void loadConfiguration(const std::string &configPath, std::unordered_map<std::string, std::string> &resourceMap)
     {
         using std::runtime_error;
         using std::string;
@@ -150,7 +150,7 @@ public:
     /// @brief Convert JSON object string to mazes::configurator
     /// @param jsonValue JSON string in format: {"rows": 100, "columns": 99, "seed": 50, "algo": "dfs"}
     /// @return Configured mazes::configurator object
-    static mazes::configurator jsonToConfigurator(const std::string& jsonValue)
+    static mazes::configurator jsonToConfigurator(const std::string &jsonValue)
     {
         using mazes::args;
         using mazes::configurator;
@@ -190,7 +190,7 @@ private:
     /// @param jsonValue The JSON string to parse
     /// @param fieldName The field name to extract
     /// @return Optional containing the integer value if found and valid
-    [[nodiscard]] static std::optional<int> extractJsonIntField(const std::string& jsonValue, const std::string& fieldName)
+    [[nodiscard]] static std::optional<int> extractJsonIntField(const std::string &jsonValue, const std::string &fieldName)
     {
         std::string searchKey = "\"" + fieldName + "\"";
         auto fieldPos = jsonValue.find(searchKey);
@@ -238,7 +238,7 @@ private:
     /// @param jsonValue The JSON string to parse
     /// @param fieldName The field name to extract
     /// @return Optional containing the string value if found
-    [[nodiscard]] static std::optional<std::string> extractJsonStringField(const std::string& jsonValue, const std::string& fieldName)
+    [[nodiscard]] static std::optional<std::string> extractJsonStringField(const std::string &jsonValue, const std::string &fieldName)
     {
         std::string searchKey = "\"" + fieldName + "\"";
         auto fieldPos = jsonValue.find(searchKey);

@@ -1,20 +1,20 @@
 #ifndef ANIMATION_HPP
 #define ANIMATION_HPP
 
-#include <vector>
 #include <chrono>
-#include <optional>
 #include <cstdint>
+#include <optional>
+#include <vector>
 
 #include <glm/glm.hpp>
 
 /// @brief Rectangle representing a frame in a sprite sheet
 struct AnimationRect
 {
-    int left{ 0 };
-    int top{ 0 };
-    int width{ 0 };
-    int height{ 0 };
+    int left{0};
+    int top{0};
+    int width{0};
+    int height{0};
 };
 
 /// @brief Animation state for sprite sheet animations
@@ -32,7 +32,7 @@ public:
     /// @param frameDuration Duration of each frame in seconds
     /// @param loop Whether the animation should loop
     explicit Animation(int frameWidth, int frameHeight, int frameCount,
-        float frameDuration = 0.1f, bool loop = true);
+                       float frameDuration = 0.1f, bool loop = true);
 
     /// @brief Configure animation from sprite sheet row
     /// @param row Row index in the sprite sheet (0-based)
@@ -41,7 +41,7 @@ public:
     /// @param frameCount Number of frames in this animation
     /// @param frameDuration Duration per frame in seconds
     void configure(int row, int frameWidth, int frameHeight,
-        int frameCount, float frameDuration = 0.1f);
+                   int frameCount, float frameDuration = 0.1f);
 
     /// @brief Update animation and get current frame rect
     /// @return Current frame rectangle
@@ -80,11 +80,11 @@ public:
 
 private:
     std::vector<AnimationRect> mFrames;
-    int mCurrentFrame{ 0 };
-    float mFrameDuration{ 0.1f };
-    float mAccumulatedTime{ 0.0f };
-    bool mLoop{ true };
-    bool mEnded{ false };
+    int mCurrentFrame{0};
+    float mFrameDuration{0.1f};
+    float mAccumulatedTime{0.0f};
+    bool mLoop{true};
+    bool mEnded{false};
 
     std::optional<std::chrono::steady_clock::time_point> mLastFrameTime;
 };
@@ -157,7 +157,7 @@ public:
     [[nodiscard]] glm::vec3 getPosition() const noexcept { return mPosition; }
 
     /// @brief Set the 3D position
-    void setPosition(const glm::vec3& position) noexcept { mPosition = position; }
+    void setPosition(const glm::vec3 &position) noexcept { mPosition = position; }
 
     /// @brief Get rotation (facing direction)
     [[nodiscard]] float getRotation() const noexcept { return mRotation; }
@@ -167,14 +167,14 @@ public:
 
 private:
     Animation mCurrentAnimation;
-    CharacterAnimState mCurrentState{ CharacterAnimState::IDLE };
-    int mCharacterIndex{ 0 };
-    int mTileSize{ TILE_SIZE };
-    float mSpeedMultiplier{ 1.0f };
+    CharacterAnimState mCurrentState{CharacterAnimState::IDLE};
+    int mCharacterIndex{0};
+    int mTileSize{TILE_SIZE};
+    float mSpeedMultiplier{1.0f};
 
     // 3D positioning for rendering
-    glm::vec3 mPosition{ 0.0f };
-    float mRotation{ 0.0f };  // Yaw rotation in degrees
+    glm::vec3 mPosition{0.0f};
+    float mRotation{0.0f}; // Yaw rotation in degrees
 };
 
 #endif // ANIMATION_HPP

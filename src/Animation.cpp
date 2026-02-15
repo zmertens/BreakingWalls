@@ -1,28 +1,24 @@
 #include "Animation.hpp"
 
-#include <SDL3/SDL_log.h>
-
 #include <algorithm>
 
 Animation::Animation(int frameWidth, int frameHeight, int frameCount,
-    float frameDuration, bool loop)
-    : mFrameDuration(frameDuration)
-    , mLoop(loop)
+                     float frameDuration, bool loop)
+    : mFrameDuration(frameDuration), mLoop(loop)
 {
     mFrames.reserve(frameCount);
     for (int i = 0; i < frameCount; ++i)
     {
         mFrames.push_back(AnimationRect{
-            i * frameWidth,  // left
-            0,               // top (single row)
+            i * frameWidth, // left
+            0,              // top (single row)
             frameWidth,
-            frameHeight
-        });
+            frameHeight});
     }
 }
 
 void Animation::configure(int row, int frameWidth, int frameHeight,
-    int frameCount, float frameDuration)
+                          int frameCount, float frameDuration)
 {
     mFrames.clear();
     mFrames.reserve(frameCount);
@@ -36,31 +32,27 @@ void Animation::configure(int row, int frameWidth, int frameHeight,
     // For a sprite sheet, this means:
     // Frame 0: (col=0, row=0), Frame 1: (col=0, row=1), Frame 2: (col=0, row=2), ...
     // Then Frame N: (col=1, row=0), etc.
-    
+
     // Calculate how many rows fit in the sprite sheet
     // Assuming standard 1024x1024 sheet with 128x128 tiles = 8 rows
-    int tilesPerColumn = 8;  // 1024 / 128 = 8 tiles vertically
-    
+    int tilesPerColumn = 8; // 1024 / 128 = 8 tiles vertically
+
     for (int i = 0; i < frameCount; ++i)
     {
-        int col = i / tilesPerColumn;  // Which column (0, 1, 2, ...)
-        int rowInCol = i % tilesPerColumn;  // Which row within that column
-        
+        int col = i / tilesPerColumn;      // Which column (0, 1, 2, ...)
+        int rowInCol = i % tilesPerColumn; // Which row within that column
+
         mFrames.push_back(AnimationRect{
-            col * frameWidth,        // left (x position)
-            rowInCol * frameHeight,  // top (y position)
+            col * frameWidth,       // left (x position)
+            rowInCol * frameHeight, // top (y position)
             frameWidth,
-            frameHeight
-        });
+            frameHeight});
     }
 
     // Debug log
     if (!mFrames.empty())
     {
-        SDL_Log("Animation configured (column-wise): %d frames, first at (%d, %d), last at (%d, %d)",
-            frameCount, 
-            mFrames[0].left, mFrames[0].top,
-            mFrames.back().left, mFrames.back().top);
+        // Logs can go here
     }
 }
 
@@ -139,8 +131,7 @@ void Animation::setCurrentFrame(int frame)
 // ============================================================================
 
 CharacterAnimator::CharacterAnimator(int characterIndex, int tileSize)
-    : mCharacterIndex(characterIndex)
-    , mTileSize(tileSize)
+    : mCharacterIndex(characterIndex), mTileSize(tileSize)
 {
     initialize(characterIndex);
 }
@@ -153,12 +144,11 @@ void CharacterAnimator::initialize(int characterIndex)
     // Each character has FRAMES_PER_CHARACTER frames (9), all in one row
     // The row is determined by the character index
     mCurrentAnimation.configure(
-        mCharacterIndex,           // row
-        mTileSize,                 // frame width
-        mTileSize,                 // frame height
-        FRAMES_PER_CHARACTER,      // 9 frames
-        DEFAULT_FRAME_DURATION
-    );
+        mCharacterIndex,      // row
+        mTileSize,            // frame width
+        mTileSize,            // frame height
+        FRAMES_PER_CHARACTER, // 9 frames
+        DEFAULT_FRAME_DURATION);
 
     // Ensure we start at frame 0
     mCurrentAnimation.reset();
@@ -195,7 +185,7 @@ void CharacterAnimator::setState(CharacterAnimState state, bool resetIfSame)
     switch (state)
     {
     case CharacterAnimState::IDLE:
-        duration = 0.2f / mSpeedMultiplier;  // Slower for idle
+        duration = 0.2f / mSpeedMultiplier; // Slower for idle
         mCurrentAnimation.setLoop(true);
         break;
 
@@ -218,7 +208,7 @@ void CharacterAnimator::setState(CharacterAnimState state, bool resetIfSame)
         break;
 
     case CharacterAnimState::ATTACK:
-        duration = 0.08f / mSpeedMultiplier;  // Fast attack
+        duration = 0.08f / mSpeedMultiplier; // Fast attack
         mCurrentAnimation.setLoop(false);
         break;
 
@@ -234,8 +224,7 @@ void CharacterAnimator::setState(CharacterAnimState state, bool resetIfSame)
         mTileSize,
         mTileSize,
         FRAMES_PER_CHARACTER,
-        duration
-    );
+        duration);
 }
 
 AnimationRect CharacterAnimator::getCurrentFrame() const

@@ -25,7 +25,7 @@ class ResourceManager
 {
 public:
     // Level loading
-    void load(Identifier id, const std::vector<mazes::configurator>& configs, bool appendResults);
+    void load(Identifier id, const std::vector<mazes::configurator> &configs, bool appendResults);
 
     // SoundBuffer loading
     void load(Identifier id, std::string_view filename);
@@ -38,10 +38,10 @@ public:
 
     // Font loading
     template <typename Parameter1, typename Parameter2, typename PixelSize = float>
-    void load(Identifier id, const Parameter1& param1, const Parameter2& param2, const PixelSize& pixelSize);
+    void load(Identifier id, const Parameter1 &param1, const Parameter2 &param2, const PixelSize &pixelSize);
 
-    Resource& get(Identifier id);
-    const Resource& get(Identifier id) const;
+    Resource &get(Identifier id);
+    const Resource &get(Identifier id) const;
 
     /// Insert a pre-constructed resource
     void insert(Identifier id, std::unique_ptr<Resource> resource)
@@ -64,7 +64,7 @@ private:
 };
 
 template <typename Resource, typename Identifier>
-void ResourceManager<Resource, Identifier>::load(Identifier id, const std::vector<mazes::configurator>& configs, bool appendResults)
+void ResourceManager<Resource, Identifier>::load(Identifier id, const std::vector<mazes::configurator> &configs, bool appendResults)
 {
     // Create and load resource
     auto resource = std::make_unique<Resource>();
@@ -119,7 +119,7 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
 
     if (!resource->loadFromFile(filename, channelOffset))
     {
-        throw std::runtime_error("ResourceManager::load - Failed to load " + std::string{ filename });
+        throw std::runtime_error("ResourceManager::load - Failed to load " + std::string{filename});
     }
 
     // If loading successful, insert resource to map
@@ -128,7 +128,7 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
 
 template <typename Resource, typename Identifier>
 template <typename Parameter1, typename Parameter2, typename PixelSize>
-void ResourceManager<Resource, Identifier>::load(Identifier id, const Parameter1& param1, const Parameter2& param2, const PixelSize& pixelSize)
+void ResourceManager<Resource, Identifier>::load(Identifier id, const Parameter1 &param1, const Parameter2 &param2, const PixelSize &pixelSize)
 {
     auto resource = std::make_unique<Resource>();
     if (!resource->loadFromMemoryCompressedTTF(param1, param2, pixelSize))
@@ -140,7 +140,7 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, const Parameter1
 }
 
 template <typename Resource, typename Identifier>
-Resource& ResourceManager<Resource, Identifier>::get(Identifier id)
+Resource &ResourceManager<Resource, Identifier>::get(Identifier id)
 {
     auto found = mResourceMap.find(id);
     assert(found != mResourceMap.cend());
@@ -149,7 +149,7 @@ Resource& ResourceManager<Resource, Identifier>::get(Identifier id)
 }
 
 template <typename Resource, typename Identifier>
-const Resource& ResourceManager<Resource, Identifier>::get(Identifier id) const
+const Resource &ResourceManager<Resource, Identifier>::get(Identifier id) const
 {
     auto found = mResourceMap.find(id);
     assert(found != mResourceMap.cend());

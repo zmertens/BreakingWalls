@@ -9,16 +9,19 @@
 
 class StateStack;
 union SDL_Event;
-namespace Textures { enum class ID : unsigned int; }
+namespace Textures
+{
+    enum class ID : unsigned int;
+}
 
 class LoadingState : public State
 {
 public:
-    explicit LoadingState(StateStack& stack, State::Context context, std::string_view resourcePath = "");
+    explicit LoadingState(StateStack &stack, State::Context context, std::string_view resourcePath = "");
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
-    bool handleEvent(const SDL_Event& event) noexcept override;
+    bool handleEvent(const SDL_Event &event) noexcept override;
 
     // Check if loading has completed
     bool isFinished() const noexcept;
@@ -28,7 +31,7 @@ private:
 
     void loadTexturesFromWorkerRequests() const noexcept;
 
-    void loadWindowIcon(const std::unordered_map<std::string, std::string>& resources) noexcept;
+    void loadWindowIcon(const std::unordered_map<std::string, std::string> &resources) noexcept;
 
     void loadAudio() noexcept;
     void loadFonts() noexcept;

@@ -20,55 +20,55 @@ union SDL_Event;
 class GameState : public State
 {
 public:
-    explicit GameState(StateStack& stack, Context context);
+    explicit GameState(StateStack &stack, Context context);
     ~GameState() override;
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
-    bool handleEvent(const SDL_Event& event) noexcept override;
+    bool handleEvent(const SDL_Event &event) noexcept override;
 
     /// Get reference to World (for multiplayer remote player rendering)
-    World& getWorld() noexcept { return mWorld; }
-    const World& getWorld() const noexcept { return mWorld; }
+    World &getWorld() noexcept { return mWorld; }
+    const World &getWorld() const noexcept { return mWorld; }
 
     /// Get reference to Camera (for multiplayer rendering)
-    Camera& getCamera() noexcept { return mCamera; }
-    const Camera& getCamera() const noexcept { return mCamera; }
+    Camera &getCamera() noexcept { return mCamera; }
+    const Camera &getCamera() const noexcept { return mCamera; }
 
 private:
-    World mWorld;  // Manages both 2D physics and 3D sphere scene
-    Player& mPlayer;  // Restored for camera input handling
+    World mWorld;    // Manages both 2D physics and 3D sphere scene
+    Player &mPlayer; // Restored for camera input handling
 
     // Music player reference for game music
-    MusicPlayer* mGameMusic{ nullptr };
+    MusicPlayer *mGameMusic{nullptr};
 
     // Path tracer camera (for 3D scene navigation)
     // Supports both first-person and third-person modes
     Camera mCamera;
 
     // Shader references from context
-    Shader* mDisplayShader{ nullptr };
-    Shader* mComputeShader{ nullptr };
+    Shader *mDisplayShader{nullptr};
+    Shader *mComputeShader{nullptr};
 
     // GPU resources
-    GLuint mShapeSSBO{ 0 };     // Shader Storage Buffer Object for spheres
-    GLuint mVAO{ 0 };           // Vertex Array Object for fullscreen quad
-    GLuint mAccumTex{ 0 };      // Accumulation texture for progressive rendering
-    GLuint mDisplayTex{ 0 };    // Display texture for final output
+    GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres
+    GLuint mVAO{0};        // Vertex Array Object for fullscreen quad
+    GLuint mAccumTex{0};   // Accumulation texture for progressive rendering
+    GLuint mDisplayTex{0}; // Display texture for final output
 
     // Progressive rendering state
-    mutable uint32_t mCurrentBatch{ 0 };
-    uint32_t mSamplesPerBatch{ 4 };
-    uint32_t mTotalBatches{ 250 };
+    mutable uint32_t mCurrentBatch{0};
+    uint32_t mSamplesPerBatch{4};
+    uint32_t mTotalBatches{250};
 
     // Camera movement tracking for accumulation reset
     mutable glm::vec3 mLastCameraPosition;
-    mutable float mLastCameraYaw{ 0.0f };
-    mutable float mLastCameraPitch{ 0.0f };
+    mutable float mLastCameraYaw{0.0f};
+    mutable float mLastCameraPitch{0.0f};
 
-    bool mShadersInitialized{ false };
-    int mWindowWidth{ 1280 };
-    int mWindowHeight{ 720 };
+    bool mShadersInitialized{false};
+    int mWindowWidth{1280};
+    int mWindowHeight{720};
 
     /// Initialize GPU graphics resources for compute shader rendering
     void initializeGraphicsResources() noexcept;

@@ -9,9 +9,16 @@
 class Plane
 {
 public:
-    Material material;
-    glm::vec3 point;        ///< A point on the plane
-    glm::vec3 normal;       ///< Plane normal vector
+    explicit Plane(const glm::vec3 &point, const glm::vec3 &normal, const Material &material);
+
+    const glm::vec3 &getPoint() const noexcept;
+    const glm::vec3 &getNormal() const noexcept;
+    const Material &getMaterial() const noexcept;
+
+private:
+    Material mMaterial;
+    glm::vec3 mPoint;
+    glm::vec3 mNormal;
 };
 
 #endif // PLANE_HPP

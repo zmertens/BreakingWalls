@@ -31,19 +31,19 @@ class World final
     friend class Player;
 
 public:
-    explicit World(RenderWindow& window, FontManager& fonts, TextureManager& textures, ShaderManager& shaders);
-    ~World();  // Defined in .cpp to avoid incomplete type issues
+    explicit World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders);
+    ~World(); // Defined in .cpp to avoid incomplete type issues
 
     void init() noexcept;
     void update(float dt);
     void draw() const noexcept;
     void destroyWorld();
-    void handleEvent(const SDL_Event& event);
+    void handleEvent(const SDL_Event &event);
 
-    const std::vector<Sphere>& getSpheres() const noexcept { return mSpheres; }
-    std::vector<Sphere>& getSpheres() noexcept { return mSpheres; }
+    const std::vector<Sphere> &getSpheres() const noexcept { return mSpheres; }
+    std::vector<Sphere> &getSpheres() noexcept { return mSpheres; }
 
-    void updateSphereChunks(const glm::vec3& cameraPosition) noexcept;
+    void updateSphereChunks(const glm::vec3 &cameraPosition) noexcept;
     glm::vec3 getMazeSpawnPosition() const noexcept { return mPlayerSpawnPosition; }
 
     // ========================================================================
@@ -53,76 +53,81 @@ public:
     /// Render player character as a billboard sprite using geometry shader
     /// @param player Player with animation state
     /// @param camera Camera for view/projection matrices
-    void renderPlayerCharacter(const Player& player, const Camera& camera) const noexcept;
+    void renderPlayerCharacter(const Player &player, const Camera &camera) const noexcept;
 
     /// Render a character from raw state data (for remote players)
     /// @param position World position of character
     /// @param facing Facing direction in degrees
     /// @param frame Animation frame to render
     /// @param camera Camera for view/projection matrices
-    void renderCharacterFromState(const glm::vec3& position, float facing, 
-                                    const AnimationRect& frame, const Camera& camera) const noexcept;
+    void renderCharacterFromState(const glm::vec3 &position, float facing,
+                                  const AnimationRect &frame, const Camera &camera) const noexcept;
 
     /// Get the character sprite sheet texture (for external rendering)
-    [[nodiscard]] const Texture* getCharacterSpriteSheet() const noexcept;
+    [[nodiscard]] const Texture *getCharacterSpriteSheet() const noexcept;
 
 private:
-
     void initPathTracerScene() noexcept;
     void syncPhysicsToSpheres() noexcept;
 
-    struct ChunkCoord {
+    struct ChunkCoord
+    {
         int x, z;
 
-        bool operator==(const ChunkCoord& other) const {
+        bool operator==(const ChunkCoord &other) const
+        {
             return x == other.x && z == other.z;
         }
     };
 
-    struct ChunkCoordHash {
-        std::size_t operator()(const ChunkCoord& coord) const {
+    struct ChunkCoordHash
+    {
+        std::size_t operator()(const ChunkCoord &coord) const
+        {
             return std::hash<int>()(coord.x) ^ (std::hash<int>()(coord.z) << 1);
         }
     };
 
-    struct MazeCell {
+    struct MazeCell
+    {
         int row, col;
         int distance;
         float worldX, worldZ;
     };
 
-    struct ChunkWorkItem {
+    struct ChunkWorkItem
+    {
         ChunkCoord coord;
         std::vector<MazeCell> cells;
         std::vector<Sphere> spheres;
         glm::vec3 spawnPosition;
-        bool hasSpawnPosition{ false };
+        bool hasSpawnPosition{false};
     };
 
     // Worker management
     void initWorkerPool() noexcept;
     void shutdownWorkerPool() noexcept;
-    void submitChunkForGeneration(const ChunkCoord& coord) noexcept;
+    void submitChunkForGeneration(const ChunkCoord &coord) noexcept;
     void processCompletedChunks() noexcept;
-    ChunkWorkItem generateChunkAsync(const ChunkCoord& coord) const noexcept;
+    ChunkWorkItem generateChunkAsync(const ChunkCoord &coord) const noexcept;
 
-    ChunkCoord getChunkCoord(const glm::vec3& position) const noexcept;
-    void loadChunk(const ChunkCoord& coord) noexcept;
-    void unloadChunk(const ChunkCoord& coord) noexcept;
+    ChunkCoord getChunkCoord(const glm::vec3 &position) const noexcept;
+    void loadChunk(const ChunkCoord &coord) noexcept;
+    void unloadChunk(const ChunkCoord &coord) noexcept;
 
     // Thread-safe maze generation helpers
-    std::string generateMazeForChunk(const ChunkCoord& coord) const noexcept;
-    std::vector<MazeCell> parseMazeCells(const std::string& mazeStr, const ChunkCoord& coord,
-        glm::vec3& outSpawnPosition, bool& outHasSpawn) const noexcept;
-    MaterialType getMaterialForDistance(int distance) const noexcept;
+    std::string generateMazeForChunk(const ChunkCoord &coord) const noexcept;
+    std::vector<MazeCell> parseMazeCells(const std::string &mazeStr, const ChunkCoord &coord,
+                                         glm::vec3 &outSpawnPosition, bool &outHasSpawn) const noexcept;
+    Material::MaterialType getMaterialForDistance(int distance) const noexcept;
 
     static constexpr auto FORCE_DUE_TO_GRAVITY = 9.8f;
 
-    RenderWindow& mWindow;
+    RenderWindow &mWindow;
     View mWorldView;
-    FontManager& mFonts;
-    TextureManager& mTextures;
-    ShaderManager& mShaders;  // Added for billboard shader access
+    FontManager &mFonts;
+    TextureManager &mTextures;
+    ShaderManager &mShaders; // Added for billboard shader access
 
     b2WorldId mWorldId;
     b2BodyId mMazeWallsBodyId;
@@ -136,7 +141,7 @@ private:
     // Modern C++ worker pool
     static constexpr size_t NUM_WORKER_THREADS = 4;
     static constexpr float SPHERE_SPAWN_RATE = 0.01f;
-    std::atomic<bool> mWorkersShouldStop{ false };
+    std::atomic<bool> mWorkersShouldStop{false};
     std::vector<std::future<void>> mWorkerThreads;
 
     mutable std::mutex mWorkQueueMutex;

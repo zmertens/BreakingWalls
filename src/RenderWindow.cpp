@@ -9,7 +9,7 @@
 #include <glad/glad.h>
 #include <SDL3/SDL.h>
 
-RenderWindow::RenderWindow(SDL_Window* window)
+RenderWindow::RenderWindow(SDL_Window *window)
     : mWindow(window), mCurrentView()
 {
     // Initialize view with window dimensions
@@ -22,7 +22,7 @@ RenderWindow::RenderWindow(SDL_Window* window)
     }
 }
 
-void RenderWindow::setView(const View& view)
+void RenderWindow::setView(const View &view)
 {
     mCurrentView = view;
 }

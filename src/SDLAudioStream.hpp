@@ -18,7 +18,7 @@ public:
     /// @param stream The audio stream being fed
     /// @param additional_amount How much more data is needed (in bytes)
     /// @param total_amount Total amount of data the stream is consuming right now (in bytes)
-    using AudioCallback = std::function<void(SDL_AudioStream* stream, int additional_amount, int total_amount)>;
+    using AudioCallback = std::function<void(SDL_AudioStream *stream, int additional_amount, int total_amount)>;
 
     /// @brief Constructor
     explicit SDLAudioStream();
@@ -27,10 +27,10 @@ public:
     ~SDLAudioStream();
 
     // Non-copyable, movable
-    SDLAudioStream(const SDLAudioStream&) = delete;
-    SDLAudioStream& operator=(const SDLAudioStream&) = delete;
-    SDLAudioStream(SDLAudioStream&&) noexcept;
-    SDLAudioStream& operator=(SDLAudioStream&&) noexcept;
+    SDLAudioStream(const SDLAudioStream &) = delete;
+    SDLAudioStream &operator=(const SDLAudioStream &) = delete;
+    SDLAudioStream(SDLAudioStream &&) noexcept;
+    SDLAudioStream &operator=(SDLAudioStream &&) noexcept;
 
     /// @brief Initialize the audio stream with specified parameters
     /// @param freq Sample rate (e.g., 8000, 44100, 48000)
@@ -74,25 +74,25 @@ public:
 
 private:
     /// @brief Internal SDL audio callback (static wrapper)
-    static void SDLCALL sdlAudioCallbackWrapper(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount);
+    static void SDLCALL sdlAudioCallbackWrapper(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount);
 
-    SDL_AudioStream* mStream{ nullptr };
+    SDL_AudioStream *mStream{nullptr};
     SDL_AudioSpec mSpec{};
     AudioCallback mCallback;
-    bool mIsPlaying{ false };
+    bool mIsPlaying{false};
 
     // For sine wave generation (example/testing)
-    int mCurrentSineSample{ 0 };
-    float mSineFrequency{ 440.0f };
-    float mSineVolume{ 0.5f };
-    float mSineDuration{ 0.0f };
-    float mSineElapsed{ 0.0f };
+    int mCurrentSineSample{0};
+    float mSineFrequency{440.0f};
+    float mSineVolume{0.5f};
+    float mSineDuration{0.0f};
+    float mSineElapsed{0.0f};
 
     // For white noise generation
-    int mCurrentNoiseSample{ 0 };
-    float mNoiseVolume{ 0.5f };
-    float mNoiseDuration{ 0.0f };
-    float mNoiseScale{ 1.0f };
+    int mCurrentNoiseSample{0};
+    float mNoiseVolume{0.5f};
+    float mNoiseDuration{0.0f};
+    float mNoiseScale{1.0f};
 };
 
 #endif // SDL_AUDIO_STREAM_HPP

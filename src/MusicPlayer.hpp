@@ -16,10 +16,10 @@ public:
     ~MusicPlayer();
 
     // Non-copyable, movable
-    MusicPlayer(const MusicPlayer&) = delete;
-    MusicPlayer& operator=(const MusicPlayer&) = delete;
-    MusicPlayer(MusicPlayer&&) noexcept;
-    MusicPlayer& operator=(MusicPlayer&&) noexcept;
+    MusicPlayer(const MusicPlayer &) = delete;
+    MusicPlayer &operator=(const MusicPlayer &) = delete;
+    MusicPlayer(MusicPlayer &&) noexcept;
+    MusicPlayer &operator=(MusicPlayer &&) noexcept;
 
     /// @brief Open a music file from disk (used by ResourceManager)
     /// @param filename Path to the music file

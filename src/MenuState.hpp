@@ -10,11 +10,11 @@ class MusicPlayer;
 class MenuState : public State
 {
 public:
-    explicit MenuState(StateStack& stack, Context context);
+    explicit MenuState(StateStack &stack, Context context);
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
-    bool handleEvent(const SDL_Event& event) noexcept override;
+    bool handleEvent(const SDL_Event &event) noexcept override;
 
 private:
     enum class MenuItem : unsigned int
@@ -28,7 +28,7 @@ private:
         COUNT = 6
     };
 
-    MusicPlayer* mMusic;
+    MusicPlayer *mMusic;
 
     // Navigation state variables
     mutable MenuItem mSelectedMenuItem;

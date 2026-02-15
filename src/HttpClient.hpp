@@ -7,22 +7,33 @@
 class HttpClient
 {
 public:
+    // Packets originated in the client
+	enum PacketType
+	{
+		POSITION_UPDATE,
+        // format: [Int32:packetType]
+		LOBBY_STATUS,
+        // format: [Int32:packetType] [Int32:playerCount] [Int32:minPlayers] [Int32:isReady]
+		LOBBY_READY 
+	};
+
+
     /// @brief Constructor
     /// @param network_data Network data for initializing the HTTP client (e.g. server URL)
-    explicit HttpClient(const std::string& network_data);
+    explicit HttpClient(const std::string &network_data);
 
     /// @brief Issue a GET request and return the response body (empty on failure)
     /// @param path Absolute path on server (e.g. "/mazes/networks/data")
-    std::string get(const std::string& path);
+    std::string get(const std::string &path);
 
     /// @brief Issue a POST request and return the response body (empty on failure)
     /// @param path Absolute path on server (e.g. "/mazes/networks/data")
     /// @param body Request payload
     /// @param contentType MIME type for payload
     std::string post(
-        const std::string& path,
-        const std::string& body,
-        const std::string& contentType = "application/json");
+        const std::string &path,
+        const std::string &body,
+        const std::string &contentType = "application/json");
 
     std::string_view getHostURL() const noexcept;
 

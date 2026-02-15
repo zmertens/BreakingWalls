@@ -12,17 +12,15 @@
 #include "SoundPlayer.hpp"
 #include "StateStack.hpp"
 
-SettingsState::SettingsState(StateStack& stack, Context context)
-    : State(stack, context)
-    , mShowText{ true }
-    , mShowSettingsWindow(true)
+SettingsState::SettingsState(StateStack &stack, Context context)
+    : State(stack, context), mShowText{true}, mShowSettingsWindow(true)
 {
 }
 
 void SettingsState::draw() const noexcept
 {
     // Draw the game background FIRST, before any ImGui calls
-    const auto& window = *getContext().window;
+    const auto &window = *getContext().window;
 
     ImGui::PushFont(getContext().fonts->get(Fonts::ID::LIMELIGHT).get());
 
@@ -42,7 +40,7 @@ void SettingsState::draw() const noexcept
     ImGui::SetNextWindowSize(ImVec2(500, 600), ImGuiCond_FirstUseEver);
 
     // Get current options from global OptionsManager
-    auto& optionsManager = *getContext().options;
+    auto &optionsManager = *getContext().options;
 
     // Use static variables to persist UI state between frames
     // Initialize from options on first access using a flag
@@ -62,7 +60,7 @@ void SettingsState::draw() const noexcept
         // Load values from OptionsManager (using default option ID)
         try
         {
-            const auto& opts = optionsManager.get(GUIOptions::ID::DE_FACTO);
+            const auto &opts = optionsManager.get(GUIOptions::ID::DE_FACTO);
             masterVolume = opts.mMasterVolume;
             musicVolume = opts.mMusicVolume;
             sfxVolume = opts.mSfxVolume;
@@ -72,7 +70,8 @@ void SettingsState::draw() const noexcept
             enableMusic = opts.mEnableMusic;
             enableSound = opts.mEnableSound;
             showDebugOverlay = opts.mShowDebugOverlay;
-        } catch (const std::exception&)
+        }
+        catch (const std::exception &)
         {
             // Options not loaded yet, use defaults
         }
@@ -135,8 +134,7 @@ void SettingsState::draw() const noexcept
                 .mVsync = vsync,
                 .mMasterVolume = masterVolume,
                 .mMusicVolume = musicVolume,
-                .mSfxVolume = sfxVolume
-                });
+                .mSfxVolume = sfxVolume});
         }
 
         ImGui::SameLine();
@@ -176,11 +174,11 @@ void SettingsState::draw() const noexcept
     ImGui::PopFont();
 }
 
-void SettingsState::applySettings(const Options& options) const noexcept
+void SettingsState::applySettings(const Options &options) const noexcept
 {
-    auto* window = getContext().window;
-    auto* sounds = getContext().sounds;
-    auto* musicManager = getContext().music;
+    auto *window = getContext().window;
+    auto *sounds = getContext().sounds;
+    auto *musicManager = getContext().music;
 
     // Apply fullscreen
     if (window)
@@ -203,27 +201,29 @@ void SettingsState::applySettings(const Options& options) const noexcept
         try
         {
             // Apply to game music
-            auto& gameMusic = musicManager->get(Music::ID::GAME_MUSIC);
+            auto &gameMusic = musicManager->get(Music::ID::GAME_MUSIC);
             if (options.mEnableMusic)
             {
                 gameMusic.setVolume(options.mMasterVolume * options.mMusicVolume / 100.0f);
-            } else
+            }
+            else
             {
                 gameMusic.setVolume(0.0f);
             }
-        } catch (const std::exception&)
+        }
+        catch (const std::exception &)
         {
             // Music not loaded yet
         }
     }
 
     // Store settings in OptionsManager for persistence
-    auto* optionsManager = getContext().options;
+    auto *optionsManager = getContext().options;
     if (optionsManager)
     {
         try
         {
-            auto& opts = optionsManager->get(GUIOptions::ID::DE_FACTO);
+            auto &opts = optionsManager->get(GUIOptions::ID::DE_FACTO);
             opts.mMasterVolume = options.mMasterVolume;
             opts.mMusicVolume = options.mMusicVolume;
             opts.mSfxVolume = options.mSfxVolume;
@@ -233,7 +233,8 @@ void SettingsState::applySettings(const Options& options) const noexcept
             opts.mEnableMusic = options.mEnableMusic;
             opts.mEnableSound = options.mEnableSound;
             opts.mShowDebugOverlay = options.mShowDebugOverlay;
-        } catch (const std::exception&)
+        }
+        catch (const std::exception &)
         {
             // Options not available
         }
@@ -261,7 +262,7 @@ bool SettingsState::update(float dt, unsigned int subSteps) noexcept
     return false;
 }
 
-bool SettingsState::handleEvent(const SDL_Event& event) noexcept
+bool SettingsState::handleEvent(const SDL_Event &event) noexcept
 {
     if (event.type == SDL_EVENT_KEY_DOWN)
     {
@@ -273,4 +274,3 @@ bool SettingsState::handleEvent(const SDL_Event& event) noexcept
 
     return true;
 }
-

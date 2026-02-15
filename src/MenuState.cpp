@@ -19,11 +19,8 @@
 #include "SoundPlayer.hpp"
 #include "StateStack.hpp"
 
-MenuState::MenuState(StateStack& stack, Context context)
-    : State(stack, context)
-    , mSelectedMenuItem(MenuItem::NEW_GAME)
-    , mShowMainMenu(true), mItemSelectedFlags{}
-    , mMusic{}
+MenuState::MenuState(StateStack &stack, Context context)
+    : State(stack, context), mSelectedMenuItem(MenuItem::NEW_GAME), mShowMainMenu(true), mItemSelectedFlags{}, mMusic{}
 {
     // initialize selection flags so UI shows correct selected item
     mItemSelectedFlags.fill(false);
@@ -32,7 +29,8 @@ MenuState::MenuState(StateStack& stack, Context context)
 
 void MenuState::draw() const noexcept
 {
-    if (!mShowMainMenu) {
+    if (!mShowMainMenu)
+    {
 
         return;
     }
@@ -43,7 +41,8 @@ void MenuState::draw() const noexcept
 
     ImGui::PushFont(getContext().fonts->get(Fonts::ID::NUNITO_SANS).get());
 
-    if constexpr (false) {
+    if constexpr (false)
+    {
         auto showDemoWindow = false;
         ImGui::ShowDemoWindow(&showDemoWindow);
     }
@@ -63,7 +62,8 @@ void MenuState::draw() const noexcept
     ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
 
-    if (ImGui::Begin("Main Menu", &mShowMainMenu, ImGuiWindowFlags_NoCollapse)) {
+    if (ImGui::Begin("Main Menu", &mShowMainMenu, ImGuiWindowFlags_NoCollapse))
+    {
         ImGui::Text("Welcome to MazeBuilder Physics");
         ImGui::Separator();
         ImGui::Spacing();
@@ -73,17 +73,16 @@ void MenuState::draw() const noexcept
         ImGui::Spacing();
 
         const array<string, static_cast<size_t>(MenuItem::COUNT)> menuItems = {
-            "Resume", "New Game", "Network Game", "Settings", "Splash screen", "Quit"
-        };
+            "Resume", "New Game", "Network Game", "Settings", "Splash screen", "Quit"};
 
         // Use Selectable with bool* overload so ImGui keeps a consistent toggled state
         const auto active = static_cast<size_t>(getContext().player->isActive());
-        for (size_t i{ static_cast<size_t>(active ? 0 : 1) }; i < menuItems.size(); ++i)
+        for (size_t i{static_cast<size_t>(active ? 0 : 1)}; i < menuItems.size(); ++i)
         {
-            if (bool* flag = &mItemSelectedFlags[i]; ImGui::Selectable(menuItems[i].c_str(), flag))
+            if (bool *flag = &mItemSelectedFlags[i]; ImGui::Selectable(menuItems[i].c_str(), flag))
             {
                 // When an item is selected, clear others and set the selected index
-                for (auto& f : mItemSelectedFlags)
+                for (auto &f : mItemSelectedFlags)
                 {
                     f = false;
                 }
@@ -100,9 +99,10 @@ void MenuState::draw() const noexcept
         // Display selected menu info
         ImGui::TextColored(ImVec4(0.933f, 1.0f, 0.8f, 1.0f), "Selected: ");
         ImGui::SameLine();
-        if (static_cast<unsigned int>(mSelectedMenuItem) < static_cast<unsigned int>(MenuItem::COUNT)) {
+        if (static_cast<unsigned int>(mSelectedMenuItem) < static_cast<unsigned int>(MenuItem::COUNT))
+        {
             ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "%s",
-                menuItems.at(static_cast<unsigned int>(mSelectedMenuItem)).c_str());
+                               menuItems.at(static_cast<unsigned int>(mSelectedMenuItem)).c_str());
         }
 
         ImGui::Spacing();
@@ -110,7 +110,8 @@ void MenuState::draw() const noexcept
         ImGui::Spacing();
 
         // Action buttons
-        if (ImGui::Button("Confirm Selection", ImVec2(180, 40))) {
+        if (ImGui::Button("Confirm Selection", ImVec2(180, 40)))
+        {
             SDL_Log("Confirmed selection: %u", static_cast<unsigned int>(mSelectedMenuItem));
             getContext().sounds->play(SoundEffect::ID::SELECT);
             // Close the menu window to trigger state transition in update()
@@ -129,29 +130,32 @@ void MenuState::draw() const noexcept
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Draw the game background first so ImGui renders on top of it
-    auto& window = *getContext().window;
+    auto &window = *getContext().window;
 }
 
 bool MenuState::update(float dt, unsigned int subSteps) noexcept
 {
     // If menu is visible, just keep it showing (no transitions yet)
-    if (mShowMainMenu) {
+    if (mShowMainMenu)
+    {
         return true;
     }
 
     // Menu was closed by user - process the selected action
-    switch (mSelectedMenuItem) {
+    switch (mSelectedMenuItem)
+    {
     case MenuItem::CONTINUE:
         // Only pop if there's a GameState to return to
-        if (getStack().peekState<GameState*>() != nullptr)
+        if (getStack().peekState<GameState *>() != nullptr)
         {
             // Pop menu state, returning to game
             requestStackPop();
-        } else
+        }
+        else
         {
             // If no game state exists, start a new game
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                "MenuState: Cannot continue - no game in progress. Starting new game.");
+                        "MenuState: Cannot continue - no game in progress. Starting new game.");
             requestStackPop();
             requestStackPush(States::ID::GAME);
         }
@@ -189,7 +193,7 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
     return true;
 }
 
-bool MenuState::handleEvent(const SDL_Event& event) noexcept
+bool MenuState::handleEvent(const SDL_Event &event) noexcept
 {
 
     if (event.type == SDL_EVENT_KEY_DOWN)

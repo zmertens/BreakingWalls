@@ -58,6 +58,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/MusicPlayer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PauseState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PhysicsGame.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Plane.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Player.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/RenderWindow.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GLSDLHelper.cpp
@@ -65,6 +66,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/SettingsState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Shader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SoundPlayer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Sphere.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SplashState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/StateStack.cpp

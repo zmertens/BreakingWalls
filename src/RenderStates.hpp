@@ -9,7 +9,7 @@ struct RenderStates
     {
     }
 
-    explicit RenderStates(const b2Transform& theTransform) : transform(theTransform)
+    explicit RenderStates(const b2Transform &theTransform) : transform(theTransform)
     {
     }
 

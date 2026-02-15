@@ -17,7 +17,7 @@ class GLSDLHelper
 {
 public:
     SDL_GLContext mGLContext{};
-    SDL_Window* mWindow{ nullptr };
+    SDL_Window *mWindow{nullptr};
 
 private:
     std::once_flag mInitializedFlag;
@@ -49,13 +49,13 @@ public:
     /// Allocate SSBO buffer with specified capacity
     /// @param bufferSize Size in bytes to allocate
     /// @param data Optional initial data (can be nullptr)
-    static void allocateSSBOBuffer(GLsizeiptr bufferSize, const void* data = nullptr) noexcept;
+    static void allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data = nullptr) noexcept;
 
     /// Update SSBO buffer data
     /// @param offset Offset in bytes
     /// @param size Size in bytes
     /// @param data Pointer to the data
-    static void updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void* data) noexcept;
+    static void updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void *data) noexcept;
 
     /// Create a 2D texture for path tracing with RGBA32F format
     /// @param width Texture width
@@ -65,15 +65,15 @@ public:
 
     /// Delete a Vertex Array Object
     /// @param vao Reference to VAO handle (will be set to 0 after deletion)
-    static void deleteVAO(GLuint& vao) noexcept;
+    static void deleteVAO(GLuint &vao) noexcept;
 
     /// Delete a buffer object (SSBO, VBO, etc.)
     /// @param buffer Reference to buffer handle (will be set to 0 after deletion)
-    static void deleteBuffer(GLuint& buffer) noexcept;
+    static void deleteBuffer(GLuint &buffer) noexcept;
 
     /// Delete a texture
     /// @param texture Reference to texture handle (will be set to 0 after deletion)
-    static void deleteTexture(GLuint& texture) noexcept;
+    static void deleteTexture(GLuint &texture) noexcept;
 
     // ========================================================================
     // Billboard sprite rendering for characters (uses geometry shader)
@@ -96,13 +96,13 @@ public:
     /// @param sheetWidth Total width of sprite sheet in pixels
     /// @param sheetHeight Total height of sprite sheet in pixels
     static void renderBillboardSprite(
-        Shader& billboardShader,
+        Shader &billboardShader,
         GLuint textureId,
-        const AnimationRect& frameRect,
-        const glm::vec3& worldPosition,
+        const AnimationRect &frameRect,
+        const glm::vec3 &worldPosition,
         float halfSize,
-        const glm::mat4& viewMatrix,
-        const glm::mat4& projMatrix,
+        const glm::mat4 &viewMatrix,
+        const glm::mat4 &projMatrix,
         int sheetWidth,
         int sheetHeight) noexcept;
 

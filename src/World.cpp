@@ -26,18 +26,8 @@
 #include <sstream>
 #include <cctype>
 
-World::World(RenderWindow& window, FontManager& fonts, TextureManager& textures, ShaderManager& shaders)
-    : mWindow{ window }
-    , mWorldView{ window.getView() }
-    , mFonts{ fonts }
-    , mTextures{ textures }
-    , mShaders{ shaders }
-    , mWorldId{ b2_nullWorldId }
-    , mMazeWallsBodyId{ b2_nullBodyId }
-    , mIsPanning{ false }
-    , mLastMousePosition{ 0.f, 0.f }
-    , mLastChunkUpdatePosition{}
-    , mPlayerSpawnPosition{}
+World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders)
+    : mWindow{window}, mWorldView{window.getView()}, mFonts{fonts}, mTextures{textures}, mShaders{shaders}, mWorldId{b2_nullWorldId}, mMazeWallsBodyId{b2_nullBodyId}, mIsPanning{false}, mLastMousePosition{0.f, 0.f}, mLastChunkUpdatePosition{}, mPlayerSpawnPosition{}
 {
 }
 
@@ -49,7 +39,7 @@ World::~World()
 void World::init() noexcept
 {
     b2WorldDef worldDef = b2DefaultWorldDef();
-    worldDef.gravity = { 0.0f, FORCE_DUE_TO_GRAVITY };
+    worldDef.gravity = {0.0f, FORCE_DUE_TO_GRAVITY};
 
     mWorldId = b2CreateWorld(&worldDef);
 
@@ -74,7 +64,7 @@ void World::initWorkerPool() noexcept
     for (size_t i = 0; i < NUM_WORKER_THREADS; ++i)
     {
         mWorkerThreads.push_back(std::async(std::launch::async, [this, i]()
-            {
+                                            {
                 while (!mWorkersShouldStop.load(std::memory_order_acquire))
                 {
                     std::packaged_task<ChunkWorkItem()> task;
@@ -104,8 +94,7 @@ void World::initWorkerPool() noexcept
                     {
                         task();
                     }
-                }
-            }));
+                } }));
     }
 }
 
@@ -134,20 +123,23 @@ void World::shutdownWorkerPool() noexcept
     // Wait for all workers with timeout
     for (size_t i = 0; i < mWorkerThreads.size(); ++i)
     {
-        auto& worker = mWorkerThreads[i];
+        auto &worker = mWorkerThreads[i];
         if (worker.valid())
         {
-            try {
+            try
+            {
                 // Wait with timeout
                 auto status = worker.wait_for(std::chrono::seconds(5));
                 if (status == std::future_status::timeout)
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "Worker thread %zu timed out waiting for shutdown", i);
+                                "Worker thread %zu timed out waiting for shutdown", i);
                 }
-            } catch (const std::exception& e) {
+            }
+            catch (const std::exception &e)
+            {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                    "Worker thread %zu shutdown exception: %s", i, e.what());
+                             "Worker thread %zu shutdown exception: %s", i, e.what());
             }
         }
     }
@@ -161,14 +153,14 @@ void World::shutdownWorkerPool() noexcept
     }
 }
 
-void World::submitChunkForGeneration(const ChunkCoord& coord) noexcept
+void World::submitChunkForGeneration(const ChunkCoord &coord) noexcept
 {
     // Create packaged task for chunk generation
     std::packaged_task<ChunkWorkItem()> task(
-        [this, coord]() -> ChunkWorkItem {
+        [this, coord]() -> ChunkWorkItem
+        {
             return generateChunkAsync(coord);
-        }
-    );
+        });
 
     // Get future before moving task
     auto future = task.get_future();
@@ -189,19 +181,22 @@ void World::submitChunkForGeneration(const ChunkCoord& coord) noexcept
     mWorkAvailable.notify_one();
 }
 
-World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord& coord) const noexcept
+World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord &coord) const noexcept
 {
+    using MaterialType = Material::MaterialType;
+
     ChunkWorkItem result;
     result.coord = coord;
     result.hasSpawnPosition = false;
 
-    try {
+    try
+    {
         // Generate maze (thread-safe with mutex)
         std::string mazeStr = generateMazeForChunk(coord);
         if (mazeStr.empty())
         {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                "Worker: Empty maze for chunk (%d, %d)", coord.x, coord.z);
+                        "Worker: Empty maze for chunk (%d, %d)", coord.x, coord.z);
             return result;
         }
 
@@ -211,15 +206,17 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord& coord) const no
         // Generate spheres (without physics bodies)
         std::mt19937 generator(coord.x * 73856093 ^ coord.z * 19349663);
 
-        auto getRandomFloat = [&generator](float low, float high) -> float {
+        auto getRandomFloat = [&generator](float low, float high) -> float
+        {
             std::uniform_real_distribution<float> distribution(low, high);
             return distribution(generator);
-            };
+        };
 
-        for (const auto& cell : result.cells)
+        for (const auto &cell : result.cells)
         {
             // Use SPHERE_SPAWN_RATE constant (1%)
-            if (getRandomFloat(0.0f, 1.0f) > SPHERE_SPAWN_RATE) {
+            if (getRandomFloat(0.0f, 1.0f) > SPHERE_SPAWN_RATE)
+            {
                 continue;
             }
 
@@ -228,25 +225,28 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord& coord) const no
             float density, fuzz = 0.0f, refractIdx = 1.5f;
             glm::vec3 albedo;
 
-            if (matType == MaterialType::METAL) {
+            if (matType == MaterialType::METAL)
+            {
                 density = 2.5f;
                 albedo = glm::vec3(
                     getRandomFloat(0.6f, 1.0f),
                     getRandomFloat(0.6f, 1.0f),
-                    getRandomFloat(0.6f, 1.0f)
-                );
+                    getRandomFloat(0.6f, 1.0f));
                 fuzz = getRandomFloat(0.0f, 0.3f);
-            } else if (matType == MaterialType::DIELECTRIC) {
+            }
+            else if (matType == MaterialType::DIELECTRIC)
+            {
                 density = 0.8f;
                 albedo = glm::vec3(1.0f);
                 refractIdx = 1.5f;
-            } else {
+            }
+            else
+            {
                 density = 1.0f;
                 albedo = glm::vec3(
                     getRandomFloat(0.2f, 0.8f),
                     getRandomFloat(0.2f, 0.8f),
-                    getRandomFloat(0.2f, 0.8f)
-                );
+                    getRandomFloat(0.2f, 0.8f));
             }
 
             float ypos = 5.0f + (cell.distance % 10) * 2.0f;
@@ -256,10 +256,12 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord& coord) const no
 
             result.spheres.emplace_back(center, radius, albedo, matType, fuzz, refractIdx);
         }
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-            "Worker: Exception generating chunk (%d, %d): %s",
-            coord.x, coord.z, e.what());
+                     "Worker: Exception generating chunk (%d, %d): %s",
+                     coord.x, coord.z, e.what());
     }
 
     return result;
@@ -267,16 +269,19 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord& coord) const no
 
 void World::processCompletedChunks() noexcept
 {
+    using MaterialType = Material::MaterialType;
+
     std::lock_guard<std::mutex> lock(mCompletedChunksMutex);
 
     auto it = mPendingChunks.begin();
     while (it != mPendingChunks.end())
     {
-        auto& [coord, future] = *it;
+        auto &[coord, future] = *it;
 
         if (future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)
         {
-            try {
+            try
+            {
                 ChunkWorkItem workItem = future.get();
 
                 // Update spawn position if found
@@ -288,7 +293,7 @@ void World::processCompletedChunks() noexcept
                 std::vector<size_t> sphereIndices;
 
                 // Create physics bodies for all spheres
-                for (const auto& sphere : workItem.spheres)
+                for (const auto &sphere : workItem.spheres)
                 {
                     size_t sphereIndex = mSpheres.size();
                     sphereIndices.push_back(sphereIndex);
@@ -299,24 +304,23 @@ void World::processCompletedChunks() noexcept
                     {
                         b2BodyDef bodyDef = b2DefaultBodyDef();
                         bodyDef.type = b2_dynamicBody;
-                        bodyDef.position = { sphere.center.x, sphere.center.z };
+                        bodyDef.position = {sphere.getCenter().x, sphere.getCenter().z};
                         bodyDef.linearDamping = 0.2f;
                         bodyDef.angularDamping = 0.3f;
-                        bodyDef.isBullet = sphere.radius < 4.0f;
+                        bodyDef.isBullet = sphere.getRadius() < 4.0f;
 
                         b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
 
                         if (b2Body_IsValid(bodyId))
                         {
                             b2ShapeDef shapeDef = b2DefaultShapeDef();
-                            shapeDef.density = sphere.materialType == static_cast<uint32_t>(MaterialType::METAL) ? 2.5f :
-                                (sphere.materialType == static_cast<uint32_t>(MaterialType::DIELECTRIC) ? 0.8f : 1.0f);
+                            shapeDef.density = sphere.getMaterialType() == MaterialType::METAL ? 2.5f : (sphere.getMaterialType() == MaterialType::DIELECTRIC ? 0.8f : 1.0f);
 
-                            b2Circle circle = { {0.0f, 0.0f}, sphere.radius };
+                            b2Circle circle = {{0.0f, 0.0f}, sphere.getRadius()};
                             b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
 
-                            float friction = sphere.materialType == static_cast<uint32_t>(MaterialType::METAL) ? 0.2f : 0.4f;
-                            float restitution = sphere.materialType == static_cast<uint32_t>(MaterialType::DIELECTRIC) ? 0.6f : 0.3f;
+                            float friction = sphere.getMaterialType() == MaterialType::METAL ? 0.2f : 0.4f;
+                            float restitution = sphere.getMaterialType() == MaterialType::DIELECTRIC ? 0.6f : 0.3f;
                             b2Shape_SetFriction(shapeId, friction);
                             b2Shape_SetRestitution(shapeId, restitution);
                             b2Body_SetAwake(bodyId, true);
@@ -328,7 +332,8 @@ void World::processCompletedChunks() noexcept
                         }
 
                         mSphereBodyIds.push_back(bodyId);
-                    } else
+                    }
+                    else
                     {
                         mSphereBodyIds.push_back(b2_nullBodyId);
                     }
@@ -338,14 +343,17 @@ void World::processCompletedChunks() noexcept
                 // This prevents race condition where unloadChunk is called before we're done
                 mLoadedChunks.insert(coord);
                 mChunkSphereIndices[coord] = sphereIndices;
-            } catch (const std::exception& e) {
+            }
+            catch (const std::exception &e)
+            {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                    "World: Exception integrating chunk (%d, %d): %s",
-                    coord.x, coord.z, e.what());
+                             "World: Exception integrating chunk (%d, %d): %s",
+                             coord.x, coord.z, e.what());
             }
 
             it = mPendingChunks.erase(it);
-        } else
+        }
+        else
         {
             ++it;
         }
@@ -375,7 +383,7 @@ void World::draw() const noexcept
     // World only manages physics and sphere data
 }
 
-void World::handleEvent(const SDL_Event& event)
+void World::handleEvent(const SDL_Event &event)
 {
     switch (event.type)
     {
@@ -383,7 +391,6 @@ void World::handleEvent(const SDL_Event& event)
         // Testing: Launch balls with number keys 1-4
         switch (event.key.key)
         {
-
         }
     case SDL_EVENT_MOUSE_WHEEL:
         if (event.wheel.y > 0)
@@ -395,7 +402,7 @@ void World::handleEvent(const SDL_Event& event)
         if (event.button.button == SDL_BUTTON_MIDDLE)
         {
             mIsPanning = true;
-            mLastMousePosition = { static_cast<float>(event.button.x), static_cast<float>(event.button.y) };
+            mLastMousePosition = {static_cast<float>(event.button.x), static_cast<float>(event.button.y)};
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
@@ -407,14 +414,15 @@ void World::handleEvent(const SDL_Event& event)
     case SDL_EVENT_MOUSE_MOTION:
         if (mIsPanning)
         {
-            SDL_FPoint currentMousePosition = { static_cast<float>(event.motion.x), static_cast<float>(event.motion.y) };
-            SDL_FPoint delta = { currentMousePosition.x - mLastMousePosition.x, currentMousePosition.y - mLastMousePosition.y };
+            SDL_FPoint currentMousePosition = {static_cast<float>(event.motion.x), static_cast<float>(event.motion.y)};
+            SDL_FPoint delta = {currentMousePosition.x - mLastMousePosition.x, currentMousePosition.y - mLastMousePosition.y};
             mLastMousePosition = currentMousePosition;
 
             if (SDL_GetModState() & SDL_KMOD_SHIFT)
             {
                 mWorldView.rotate(delta.x);
-            } else
+            }
+            else
             {
                 mWorldView.move(-delta.x, -delta.y);
             }
@@ -434,11 +442,16 @@ void World::destroyWorld()
     {
         if (b2Body_IsValid(*it))
         {
-            try {
+            try
+            {
                 b2DestroyBody(*it);
-            } catch (const std::exception& e) {
+            }
+            catch (const std::exception &e)
+            {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Error destroying body: %s", e.what());
-            } catch (...) {
+            }
+            catch (...)
+            {
                 // Ignore unknown errors during cleanup
             }
         }
@@ -448,11 +461,16 @@ void World::destroyWorld()
     // Destroy physics world
     if (b2World_IsValid(mWorldId))
     {
-        try {
+        try
+        {
             b2DestroyWorld(mWorldId);
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception &e)
+        {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Error destroying physics world: %s", e.what());
-        } catch (...) {
+        }
+        catch (...)
+        {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Unknown error destroying physics world");
         }
         mWorldId = b2_nullWorldId;
@@ -466,6 +484,8 @@ void World::destroyWorld()
 
 void World::initPathTracerScene() noexcept
 {
+    using MaterialType = Material::MaterialType;
+
     mSpheres.clear();
     mSphereBodyIds.clear();
     mLoadedChunks.clear();
@@ -484,8 +504,7 @@ void World::initPathTracerScene() noexcept
         glm::vec3(0.5f, 0.5f, 0.5f),
         MaterialType::LAMBERTIAN,
         0.0f,
-        0.0f
-    );
+        0.0f);
     mSphereBodyIds.push_back(b2_nullBodyId);
 
     // Center glass sphere - dynamic physics body (hero sphere, always present)
@@ -495,13 +514,12 @@ void World::initPathTracerScene() noexcept
         glm::vec3(1.0f, 1.0f, 1.0f),
         MaterialType::DIELECTRIC,
         0.0f,
-        1.5f
-    );
+        1.5f);
 
     {
         b2BodyDef bodyDef = b2DefaultBodyDef();
         bodyDef.type = b2_dynamicBody;
-        bodyDef.position = { 0.0f, 1.0f };
+        bodyDef.position = {0.0f, 1.0f};
         bodyDef.linearDamping = 0.1f;
         bodyDef.angularDamping = 0.3f;
 
@@ -510,7 +528,7 @@ void World::initPathTracerScene() noexcept
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.density = 0.8f;
 
-        b2Circle circle = { {0.0f, 0.0f}, 1.0f };
+        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
         b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
         b2Shape_SetFriction(shapeId, 0.3f);
         b2Shape_SetRestitution(shapeId, 0.4f);
@@ -526,13 +544,12 @@ void World::initPathTracerScene() noexcept
         glm::vec3(0.4f, 0.2f, 0.1f),
         MaterialType::LAMBERTIAN,
         0.0f,
-        0.0f
-    );
+        0.0f);
 
     {
         b2BodyDef bodyDef = b2DefaultBodyDef();
         bodyDef.type = b2_dynamicBody;
-        bodyDef.position = { -4.0f, 1.0f };
+        bodyDef.position = {-4.0f, 1.0f};
         bodyDef.linearDamping = 0.2f;
         bodyDef.angularDamping = 0.3f;
 
@@ -541,7 +558,7 @@ void World::initPathTracerScene() noexcept
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.density = 1.0f;
 
-        b2Circle circle = { {0.0f, 0.0f}, 1.0f };
+        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
         b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
         b2Shape_SetFriction(shapeId, 0.5f);
         b2Shape_SetRestitution(shapeId, 0.3f);
@@ -557,13 +574,12 @@ void World::initPathTracerScene() noexcept
         glm::vec3(0.7f, 0.6f, 0.5f),
         MaterialType::METAL,
         0.0f,
-        0.0f
-    );
+        0.0f);
 
     {
         b2BodyDef bodyDef = b2DefaultBodyDef();
         bodyDef.type = b2_dynamicBody;
-        bodyDef.position = { 4.0f, 1.0f };
+        bodyDef.position = {4.0f, 1.0f};
         bodyDef.linearDamping = 0.1f;
         bodyDef.angularDamping = 0.3f;
 
@@ -572,7 +588,7 @@ void World::initPathTracerScene() noexcept
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.density = 2.5f;
 
-        b2Circle circle = { {0.0f, 0.0f}, 1.0f };
+        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
         b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
         b2Shape_SetFriction(shapeId, 0.2f);
         b2Shape_SetRestitution(shapeId, 0.5f);
@@ -595,23 +611,24 @@ void World::syncPhysicsToSpheres() noexcept
 
             // Update sphere center: map 2D physics (x, y) back to 3D (x, y_original, z)
             // Keep Y coordinate from original sphere, use physics Y as Z coordinate
-            float originalY = mSpheres[i].center.y;
-            mSpheres[i].center.x = pos.x;
-            mSpheres[i].center.y = originalY;  // Preserve height
-            mSpheres[i].center.z = pos.y;       // Physics Y becomes Z
+            float originalY = mSpheres[i].getCenter().y;
+            glm::vec3 newCenter = mSpheres[i].getCenter();
+            newCenter.x = pos.x;
+            newCenter.y = originalY;
+            newCenter.z = pos.y;
+            mSpheres[i].setCenter(newCenter);
         }
     }
 }
 
-World::ChunkCoord World::getChunkCoord(const glm::vec3& position) const noexcept
+World::ChunkCoord World::getChunkCoord(const glm::vec3 &position) const noexcept
 {
     return ChunkCoord{
         static_cast<int>(std::floor(position.x / CHUNK_SIZE)),
-        static_cast<int>(std::floor(position.z / CHUNK_SIZE))
-    };
+        static_cast<int>(std::floor(position.z / CHUNK_SIZE))};
 }
 
-void World::updateSphereChunks(const glm::vec3& cameraPosition) noexcept
+void World::updateSphereChunks(const glm::vec3 &cameraPosition) noexcept
 {
     ChunkCoord currentChunk = getChunkCoord(cameraPosition);
     ChunkCoord lastChunk = getChunkCoord(mLastChunkUpdatePosition);
@@ -620,7 +637,8 @@ void World::updateSphereChunks(const glm::vec3& cameraPosition) noexcept
     bool firstCall = (mLastChunkUpdatePosition.x == std::numeric_limits<float>::max());
     bool chunkChanged = (currentChunk.x != lastChunk.x || currentChunk.z != lastChunk.z);
 
-    if (!firstCall && !chunkChanged) {
+    if (!firstCall && !chunkChanged)
+    {
         return; // Still in same chunk, no update needed
     }
 
@@ -628,47 +646,55 @@ void World::updateSphereChunks(const glm::vec3& cameraPosition) noexcept
 
     // Determine chunks that should be loaded
     std::unordered_set<ChunkCoord, ChunkCoordHash> desiredChunks;
-    for (int dx = -CHUNK_LOAD_RADIUS; dx <= CHUNK_LOAD_RADIUS; ++dx) {
-        for (int dz = -CHUNK_LOAD_RADIUS; dz <= CHUNK_LOAD_RADIUS; ++dz) {
-            desiredChunks.insert(ChunkCoord{ currentChunk.x + dx, currentChunk.z + dz });
+    for (int dx = -CHUNK_LOAD_RADIUS; dx <= CHUNK_LOAD_RADIUS; ++dx)
+    {
+        for (int dz = -CHUNK_LOAD_RADIUS; dz <= CHUNK_LOAD_RADIUS; ++dz)
+        {
+            desiredChunks.insert(ChunkCoord{currentChunk.x + dx, currentChunk.z + dz});
         }
     }
 
     // Unload chunks that are out of range
     std::vector<ChunkCoord> chunksToUnload;
-    for (const auto& chunk : mLoadedChunks) {
-        if (desiredChunks.find(chunk) == desiredChunks.end()) {
+    for (const auto &chunk : mLoadedChunks)
+    {
+        if (desiredChunks.find(chunk) == desiredChunks.end())
+        {
             chunksToUnload.push_back(chunk);
         }
     }
 
     int unloadedCount = 0;
-    for (const auto& chunk : chunksToUnload) {
+    for (const auto &chunk : chunksToUnload)
+    {
         unloadChunk(chunk);
         unloadedCount++;
     }
 
     // Load new chunks
     int loadedCount = 0;
-    for (const auto& chunk : desiredChunks) {
-        if (mLoadedChunks.find(chunk) == mLoadedChunks.end()) {
+    for (const auto &chunk : desiredChunks)
+    {
+        if (mLoadedChunks.find(chunk) == mLoadedChunks.end())
+        {
             loadChunk(chunk);
             loadedCount++;
         }
     }
 }
 
-void World::loadChunk(const ChunkCoord& coord) noexcept
+void World::loadChunk(const ChunkCoord &coord) noexcept
 {
     // Don't submit if already loaded or pending
-    if (mLoadedChunks.find(coord) != mLoadedChunks.end()) {
+    if (mLoadedChunks.find(coord) != mLoadedChunks.end())
+    {
         return;
     }
 
     // Check if already pending
     {
         std::lock_guard<std::mutex> lock(mCompletedChunksMutex);
-        for (const auto& [pendingCoord, _] : mPendingChunks)
+        for (const auto &[pendingCoord, _] : mPendingChunks)
         {
             if (pendingCoord == coord)
             {
@@ -681,10 +707,11 @@ void World::loadChunk(const ChunkCoord& coord) noexcept
     submitChunkForGeneration(coord);
 }
 
-void World::unloadChunk(const ChunkCoord& coord) noexcept
+void World::unloadChunk(const ChunkCoord &coord) noexcept
 {
     auto it = mChunkSphereIndices.find(coord);
-    if (it == mChunkSphereIndices.end()) {
+    if (it == mChunkSphereIndices.end())
+    {
         return;
     }
 
@@ -697,20 +724,24 @@ void World::unloadChunk(const ChunkCoord& coord) noexcept
     // Sort in reverse to remove from back to front
     std::sort(indicesToRemove.rbegin(), indicesToRemove.rend());
 
-    for (size_t idx : indicesToRemove) {
-        if (idx >= mSpheres.size() || idx >= mSphereBodyIds.size()) {
+    for (size_t idx : indicesToRemove)
+    {
+        if (idx >= mSpheres.size() || idx >= mSphereBodyIds.size())
+        {
             continue;
         }
 
         // Destroy physics body if valid
         b2BodyId bodyId = mSphereBodyIds[idx];
-        if (b2Body_IsValid(bodyId)) {
+        if (b2Body_IsValid(bodyId))
+        {
             b2DestroyBody(bodyId);
         }
 
         // Swap with last element
         size_t lastIdx = mSpheres.size() - 1;
-        if (idx < lastIdx) {
+        if (idx < lastIdx)
+        {
             // Remember that the element at lastIdx is now at idx
             indexRemapping[lastIdx] = idx;
 
@@ -724,13 +755,14 @@ void World::unloadChunk(const ChunkCoord& coord) noexcept
     }
 
     // Update ALL chunk indices based on remapping
-    for (auto& [chunkCoord, indices] : mChunkSphereIndices)
+    for (auto &[chunkCoord, indices] : mChunkSphereIndices)
     {
-        if (chunkCoord == coord) {
+        if (chunkCoord == coord)
+        {
             continue;
         }
 
-        for (size_t& sphereIdx : indices)
+        for (size_t &sphereIdx : indices)
         {
             // If this index was remapped, update it
             auto remapIt = indexRemapping.find(sphereIdx);
@@ -746,14 +778,16 @@ void World::unloadChunk(const ChunkCoord& coord) noexcept
     mLoadedChunks.erase(coord);
 }
 
-std::string World::generateMazeForChunk(const ChunkCoord& coord) const noexcept
+std::string World::generateMazeForChunk(const ChunkCoord &coord) const noexcept
 {
-    try {
+    try
+    {
         // Thread-safe cache access
         {
             std::lock_guard<std::mutex> lock(mMazeCacheMutex);
             auto it = mChunkMazes.find(coord);
-            if (it != mChunkMazes.end()) {
+            if (it != mChunkMazes.end())
+            {
                 return it->second;
             }
         }
@@ -762,11 +796,10 @@ std::string World::generateMazeForChunk(const ChunkCoord& coord) const noexcept
 
         auto mazeStr = mazes::create(
             mazes::configurator()
-            .rows(MAZE_ROWS)
-            .columns(MAZE_COLS)
-            .distances(false)
-            .seed(seed)
-        );
+                .rows(MAZE_ROWS)
+                .columns(MAZE_COLS)
+                .distances(false)
+                .seed(seed));
 
         // Cache the result (thread-safe)
         {
@@ -775,19 +808,22 @@ std::string World::generateMazeForChunk(const ChunkCoord& coord) const noexcept
         }
 
         return mazeStr;
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to generate maze: %s", e.what());
         return "";
     }
 }
 
-std::vector<World::MazeCell> World::parseMazeCells(const std::string& mazeStr, const ChunkCoord& coord,
-    glm::vec3& outSpawnPosition, bool& outHasSpawn) const noexcept
+std::vector<World::MazeCell> World::parseMazeCells(const std::string &mazeStr, const ChunkCoord &coord,
+                                                   glm::vec3 &outSpawnPosition, bool &outHasSpawn) const noexcept
 {
     std::vector<MazeCell> cells;
     outHasSpawn = false;
 
-    if (mazeStr.empty()) {
+    if (mazeStr.empty())
+    {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "World: Empty maze string for chunk (%d, %d)", coord.x, coord.z);
         return cells;
     }
@@ -795,8 +831,10 @@ std::vector<World::MazeCell> World::parseMazeCells(const std::string& mazeStr, c
     float chunkWorldX = coord.x * CHUNK_SIZE;
     float chunkWorldZ = coord.z * CHUNK_SIZE;
 
-    for (int row = 0; row < MAZE_ROWS; ++row) {
-        for (int col = 0; col < MAZE_COLS; ++col) {
+    for (int row = 0; row < MAZE_ROWS; ++row)
+    {
+        for (int col = 0; col < MAZE_COLS; ++col)
+        {
             int centerRow = MAZE_ROWS / 2;
             int centerCol = MAZE_COLS / 2;
             int distance = std::abs(row - centerRow) + std::abs(col - centerCol);
@@ -804,10 +842,11 @@ std::vector<World::MazeCell> World::parseMazeCells(const std::string& mazeStr, c
             float worldX = chunkWorldX + (col * CELL_SIZE) + (CELL_SIZE * 0.5f);
             float worldZ = chunkWorldZ + (row * CELL_SIZE) + (CELL_SIZE * 0.5f);
 
-            cells.push_back(MazeCell{ row, col, distance, worldX, worldZ });
+            cells.push_back(MazeCell{row, col, distance, worldX, worldZ});
 
             // Track spawn in work item instead of const_cast
-            if (row == centerRow && col == centerCol && coord.x == 0 && coord.z == 0) {
+            if (row == centerRow && col == centerCol && coord.x == 0 && coord.z == 0)
+            {
                 outSpawnPosition = glm::vec3(worldX, 10.0f, worldZ);
                 outHasSpawn = true;
             }
@@ -817,13 +856,20 @@ std::vector<World::MazeCell> World::parseMazeCells(const std::string& mazeStr, c
     return cells;
 }
 
-MaterialType World::getMaterialForDistance(int distance) const noexcept
+Material::MaterialType World::getMaterialForDistance(int distance) const noexcept
 {
-    if (distance % 4 == 0 && distance != 0) {
+    using MaterialType = Material::MaterialType;
+
+    if (distance % 4 == 0 && distance != 0)
+    {
         return MaterialType::METAL;
-    } else if (distance % 6 == 0 && distance != 0) {
+    }
+    else if (distance % 6 == 0 && distance != 0)
+    {
         return MaterialType::DIELECTRIC;
-    } else {
+    }
+    else
+    {
         return MaterialType::LAMBERTIAN;
     }
 }
@@ -837,7 +883,7 @@ MaterialType World::getMaterialForDistance(int distance) const noexcept
 #include "GLSDLHelper.hpp"
 #include "Shader.hpp"
 
-void World::renderPlayerCharacter(const Player& player, const Camera& camera) const noexcept
+void World::renderPlayerCharacter(const Player &player, const Camera &camera) const noexcept
 {
     // Only render in third-person mode
     if (camera.getMode() != CameraMode::THIRD_PERSON)
@@ -846,26 +892,26 @@ void World::renderPlayerCharacter(const Player& player, const Camera& camera) co
     }
 
     // Get the character sprite sheet texture
-    const Texture* spriteSheet = getCharacterSpriteSheet();
+    const Texture *spriteSheet = getCharacterSpriteSheet();
     if (!spriteSheet || spriteSheet->get() == 0)
     {
         static bool loggedOnce = false;
         if (!loggedOnce)
         {
             SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "World: Character sprite sheet not loaded (ID: %d)",
-                static_cast<int>(Textures::ID::CHARACTER_SPRITE_SHEET));
+                        static_cast<int>(Textures::ID::CHARACTER_SPRITE_SHEET));
             loggedOnce = true;
         }
         return;
     }
 
     // Get billboard shader
-    Shader* billboardShader = nullptr;
+    Shader *billboardShader = nullptr;
     try
     {
         billboardShader = &mShaders.get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
     }
-    catch (const std::exception& e)
+    catch (const std::exception &e)
     {
         static bool loggedOnce = false;
         if (!loggedOnce)
@@ -882,17 +928,17 @@ void World::renderPlayerCharacter(const Player& player, const Camera& camera) co
     // Get player position - this is where the character sprite will be rendered
     glm::vec3 playerPos = player.getPosition();
 
-    // Offset the billboard slightly in front of the player position 
+    // Offset the billboard slightly in front of the player position
     // so it's visible when camera is looking at player
     // The camera looks at mFollowTarget + (0,1,0), so render at same position
-    
+
     // Billboard half-size (character size in world units)
     float halfSize = 3.0f;
 
     // Get window dimensions from SDL
     int windowWidth = 1280;
     int windowHeight = 720;
-    SDL_Window* sdlWindow = mWindow.getSDLWindow();
+    SDL_Window *sdlWindow = mWindow.getSDLWindow();
     if (sdlWindow)
     {
         SDL_GetWindowSize(sdlWindow, &windowWidth, &windowHeight);
@@ -912,8 +958,8 @@ void World::renderPlayerCharacter(const Player& player, const Camera& camera) co
         SDL_Log("  Player pos: (%.1f, %.1f, %.1f)", playerPos.x, playerPos.y, playerPos.z);
         SDL_Log("  Camera pos: (%.1f, %.1f, %.1f)", camPos.x, camPos.y, camPos.z);
         SDL_Log("  Frame: %d,%d,%d,%d, texture: %u (%dx%d)",
-            frame.left, frame.top, frame.width, frame.height,
-            spriteSheet->get(), spriteSheet->getWidth(), spriteSheet->getHeight());
+                frame.left, frame.top, frame.width, frame.height,
+                spriteSheet->get(), spriteSheet->getWidth(), spriteSheet->getHeight());
         firstRender = false;
     }
 
@@ -927,30 +973,29 @@ void World::renderPlayerCharacter(const Player& player, const Camera& camera) co
         viewMatrix,
         projMatrix,
         spriteSheet->getWidth(),
-        spriteSheet->getHeight()
-    );
+        spriteSheet->getHeight());
 }
 
-void World::renderCharacterFromState(const glm::vec3& position, float facing, 
-                                       const AnimationRect& frame, const Camera& camera) const noexcept
+void World::renderCharacterFromState(const glm::vec3 &position, float facing,
+                                     const AnimationRect &frame, const Camera &camera) const noexcept
 {
     // Only render in third-person mode (or always for remote players)
     // For remote players, we always want to render them
-    
+
     // Get the character sprite sheet texture
-    const Texture* spriteSheet = getCharacterSpriteSheet();
+    const Texture *spriteSheet = getCharacterSpriteSheet();
     if (!spriteSheet || spriteSheet->get() == 0)
     {
         return;
     }
 
     // Get billboard shader
-    Shader* billboardShader = nullptr;
+    Shader *billboardShader = nullptr;
     try
     {
         billboardShader = &mShaders.get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
     }
-    catch (const std::exception&)
+    catch (const std::exception &)
     {
         return;
     }
@@ -961,7 +1006,7 @@ void World::renderCharacterFromState(const glm::vec3& position, float facing,
     // Get window dimensions
     int windowWidth = 1280;
     int windowHeight = 720;
-    SDL_Window* sdlWindow = mWindow.getSDLWindow();
+    SDL_Window *sdlWindow = mWindow.getSDLWindow();
     if (sdlWindow)
     {
         SDL_GetWindowSize(sdlWindow, &windowWidth, &windowHeight);
@@ -982,19 +1027,17 @@ void World::renderCharacterFromState(const glm::vec3& position, float facing,
         viewMatrix,
         projMatrix,
         spriteSheet->getWidth(),
-        spriteSheet->getHeight()
-    );
+        spriteSheet->getHeight());
 }
 
-const Texture* World::getCharacterSpriteSheet() const noexcept
+const Texture *World::getCharacterSpriteSheet() const noexcept
 {
     try
     {
         return &mTextures.get(Textures::ID::CHARACTER_SPRITE_SHEET);
     }
-    catch (const std::exception&)
+    catch (const std::exception &)
     {
         return nullptr;
     }
 }
-

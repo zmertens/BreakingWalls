@@ -19,7 +19,7 @@ bool GLSDLHelper::sBillboardInitialized = false;
 
 namespace
 {
-    bool checkForOpenGLError(const std::string& file, int line)
+    bool checkForOpenGLError(const std::string &file, int line)
     {
         bool error = false;
         GLenum glErr;
@@ -49,8 +49,8 @@ namespace
             }
 
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "OpenGL error in file %s at line %d, error message: %s\n",
-                file.c_str(), line, message.c_str());
+                         "OpenGL error in file %s at line %d, error message: %s\n",
+                         file.c_str(), line, message.c_str());
             glErr = glGetError();
             error = true;
         }
@@ -58,7 +58,7 @@ namespace
     }
 
     void debugCallbackForOpenGL(GLenum source, GLenum type, GLuint id,
-        GLenum severity, GLsizei length, const GLchar* message, const void* param)
+                                GLenum severity, GLsizei length, const GLchar *message, const void *param)
     {
         std::string sourceStr;
         switch (source)
@@ -130,8 +130,8 @@ namespace
         }
 
         SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION,
-            "OpenGL - Source: %s, Type: %s, Severity: %s, Message: %s\n",
-            sourceStr.c_str(), typeStr.c_str(), severityStr.c_str(), message);
+                     "OpenGL - Source: %s, Type: %s, Severity: %s, Message: %s\n",
+                     sourceStr.c_str(), typeStr.c_str(), severityStr.c_str(), message);
     }
 
 } // anonymous namespace
@@ -139,66 +139,67 @@ namespace
 void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 {
     auto initFunc = [this, title, width, height]()
+    {
+        if (!SDL_SetAppMetadata("Maze builder with physics", title.data(),
+                                "c++;cozy;game;simulation;physics"))
         {
-            if (!SDL_SetAppMetadata("Maze builder with physics", title.data(),
-                "c++;cozy;game;simulation;physics")) {
-                return;
-            }
+            return;
+        }
 
-            SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, title.data());
-            SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Flips And Ale");
-            SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "MIT License");
-            SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "csv");
-            SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, title.data());
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, title.data());
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Flips And Ale");
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "MIT License");
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "csv");
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, title.data());
 
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-            SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-            SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
 #if defined(BREAKING_WALLS_DEBUG)
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
 #endif
 
-            this->mWindow = SDL_CreateWindow(title.data(), width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_INPUT_FOCUS);
+        this->mWindow = SDL_CreateWindow(title.data(), width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_INPUT_FOCUS);
 
-            if (!this->mWindow)
-            {
-                SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_CreateWindow failed: %s\n", SDL_GetError());
-                return;
-            }
+        if (!this->mWindow)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_CreateWindow failed: %s\n", SDL_GetError());
+            return;
+        }
 
-            this->mGLContext = SDL_GL_CreateContext(this->mWindow);
-            if (!this->mGLContext)
-            {
-                SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
-                SDL_DestroyWindow(this->mWindow);
-                return;
-            }
+        this->mGLContext = SDL_GL_CreateContext(this->mWindow);
+        if (!this->mGLContext)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+            SDL_DestroyWindow(this->mWindow);
+            return;
+        }
 
-            SDL_GL_MakeCurrent(this->mWindow, this->mGLContext);
+        SDL_GL_MakeCurrent(this->mWindow, this->mGLContext);
 
-            if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
-            {
-                SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to initialize GLAD\n");
-                SDL_GL_DestroyContext(this->mGLContext);
-                SDL_DestroyWindow(this->mWindow);
-                return;
-            }
+        if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to initialize GLAD\n");
+            SDL_GL_DestroyContext(this->mGLContext);
+            SDL_DestroyWindow(this->mWindow);
+            return;
+        }
 
-            SDL_Log("OpenGL Version: %s\n", glGetString(GL_VERSION));
-            SDL_Log("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
+        SDL_Log("OpenGL Version: %s\n", glGetString(GL_VERSION));
+        SDL_Log("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
 
-            SDL_GL_SetSwapInterval(1);
+        SDL_GL_SetSwapInterval(1);
 
 #if defined(BREAKING_WALLS_DEBUG)
-            glDebugMessageCallback(debugCallbackForOpenGL, nullptr);
-            glEnable(GL_DEBUG_OUTPUT);
-            glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-            SDL_Log("OpenGL and SDL initialized successfully.");
+        glDebugMessageCallback(debugCallbackForOpenGL, nullptr);
+        glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        SDL_Log("OpenGL and SDL initialized successfully.");
 #endif
-        };
+    };
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
     {
@@ -218,18 +219,21 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
             }
 
             // Log current audio driver
-            if (const auto* currentDriver = SDL_GetCurrentAudioDriver())
+            if (const auto *currentDriver = SDL_GetCurrentAudioDriver())
             {
                 SDL_Log("Current audio driver: %s", currentDriver);
-            } else
+            }
+            else
             {
                 SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "No audio driver initialized");
             }
-        } else
+        }
+        else
         {
             SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "SDL Audio subsystem failed to initialize");
         }
-    } else
+    }
+    else
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_Init failed: %s\n", SDL_GetError());
     }
@@ -255,7 +259,7 @@ void GLSDLHelper::destroyAndQuit() noexcept
 
     if (mWindow)
     {
-        SDL_Log("SDLHelper::destroyAndQuit() - Destroying window %p\n", static_cast<void*>(mWindow));
+        SDL_Log("SDLHelper::destroyAndQuit() - Destroying window %p\n", static_cast<void *>(mWindow));
         SDL_DestroyWindow(mWindow);
         mWindow = nullptr;
     }
@@ -290,12 +294,12 @@ GLuint GLSDLHelper::createAndBindSSBO(GLuint bindingPoint) noexcept
     return ssbo;
 }
 
-void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void* data) noexcept
+void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) noexcept
 {
     glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, data, GL_DYNAMIC_DRAW);
 }
 
-void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void* data) noexcept
+void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void *data) noexcept
 {
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, offset, size, data);
 }
@@ -313,7 +317,7 @@ GLuint GLSDLHelper::createPathTracerTexture(GLsizei width, GLsizei height) noexc
     return texture;
 }
 
-void GLSDLHelper::deleteVAO(GLuint& vao) noexcept
+void GLSDLHelper::deleteVAO(GLuint &vao) noexcept
 {
     if (vao != 0)
     {
@@ -322,7 +326,7 @@ void GLSDLHelper::deleteVAO(GLuint& vao) noexcept
     }
 }
 
-void GLSDLHelper::deleteBuffer(GLuint& buffer) noexcept
+void GLSDLHelper::deleteBuffer(GLuint &buffer) noexcept
 {
     if (buffer != 0)
     {
@@ -331,7 +335,7 @@ void GLSDLHelper::deleteBuffer(GLuint& buffer) noexcept
     }
 }
 
-void GLSDLHelper::deleteTexture(GLuint& texture) noexcept
+void GLSDLHelper::deleteTexture(GLuint &texture) noexcept
 {
     if (texture != 0)
     {
@@ -359,11 +363,11 @@ void GLSDLHelper::initializeBillboardRendering() noexcept
     glBindBuffer(GL_ARRAY_BUFFER, sBillboardVBO);
 
     // Single point at origin - the model matrix will position it
-    float pointData[3] = { 0.0f, 0.0f, 0.0f };
+    float pointData[3] = {0.0f, 0.0f, 0.0f};
     glBufferData(GL_ARRAY_BUFFER, sizeof(pointData), pointData, GL_STATIC_DRAW);
 
     // Position attribute (location 0)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
     glEnableVertexAttribArray(0);
 
     glBindVertexArray(0);
@@ -396,13 +400,13 @@ void GLSDLHelper::cleanupBillboardRendering() noexcept
 }
 
 void GLSDLHelper::renderBillboardSprite(
-    Shader& billboardShader,
+    Shader &billboardShader,
     GLuint textureId,
-    const AnimationRect& frameRect,
-    const glm::vec3& worldPosition,
+    const AnimationRect &frameRect,
+    const glm::vec3 &worldPosition,
     float halfSize,
-    const glm::mat4& viewMatrix,
-    const glm::mat4& projMatrix,
+    const glm::mat4 &viewMatrix,
+    const glm::mat4 &projMatrix,
     int sheetWidth,
     int sheetHeight) noexcept
 {
@@ -470,8 +474,8 @@ void GLSDLHelper::renderBillboardSprite(
     if (renderCount < 5)
     {
         SDL_Log("Billboard render #%d: pos=(%.1f,%.1f,%.1f) size=%.1f uv=(%.3f,%.3f,%.3f,%.3f) tex=%u",
-            renderCount, worldPosition.x, worldPosition.y, worldPosition.z,
-            halfSize, u, v, uWidth, vHeight, textureId);
+                renderCount, worldPosition.x, worldPosition.y, worldPosition.z,
+                halfSize, u, v, uWidth, vHeight, textureId);
 
         // Log the position in view space (should give us an idea if it's visible)
         glm::vec4 viewPos = modelViewMatrix * glm::vec4(0, 0, 0, 1);
@@ -482,7 +486,8 @@ void GLSDLHelper::renderBillboardSprite(
         SDL_Log("  Clip space pos: (%.1f, %.1f, %.1f, %.1f)", clipPos.x, clipPos.y, clipPos.z, clipPos.w);
 
         // NDC position
-        if (clipPos.w != 0) {
+        if (clipPos.w != 0)
+        {
             glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
             SDL_Log("  NDC pos: (%.2f, %.2f, %.2f) - should be in [-1,1]", ndc.x, ndc.y, ndc.z);
         }
@@ -507,7 +512,16 @@ void GLSDLHelper::renderBillboardSprite(
     }
 
     // Restore previous OpenGL state
-    if (!blendEnabled) glDisable(GL_BLEND);
-    if (cullFaceEnabled) glEnable(GL_CULL_FACE);
-    if (!depthTestEnabled) glDisable(GL_DEPTH_TEST);
+    if (!blendEnabled)
+    {
+        glDisable(GL_BLEND);
+    }
+    if (cullFaceEnabled)
+    {
+        glEnable(GL_CULL_FACE);
+    }
+    if (!depthTestEnabled)
+    {
+        glDisable(GL_DEPTH_TEST);
+    }
 }

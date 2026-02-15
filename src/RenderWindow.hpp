@@ -11,28 +11,28 @@ class View;
 class RenderWindow
 {
 public:
-    explicit RenderWindow(SDL_Window* window);
+    explicit RenderWindow(SDL_Window *window);
 
     virtual ~RenderWindow() = default;
 
     // Delete copy constructor and copy assignment operator
     // because RenderWindow contains std::unique_ptr which is not copyable
-    RenderWindow(const RenderWindow&) = delete;
-    RenderWindow& operator=(const RenderWindow&) = delete;
+    RenderWindow(const RenderWindow &) = delete;
+    RenderWindow &operator=(const RenderWindow &) = delete;
 
     // Allow move constructor and move assignment operator
-    RenderWindow(RenderWindow&&) = default;
-    RenderWindow& operator=(RenderWindow&&) = default;
+    RenderWindow(RenderWindow &&) = default;
+    RenderWindow &operator=(RenderWindow &&) = default;
 
     /// @brief Set the current view (camera) for rendering
-    void setView(const View& view);
+    void setView(const View &view);
 
     [[nodiscard]] View getView() const noexcept;
 
     /// @brief Draw a drawable object (like RenderWindow)
     /// @tparam T Any type with a draw(RenderStates) method
     template <typename T>
-    void draw(const T& drawable) const noexcept;
+    void draw(const T &drawable) const noexcept;
 
     void beginFrame() const noexcept;
 
@@ -53,15 +53,15 @@ public:
     void setVsync(bool enabled) const noexcept;
 
     /// @brief Get the SDL window for direct access
-    [[nodiscard]] SDL_Window* getSDLWindow() const noexcept { return mWindow; }
+    [[nodiscard]] SDL_Window *getSDLWindow() const noexcept { return mWindow; }
 
 private:
-    SDL_Window* mWindow;
+    SDL_Window *mWindow;
     View mCurrentView;
 };
 
 template <typename T>
-void RenderWindow::draw(const T& drawable) const noexcept
+void RenderWindow::draw(const T &drawable) const noexcept
 {
     RenderStates states;
     // Apply view transform if needed (for camera/scrolling)

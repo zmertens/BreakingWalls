@@ -8,15 +8,15 @@ struct Options;
 class SettingsState : public State
 {
 public:
-    explicit SettingsState(StateStack& stack, Context context);
+    explicit SettingsState(StateStack &stack, Context context);
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
-    bool handleEvent(const SDL_Event& event) noexcept override;
+    bool handleEvent(const SDL_Event &event) noexcept override;
 
 private:
     // Apply all settings to the game systems
-    void applySettings(const Options& options) const noexcept;
+    void applySettings(const Options &options) const noexcept;
 
     bool mShowText;
 
@@ -25,4 +25,3 @@ private:
 };
 
 #endif // SETTINGS_STATE_HPP
-

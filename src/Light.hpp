@@ -13,21 +13,21 @@ public:
 
 public:
     Light();
-    
-    explicit Light(const glm::vec3& ambient, const glm::vec3& diffuse, const glm::vec3& specular,
-        const glm::vec4& position);
+
+    explicit Light(const glm::vec3 &ambient, const glm::vec3 &diffuse, const glm::vec3 &specular,
+                   const glm::vec4 &position);
 
     [[nodiscard]] glm::vec3 getAmbient() const;
-    void setAmbient(const glm::vec3& ambient);
+    void setAmbient(const glm::vec3 &ambient);
 
     [[nodiscard]] glm::vec3 getDiffuse() const;
-    void setDiffuse(const glm::vec3& diffuse);
+    void setDiffuse(const glm::vec3 &diffuse);
 
     [[nodiscard]] glm::vec3 getSpecular() const;
-    void setSpecular(const glm::vec3& specular);
+    void setSpecular(const glm::vec3 &specular);
 
     [[nodiscard]] glm::vec4 getPosition() const;
-    void setPosition(const glm::vec4& position);
+    void setPosition(const glm::vec4 &position);
 
 protected:
     glm::vec3 mAmbient;

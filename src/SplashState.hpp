@@ -12,12 +12,18 @@
 class SplashState : public State
 {
 public:
-    explicit SplashState(StateStack& stack, Context context);
+    explicit SplashState(StateStack &stack, Context context);
     ~SplashState() override;
+
+    // Non-copyable, movable
+    SplashState(const SplashState &) = delete;
+    SplashState &operator=(const SplashState &) = delete;
+    SplashState(SplashState &&) noexcept;
+    SplashState &operator=(SplashState &&) noexcept;
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
-    bool handleEvent(const SDL_Event& event) noexcept override;
+    bool handleEvent(const SDL_Event &event) noexcept override;
 
 private:
     bool isLoadingComplete() const noexcept;
@@ -36,32 +42,32 @@ private:
     Camera mCamera;
 
     // Shader references
-    Shader* mDisplayShader{ nullptr };
-    Shader* mComputeShader{ nullptr };
+    Shader *mDisplayShader{nullptr};
+    Shader *mComputeShader{nullptr};
 
     // GPU resources
-    GLuint mShapeSSBO{ 0 };
-    GLuint mVAO{ 0 };
-    GLuint mAccumTex{ 0 };
-    GLuint mDisplayTex{ 0 };
+    GLuint mShapeSSBO{0};
+    GLuint mVAO{0};
+    GLuint mAccumTex{0};
+    GLuint mDisplayTex{0};
 
     // Progressive rendering state
-    mutable uint32_t mCurrentBatch{ 0 };
-    uint32_t mSamplesPerBatch{ 4 };
-    uint32_t mTotalBatches{ 250 };
+    mutable uint32_t mCurrentBatch{0};
+    uint32_t mSamplesPerBatch{4};
+    uint32_t mTotalBatches{250};
 
     // Camera movement tracking
     mutable glm::vec3 mLastCameraPosition;
-    mutable float mLastCameraYaw{ 0.0f };
-    mutable float mLastCameraPitch{ 0.0f };
+    mutable float mLastCameraYaw{0.0f};
+    mutable float mLastCameraPitch{0.0f};
 
     // Auto-float camera parameters
-    float mFloatSpeed{ 15.0f };  // Units per second for gentle floating
-    float mFloatTime{ 0.0f };    // Accumulated time for gentle oscillation
+    float mFloatSpeed{15.0f}; // Units per second for gentle floating
+    float mFloatTime{0.0f};   // Accumulated time for gentle oscillation
 
-    bool mShadersInitialized{ false };
-    int mWindowWidth{ 1280 };
-    int mWindowHeight{ 720 };
+    bool mShadersInitialized{false};
+    int mWindowWidth{1280};
+    int mWindowHeight{720};
 };
 
 #endif // SPLASH_STATE_HPP

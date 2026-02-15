@@ -22,22 +22,22 @@ public:
 
 public:
     /// Constructor with position and spherical coordinates
-    explicit Camera(const glm::vec3& position = glm::vec3(0),
-        const float yaw = -90.0f, const float pitch = 0.0f,
-        float fovy = 65.0f, float near = 0.1f, float far = 100.0f);
+    explicit Camera(const glm::vec3 &position = glm::vec3(0),
+                    const float yaw = -90.0f, const float pitch = 0.0f,
+                    float fovy = 65.0f, float near = 0.1f, float far = 100.0f);
 
     /// Move camera by velocity vector
-    void move(const glm::vec3& velocity, float dt);
-    
+    void move(const glm::vec3 &velocity, float dt);
+
     /// Rotate camera using yaw and pitch
     void rotate(float yaw, float pitch, bool holdPitch = true, bool holdYaw = true);
 
     /// Get the look-at matrix
     [[nodiscard]] glm::mat4 getLookAt() const;
-    
+
     /// Get the perspective projection matrix
     [[nodiscard]] glm::mat4 getPerspective(const float aspectRatio) const;
-    
+
     /// Get infinite perspective projection matrix
     [[nodiscard]] glm::mat4 getInfPerspective(const float aspectRatio) const;
 
@@ -48,17 +48,17 @@ public:
     void updateFieldOfView(float dy);
 
     [[nodiscard]] glm::vec3 getPosition() const;
-    void setPosition(const glm::vec3& position);
-    
+    void setPosition(const glm::vec3 &position);
+
     [[nodiscard]] glm::vec3 getTarget() const;
-    void setTarget(const glm::vec3& target);
-    
+    void setTarget(const glm::vec3 &target);
+
     [[nodiscard]] glm::vec3 getUp() const;
-    void setUp(const glm::vec3& up);
-    
+    void setUp(const glm::vec3 &up);
+
     [[nodiscard]] glm::vec3 getRight() const;
-    void setRight(const glm::vec3& right);
-    
+    void setRight(const glm::vec3 &right);
+
     [[nodiscard]] float getNear() const;
     void setNear(float near);
 
@@ -79,7 +79,7 @@ public:
     [[nodiscard]] CameraMode getMode() const noexcept { return mMode; }
 
     /// Set the target position to follow (for third person)
-    void setFollowTarget(const glm::vec3& targetPos) noexcept { mFollowTarget = targetPos; }
+    void setFollowTarget(const glm::vec3 &targetPos) noexcept { mFollowTarget = targetPos; }
 
     /// Get the follow target position
     [[nodiscard]] glm::vec3 getFollowTarget() const noexcept { return mFollowTarget; }
@@ -112,7 +112,7 @@ private:
     static float sSensitivity;
 
     glm::vec3 mPosition;
-    glm::vec3 mTarget;      ///< Direction vector
+    glm::vec3 mTarget; ///< Direction vector
     glm::vec3 mUp;
     glm::vec3 mRight;
     float mYaw;
@@ -122,10 +122,10 @@ private:
     float mFar;
 
     // Third-person camera support
-    CameraMode mMode{ CameraMode::FIRST_PERSON };
-    glm::vec3 mFollowTarget{ 0.0f };    ///< Position to follow in third person
-    float mThirdPersonDistance{ 10.0f }; ///< Distance behind target
-    float mThirdPersonHeight{ 5.0f };    ///< Height above target
+    CameraMode mMode{CameraMode::FIRST_PERSON};
+    glm::vec3 mFollowTarget{0.0f};     ///< Position to follow in third person
+    float mThirdPersonDistance{10.0f}; ///< Distance behind target
+    float mThirdPersonHeight{5.0f};    ///< Height above target
 
 private:
     /// Update target, right, and up vectors based on yaw/pitch Euler angles

@@ -17,7 +17,6 @@
 #include "HttpClient.hpp"
 #include "JsonUtils.hpp"
 #include "MusicPlayer.hpp"
-#include "NetworkProtocol.hpp"
 #include "StateStack.hpp"
 
 namespace
@@ -28,7 +27,7 @@ namespace
     constexpr float NETWORK_DISCOVERY_INTERVAL = 5.0f;
     constexpr float LOBBY_STATUS_INTERVAL = 1.0f;
 
-    bool parseJsonStringField(const std::string& src, std::string_view key, std::string& out)
+    bool parseJsonStringField(const std::string &src, std::string_view key, std::string &out)
     {
         const std::regex fieldRegex(
             std::string{"\""} + std::string(key) + std::string{"\"\\s*:\\s*\"([^\"]*)\""});
@@ -43,7 +42,7 @@ namespace
         return false;
     }
 
-    bool parseJsonIntField(const std::string& src, std::string_view key, unsigned short& out)
+    bool parseJsonIntField(const std::string &src, std::string_view key, unsigned short &out)
     {
         const std::regex fieldRegex(
             std::string{"\""} + std::string(key) + std::string{"\"\\s*:\\s*(\\d+)"});
@@ -65,25 +64,23 @@ namespace
         return false;
     }
 
-    std::string makePeerKey(const sf::IpAddress& ip, unsigned short port)
+    std::string makePeerKey(const sf::IpAddress &ip, unsigned short port)
     {
         return ip.toString() + ":" + std::to_string(port);
     }
 
-    std::string makeResponseSnippet(const char* label, const std::string& response)
+    std::string makeResponseSnippet(const char *label, const std::string &response)
     {
         const size_t maxLen = 160;
         const size_t len = std::min(response.size(), maxLen);
         const std::string snippet = response.substr(0, len);
         return std::string("MultiplayerGameState: ") + label +
-            " (" + std::to_string(response.size()) + " bytes): " + snippet;
+               " (" + std::to_string(response.size()) + " bytes): " + snippet;
     }
 }
 
-MultiplayerGameState::MultiplayerGameState(StateStack& stack, Context context)
-    : State(stack, context)
-    , mLocalGame(std::make_unique<GameState>(stack, context))
-    , mMusic{ nullptr }
+MultiplayerGameState::MultiplayerGameState(StateStack &stack, Context context)
+    : State(stack, context), mLocalGame(std::make_unique<GameState>(stack, context)), mMusic{nullptr}
 {
     log("MultiplayerGameState: Constructed");
     initializeNetwork();
@@ -95,7 +92,7 @@ void MultiplayerGameState::draw() const noexcept
     if (mLocalGame)
     {
         mLocalGame->draw();
-        
+
         // Render remote players if lobby is ready
         if (mLobbyReady && !mRemotePlayers.empty())
         {
@@ -104,13 +101,13 @@ void MultiplayerGameState::draw() const noexcept
             glDepthFunc(GL_LESS);
             glDepthMask(GL_TRUE);
             glEnable(GL_DEPTH_TEST);
-            
+
             // Get World and Camera from local game
-            auto& world = mLocalGame->getWorld();
-            const auto& camera = mLocalGame->getCamera();
-            
+            auto &world = mLocalGame->getWorld();
+            const auto &camera = mLocalGame->getCamera();
+
             // Render each remote player
-            for (const auto& [playerName, remoteState] : mRemotePlayers)
+            for (const auto &[playerName, remoteState] : mRemotePlayers)
             {
                 if (remoteState.initialized)
                 {
@@ -119,8 +116,7 @@ void MultiplayerGameState::draw() const noexcept
                         remoteState.position,
                         remoteState.facing,
                         frame,
-                        camera
-                    );
+                        camera);
                 }
             }
         }
@@ -132,20 +128,20 @@ void MultiplayerGameState::draw() const noexcept
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(350, 100), ImGuiCond_Always);
         ImGui::Begin("Multiplayer Lobby", nullptr,
-            ImGuiWindowFlags_NoTitleBar | 
-            ImGuiWindowFlags_NoResize | 
-            ImGuiWindowFlags_NoMove | 
-            ImGuiWindowFlags_NoCollapse);
+                     ImGuiWindowFlags_NoTitleBar |
+                         ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoMove |
+                         ImGuiWindowFlags_NoCollapse);
 
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "WAITING FOR PLAYERS...");
         ImGui::Separator();
         ImGui::Text("Connected: %d / %d", mConnectedPlayerCount, mMinimumPlayers);
         ImGui::Text("Minimum: %d players", mMinimumPlayers);
-        
+
         if (mConnectedPlayerCount < mMinimumPlayers)
         {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), 
-                "Need %d more player(s)", mMinimumPlayers - mConnectedPlayerCount);
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f),
+                               "Need %d more player(s)", mMinimumPlayers - mConnectedPlayerCount);
         }
 
         ImGui::End();
@@ -224,16 +220,16 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
     }
 
     pollNetwork();
-    
+
     // Update remote player animations
-    for (auto& [playerName, remoteState] : mRemotePlayers)
+    for (auto &[playerName, remoteState] : mRemotePlayers)
     {
         if (remoteState.initialized)
         {
             remoteState.animator.update();
         }
     }
-    
+
     // Only send position updates if lobby is ready
     if (mLobbyReady)
     {
@@ -243,7 +239,7 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
     return true;
 }
 
-bool MultiplayerGameState::handleEvent(const SDL_Event& event) noexcept
+bool MultiplayerGameState::handleEvent(const SDL_Event &event) noexcept
 {
     if (mLocalGame)
     {
@@ -318,16 +314,17 @@ void MultiplayerGameState::startRegistration()
             << "}";
 
     mRegistrationFuture = std::async(std::launch::async,
-        [client = getContext().httpClient, body = payload.str()]() {
-            try
-            {
-                return client ? client->post("/mazes/networks/data", body) : std::string{};
-            }
-            catch (...)
-            {
-                return std::string{};
-            }
-        });
+                                     [client = getContext().httpClient, body = payload.str()]()
+                                     {
+                                         try
+                                         {
+                                             return client ? client->post("/mazes/networks/data", body) : std::string{};
+                                         }
+                                         catch (...)
+                                         {
+                                             return std::string{};
+                                         }
+                                     });
 }
 
 void MultiplayerGameState::pollRegistration()
@@ -348,7 +345,7 @@ void MultiplayerGameState::pollRegistration()
     {
         response = mRegistrationFuture.get();
     }
-    catch (const std::exception& e)
+    catch (const std::exception &e)
     {
         log("WARN: MultiplayerGameState: Registration future error: " + std::string(e.what()));
         return;
@@ -379,16 +376,17 @@ void MultiplayerGameState::startDiscovery()
     log("MultiplayerGameState: Starting discovery GET");
 
     mDiscoveryFuture = std::async(std::launch::async,
-        [client = getContext().httpClient]() {
-            try
-            {
-                return client ? client->get("/mazes/networks/data") : std::string{};
-            }
-            catch (...)
-            {
-                return std::string{};
-            }
-        });
+                                  [client = getContext().httpClient]()
+                                  {
+                                      try
+                                      {
+                                          return client ? client->get("/mazes/networks/data") : std::string{};
+                                      }
+                                      catch (...)
+                                      {
+                                          return std::string{};
+                                      }
+                                  });
 }
 
 void MultiplayerGameState::pollDiscovery()
@@ -409,7 +407,7 @@ void MultiplayerGameState::pollDiscovery()
     {
         response = mDiscoveryFuture.get();
     }
-    catch (const std::exception& e)
+    catch (const std::exception &e)
     {
         log("WARN: MultiplayerGameState: Discovery future error: " + std::string(e.what()));
         return;
@@ -427,7 +425,7 @@ void MultiplayerGameState::pollDiscovery()
     discoverPeers(response);
 }
 
-void MultiplayerGameState::discoverPeers(const std::string& response)
+void MultiplayerGameState::discoverPeers(const std::string &response)
 {
     if (response.empty())
     {
@@ -438,7 +436,7 @@ void MultiplayerGameState::discoverPeers(const std::string& response)
     const auto peers = parseActivePlayers(response);
     log("MultiplayerGameState: Discovery response " + std::to_string(response.size()) +
         " bytes, " + std::to_string(peers.size()) + " peer(s)");
-    for (const auto& peer : peers)
+    for (const auto &peer : peers)
     {
         if (peer.port == 0)
         {
@@ -464,7 +462,7 @@ void MultiplayerGameState::discoverPeers(const std::string& response)
     }
 }
 
-void MultiplayerGameState::connectToPeer(const PeerInfo& peer)
+void MultiplayerGameState::connectToPeer(const PeerInfo &peer)
 {
     auto socket = std::make_unique<sf::TcpSocket>();
     socket->setBlocking(true);
@@ -517,7 +515,7 @@ void MultiplayerGameState::pollNetwork()
 
     for (auto it = mPeerSockets.begin(); it != mPeerSockets.end();)
     {
-        sf::TcpSocket& socket = *(*it);
+        sf::TcpSocket &socket = *(*it);
         sf::Packet packet;
         const auto status = socket.receive(packet);
 
@@ -536,7 +534,7 @@ void MultiplayerGameState::pollNetwork()
     }
 }
 
-void MultiplayerGameState::handlePacket(sf::Packet& packet)
+void MultiplayerGameState::handlePacket(sf::Packet &packet)
 {
     std::int32_t packetType = 0;
     if (!(packet >> packetType))
@@ -544,7 +542,7 @@ void MultiplayerGameState::handlePacket(sf::Packet& packet)
         return;
     }
 
-    if (packetType == static_cast<std::int32_t>(Client::PositionUpdate))
+    if (packetType == static_cast<std::int32_t>(HttpClient::PacketType::POSITION_UPDATE))
     {
         std::string name;
         float x = 0.0f;
@@ -556,19 +554,19 @@ void MultiplayerGameState::handlePacket(sf::Packet& packet)
 
         if (packet >> name >> x >> y >> z >> facing >> moving >> animState)
         {
-            auto& remote = mRemotePlayers[name];
+            auto &remote = mRemotePlayers[name];
             remote.position = glm::vec3{x, y, z};
             remote.facing = facing;
             remote.moving = (moving != 0);
             remote.animState = animState;
-            
+
             // Initialize animator on first packet
             if (!remote.initialized)
             {
-                remote.animator.initialize(0);  // Character index 0
+                remote.animator.initialize(0); // Character index 0
                 remote.initialized = true;
             }
-            
+
             // Update animator state based on movement
             if (remote.moving)
             {
@@ -578,22 +576,22 @@ void MultiplayerGameState::handlePacket(sf::Packet& packet)
             {
                 remote.animator.setState(CharacterAnimState::IDLE);
             }
-            
+
             // Update animator position and rotation
             remote.animator.setPosition(remote.position);
             remote.animator.setRotation(remote.facing);
-            
+
             // Debug log for first position update from each player
             static std::unordered_set<std::string> loggedPlayers;
             if (loggedPlayers.find(name) == loggedPlayers.end())
             {
                 loggedPlayers.insert(name);
-                log("MultiplayerGameState: First position update from " + name + 
+                log("MultiplayerGameState: First position update from " + name +
                     " at (" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")");
             }
         }
     }
-    else if (packetType == static_cast<std::int32_t>(Client::LobbyStatus))
+    else if (packetType == static_cast<std::int32_t>(HttpClient::PacketType::LOBBY_STATUS))
     {
         std::int32_t playerCount = 0;
         std::int32_t minPlayers = 0;
@@ -605,7 +603,7 @@ void MultiplayerGameState::handlePacket(sf::Packet& packet)
             // Could be used to synchronize lobby readiness across peers
         }
     }
-    else if (packetType == static_cast<std::int32_t>(Client::LobbyReady))
+    else if (packetType == static_cast<std::int32_t>(HttpClient::PacketType::LOBBY_READY))
     {
         log("MultiplayerGameState: Received LobbyReady from peer");
     }
@@ -626,21 +624,21 @@ void MultiplayerGameState::sendLocalState(float dt)
 
     mSendAccumulator = 0.0f;
 
-    const auto& player = *getContext().player;
+    const auto &player = *getContext().player;
     const auto position = player.getPosition();
     const auto facing = player.getFacingDirection();
     const auto moving = player.isMoving();
     const auto animState = static_cast<std::uint8_t>(player.getAnimator().getState());
 
     sf::Packet packet;
-    packet << static_cast<std::int32_t>(Client::PositionUpdate)
+    packet << static_cast<std::int32_t>(HttpClient::PacketType::POSITION_UPDATE)
            << mLocalPlayerName
            << position.x << position.y << position.z
            << facing
            << static_cast<std::uint8_t>(moving ? 1 : 0)
            << animState;
 
-    for (auto& socket : mPeerSockets)
+    for (auto &socket : mPeerSockets)
     {
         const auto status = socket->send(packet);
         if (status != sf::Socket::Status::Done)
@@ -663,7 +661,7 @@ std::string MultiplayerGameState::loadNetworkUrl() const
 }
 
 std::vector<MultiplayerGameState::PeerInfo> MultiplayerGameState::parseActivePlayers(
-    const std::string& json) const
+    const std::string &json) const
 {
     std::vector<PeerInfo> peers;
 
@@ -709,12 +707,12 @@ void MultiplayerGameState::sendLobbyStatus()
     mConnectedPlayerCount = 1 + static_cast<int>(mPeerSockets.size());
 
     sf::Packet packet;
-    packet << static_cast<std::int32_t>(Client::LobbyStatus)
+    packet << static_cast<std::int32_t>(HttpClient::PacketType::LOBBY_STATUS)
            << static_cast<std::int32_t>(mConnectedPlayerCount)
            << static_cast<std::int32_t>(mMinimumPlayers)
            << static_cast<std::int32_t>(mLobbyReady ? 1 : 0);
 
-    for (auto& socket : mPeerSockets)
+    for (auto &socket : mPeerSockets)
     {
         [[maybe_unused]] auto status = socket->send(packet);
     }
@@ -736,8 +734,8 @@ void MultiplayerGameState::checkLobbyReady()
 
         // Broadcast ready status
         sf::Packet packet;
-        packet << static_cast<std::int32_t>(Client::LobbyReady);
-        for (auto& socket : mPeerSockets)
+        packet << static_cast<std::int32_t>(HttpClient::PacketType::LOBBY_READY);
+        for (auto &socket : mPeerSockets)
         {
             [[maybe_unused]] auto status = socket->send(packet);
         }

@@ -8,7 +8,7 @@
 /// @param configs Vector of configurator references
 /// @param appendResults Whether to append results to existing data
 /// @return True if the level was loaded successfully, false otherwise
-bool Level::load(const std::vector<mazes::configurator>& configs, bool appendResults) noexcept
+bool Level::load(const std::vector<mazes::configurator> &configs, bool appendResults) noexcept
 {
     if (appendResults)
     {

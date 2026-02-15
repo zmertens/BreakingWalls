@@ -27,24 +27,24 @@ public:
 
     // Delete copy constructor and copy assignment operator
     // because StateStack contains std::unique_ptr which is not copyable
-    StateStack(const StateStack&) = delete;
-    StateStack& operator=(const StateStack&) = delete;
+    StateStack(const StateStack &) = delete;
+    StateStack &operator=(const StateStack &) = delete;
 
     // Allow move constructor and move assignment operator
-    StateStack(StateStack&&) = default;
-    StateStack& operator=(StateStack&&) = default;
+    StateStack(StateStack &&) = default;
+    StateStack &operator=(StateStack &&) = default;
 
     template <typename T>
     void registerState(States::ID stateID);
 
     template <typename T, typename ResourcePath>
-    void registerState(States::ID stateID, ResourcePath&& resourcePath);
+    void registerState(States::ID stateID, ResourcePath &&resourcePath);
 
     void update(float dt, unsigned int subSteps) noexcept;
 
     void draw() const noexcept;
 
-    void handleEvent(const SDL_Event& event) noexcept;
+    void handleEvent(const SDL_Event &event) noexcept;
 
     void pushState(States::ID stateID);
 
@@ -81,18 +81,14 @@ template <typename T>
 void StateStack::registerState(States::ID stateID)
 {
     mFactories.insert_or_assign(stateID, [this]()
-    {
-        return State::Ptr(std::make_unique<T>(*this, mContext));
-    });
+                                { return State::Ptr(std::make_unique<T>(*this, mContext)); });
 }
 
 template <typename T, typename ResourcePath>
-void StateStack::registerState(States::ID stateID, ResourcePath&& resourcePath)
+void StateStack::registerState(States::ID stateID, ResourcePath &&resourcePath)
 {
     mFactories.insert_or_assign(stateID, [this, resourcePath = std::forward<ResourcePath>(resourcePath)]()
-    {
-        return State::Ptr(std::make_unique<T>(*this, mContext, resourcePath));
-    });
+                                { return State::Ptr(std::make_unique<T>(*this, mContext, resourcePath)); });
 }
 
 template <typename Pointer>

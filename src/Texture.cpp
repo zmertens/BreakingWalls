@@ -15,7 +15,7 @@
 namespace
 {
     /// Create a rotated copy of RGBA texture data (180 degrees)
-    std::vector<std::uint8_t> create_rotated_180(const std::uint8_t* data, int width, int height) noexcept
+    std::vector<std::uint8_t> create_rotated_180(const std::uint8_t *data, int width, int height) noexcept
     {
         if (data == nullptr || width <= 0 || height <= 0)
         {
@@ -48,7 +48,7 @@ Texture::~Texture() noexcept
     free();
 }
 
-Texture::Texture(Texture&& other) noexcept
+Texture::Texture(Texture &&other) noexcept
     : mTextureId(other.mTextureId), mWidth(other.mWidth), mHeight(other.mHeight), mBytes(other.mBytes)
 {
     other.mTextureId = 0;
@@ -57,7 +57,7 @@ Texture::Texture(Texture&& other) noexcept
     other.mBytes = nullptr;
 }
 
-Texture& Texture::operator=(Texture&& other) noexcept
+Texture &Texture::operator=(Texture &&other) noexcept
 {
     if (this != &other)
     {
@@ -93,7 +93,7 @@ std::uint32_t Texture::get() const noexcept
     return mTextureId;
 }
 
-std::uint8_t* Texture::getPixelData() const noexcept
+std::uint8_t *Texture::getPixelData() const noexcept
 {
     return mBytes;
 }
@@ -145,12 +145,12 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
     int components;
 
     // Force RGBA (4 components) for consistency
-    auto* data = stbi_load(filepath.data(), &width, &height, &components, 4);
+    auto *data = stbi_load(filepath.data(), &width, &height, &components, 4);
 
     if (data == nullptr)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "stbi_load %s failed: %s\n",
-            filepath.data(), stbi_failure_reason());
+                     filepath.data(), stbi_failure_reason());
         return false;
     }
 
@@ -166,7 +166,7 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
 
     // Upload texture data - now we know it's always RGBA
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
-        GL_UNSIGNED_BYTE, data);
+                 GL_UNSIGNED_BYTE, data);
 
     // Generate mipmaps for better quality
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -175,7 +175,7 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
     if (const GLenum error = glGetError(); error != GL_NO_ERROR)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error after loading %s: 0x%x\n",
-            filepath.data(), error);
+                     filepath.data(), error);
         stbi_image_free(data);
         return false;
     }
@@ -188,8 +188,8 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
     return true;
 }
 
-bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const int height,
-    const std::uint32_t channelOffset, const bool rotate_180) noexcept
+bool Texture::loadFromMemory(const std::uint8_t *data, const int width, const int height,
+                             const std::uint32_t channelOffset, const bool rotate_180) noexcept
 {
     if (data == nullptr || width <= 0 || height <= 0)
     {
@@ -200,7 +200,7 @@ bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const in
     this->free();
 
     // If rotation requested, create rotated copy
-    const std::uint8_t* upload_data = data;
+    const std::uint8_t *upload_data = data;
     std::vector<std::uint8_t> rotated_buffer;
 
     if (rotate_180)
@@ -214,7 +214,7 @@ bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const in
         upload_data = rotated_buffer.data();
     }
 
-    mBytes = const_cast<std::uint8_t*>(data);
+    mBytes = const_cast<std::uint8_t *>(data);
 
     glGenTextures(1, &mTextureId);
     glActiveTexture(GL_TEXTURE0 + channelOffset);
@@ -228,7 +228,7 @@ bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const in
 
     // Upload texture data - RGBA format (potentially rotated)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, upload_data);
+                 GL_RGBA, GL_UNSIGNED_BYTE, upload_data);
 
     // Generate mipmaps
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -246,8 +246,8 @@ bool Texture::loadFromMemory(const std::uint8_t* data, const int width, const in
     return true;
 }
 
-bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const int height,
-    const std::uint32_t channelOffset, const bool rotate_180) noexcept
+bool Texture::updateFromMemory(const std::uint8_t *data, const int width, const int height,
+                               const std::uint32_t channelOffset, const bool rotate_180) noexcept
 {
     if (data == nullptr || width <= 0 || height <= 0)
     {
@@ -259,12 +259,12 @@ bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const 
     if (width > MAX_TEXTURE_WIDTH || height > MAX_TEXTURE_HEIGHT)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-            "Texture dimensions %dx%d exceed maximum %dx%d\n",
-            width, height, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
+                     "Texture dimensions %dx%d exceed maximum %dx%d\n",
+                     width, height, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
         return false;
     }
 
-    mBytes = const_cast<std::uint8_t*>(data);
+    mBytes = const_cast<std::uint8_t *>(data);
 
     // If texture doesn't exist or dimensions changed, reallocate
     if (mTextureId == 0 || mWidth != width || mHeight != height)
@@ -273,7 +273,7 @@ bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const 
     }
 
     // If rotation requested, create rotated copy
-    const std::uint8_t* upload_data = data;
+    const std::uint8_t *upload_data = data;
     std::vector<std::uint8_t> rotated_buffer;
 
     if (rotate_180)
@@ -291,7 +291,7 @@ bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const 
     glActiveTexture(GL_TEXTURE0 + channelOffset);
     glBindTexture(GL_TEXTURE_2D, mTextureId);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA,
-        GL_UNSIGNED_BYTE, upload_data);
+                    GL_UNSIGNED_BYTE, upload_data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     if (const GLenum error = glGetError(); error != GL_NO_ERROR)
@@ -301,21 +301,6 @@ bool Texture::updateFromMemory(const std::uint8_t* data, const int width, const 
     }
 
     return true;
-}
-
-bool Texture::loadBmpIcon(SDL_Window* window, const std::string_view filepath) noexcept
-{
-    if (SDL_Surface* bmp_surface = SDL_LoadBMP(filepath.data()))
-    {
-        SDL_SetWindowIcon(window, bmp_surface);
-        SDL_DestroySurface(bmp_surface);
-
-        return true;
-    }
-
-    SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load window icon from %s: %s",
-        filepath.data(), SDL_GetError());
-    return false;
 }
 
 bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cellSize) noexcept
@@ -340,7 +325,8 @@ bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cell
             maxCols = std::max(maxCols, currentCol);
             currentCol = 0;
             ++rows;
-        } else
+        }
+        else
         {
             ++currentCol;
         }
@@ -360,7 +346,7 @@ bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cell
     if (pixelWidth > MAX_TEXTURE_WIDTH || pixelHeight > MAX_TEXTURE_HEIGHT)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze texture %dx%d exceeds maximum %dx%d\n",
-            pixelWidth, pixelHeight, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
+                     pixelWidth, pixelHeight, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
         return false;
     }
 
@@ -368,10 +354,10 @@ bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cell
     std::vector<std::uint8_t> pixels(pixelWidth * pixelHeight * 4, 0);
 
     // Define colors (RGBA)
-    constexpr std::uint8_t WALL_COLOR[4] = { 40, 40, 40, 255 };       // Dark gray for walls
-    constexpr std::uint8_t PATH_COLOR[4] = { 200, 200, 200, 255 };   // Light gray for paths
-    constexpr std::uint8_t START_COLOR[4] = { 0, 255, 0, 255 };      // Green for start
-    constexpr std::uint8_t END_COLOR[4] = { 255, 0, 0, 255 };        // Red for end
+    constexpr std::uint8_t WALL_COLOR[4] = {40, 40, 40, 255};    // Dark gray for walls
+    constexpr std::uint8_t PATH_COLOR[4] = {200, 200, 200, 255}; // Light gray for paths
+    constexpr std::uint8_t START_COLOR[4] = {0, 255, 0, 255};    // Green for start
+    constexpr std::uint8_t END_COLOR[4] = {255, 0, 0, 255};      // Red for end
 
     // Render maze to pixel buffer
     int row = 0;
@@ -387,7 +373,7 @@ bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cell
         }
 
         // Determine color based on character
-        const std::uint8_t* color = nullptr;
+        const std::uint8_t *color = nullptr;
         switch (c)
         {
         case static_cast<unsigned char>(mazes::barriers::CORNER):

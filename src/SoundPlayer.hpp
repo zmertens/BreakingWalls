@@ -12,20 +12,20 @@ class SoundPlayer
 {
 public:
     /// @brief Constructor that takes a reference to an external SoundBufferManager
-    explicit SoundPlayer(SoundBufferManager& soundBuffers);
+    explicit SoundPlayer(SoundBufferManager &soundBuffers);
 
     /// @brief Destructor
     ~SoundPlayer();
 
     // Non-copyable, movable
-    SoundPlayer(const SoundPlayer&) = delete;
-    SoundPlayer& operator=(const SoundPlayer&) = delete;
-    SoundPlayer(SoundPlayer&&) noexcept;
-    SoundPlayer& operator=(SoundPlayer&&) noexcept;
+    SoundPlayer(const SoundPlayer &) = delete;
+    SoundPlayer &operator=(const SoundPlayer &) = delete;
+    SoundPlayer(SoundPlayer &&) noexcept;
+    SoundPlayer &operator=(SoundPlayer &&) noexcept;
 
     void play(SoundEffect::ID effect);
     void play(SoundEffect::ID effect,
-        sf::Vector2f position);
+              sf::Vector2f position);
     void removeStoppedSounds();
     void setListenerPosition(sf::Vector2f position);
     sf::Vector2f getListenerPosition() const;

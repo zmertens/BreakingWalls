@@ -28,11 +28,8 @@ namespace
 class SoundPlayer::Impl
 {
 public:
-    explicit Impl(SoundBufferManager& soundBuffers)
-        : mSoundBuffers{ soundBuffers }
-        , mSounds{}
-        , mVolume{ 100.0f }
-        , mEnabled{ true }
+    explicit Impl(SoundBufferManager &soundBuffers)
+        : mSoundBuffers{soundBuffers}, mSounds{}, mVolume{100.0f}, mEnabled{true}
     {
     }
 
@@ -52,11 +49,11 @@ public:
             return;
         }
 
-        mSounds.emplace_back(sf::Sound{ mSoundBuffers.get(effect) });
-        sf::Sound& sound = mSounds.back();
+        mSounds.emplace_back(sf::Sound{mSoundBuffers.get(effect)});
+        sf::Sound &sound = mSounds.back();
 
         // Set 3D position: X same, Y negated (audio Y is up), Z=0 (sound in 2D plane)
-        sound.setPosition(sf::Vector3f{ position.x, -position.y, 0.f });
+        sound.setPosition(sf::Vector3f{position.x, -position.y, 0.f});
         sound.setAttenuation(ATTENUATION);
         sound.setMinDistance(MIN_DISTANCE_3D);
         sound.setVolume(mVolume);
@@ -66,9 +63,8 @@ public:
 
     void removeStoppedSounds()
     {
-        std::erase_if(mSounds, [](const sf::Sound& sound) {
-            return sound.getStatus() == sf::Sound::Status::Stopped;
-            });
+        std::erase_if(mSounds, [](const sf::Sound &sound)
+                      { return sound.getStatus() == sf::Sound::Status::Stopped; });
     }
 
     // Set listener position in 2D game coordinates
@@ -76,7 +72,7 @@ public:
     {
         // Convert 2D position to 3D listener position
         // X stays the same, Y is negated (audio Y is up), Z is listener distance from sound plane
-        sf::Listener::setPosition(sf::Vector3f{ position.x, -position.y, LISTENER_Z });
+        sf::Listener::setPosition(sf::Vector3f{position.x, -position.y, LISTENER_Z});
     }
 
     // Get listener position in 2D game coordinates
@@ -84,14 +80,14 @@ public:
     {
         sf::Vector3f pos = sf::Listener::getPosition();
         // Convert back from 3D audio to 2D game coordinates (negate Y back)
-        return sf::Vector2f{ pos.x, -pos.y };
+        return sf::Vector2f{pos.x, -pos.y};
     }
 
     void setVolume(float volume)
     {
         mVolume = std::clamp(volume, 0.0f, 100.0f);
         // Update volume for all currently playing sounds
-        for (auto& sound : mSounds)
+        for (auto &sound : mSounds)
         {
             sound.setVolume(mVolume);
         }
@@ -108,7 +104,7 @@ public:
         if (!mEnabled)
         {
             // Stop all currently playing sounds when disabled
-            for (auto& sound : mSounds)
+            for (auto &sound : mSounds)
             {
                 sound.stop();
             }
@@ -121,7 +117,7 @@ public:
     }
 
 private:
-    SoundBufferManager& mSoundBuffers;
+    SoundBufferManager &mSoundBuffers;
     std::list<sf::Sound> mSounds;
     float mVolume;
     bool mEnabled;
@@ -129,15 +125,15 @@ private:
 
 // SoundPlayer public API
 
-SoundPlayer::SoundPlayer(SoundBufferManager& soundBuffers)
-    : mImpl{ std::make_unique<Impl>(soundBuffers) }
+SoundPlayer::SoundPlayer(SoundBufferManager &soundBuffers)
+    : mImpl{std::make_unique<Impl>(soundBuffers)}
 {
 }
 
 SoundPlayer::~SoundPlayer() = default;
 
-SoundPlayer::SoundPlayer(SoundPlayer&&) noexcept = default;
-SoundPlayer& SoundPlayer::operator=(SoundPlayer&&) noexcept = default;
+SoundPlayer::SoundPlayer(SoundPlayer &&) noexcept = default;
+SoundPlayer &SoundPlayer::operator=(SoundPlayer &&) noexcept = default;
 
 void SoundPlayer::play(SoundEffect::ID effect)
 {

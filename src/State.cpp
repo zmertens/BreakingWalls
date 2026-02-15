@@ -6,34 +6,22 @@
 #include <cstdarg>
 #include <cstdio>
 
-State::Context::Context(RenderWindow& window,
-    FontManager& fonts,
-    LevelsManager& levels,
-    MusicManager& music,
-    OptionsManager& options,
-    SoundBufferManager& soundBuffers,
-    SoundPlayer& sounds,
-    ShaderManager& shaders,
-    TextureManager& textures, Player& player,
-    HttpClient& httpClient)
-    : window{ &window }
-    , fonts{ &fonts }
-    , levels{ &levels }
-    , music{ &music }
-    , options{ &options }
-    , soundBuffers{ &soundBuffers }
-    , sounds{ &sounds }
-    , shaders{ &shaders }
-    , textures{ &textures }
-    , player{ &player }
-    , httpClient{ &httpClient }
+State::Context::Context(RenderWindow &window,
+                        FontManager &fonts,
+                        LevelsManager &levels,
+                        MusicManager &music,
+                        OptionsManager &options,
+                        SoundBufferManager &soundBuffers,
+                        SoundPlayer &sounds,
+                        ShaderManager &shaders,
+                        TextureManager &textures, Player &player,
+                        HttpClient &httpClient)
+    : window{&window}, fonts{&fonts}, levels{&levels}, music{&music}, options{&options}, soundBuffers{&soundBuffers}, sounds{&sounds}, shaders{&shaders}, textures{&textures}, player{&player}, httpClient{&httpClient}
 {
-
 }
 
-State::State(StateStack& stack, Context context)
-    : mStack{ &stack }
-    , mContext{ context }
+State::State(StateStack &stack, Context context)
+    : mStack{&stack}, mContext{context}
 {
 }
 
@@ -57,17 +45,17 @@ State::Context State::getContext() const noexcept
     return mContext;
 }
 
-StateStack& State::getStack() const noexcept
+StateStack &State::getStack() const noexcept
 {
     return *mStack;
 }
 
-/// @brief 
+/// @brief
 /// @param message
 /// @param delimiter '\n'
 void State::log(std::string_view message, const char delimiter) const noexcept
 {
-    mLogs += std::string{ message } + delimiter;
+    mLogs += std::string{message} + delimiter;
 }
 
 std::string_view State::view() const noexcept

@@ -4,20 +4,20 @@
 // Player verses computer AI gameplay with physics simulation
 // Scoring system based on survivability (time) and efficiency (resources)
 
-#include <iostream>
 #include <exception>
+#include <iostream>
 #include <string>
 
 #include "PhysicsGame.hpp"
 
 #include <MazeBuilder/maze_builder.h>
 
-const auto WINDOW_TITLE{ "Breaking Walls " + mazes::VERSION };
+const auto WINDOW_TITLE{"Breaking Walls " + mazes::VERSION};
 
 static constexpr auto WINDOW_WIDTH = 1280;
 static constexpr auto WINDOW_HEIGHT = 720;
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
     std::string configPath{};
 
@@ -45,7 +45,8 @@ int main(int argc, char* argv[])
         {
             throw std::runtime_error("Error: " + std::string(argv[0]) + " encountered an error during execution");
         }
-    } catch (std::exception& ex)
+    }
+    catch (std::exception &ex)
     {
         std::cerr << ex.what() << std::endl;
     }

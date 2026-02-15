@@ -1,6 +1,5 @@
 #include "HttpClient.hpp"
 
-#include <iostream>
 #include <regex>
 #include <sstream>
 #include <unordered_map>
@@ -21,8 +20,6 @@ HttpClient::HttpClient(const std::string &network_data)
 
 void HttpClient::parseServerURL() noexcept
 {
-    using std::cout;
-    using std::endl;
     using std::ostringstream;
     using std::regex;
     using std::smatch;
@@ -48,14 +45,12 @@ void HttpClient::parseServerURL() noexcept
             }
             catch (const std::exception &e)
             {
-                cout << "HttpClient: Invalid port in URL: " << e.what() << endl;
                 m_port = 80;
             }
         }
     }
     else
     {
-        cout << "HttpClient: Invalid URL format: " << m_network_data << endl;
         m_host = m_network_data;
         if (m_host == "localhost")
         {
@@ -69,8 +64,6 @@ std::string HttpClient::get(const std::string &path)
 {
     try
     {
-        std::cout << "HttpClient: GET http://" << m_host << ":" << m_port << path
-                  << std::endl;
         sf::Http http(m_host, m_port);
 
         sf::Http::Request request(path, sf::Http::Request::Method::Get);
@@ -82,11 +75,6 @@ std::string HttpClient::get(const std::string &path)
 
         if (status != sf::Http::Response::Status::Ok)
         {
-            std::cout << "HttpClient: GET http://" << m_host << ":" << m_port << path
-                      << " status="
-                      << static_cast<int>(status)
-                      << " bytes=" << response.getBody().size()
-                      << std::endl;
             return response.getBody();
         }
 
@@ -99,14 +87,12 @@ std::string HttpClient::get(const std::string &path)
 }
 
 std::string HttpClient::post(
-    const std::string& path,
-    const std::string& body,
-    const std::string& contentType)
+    const std::string &path,
+    const std::string &body,
+    const std::string &contentType)
 {
     try
     {
-        std::cout << "HttpClient: POST http://" << m_host << ":" << m_port << path
-                  << std::endl;
         sf::Http http(m_host, m_port);
 
         sf::Http::Request request(path, sf::Http::Request::Method::Post);
@@ -121,11 +107,6 @@ std::string HttpClient::post(
         if (status != sf::Http::Response::Status::Ok &&
             status != sf::Http::Response::Status::Created)
         {
-            std::cout << "HttpClient: POST http://" << m_host << ":" << m_port << path
-                      << " status="
-                      << static_cast<int>(status)
-                      << " bytes=" << response.getBody().size()
-                      << std::endl;
             return response.getBody();
         }
 

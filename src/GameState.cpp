@@ -16,48 +16,45 @@
 #include "StateStack.hpp"
 #include "Sphere.hpp"
 
-GameState::GameState(StateStack& stack, Context context)
-    : State{ stack, context }
-    , mWorld{ *context.window, *context.fonts, *context.textures, *context.shaders }
-    , mPlayer{ *context.player }
-    , mGameMusic{ nullptr }
-    , mDisplayShader{ nullptr }
-    , mComputeShader{ nullptr }
-    // Initialize camera at maze spawn position (will be updated after first chunk loads)
-    , mCamera{ glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f }
+GameState::GameState(StateStack &stack, Context context)
+    : State{stack, context}, mWorld{*context.window, *context.fonts, *context.textures, *context.shaders}, mPlayer{*context.player}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}
+      // Initialize camera at maze spawn position (will be updated after first chunk loads)
+      ,
+      mCamera{glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f}
 {
     mPlayer.setActive(true);
-    mWorld.init();  // This now initializes both 2D physics and 3D path tracer scene
+    mWorld.init(); // This now initializes both 2D physics and 3D path tracer scene
 
     // Initialize player animator with character index 0
     mPlayer.initializeAnimator(0);
 
     // Get shaders from context
-    auto& shaders = *context.shaders;
+    auto &shaders = *context.shaders;
     try
     {
         mDisplayShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD);
         mComputeShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_COMPUTE);
         mShadersInitialized = true;
-    } catch (const std::exception& e)
+    }
+    catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
         mShadersInitialized = false;
     }
 
     // Get and play game music from context
-    auto& music = *context.music;
+    auto &music = *context.music;
     try
     {
         mGameMusic = &music.get(Music::ID::GAME_MUSIC);
         if (mGameMusic)
         {
             SDL_Log("GameState: Got music reference from manager");
-            
+
             // Set volume to 100% to ensure it's audible
             mGameMusic->setVolume(100.0f);
             mGameMusic->setLoop(true);
-            
+
             // Check if music is already playing (LoadingState/MenuState may have started it)
             if (!mGameMusic->isPlaying())
             {
@@ -68,27 +65,28 @@ GameState::GameState(StateStack& stack, Context context)
             {
                 SDL_Log("GameState: Music already playing - keeping it running");
             }
-            
+
             // Add a small delay then check again
             SDL_Delay(100);
-            
+
             if (mGameMusic->isPlaying())
             {
                 SDL_Log("GameState: ? Music confirmed playing after delay (volume=100%%)");
             }
             else
             {
-                SDL_LogError(SDL_LOG_CATEGORY_AUDIO, 
-                    "GameState: ? Music STOPPED after delay! This is the problem!");
                 SDL_LogError(SDL_LOG_CATEGORY_AUDIO,
-                    "  The music was playing but stopped during GameState initialization");
-                
+                             "GameState: ? Music STOPPED after delay! This is the problem!");
+                SDL_LogError(SDL_LOG_CATEGORY_AUDIO,
+                             "  The music was playing but stopped during GameState initialization");
+
                 // Try to restart it
                 SDL_Log("GameState: Attempting to restart music...");
                 mGameMusic->play();
             }
         }
-    } catch (const std::exception& e)
+    }
+    catch (const std::exception &e)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get game music: %s", e.what());
         mGameMusic = nullptr;
@@ -99,8 +97,8 @@ GameState::GameState(StateStack& stack, Context context)
 
     // Update camera to maze spawn position (position "0" in the maze)
     glm::vec3 spawnPos = mWorld.getMazeSpawnPosition();
-    spawnPos.y += 50.0f;  // Place camera above spawn
-    spawnPos.z += 50.0f;  // Move back a bit
+    spawnPos.y += 50.0f; // Place camera above spawn
+    spawnPos.z += 50.0f; // Move back a bit
     mCamera.setPosition(spawnPos);
 
     // Set initial player position
@@ -170,7 +168,7 @@ void GameState::initializeGraphicsResources() noexcept
     createPathTracerTextures();
 
     // Upload sphere data from World to GPU with extra capacity for dynamic spawning
-    const auto& spheres = mWorld.getSpheres();
+    const auto &spheres = mWorld.getSpheres();
 
     // Allocate buffer with 4x capacity to handle chunk-based spawning
     // This reduces frequent reallocations as spheres are loaded/unloaded
@@ -237,7 +235,7 @@ void GameState::renderWithComputeShaders() const noexcept
     checkCameraMovement();
 
     // Update sphere data on GPU every frame (physics may have changed positions)
-    const auto& spheres = mWorld.getSpheres();
+    const auto &spheres = mWorld.getSpheres();
 
     // Safety check: ensure we have spheres to render
     if (spheres.empty())
@@ -260,7 +258,8 @@ void GameState::renderWithComputeShaders() const noexcept
         // Reallocating buffer with new size (add some headroom to avoid frequent reallocations)
         size_t newSize = requiredSize * 2;
         GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(newSize), spheres.data());
-    } else
+    }
+    else
     {
         // Update existing buffer
         GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(requiredSize), spheres.data());
@@ -331,7 +330,7 @@ void GameState::cleanupResources() noexcept
 void GameState::updateSounds() noexcept
 {
     // Get sound player from context
-    auto* sounds = getContext().sounds;
+    auto *sounds = getContext().sounds;
     if (!sounds)
     {
         return;
@@ -341,7 +340,7 @@ void GameState::updateSounds() noexcept
     // Convert 3D camera position to 2D for the sound system
     // Using camera X and Z as the 2D position (Y is up in 3D, but we use X/Z plane)
     glm::vec3 camPos = mCamera.getPosition();
-    sounds->setListenerPosition(sf::Vector2f{ camPos.x, camPos.z });
+    sounds->setListenerPosition(sf::Vector2f{camPos.x, camPos.z});
 
     // Remove sounds that have finished playing
     sounds->removeStoppedSounds();
@@ -352,17 +351,17 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     // Periodic music health check
     static float musicCheckTimer = 0.0f;
     musicCheckTimer += dt;
-    
+
     if (musicCheckTimer >= 5.0f) // Check every 5 seconds
     {
         musicCheckTimer = 0.0f;
-        
+
         if (mGameMusic)
         {
             if (!mGameMusic->isPlaying())
             {
-                SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, 
-                    "GameState: Music stopped unexpectedly! Attempting restart...");
+                SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
+                            "GameState: Music stopped unexpectedly! Attempting restart...");
                 mGameMusic->play();
             }
         }
@@ -383,18 +382,19 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     mPlayer.updateAnimation(dt);
 
     // Log progress periodically
-    if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches) {
+    if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches)
+    {
         uint32_t totalSamples = mCurrentBatch * mSamplesPerBatch;
         // stats
         // auto progress = static_cast<float>(mCurrentBatch) / static_cast<float>(mTotalBatches) * 100.0f;
-        //log("Progress: " + std::to_string(totalSamples) + " samples (" +
-            //std::to_string(mCurrentBatch) + "/" + std::to_string(mTotalBatches) + " batches)");
+        // log("Progress: " + std::to_string(totalSamples) + " samples (" +
+        // std::to_string(mCurrentBatch) + "/" + std::to_string(mTotalBatches) + " batches)");
     }
 
     return true;
 }
 
-bool GameState::handleEvent(const SDL_Event& event) noexcept
+bool GameState::handleEvent(const SDL_Event &event) noexcept
 {
     // World still handles mouse panning for the 2D view
     mWorld.handleEvent(event);
@@ -415,7 +415,7 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
             mCurrentBatch = 0;
 
             // Play non-spatialized UI sound
-            if (auto* sounds = getContext().sounds)
+            if (auto *sounds = getContext().sounds)
             {
                 sounds->play(SoundEffect::ID::SELECT);
             }
@@ -426,9 +426,9 @@ bool GameState::handleEvent(const SDL_Event& event) noexcept
         if (event.key.scancode == SDL_SCANCODE_R)
         {
             glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
-            if (auto* sounds = getContext().sounds)
+            if (auto *sounds = getContext().sounds)
             {
-                sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{ resetPos.x, resetPos.z });
+                sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{resetPos.x, resetPos.z});
             }
             log("Camera reset to initial position");
         }
@@ -469,7 +469,7 @@ void GameState::renderPlayerCharacter() const noexcept
     // Reset depth function to default
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
-    
+
     // Also ensure we have proper 3D projection set up
     glEnable(GL_DEPTH_TEST);
 

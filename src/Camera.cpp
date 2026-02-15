@@ -1,7 +1,5 @@
 #include "Camera.hpp"
 
-#include <SDL3/SDL_log.h>
-
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/transform.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -11,20 +9,15 @@ const float Camera::scMaxPitchValue = 89.0f;
 const float Camera::scMaxFieldOfView = 89.0f;
 float Camera::sSensitivity = 0.05f;
 
-Camera::Camera(const glm::vec3& position,
-    const float yaw, const float pitch,
-    float fovy, float near, float far)
-    : mPosition(position)
-    , mYaw(yaw)
-    , mPitch(pitch)
-    , mFieldOfView(fovy)
-    , mNear(near)
-    , mFar(far)
+Camera::Camera(const glm::vec3 &position,
+               const float yaw, const float pitch,
+               float fovy, float near, float far)
+    : mPosition(position), mYaw(yaw), mPitch(pitch), mFieldOfView(fovy), mNear(near), mFar(far)
 {
     updateVectors();
 }
 
-void Camera::move(const glm::vec3& velocity, float dt)
+void Camera::move(const glm::vec3 &velocity, float dt)
 {
     mPosition = mPosition + (velocity * dt);
 }
@@ -33,7 +26,7 @@ void Camera::rotate(float yaw, float pitch, bool holdPitch, bool holdYaw)
 {
     mYaw += yaw * sSensitivity;
     mPitch += pitch * sSensitivity;
-    
+
     if (holdPitch)
     {
         if (mPitch > scMaxPitchValue)
@@ -102,7 +95,7 @@ glm::vec3 Camera::getPosition() const
     return mPosition;
 }
 
-void Camera::setPosition(const glm::vec3& position)
+void Camera::setPosition(const glm::vec3 &position)
 {
     mPosition = position;
 }
@@ -112,7 +105,7 @@ glm::vec3 Camera::getTarget() const
     return mTarget;
 }
 
-void Camera::setTarget(const glm::vec3& target)
+void Camera::setTarget(const glm::vec3 &target)
 {
     mTarget = target;
 }
@@ -122,7 +115,7 @@ glm::vec3 Camera::getUp() const
     return mUp;
 }
 
-void Camera::setUp(const glm::vec3& up)
+void Camera::setUp(const glm::vec3 &up)
 {
     mUp = up;
 }
@@ -132,7 +125,7 @@ glm::vec3 Camera::getRight() const
     return mRight;
 }
 
-void Camera::setRight(const glm::vec3& right)
+void Camera::setRight(const glm::vec3 &right)
 {
     mRight = right;
 }
@@ -226,17 +219,13 @@ glm::mat4 Camera::getThirdPersonLookAt() const
     glm::vec3 cameraPos = getActualPosition();
     // Look at the follow target (player position) plus a slight height offset
     glm::vec3 lookAtPoint = mFollowTarget + glm::vec3(0.0f, 1.0f, 0.0f);
-    
+
     // Debug log on first call
     static bool firstCall = true;
     if (firstCall)
     {
-        SDL_Log("Camera 3rd person: cam=(%.1f,%.1f,%.1f) lookAt=(%.1f,%.1f,%.1f) followTarget=(%.1f,%.1f,%.1f)",
-            cameraPos.x, cameraPos.y, cameraPos.z,
-            lookAtPoint.x, lookAtPoint.y, lookAtPoint.z,
-            mFollowTarget.x, mFollowTarget.y, mFollowTarget.z);
         firstCall = false;
     }
-    
+
     return glm::lookAt(cameraPos, lookAtPoint, glm::vec3(0.0f, 1.0f, 0.0f));
 }

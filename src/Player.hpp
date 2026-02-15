@@ -2,8 +2,8 @@
 #define PLAYER_HPP
 
 #include <cstdint>
-#include <map>
 #include <functional>
+#include <map>
 
 #include "Animation.hpp"
 
@@ -41,8 +41,8 @@ public:
 
     explicit Player();
 
-    void handleEvent(const SDL_Event& event, Camera& camera);
-    void handleRealtimeInput(Camera& camera, float dt);
+    void handleEvent(const SDL_Event &event, Camera &camera);
+    void handleRealtimeInput(Camera &camera, float dt);
 
     void assignKey(Action action, std::uint32_t key);
     [[nodiscard]] std::uint32_t getAssignedKey(Action action) const;
@@ -67,14 +67,14 @@ public:
     [[nodiscard]] AnimationRect getCurrentAnimationFrame() const;
 
     /// Get the character animator
-    [[nodiscard]] const CharacterAnimator& getAnimator() const noexcept { return mAnimator; }
-    [[nodiscard]] CharacterAnimator& getAnimator() noexcept { return mAnimator; }
+    [[nodiscard]] const CharacterAnimator &getAnimator() const noexcept { return mAnimator; }
+    [[nodiscard]] CharacterAnimator &getAnimator() noexcept { return mAnimator; }
 
     /// Get player's 3D position
     [[nodiscard]] glm::vec3 getPosition() const noexcept { return mPosition; }
 
     /// Set player's 3D position
-    void setPosition(const glm::vec3& position) noexcept;
+    void setPosition(const glm::vec3 &position) noexcept;
 
     /// Get player's facing direction (yaw in degrees)
     [[nodiscard]] float getFacingDirection() const noexcept { return mFacingDirection; }
@@ -90,21 +90,21 @@ private:
     void updateAnimationState();
 
     std::map<std::uint32_t, Action> mKeyBinding;
-    std::map<Action, std::function<void(Camera&, float)>> mCameraActions;
+    std::map<Action, std::function<void(Camera &, float)>> mCameraActions;
     bool mIsActive;
     bool mIsOnGround;
 
     // Animation system
     CharacterAnimator mAnimator;
-    glm::vec3 mPosition{ 0.0f };
-    float mFacingDirection{ 0.0f };
-    bool mIsMoving{ false };
+    glm::vec3 mPosition{0.0f};
+    float mFacingDirection{0.0f};
+    bool mIsMoving{false};
 
     // Movement tracking for animation state
-    bool mMovingForward{ false };
-    bool mMovingBackward{ false };
-    bool mMovingLeft{ false };
-    bool mMovingRight{ false };
+    bool mMovingForward{false};
+    bool mMovingBackward{false};
+    bool mMovingLeft{false};
+    bool mMovingRight{false};
 };
 
 #endif // PLAYER_HPP

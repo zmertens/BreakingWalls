@@ -15,11 +15,11 @@
 #include "StateStack.hpp"
 #include "Sphere.hpp"
 
-SplashState::SplashState(StateStack& stack, Context context)
-    : State(stack, context)
-    , mWorld{ *context.window, *context.fonts, *context.textures, *context.shaders }
-    // Start camera at a pleasant vantage point looking at the scene
-    , mCamera{ glm::vec3(0.0f, 30.0f, 100.0f), -90.0f, -5.0f, 65.0f, 0.1f, 500.0f }
+SplashState::SplashState(StateStack &stack, Context context)
+    : State(stack, context), mWorld{*context.window, *context.fonts, *context.textures, *context.shaders}
+      // Start camera at a pleasant vantage point looking at the scene
+      ,
+      mCamera{glm::vec3(0.0f, 30.0f, 100.0f), -90.0f, -5.0f, 65.0f, 0.1f, 500.0f}
 {
     getContext().player->setActive(false);
 
@@ -27,7 +27,7 @@ SplashState::SplashState(StateStack& stack, Context context)
     mWorld.init();
 
     // Get shaders from context
-    auto& shaders = *context.shaders;
+    auto &shaders = *context.shaders;
     mDisplayShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD);
     mComputeShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_COMPUTE);
     mShadersInitialized = true;
@@ -87,7 +87,7 @@ void SplashState::initializeGraphicsResources() noexcept
     createPathTracerTextures();
 
     // Upload sphere data from World to GPU
-    const auto& spheres = mWorld.getSpheres();
+    const auto &spheres = mWorld.getSpheres();
 
     size_t initialCapacity = std::max(spheres.size() * 4, size_t(1000));
     size_t bufferSize = initialCapacity * sizeof(Sphere);
@@ -146,7 +146,7 @@ void SplashState::renderWithComputeShaders() const noexcept
 
     checkCameraMovement();
 
-    const auto& spheres = mWorld.getSpheres();
+    const auto &spheres = mWorld.getSpheres();
 
     if (spheres.empty())
     {
@@ -252,7 +252,7 @@ bool SplashState::update(float dt, unsigned int subSteps) noexcept
     return true;
 }
 
-bool SplashState::handleEvent(const SDL_Event& event) noexcept
+bool SplashState::handleEvent(const SDL_Event &event) noexcept
 {
     // Any key press or mouse click transitions to menu
     if (event.type == SDL_EVENT_KEY_DOWN ||
@@ -274,7 +274,7 @@ bool SplashState::handleEvent(const SDL_Event& event) noexcept
 bool SplashState::isLoadingComplete() const noexcept
 {
     // Check if the state below us (LoadingState) is finished
-    if (const auto* loadingState = getStack().peekState<LoadingState*>())
+    if (const auto *loadingState = getStack().peekState<LoadingState *>())
     {
         return loadingState->isFinished();
     }

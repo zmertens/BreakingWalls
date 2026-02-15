@@ -96,6 +96,7 @@ namespace
 class ResourceLoader : public mazes::singleton_base<ResourceLoader>
 {
     friend class mazes::singleton_base<ResourceLoader>;
+
 public:
     /// @brief Represents a texture that needs to be loaded on the main thread
     struct TextureLoadRequest
@@ -110,20 +111,15 @@ public:
     };
 
     explicit ResourceLoader()
-        : mShouldExit(false)
-        , mPendingWorkCount(0)
-        , mTotalWorkItems(0)
-        , mConfigMappings({
-              {JSONKeys::BALL_NORMAL, Textures::ID::BALL_NORMAL},
-              {JSONKeys::CHARACTER_IMAGE, Textures::ID::CHARACTER},
-              {JSONKeys::LEVEL_DEFAULTS, Textures::ID::LEVEL_TWO},
-              {JSONKeys::CHARACTERS_SPRITE_SHEET, Textures::ID::CHARACTER_SPRITE_SHEET},
-              {JSONKeys::SPLASH_IMAGE, Textures::ID::SPLASH_TITLE_IMAGE},
-              {JSONKeys::SDL_LOGO, Textures::ID::SDL_LOGO},
-              {JSONKeys::SFML_LOGO, Textures::ID::SFML_LOGO},
-              {JSONKeys::WALL_HORIZONTAL, Textures::ID::WALL_HORIZONTAL},
-              {JSONKeys::WINDOW_ICON, Textures::ID::WINDOW_ICON}
-          })
+        : mShouldExit(false), mPendingWorkCount(0), mTotalWorkItems(0), mConfigMappings({{JSONKeys::BALL_NORMAL, Textures::ID::BALL_NORMAL},
+                                                                                         {JSONKeys::CHARACTER_IMAGE, Textures::ID::CHARACTER},
+                                                                                         {JSONKeys::LEVEL_DEFAULTS, Textures::ID::LEVEL_TWO},
+                                                                                         {JSONKeys::CHARACTERS_SPRITE_SHEET, Textures::ID::CHARACTER_SPRITE_SHEET},
+                                                                                         {JSONKeys::SPLASH_IMAGE, Textures::ID::SPLASH_TITLE_IMAGE},
+                                                                                         {JSONKeys::SDL_LOGO, Textures::ID::SDL_LOGO},
+                                                                                         {JSONKeys::SFML_LOGO, Textures::ID::SFML_LOGO},
+                                                                                         {JSONKeys::WALL_HORIZONTAL, Textures::ID::WALL_HORIZONTAL},
+                                                                                         {JSONKeys::WINDOW_ICON, Textures::ID::WINDOW_ICON}})
     {
     }
 
@@ -132,10 +128,10 @@ public:
         shutdown();
     }
 
-    ResourceLoader(const ResourceLoader&) = delete;
-    ResourceLoader& operator=(const ResourceLoader&) = delete;
-    ResourceLoader(ResourceLoader&&) = delete;
-    ResourceLoader& operator=(ResourceLoader&&) = delete;
+    ResourceLoader(const ResourceLoader &) = delete;
+    ResourceLoader &operator=(const ResourceLoader &) = delete;
+    ResourceLoader(ResourceLoader &&) = delete;
+    ResourceLoader &operator=(ResourceLoader &&) = delete;
 
     /// @brief Initialize worker threads for concurrent resource loading
     void initThreads(unsigned int numWorkers = 4) noexcept
@@ -147,7 +143,8 @@ public:
 
         for (unsigned int i = 0; i < numWorkers; ++i)
         {
-            mWorkerThreads.emplace_back([this]() { workerThreadFunc(); });
+            mWorkerThreads.emplace_back([this]()
+                                        { workerThreadFunc(); });
         }
     }
 
@@ -177,7 +174,7 @@ public:
             {
                 absolutePath = std::filesystem::absolute(absolutePath).string();
             }
-            catch (const std::exception& e)
+            catch (const std::exception &e)
             {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to resolve absolute path: %s\n", e.what());
                 absolutePath = std::string(resourcePath);
@@ -185,16 +182,17 @@ public:
         }
 
         mResourcePathPrefix = mazes::io_utils::getDirectoryPath(absolutePath) + "/";
-        
-        SDL_Log("ResourceLoader: Resource path: %s, absolute: %s, prefix: %s\n", 
-            resourcePath.data(), absolutePath.c_str(), mResourcePathPrefix.c_str());
+
+        SDL_Log("ResourceLoader: Resource path: %s, absolute: %s, prefix: %s\n",
+                resourcePath.data(), absolutePath.c_str(), mResourcePathPrefix.c_str());
 
         std::unordered_map<std::string, std::string> resources{};
 
         try
         {
             JSONUtils::loadConfiguration(absolutePath, resources);
-        } catch (const std::exception& e)
+        }
+        catch (const std::exception &e)
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "ResourceLoader: Failed to load resources: %s\n", e.what());
             return;
@@ -210,7 +208,7 @@ public:
             std::unique_lock<std::mutex> lock(mQueueMutex);
 
             int index = 0;
-            for (const auto& [key, value] : resources)
+            for (const auto &[key, value] : resources)
             {
                 mWorkQueue.emplace_back(key, value, index++);
             }
@@ -278,7 +276,8 @@ private:
         {
             std::unique_lock<std::mutex> lock(mQueueMutex);
 
-            mCondVar.wait(lock, [this]() { return !mWorkQueue.empty() || mShouldExit.load(); });
+            mCondVar.wait(lock, [this]()
+                          { return !mWorkQueue.empty() || mShouldExit.load(); });
 
             if (mShouldExit.load())
             {
@@ -312,7 +311,7 @@ private:
     }
 
     /// @brief Process a single work item (resource loading and parsing)
-    void processWorkItem(const ResourceWorkItem& item) noexcept
+    void processWorkItem(const ResourceWorkItem &item) noexcept
     {
         if (mShouldExit.load())
         {
@@ -338,13 +337,15 @@ private:
         if (item.key == JSONKeys::LEVEL_DEFAULTS)
         {
             processLevelDefaults(item.value);
-        } else if (item.key == JSONKeys::PLAYER_HITPOINTS_DEFAULT ||
-                   item.key == JSONKeys::PLAYER_SPEED_DEFAULT ||
-                   item.key == JSONKeys::ENEMY_HITPOINTS_DEFAULT ||
-                   item.key == JSONKeys::ENEMY_SPEED_DEFAULT)
+        }
+        else if (item.key == JSONKeys::PLAYER_HITPOINTS_DEFAULT ||
+                 item.key == JSONKeys::PLAYER_SPEED_DEFAULT ||
+                 item.key == JSONKeys::ENEMY_HITPOINTS_DEFAULT ||
+                 item.key == JSONKeys::ENEMY_SPEED_DEFAULT)
         {
             // Numeric configs handled here in the future
-        } else
+        }
+        else
         {
             processTextureRequest(item.key, item.value);
         }
@@ -353,8 +354,9 @@ private:
         mProcessedConfigs[item.key] = true;
     }
 
+    // @TODO - Move to Level / LevelServices
     /// @brief Process level configuration and generate mazes
-    void processLevelDefaults(const std::string& value) noexcept
+    void processLevelDefaults(const std::string &value) noexcept
     {
         std::vector<std::unordered_map<std::string, std::string>> levelConfigs;
         mazes::json_helper jh{};
@@ -373,7 +375,7 @@ private:
             {
                 mazes::configurator config;
 
-                for (const auto& [key, val] : levelConfigs[i])
+                for (const auto &[key, val] : levelConfigs[i])
                 {
                     if (key == "rows" || key == "columns" || key == "seed")
                     {
@@ -386,10 +388,11 @@ private:
                                 config.columns(static_cast<unsigned int>(intValue));
                             else if (key == "seed")
                                 config.seed(static_cast<unsigned int>(intValue));
-                        } catch (...)
+                        }
+                        catch (...)
                         {
                             SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                                "ResourceLoader: Failed to parse %s from level config %zu\n", key.c_str(), i);
+                                         "ResourceLoader: Failed to parse %s from level config %zu\n", key.c_str(), i);
                         }
                     }
                     else if (key == "algo")
@@ -401,8 +404,9 @@ private:
                     {
                         std::string distValue = val;
                         distValue.erase(std::remove_if(distValue.begin(), distValue.end(),
-                            [](char c) { return c == '"' || c == '\'' || std::isspace(static_cast<unsigned char>(c)); }),
-                            distValue.end());
+                                                       [](char c)
+                                                       { return c == '"' || c == '\'' || std::isspace(static_cast<unsigned char>(c)); }),
+                                        distValue.end());
 
                         bool showDistances = (distValue == "true" || distValue == "1");
                         if (showDistances)
@@ -422,10 +426,11 @@ private:
                     }
                     composedMazeString += mazeStr;
                 }
-            } catch (const std::exception& e)
+            }
+            catch (const std::exception &e)
             {
                 SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                    "ResourceLoader: Failed to create maze from config %zu: %s\n", i, e.what());
+                             "ResourceLoader: Failed to create maze from config %zu: %s\n", i, e.what());
             }
         }
 
@@ -437,15 +442,15 @@ private:
     }
 
     /// @brief Process texture load requests
-    void processTextureRequest(const std::string& key, const std::string& value) noexcept
+    void processTextureRequest(const std::string &key, const std::string &value) noexcept
     {
-        for (const auto& [cfgKey, textureId] : mConfigMappings)
+        for (const auto &[cfgKey, textureId] : mConfigMappings)
         {
             if (key == cfgKey)
             {
                 std::unique_lock<std::mutex> lock(mQueueMutex);
                 mTextureLoadRequests.emplace_back(textureId,
-                    mResourcePathPrefix + JSONUtils::extractJsonValue(value));
+                                                  mResourcePathPrefix + JSONUtils::extractJsonValue(value));
                 break;
             }
         }
@@ -460,7 +465,7 @@ private:
             mCondVar.notify_all();
         }
 
-        for (auto& t : mWorkerThreads)
+        for (auto &t : mWorkerThreads)
         {
             if (t.joinable())
             {
@@ -491,7 +496,7 @@ private:
 
 namespace
 {
-    inline ResourceLoader& resourceLoader()
+    inline ResourceLoader &resourceLoader()
     {
         return *mazes::singleton_base<ResourceLoader>::instance();
     }
@@ -501,10 +506,8 @@ namespace
 /// @param stack
 /// @param context
 /// @param resourcePath ""
-LoadingState::LoadingState(StateStack& stack, Context context, std::string_view resourcePath)
-    : State(stack, context)
-    , mHasFinished{ false }
-    , mResourcePath{ resourcePath }
+LoadingState::LoadingState(StateStack &stack, Context context, std::string_view resourcePath)
+    : State(stack, context), mHasFinished{false}, mResourcePath{resourcePath}
 {
     resourceLoader().initThreads();
 
@@ -512,7 +515,8 @@ LoadingState::LoadingState(StateStack& stack, Context context, std::string_view 
     if (!mResourcePath.empty())
     {
         loadResources();
-    } else
+    }
+    else
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: No resource path provided\n");
         mHasFinished = true;
@@ -521,9 +525,9 @@ LoadingState::LoadingState(StateStack& stack, Context context, std::string_view 
 
 void LoadingState::draw() const noexcept
 {
-    const auto& window = *getContext().window;
+    const auto &window = *getContext().window;
 
-    //window.draw(mLoadingSprite);
+    // window.draw(mLoadingSprite);
 }
 
 bool LoadingState::update(float dt, unsigned int subSteps) noexcept
@@ -553,7 +557,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     return true;
 }
 
-bool LoadingState::handleEvent(const SDL_Event& event) noexcept
+bool LoadingState::handleEvent(const SDL_Event &event) noexcept
 {
     return true;
 }
@@ -590,38 +594,38 @@ void LoadingState::loadFonts() noexcept
 {
     static constexpr auto FONT_PIXEL_SIZE = 28.f;
 
-    auto& fonts = *getContext().fonts;
+    auto &fonts = *getContext().fonts;
 
     fonts.load(Fonts::ID::LIMELIGHT,
-        Limelight_Regular_compressed_data,
-        Limelight_Regular_compressed_size,
-        FONT_PIXEL_SIZE);
+               Limelight_Regular_compressed_data,
+               Limelight_Regular_compressed_size,
+               FONT_PIXEL_SIZE);
 
     fonts.load(Fonts::ID::NUNITO_SANS,
-        NunitoSans_compressed_data,
-        NunitoSans_compressed_size,
-        FONT_PIXEL_SIZE);
+               NunitoSans_compressed_data,
+               NunitoSans_compressed_size,
+               FONT_PIXEL_SIZE);
 
     fonts.load(Fonts::ID::COUSINE_REGULAR,
-        Cousine_Regular_compressed_data,
-        Cousine_Regular_compressed_size,
-        FONT_PIXEL_SIZE);
+               Cousine_Regular_compressed_data,
+               Cousine_Regular_compressed_size,
+               FONT_PIXEL_SIZE);
 }
 
 void LoadingState::loadAudio() noexcept
 {
-    auto& music = *getContext().music;
+    auto &music = *getContext().music;
     // Use the same resource path prefix that was computed by the ResourceLoader
     auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
-    
-    SDL_Log("LoadingState::loadAudio - resourcePathPrefix: %s\n", resourcePathPrefix.c_str());
+
+    log("LoadingState::loadAudio - resourcePathPrefix: " + resourcePathPrefix);
 
     try
     {
         const auto resources = resourceLoader().getResources();
         const std::string musicPath = JSONUtils::getResourcePath(
             std::string(JSONKeys::LOADING_MUSIC), resources, resourcePathPrefix);
-        
+
         if (musicPath.empty())
         {
             log("LoadingState: LOADING_MUSIC resource key not found in configuration");
@@ -629,38 +633,19 @@ void LoadingState::loadAudio() noexcept
         else
         {
             music.load(Music::ID::GAME_MUSIC,
-                std::string_view{ musicPath },
-                100.f, true);
-            
+                       std::string_view{musicPath},
+                       100.f, true);
+
             log("LoadingState: Music resource loaded into manager");
-            
-            // Get reference to the loaded music
-            auto& loadedMusic = music.get(Music::ID::GAME_MUSIC);
-            
-            // Play the music
-            loadedMusic.play();
-            
-            // Small delay to allow SFML audio to start
-            SDL_Delay(50);
-            
-            // Check if it's actually playing
-            if (loadedMusic.isPlaying())
-            {
-                log("LoadingState: Music loaded and playing successfully");
-            }
-            else
-            {
-                log("LoadingState: Music loaded but not playing - check audio file");
-            }
         }
-    } 
-    catch (const std::exception& e)
+    }
+    catch (const std::exception &e)
     {
         log("LoadingState: Failed to load music: " + std::string(e.what()));
     }
 
     // Continue with existing sound effects loading...
-    auto& soundBuffers = *getContext().soundBuffers;
+    auto &soundBuffers = *getContext().soundBuffers;
 
     try
     {
@@ -674,21 +659,21 @@ void LoadingState::loadAudio() noexcept
             std::string(JSONKeys::SOUND_THROW), resources, resourcePathPrefix);
 
         soundBuffers.load(SoundEffect::ID::GENERATE, generatePath);
-        
+
         soundBuffers.load(SoundEffect::ID::SELECT, selectPath);
-        
+
         soundBuffers.load(SoundEffect::ID::THROW, throwPath);
-    } 
-    catch (const std::exception& e)
+    }
+    catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
-            "LoadingState: Failed to load sound effects: %s", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
+                     "LoadingState: Failed to load sound effects: %s", e.what());
     }
 }
 
 void LoadingState::loadLevels() noexcept
 {
-    auto& levels = *getContext().levels;
+    auto &levels = *getContext().levels;
     try
     {
         using mazes::configurator;
@@ -697,7 +682,8 @@ void LoadingState::loadLevels() noexcept
         levelConfigs.push_back(configurator().rows(50).columns(50));
         levels.load(Levels::ID::LEVEL_ONE, std::cref(levelConfigs), false);
         log("LoadingState: Levels loaded successfully");
-    } catch (const std::exception& e)
+    }
+    catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load levels: %s", e.what());
     }
@@ -705,22 +691,23 @@ void LoadingState::loadLevels() noexcept
 
 void LoadingState::loadShaders() noexcept
 {
-    auto& shaders = *getContext().shaders;
+    auto &shaders = *getContext().shaders;
 
     try
     {
-        auto&& resources = resourceLoader().getResources();
+        auto &&resources = resourceLoader().getResources();
         const auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
 
-        const auto shaderPath = [&](std::string_view key) {
+        const auto shaderPath = [&](std::string_view key)
+        {
             return JSONUtils::getResourcePath(std::string(key), resources, resourcePathPrefix);
         };
 
         // Load display shader (vertex + fragment)
         // @TODO connect shader filenames from mResources
         auto displayShader = std::make_unique<Shader>();
-        displayShader->compileAndAttachShader(ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SCREEN_VERTEX));
-        displayShader->compileAndAttachShader(ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SCREEN_FRAGMENT));
+        displayShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SCREEN_VERTEX));
+        displayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SCREEN_FRAGMENT));
         displayShader->linkProgram();
 
         log("LoadingState: Display shader compiled and linked");
@@ -730,7 +717,7 @@ void LoadingState::loadShaders() noexcept
 
         // Load compute shader for path tracing
         auto computeShader = std::make_unique<Shader>();
-        computeShader->compileAndAttachShader(ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PATHTRACER_COMPUTE));
+        computeShader->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PATHTRACER_COMPUTE));
         computeShader->linkProgram();
 
         log("LoadingState: Compute shader compiled and linked");
@@ -740,9 +727,9 @@ void LoadingState::loadShaders() noexcept
 
         // Load billboard shader for character sprites (vertex + geometry + fragment)
         auto billboardShader = std::make_unique<Shader>();
-        billboardShader->compileAndAttachShader(ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_BILLBOARD_VERTEX));
-        billboardShader->compileAndAttachShader(ShaderType::GEOMETRY, shaderPath(JSONKeys::SHADER_BILLBOARD_GEOMETRY));
-        billboardShader->compileAndAttachShader(ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_BILLBOARD_FRAGMENT));
+        billboardShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_BILLBOARD_VERTEX));
+        billboardShader->compileAndAttachShader(Shader::ShaderType::GEOMETRY, shaderPath(JSONKeys::SHADER_BILLBOARD_GEOMETRY));
+        billboardShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_BILLBOARD_FRAGMENT));
         billboardShader->linkProgram();
 
         log("LoadingState: Billboard shader compiled and linked");
@@ -751,7 +738,8 @@ void LoadingState::loadShaders() noexcept
         shaders.insert(Shaders::ID::GLSL_BILLBOARD_SPRITE, std::move(billboardShader));
 
         log("LoadingState: All shaders loaded successfully");
-    } catch (const std::exception& e)
+    }
+    catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Shader initialization failed: %s", e.what());
     }
@@ -759,61 +747,63 @@ void LoadingState::loadShaders() noexcept
 
 void LoadingState::loadTexturesFromWorkerRequests() const noexcept
 {
-    auto& textures = *getContext().textures;
+    auto &textures = *getContext().textures;
 
     auto textureRequests = resourceLoader().getTextureLoadRequests();
 
-    SDL_Log("Loading %zu textures on main thread...\n", textureRequests.size());
+    log("Loading %zu textures on main thread...\n", textureRequests.size());
 
     try
     {
-        for (const auto& request : textureRequests)
+        for (const auto &request : textureRequests)
         {
             // TextureLoadRequest already has the full path constructed by processTextureRequest
             // Just use it directly without additional path resolution
             textures.load(request.id, std::string_view(request.path), 0u);
             log("Loaded texture ID %d from: " + std::to_string(static_cast<int>(request.id)) + " " + request.path);
         }
-    } catch (const std::exception& e)
+    }
+    catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load textures: %s\n", e.what());
     }
 }
 
-void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::string>& resources) noexcept
+void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::string> &resources) noexcept
 {
     using std::string;
 
     // Use the same resource path prefix that was computed by the ResourceLoader
     auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
-    
-    SDL_Log("LoadingState::loadWindowIcon - resourcePathPrefix: %s\n", resourcePathPrefix.c_str());
+
+    log("LoadingState::loadWindowIcon - resourcePathPrefix: " + resourcePathPrefix);
 
     const string windowIconPath = JSONUtils::getResourcePath(
         std::string(JSONKeys::WINDOW_ICON), resources, resourcePathPrefix);
 
-    SDL_Log("LoadingState: Window icon lookup - prefix: %s, result path: %s\n", 
-        resourcePathPrefix.c_str(), windowIconPath.c_str());
+    log("LoadingState: Window icon lookup - prefix: " + resourcePathPrefix + ", result path: " + windowIconPath);
 
     if (windowIconPath.empty())
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Window icon resource not found in configuration\n");
+        log("LoadingState: Window icon resource not found in configuration");
+
         return;
     }
 
-    if (SDL_Surface* icon = SDL_LoadBMP(windowIconPath.c_str()); icon != nullptr)
+    if (SDL_Surface *icon = SDL_LoadBMP(windowIconPath.c_str()); icon != nullptr)
     {
-        if (auto* renderWindow = getContext().window; renderWindow != nullptr)
+        if (auto *renderWindow = getContext().window; renderWindow != nullptr)
         {
             SDL_SetWindowIcon(renderWindow->getSDLWindow(), icon);
             SDL_DestroySurface(icon);
             log("Loading window icon from:\t");
             log(windowIconPath.c_str());
-            SDL_Log("LoadingState: Window icon loaded successfully\n");
+            log("LoadingState: Window icon loaded successfully\n");
         }
-    } else
+    }
+    else
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load icon: %s - %s\n", windowIconPath.c_str(),
-            SDL_GetError());
+                     SDL_GetError());
     }
 }
