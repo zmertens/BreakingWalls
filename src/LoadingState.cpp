@@ -645,11 +645,11 @@ void LoadingState::loadAudio() noexcept
             try
             {
                 auto& loadedMusic = music.get(Music::ID::GAME_MUSIC);
-                log("LoadingState: ✓ Music verified in manager");
+                log("LoadingState: Music verified in manager");
             }
             catch (const std::exception& e)
             {
-                log("LoadingState: ❌ Failed to verify music in manager: " + std::string(e.what()));
+                log("LoadingState: Failed to verify music in manager: " + std::string(e.what()));
             }
         }
     }
