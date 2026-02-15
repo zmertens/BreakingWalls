@@ -46,20 +46,31 @@ GameState::GameState(StateStack &stack, Context context)
     auto &music = *context.music;
     try
     {
+        SDL_Log("GameState: Attempting to get music from manager...");
         mGameMusic = &music.get(Music::ID::GAME_MUSIC);
         if (mGameMusic)
         {
-            SDL_Log("GameState: Got music reference from manager");
+            SDL_Log("GameState: ✓ Got music reference from manager");
 
             // Set volume to 100% to ensure it's audible
             mGameMusic->setVolume(100.0f);
+            SDL_Log("GameState: Set volume to 100%%");
+            
             mGameMusic->setLoop(true);
+            SDL_Log("GameState: Set loop to true");
 
             // Start the music - the periodic health check in update() will handle restarts if needed
-            if (!mGameMusic->isPlaying())
+            bool wasPlaying = mGameMusic->isPlaying();
+            SDL_Log("GameState: Music isPlaying before play(): %s", wasPlaying ? "true" : "false");
+            
+            if (!wasPlaying)
             {
                 SDL_Log("GameState: Starting game music...");
                 mGameMusic->play();
+                
+                // Check immediately after
+                bool nowPlaying = mGameMusic->isPlaying();
+                SDL_Log("GameState: Music isPlaying after play(): %s", nowPlaying ? "true" : "false");
             }
             else
             {
@@ -69,7 +80,7 @@ GameState::GameState(StateStack &stack, Context context)
     }
     catch (const std::exception &e)
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get game music: %s", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "GameState: ❌ Failed to get game music: %s", e.what());
         mGameMusic = nullptr;
     }
 

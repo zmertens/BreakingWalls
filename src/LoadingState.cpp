@@ -632,11 +632,25 @@ void LoadingState::loadAudio() noexcept
         }
         else
         {
+            log("LoadingState: Found music path: " + musicPath);
+            log("LoadingState: Loading music into manager...");
+            
             music.load(Music::ID::GAME_MUSIC,
                        std::string_view{musicPath},
                        100.f, true);
 
-            log("LoadingState: Music resource loaded into manager");
+            log("LoadingState: Music resource loaded into manager successfully");
+            
+            // Verify the music was loaded
+            try
+            {
+                auto& loadedMusic = music.get(Music::ID::GAME_MUSIC);
+                log("LoadingState: ✓ Music verified in manager");
+            }
+            catch (const std::exception& e)
+            {
+                log("LoadingState: ❌ Failed to verify music in manager: " + std::string(e.what()));
+            }
         }
     }
     catch (const std::exception &e)

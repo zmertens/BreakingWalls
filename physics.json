@@ -4,7 +4,7 @@
     "generate_ogg": "audio/generate.ogg",
 	"select_ogg": "audio/sfx_select.ogg",
 	"throw_ogg": "audio/sfx_throw.ogg",
-    "loading_music": "audio/loading.wav",
+    "loading_music": "audio/loading.ogg",
     "SDL_logo": "textures/SDL_logo.png",
 	"SFML_logo": "textures/SFML_logo.png",
 	"shader_screen_vert_glsl": "shaders/screen.vert.glsl",
