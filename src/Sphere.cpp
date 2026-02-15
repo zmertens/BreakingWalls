@@ -3,7 +3,19 @@
 Sphere::Sphere(const glm::vec3 &cent, const float rad,
                const glm::vec3 &color, Material::MaterialType matType,
                float fuzziness, float refractIdx)
-    : mCenter(glm::vec4(cent, 0.0f)), mRadius(rad), mRadius2(rad * rad), mAlbedo(glm::vec4(color, 0.0f)), mMaterialType(static_cast<std::uint32_t>(matType)), mFuzz(fuzziness), mRefractiveIndex(refractIdx), mPadding(0)
+    : mCenter(glm::vec4(cent, 0.0f)),
+      mAmbient(glm::vec4(0.0f)),        // Unused in PBR but required for shader layout
+      mDiffuse(glm::vec4(0.0f)),        // Unused in PBR but required for shader layout
+      mSpecular(glm::vec4(0.0f)),       // Unused in PBR but required for shader layout
+      mRadius(rad),
+      mRadius2(rad * rad),
+      mShininess(0.0f),                 // Unused in PBR but required for shader layout
+      mReflectivity(0.0f),              // Unused in PBR but required for shader layout
+      mAlbedo(glm::vec4(color, 0.0f)),
+      mMaterialType(static_cast<std::uint32_t>(matType)),
+      mFuzz(fuzziness),
+      mRefractiveIndex(refractIdx),
+      mPadding(0)
 {
 }
 

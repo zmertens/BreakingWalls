@@ -55,34 +55,15 @@ GameState::GameState(StateStack &stack, Context context)
             mGameMusic->setVolume(100.0f);
             mGameMusic->setLoop(true);
 
-            // Check if music is already playing (LoadingState/MenuState may have started it)
+            // Start the music - the periodic health check in update() will handle restarts if needed
             if (!mGameMusic->isPlaying())
             {
-                SDL_Log("GameState: Music not playing, starting it now...");
+                SDL_Log("GameState: Starting game music...");
                 mGameMusic->play();
             }
             else
             {
                 SDL_Log("GameState: Music already playing - keeping it running");
-            }
-
-            // Add a small delay then check again
-            SDL_Delay(100);
-
-            if (mGameMusic->isPlaying())
-            {
-                SDL_Log("GameState: ? Music confirmed playing after delay (volume=100%%)");
-            }
-            else
-            {
-                SDL_LogError(SDL_LOG_CATEGORY_AUDIO,
-                             "GameState: ? Music STOPPED after delay! This is the problem!");
-                SDL_LogError(SDL_LOG_CATEGORY_AUDIO,
-                             "  The music was playing but stopped during GameState initialization");
-
-                // Try to restart it
-                SDL_Log("GameState: Attempting to restart music...");
-                mGameMusic->play();
             }
         }
     }

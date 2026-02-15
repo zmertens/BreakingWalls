@@ -31,8 +31,13 @@ public:
 
 private:
     glm::vec4 mCenter;
+    glm::vec4 mAmbient;       // For shader compatibility (not used in PBR)
+    glm::vec4 mDiffuse;       // For shader compatibility (not used in PBR)
+    glm::vec4 mSpecular;      // For shader compatibility (not used in PBR)
     float mRadius;
     float mRadius2;
+    float mShininess;         // For shader compatibility (not used in PBR)
+    float mReflectivity;      // For shader compatibility (not used in PBR)
 
     // New PBR properties (maintained at 16-byte alignment)
     ///< RGB color + padding
