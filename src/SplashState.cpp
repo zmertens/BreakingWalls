@@ -48,7 +48,13 @@ void SplashState::draw() const noexcept
                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground);
     ImGui::SetCursorPos(ImVec2(0, 0));
-    ImGui::Image(static_cast<ImTextureID>(static_cast<intptr_t>(mSplashTexture->get())), screenSize);
+    // Flip horizontally: swap uv0 and uv1 x values
+    ImGui::Image(
+        static_cast<ImTextureID>(static_cast<intptr_t>(mSplashTexture->get())),
+        screenSize,
+        ImVec2(0, 1),
+        ImVec2(1, 0)
+    );
     ImGui::End();
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
