@@ -137,7 +137,6 @@ struct PhysicsGame::PhysicsGameImpl
         registerStates();
 
         mStateStack->pushState(States::ID::LOADING);
-        mStateStack->pushState(States::ID::SPLASH);
     }
 
     ~PhysicsGameImpl()

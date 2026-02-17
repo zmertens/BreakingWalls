@@ -1,8 +1,9 @@
 #include "Shader.hpp"
 
+#include <SDL3/SDL_log.h>
+
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <unordered_set>
 
@@ -35,7 +36,7 @@ void Shader::compileAndAttachShader(ShaderType shaderType, const std::string &fi
     }
     catch (const std::ifstream::failure &e)
     {
-        std::cout << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: " << filename << std::endl;
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: %s", filename.c_str());
         return;
     }
 
@@ -72,7 +73,7 @@ void Shader::linkProgram()
     if (!success)
     {
         glGetProgramInfoLog(mProgram, 512, nullptr, infoLog);
-        printf("Program link failed: %s\n", infoLog);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Program link failed: %s\n", infoLog);
     }
 }
 
@@ -212,17 +213,13 @@ void Shader::setUniform(const std::string &str, GLuint value)
 
 void Shader::setSubroutine(GLenum shaderType, GLuint count, const std::string &name)
 {
-#if APP_OPENGL_MAJOR >= 4 && APP_OPENGL_MINOR >= 3
     GLuint loc = getSubroutineLocation(shaderType, name);
     glUniformSubroutinesuiv(shaderType, count, &loc);
-#endif
 }
 
 void Shader::setSubroutine(GLenum shaderType, GLuint count, GLuint index)
 {
-#if APP_OPENGL_MAJOR >= 4 && APP_OPENGL_MINOR >= 3
     glUniformSubroutinesuiv(shaderType, count, &index);
-#endif
 }
 
 void Shader::bindFragDataLocation(const std::string &str, GLuint loc)
@@ -291,12 +288,8 @@ GLuint Shader::compile(ShaderType shaderType, const std::string &shaderCode)
     if (!success)
     {
         glGetShaderInfoLog(shaderId, 512, nullptr, infoLog);
-        printf("%s -- Shader Compilation Failed: %s\n", mFileNames.at(shaderType).c_str(), infoLog);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s -- Shader Compilation Failed: %s", mFileNames.at(shaderType).c_str(), infoLog);
         return 0;
-    }
-    else
-    {
-        printf("%s compiled successfully\n", mFileNames.at(shaderType).c_str());
     }
 
     return shaderId;
@@ -321,12 +314,8 @@ GLuint Shader::compile(ShaderType shaderType, const GLchar *shaderCode)
     if (!success)
     {
         glGetShaderInfoLog(shaderId, 512, nullptr, infoLog);
-        printf("%s -- Shader Compilation Failed: %s\n", mFileNames.at(shaderType).c_str(), infoLog);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s -- Shader Compilation Failed: %s", mFileNames.at(shaderType).c_str(), infoLog);
         return 0;
-    }
-    else
-    {
-        printf("%s compiled successfully\n", mFileNames.at(shaderType).c_str());
     }
 
     return shaderId;
@@ -365,7 +354,7 @@ GLint Shader::getUniformLocation(const std::string &str)
             std::string key = std::to_string(mProgram) + ":" + str;
             if (warnedUniforms.find(key) == warnedUniforms.end())
             {
-                printf("%s does not exist in the shader (program %d)\n", str.c_str(), mProgram);
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s does not exist in the shader (program %d)", str.c_str(), mProgram);
                 warnedUniforms.insert(key);
             }
         }

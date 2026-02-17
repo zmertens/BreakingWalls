@@ -525,9 +525,22 @@ LoadingState::LoadingState(StateStack &stack, Context context, std::string_view 
 
 void LoadingState::draw() const noexcept
 {
-    const auto &window = *getContext().window;
+    // Show resource loading progress in a simple ImGui window near bottom-left
+    ImGuiIO &io = ImGui::GetIO();
+    ImVec2 screenSize = io.DisplaySize;
+    float completion = resourceLoader().getCompletion();
+    char buf[64];
+    SDL_snprintf(buf, sizeof(buf), "Resource loading progress: %.0f%%", completion * 100.0f);
 
-    // window.draw(mLoadingSprite);
+    ImVec2 windowPos = ImVec2(10, screenSize.y - 50);
+    ImVec2 windowSize = ImVec2(320, 40);
+    ImGui::SetNextWindowPos(windowPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(windowSize, ImGuiCond_Always);
+    ImGui::Begin("LoadingProgress", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Text("%s", buf);
+    ImGui::End();
 }
 
 bool LoadingState::update(float dt, unsigned int subSteps) noexcept
@@ -547,6 +560,8 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
         }
 
         mHasFinished = true;
+        requestStackPop();
+        requestStackPush(States::ID::SPLASH);
     }
 
     if (!mHasFinished)
@@ -634,20 +649,20 @@ void LoadingState::loadAudio() noexcept
         {
             log("LoadingState: Found music path: " + musicPath);
             log("LoadingState: Loading music into manager...");
-            
+
             music.load(Music::ID::GAME_MUSIC,
                        std::string_view{musicPath},
                        100.f, true);
 
             log("LoadingState: Music resource loaded into manager successfully");
-            
+
             // Verify the music was loaded
             try
             {
-                auto& loadedMusic = music.get(Music::ID::GAME_MUSIC);
+                auto &loadedMusic = music.get(Music::ID::GAME_MUSIC);
                 log("LoadingState: Music verified in manager");
             }
-            catch (const std::exception& e)
+            catch (const std::exception &e)
             {
                 log("LoadingState: Failed to verify music in manager: " + std::string(e.what()));
             }
