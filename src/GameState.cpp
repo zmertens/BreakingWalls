@@ -386,8 +386,24 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     return true;
 }
 
-bool GameState::handleEvent(const SDL_Event &event) noexcept
-{
+bool GameState::handleEvent(const SDL_Event &event) noexcept {
+    // Handle window resize event
+    if (event.type == SDL_EVENT_WINDOW_RESIZED) {
+        int newW = event.window.data1;
+        int newH = event.window.data2;
+        if (newW > 0 && newH > 0 && (newW != mWindowWidth || newH != mWindowHeight)) {
+            mWindowWidth = newW;
+            mWindowHeight = newH;
+            // Update OpenGL viewport to match new window size
+            glViewport(0, 0, mWindowWidth, mWindowHeight);
+            // Recreate path tracer textures
+            createPathTracerTextures();
+            // Reset accumulation for new size
+            mCurrentBatch = 0;
+            log("GameState: Window resized, path tracer textures recreated: " + std::to_string(mWindowWidth) + ", " + std::to_string(mWindowHeight));
+        }
+    }
+    
     // World still handles mouse panning for the 2D view
     mWorld.handleEvent(event);
 
