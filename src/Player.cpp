@@ -181,7 +181,16 @@ void Player::initializeActions()
     // Movement actions (continuous)
     mCameraActions[Action::MOVE_FORWARD] = [this](Camera &camera, float dt)
     {
-        glm::vec3 movement = camera.getTarget() * cameraMoveSpeed * dt;
+        // Project camera direction onto horizontal plane (orthogonal to ground plane)
+        glm::vec3 cameraDir = camera.getTarget();
+        glm::vec3 horizontalDir = glm::vec3(cameraDir.x, 0.0f, cameraDir.z);
+        if (glm::length(horizontalDir) > 0.01f) {
+            horizontalDir = glm::normalize(horizontalDir);
+        } else {
+            horizontalDir = glm::vec3(0.0f, 0.0f, 1.0f);  // Default forward if looking straight up/down
+        }
+        glm::vec3 movement = horizontalDir * cameraMoveSpeed * dt;
+        
         if (camera.getMode() == CameraMode::THIRD_PERSON)
         {
             // Move player, camera follows
@@ -199,7 +208,16 @@ void Player::initializeActions()
 
     mCameraActions[Action::MOVE_BACKWARD] = [this](Camera &camera, float dt)
     {
-        glm::vec3 movement = camera.getTarget() * cameraMoveSpeed * dt;
+        // Project camera direction onto horizontal plane (orthogonal to ground plane)
+        glm::vec3 cameraDir = camera.getTarget();
+        glm::vec3 horizontalDir = glm::vec3(cameraDir.x, 0.0f, cameraDir.z);
+        if (glm::length(horizontalDir) > 0.01f) {
+            horizontalDir = glm::normalize(horizontalDir);
+        } else {
+            horizontalDir = glm::vec3(0.0f, 0.0f, 1.0f);  // Default forward if looking straight up/down
+        }
+        glm::vec3 movement = horizontalDir * cameraMoveSpeed * dt;
+        
         if (camera.getMode() == CameraMode::THIRD_PERSON)
         {
             mPosition -= movement;
@@ -216,7 +234,16 @@ void Player::initializeActions()
 
     mCameraActions[Action::MOVE_LEFT] = [this](Camera &camera, float dt)
     {
-        glm::vec3 movement = camera.getRight() * cameraMoveSpeed * dt;
+        // Project right vector onto horizontal plane
+        glm::vec3 rightDir = camera.getRight();
+        glm::vec3 horizontalRight = glm::vec3(rightDir.x, 0.0f, rightDir.z);
+        if (glm::length(horizontalRight) > 0.01f) {
+            horizontalRight = glm::normalize(horizontalRight);
+        } else {
+            horizontalRight = glm::vec3(1.0f, 0.0f, 0.0f);  // Default right if needed
+        }
+        glm::vec3 movement = horizontalRight * cameraMoveSpeed * dt;
+        
         if (camera.getMode() == CameraMode::THIRD_PERSON)
         {
             mPosition -= movement;
@@ -233,7 +260,16 @@ void Player::initializeActions()
 
     mCameraActions[Action::MOVE_RIGHT] = [this](Camera &camera, float dt)
     {
-        glm::vec3 movement = camera.getRight() * cameraMoveSpeed * dt;
+        // Project right vector onto horizontal plane
+        glm::vec3 rightDir = camera.getRight();
+        glm::vec3 horizontalRight = glm::vec3(rightDir.x, 0.0f, rightDir.z);
+        if (glm::length(horizontalRight) > 0.01f) {
+            horizontalRight = glm::normalize(horizontalRight);
+        } else {
+            horizontalRight = glm::vec3(1.0f, 0.0f, 0.0f);  // Default right if needed
+        }
+        glm::vec3 movement = horizontalRight * cameraMoveSpeed * dt;
+        
         if (camera.getMode() == CameraMode::THIRD_PERSON)
         {
             mPosition += movement;

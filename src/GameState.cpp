@@ -354,6 +354,16 @@ void GameState::renderWithComputeShaders() const noexcept
 
         mComputeShader->setUniform("uTime", static_cast<GLfloat>(SDL_GetTicks()) / 1000.0f);
         mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(NOISE_TEXTURE_UNIT));
+        
+        // Shadow casting uniforms
+        mComputeShader->setUniform("uPlayerPos", mPlayer.getPosition());
+        mComputeShader->setUniform("uPlayerRadius", 1.0f);  // Player shadow radius
+        
+        // Headlamp light direction - follows camera direction slightly downward
+        glm::vec3 cameraDir = glm::normalize(mCamera.getTarget() - mCamera.getPosition());
+        // Blend camera direction with a slight downward angle for headlamp effect
+        glm::vec3 headlampDir = glm::normalize(glm::mix(cameraDir, glm::vec3(0.0f, -1.0f, 0.0f), 0.3f));
+        mComputeShader->setUniform("uLightDir", headlampDir);
 
         // Bind both textures as images for compute shader
         glBindImageTexture(0, mAccumTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);

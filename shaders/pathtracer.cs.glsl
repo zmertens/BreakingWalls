@@ -115,6 +115,11 @@ uniform float uGroundPlaneRefractiveIndex;
 uniform float uTime;
 uniform sampler2D uNoiseTex;
 
+// Shadow casting uniforms
+uniform vec3 uPlayerPos;          // Player position in world space
+uniform float uPlayerRadius;      // Player shadow radius
+uniform vec3 uLightDir;           // Light direction (normalized)
+
 // Shader storage buffer for spheres
 layout (std430, binding = 1) buffer SphereBuffer {
     Sphere bSpheres[MAX_SPHERES];
@@ -196,6 +201,108 @@ bool planeIntersect(in Ray ray, float tMin, float tMax, out HitRecord hit) {
     hit.refractiveIndex = uGroundPlaneRefractiveIndex;
 
     return true;
+}
+
+// ============================================================================
+// Shadow Ray Casting Functions
+// ============================================================================
+
+bool testPlayerShadow(in Ray shadowRay, float maxDist) {
+    // Test if shadow ray intersects player sphere
+    vec3 oc = uPlayerPos - shadowRay.origin;
+    float a = dot(shadowRay.direction, shadowRay.direction);
+    float halfB = dot(oc, shadowRay.direction);
+    float c = dot(oc, oc) - uPlayerRadius * uPlayerRadius;
+    
+    float discriminant = halfB * halfB - a * c;
+    if (discriminant < 0.0) return false;
+    
+    float sqrtD = sqrt(discriminant);
+    float root = (-halfB - sqrtD) / a;
+    
+    // Check if intersection is within valid range
+    return root > EPSILON && root < maxDist;
+}
+
+bool testSpheresShadow(in Ray shadowRay, float maxDist) {
+    // Test if shadow ray intersects any sphere
+    for (uint i = 0u; i < uSphereCount; i++) {
+        vec3 oc = shadowRay.origin - bSpheres[i].center.xyz;
+        float a = dot(shadowRay.direction, shadowRay.direction);
+        float halfB = dot(oc, shadowRay.direction);
+        float c = dot(oc, oc) - bSpheres[i].radius2;
+        
+        float discriminant = halfB * halfB - a * c;
+        if (discriminant < 0.0) continue;
+        
+        float sqrtD = sqrt(discriminant);
+        float root = (-halfB - sqrtD) / a;
+        
+        if (root > EPSILON && root < maxDist) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool testPlaneShadow(in Ray shadowRay, float maxDist) {
+    // Test if shadow ray intersects ground plane
+    vec3 planeNormal = normalize(uGroundPlaneNormal);
+    float denom = dot(planeNormal, shadowRay.direction);
+    
+    if (abs(denom) < EPSILON) return false;
+    
+    float t = dot(uGroundPlanePoint - shadowRay.origin, planeNormal) / denom;
+    return t > EPSILON && t < maxDist;
+}
+
+float calculateShadow(vec3 hitPoint, vec3 normal) {
+    // Create shadow ray from hit point towards light
+    vec3 shadowRayOrigin = hitPoint + normal * 0.01;  // Slightly offset to avoid self-intersection
+    Ray shadowRay = Ray(shadowRayOrigin, uLightDir);
+    
+    // Check if hit point is a significant distance from player (to avoid shadowing player itself)
+    float distToPlayer = length(hitPoint - uPlayerPos);
+    float minDistForPlayerShadow = uPlayerRadius * 0.5;  // Don't shadow very close points
+    
+    // Maximum distance for shadow ray
+    float maxDist = uCamera.far;
+    
+    float shadowFactor = 1.0;  // Start fully lit
+    
+    // Check occlusion by player - with soft penumbra using noise
+    if (distToPlayer > minDistForPlayerShadow) {
+        if (testPlayerShadow(shadowRay, maxDist)) {
+            // Calculate shadow softness based on distance from player
+            float shadowFalloff = smoothstep(0.0, uPlayerRadius * 2.0, distToPlayer);
+            
+            // Sample noise texture for soft shadow edges
+            vec2 shadowNoiseUV = hitPoint.xz * 0.3 + vec2(uTime * 0.5);
+            float shadowNoise = texture(uNoiseTex, shadowNoiseUV).r;
+            
+            // Blend between hard shadow and soft shadow edge using noise
+            float hardShadow = 0.15;  // Very dark core shadow
+            float softShadow = mix(0.4, 0.85, shadowNoise);  // Jittered edge
+            
+            shadowFactor = mix(hardShadow, softShadow, shadowFalloff * shadowNoise);
+        }
+    }
+    
+    // Check occlusion by other spheres
+    if (testSpheresShadow(shadowRay, maxDist)) {
+        float sphereShadow = mix(0.35, 0.7, texture(uNoiseTex, hitPoint.xy * 0.2).r);
+        shadowFactor = min(shadowFactor, sphereShadow);
+    }
+    
+    // Ground plane adds subtle soft shadow with noise
+    if (testPlaneShadow(shadowRay, maxDist)) {
+        // Very subtle shadow with noise jitter for ground
+        float groundNoise = texture(uNoiseTex, hitPoint.xz * 0.1).r;
+        float groundShadow = mix(0.88, 0.92, groundNoise);
+        shadowFactor = min(shadowFactor, groundShadow);
+    }
+    
+    return shadowFactor;
 }
 
 // ============================================================================
@@ -408,6 +515,9 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
             Ray scattered;
 
             if (scatter(hit, ray, attenuation, scattered, pixel, sampleIndex, bounce)) {
+                // Calculate shadow factor
+                float shadowFactor = calculateShadow(hit.point, hit.normal);
+                
                 // Apply grid overlay to ground plane
                 if (hitIsPlane) {
                     // Use hit point XZ coordinates for grid pattern
@@ -418,6 +528,9 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
                     vec3 gridColor = vec3(0.0, 1.0, 1.0);  // Cyan grid color
                     attenuation = mix(attenuation, gridColor, gridVal * 0.6);
                 }
+                
+                // Apply shadow to attenuation
+                attenuation *= shadowFactor;
                 
                 color *= attenuation;
                 ray = scattered;
