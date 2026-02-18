@@ -556,6 +556,8 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
             // Handle window icon separately (special case, not managed by TextureManager)
             loadWindowIcon(resources);
 
+            loadNoiseTexture2D();
+
             loadAudio();
         }
 
@@ -607,24 +609,19 @@ void LoadingState::loadResources() noexcept
 
 void LoadingState::loadFonts() noexcept
 {
-    static constexpr auto FONT_PIXEL_SIZE = 28.f;
-
     auto &fonts = *getContext().fonts;
 
     fonts.load(Fonts::ID::LIMELIGHT,
                Limelight_Regular_compressed_data,
-               Limelight_Regular_compressed_size,
-               FONT_PIXEL_SIZE);
+               Limelight_Regular_compressed_size);
 
     fonts.load(Fonts::ID::NUNITO_SANS,
                NunitoSans_compressed_data,
-               NunitoSans_compressed_size,
-               FONT_PIXEL_SIZE);
+               NunitoSans_compressed_size);
 
     fonts.load(Fonts::ID::COUSINE_REGULAR,
                Cousine_Regular_compressed_data,
-               Cousine_Regular_compressed_size,
-               FONT_PIXEL_SIZE);
+               Cousine_Regular_compressed_size);
 }
 
 void LoadingState::loadAudio() noexcept
@@ -834,5 +831,20 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load icon: %s - %s\n", windowIconPath.c_str(),
                      SDL_GetError());
+    }
+}
+
+void LoadingState::loadNoiseTexture2D() noexcept
+{
+    auto &textures = *getContext().textures;
+
+    try
+    {
+        textures.load(Textures::ID::NOISE2D, 256, 256, 2);
+        log("LoadingState: Noise texture loaded successfully");
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load noise texture: %s\n", e.what());
     }
 }

@@ -36,9 +36,10 @@ public:
     // Texture loading
     void load(Identifier id, std::string_view filename, std::uint32_t channelOffset);
 
+    void load(Identifier id, unsigned int width, unsigned int height, std::uint32_t channelOffset);
+
     // Font loading
-    template <typename Parameter1, typename Parameter2, typename PixelSize = float>
-    void load(Identifier id, const Parameter1 &param1, const Parameter2 &param2, const PixelSize &pixelSize);
+    void load(Identifier id, const void *data, const std::size_t capacity);
 
     Resource &get(Identifier id);
     const Resource &get(Identifier id) const;
@@ -94,6 +95,21 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
 }
 
 template <typename Resource, typename Identifier>
+void ResourceManager<Resource, Identifier>::load(Identifier id, unsigned int width, unsigned int height, std::uint32_t channelOffset)
+{
+    // Create and load resource
+    auto resource = std::make_unique<Resource>();
+
+    if (!resource->loadNoiseTexture2D(width, height, channelOffset))
+    {
+        throw std::runtime_error("ResourceManager::load - Failed to load noise texture");
+    }
+
+    // If loading successful, insert resource to map
+    insertResource(id, std::move(resource));
+}
+
+template <typename Resource, typename Identifier>
 void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view filename, float volume, bool loop)
 {
     // Create and load resource
@@ -127,11 +143,10 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
 }
 
 template <typename Resource, typename Identifier>
-template <typename Parameter1, typename Parameter2, typename PixelSize>
-void ResourceManager<Resource, Identifier>::load(Identifier id, const Parameter1 &param1, const Parameter2 &param2, const PixelSize &pixelSize)
+void ResourceManager<Resource, Identifier>::load(Identifier id, const void *data, const std::size_t capacity)
 {
     auto resource = std::make_unique<Resource>();
-    if (!resource->loadFromMemoryCompressedTTF(param1, param2, pixelSize))
+    if (!resource->loadFromMemoryCompressedTTF(data, capacity))
     {
         throw std::runtime_error("ResourceManager::load - Failed to load font from memory");
     }

@@ -6,8 +6,6 @@
 
 struct SDL_Window;
 
-class MazeLayout;
-
 /// @file Texture.hpp
 /// @brief Texture class for OpenGL 3 textures
 /// @details This class wraps OpenGL texture operations
@@ -42,8 +40,7 @@ public:
     /// Load texture from file using stb_image
     bool loadFromFile(std::string_view filepath, std::uint32_t channelOffset = 0) noexcept;
 
-    /// Load texture from a maze string representation
-    bool loadFromMazeBuilder(std::string_view mazeStr, int cellSize = 10) noexcept;
+    bool loadNoiseTexture2D(int width, int height, const std::uint32_t channelOffset = 0) noexcept;
 
     /// Load texture from raw RGBA memory data
     bool loadFromMemory(const std::uint8_t *data, int width, int height,

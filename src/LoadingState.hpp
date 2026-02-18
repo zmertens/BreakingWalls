@@ -33,6 +33,8 @@ private:
 
     void loadWindowIcon(const std::unordered_map<std::string, std::string> &resources) noexcept;
 
+    void loadNoiseTexture2D() noexcept;
+
     void loadAudio() noexcept;
     void loadFonts() noexcept;
     void loadLevels() noexcept;

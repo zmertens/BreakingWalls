@@ -187,6 +187,29 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
 
     return true;
 }
+#include <random>
+bool Texture::loadNoiseTexture2D(int width, int height, const std::uint32_t channelOffset) noexcept
+{
+    std::vector<unsigned char> data(static_cast<size_t>(width) * static_cast<size_t>(height));
+    std::mt19937 rng(1337);
+    std::uniform_int_distribution<int> distribution(0, 255);
+    for (auto &value : data)
+    {
+        value = static_cast<unsigned char>(distribution(rng));
+    }
+
+    glGenTextures(1, &mTextureId);
+    glActiveTexture(GL_TEXTURE0 + channelOffset);
+    glBindTexture(GL_TEXTURE_2D, mTextureId);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, data.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    return true;
+}
 
 bool Texture::loadFromMemory(const std::uint8_t *data, const int width, const int height,
                              const std::uint32_t channelOffset, const bool rotate_180) noexcept
@@ -301,111 +324,4 @@ bool Texture::updateFromMemory(const std::uint8_t *data, const int width, const 
     }
 
     return true;
-}
-
-bool Texture::loadFromMazeBuilder(const std::string_view mazeStr, const int cellSize) noexcept
-{
-    if (mazeStr.empty() || cellSize <= 0)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for loadFromMazeBuilder\n");
-        return false;
-    }
-
-    this->free();
-
-    // Parse the maze string to determine dimensions
-    int rows = 1;
-    int maxCols = 0;
-    int currentCol = 0;
-
-    for (const char c : mazeStr)
-    {
-        if (c == '\n')
-        {
-            maxCols = std::max(maxCols, currentCol);
-            currentCol = 0;
-            ++rows;
-        }
-        else
-        {
-            ++currentCol;
-        }
-    }
-    maxCols = std::max(maxCols, currentCol); // Handle last line without newline
-
-    if (rows == 0 || maxCols == 0)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid maze dimensions\n");
-        return false;
-    }
-
-    // Calculate pixel dimensions
-    const int pixelWidth = maxCols * cellSize;
-    const int pixelHeight = rows * cellSize;
-
-    if (pixelWidth > MAX_TEXTURE_WIDTH || pixelHeight > MAX_TEXTURE_HEIGHT)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze texture %dx%d exceeds maximum %dx%d\n",
-                     pixelWidth, pixelHeight, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
-        return false;
-    }
-
-    // Create RGBA pixel buffer (4 bytes per pixel)
-    std::vector<std::uint8_t> pixels(pixelWidth * pixelHeight * 4, 0);
-
-    // Define colors (RGBA)
-    constexpr std::uint8_t WALL_COLOR[4] = {40, 40, 40, 255};    // Dark gray for walls
-    constexpr std::uint8_t PATH_COLOR[4] = {200, 200, 200, 255}; // Light gray for paths
-    constexpr std::uint8_t START_COLOR[4] = {0, 255, 0, 255};    // Green for start
-    constexpr std::uint8_t END_COLOR[4] = {255, 0, 0, 255};      // Red for end
-
-    // Render maze to pixel buffer
-    int row = 0;
-    int col = 0;
-
-    for (const char c : mazeStr)
-    {
-        if (c == '\n')
-        {
-            row++;
-            col = 0;
-            continue;
-        }
-
-        // Determine color based on character
-        const std::uint8_t *color = nullptr;
-        switch (c)
-        {
-        case static_cast<unsigned char>(mazes::barriers::CORNER):
-        case static_cast<unsigned char>(mazes::barriers::HORIZONTAL):
-        case static_cast<unsigned char>(mazes::barriers::VERTICAL):
-            color = WALL_COLOR;
-            break;
-        case static_cast<unsigned char>(mazes::barriers::SINGLE_SPACE):
-        default:
-            color = PATH_COLOR;
-            break;
-        }
-
-        // Fill the cell with the chosen color
-        for (int py = 0; py < cellSize && (row * cellSize + py) < pixelHeight; ++py)
-        {
-            for (int px = 0; px < cellSize && (col * cellSize + px) < pixelWidth; ++px)
-            {
-                const int pixelX = col * cellSize + px;
-                const int pixelY = row * cellSize + py;
-                const int idx = (pixelY * pixelWidth + pixelX) * 4;
-
-                pixels[idx + 0] = color[0]; // R
-                pixels[idx + 1] = color[1]; // G
-                pixels[idx + 2] = color[2]; // B
-                pixels[idx + 3] = color[3]; // A
-            }
-        }
-
-        col++;
-    }
-
-    // Upload to OpenGL texture
-    return loadFromMemory(pixels.data(), pixelWidth, pixelHeight, 0, false);
 }

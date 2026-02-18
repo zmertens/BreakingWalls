@@ -15,34 +15,9 @@
 #include "ResourceManager.hpp"
 #include "Shader.hpp"
 #include "SoundPlayer.hpp"
-#include "StateStack.hpp"
 #include "Sphere.hpp"
-
-namespace
-{
-    GLuint createNoiseTexture2D(int width, int height) noexcept
-    {
-        std::vector<unsigned char> data(static_cast<size_t>(width) * static_cast<size_t>(height));
-        std::mt19937 rng(1337);
-        std::uniform_int_distribution<int> distribution(0, 255);
-        for (auto &value : data)
-        {
-            value = static_cast<unsigned char>(distribution(rng));
-        }
-
-        GLuint texture = 0;
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, data.data());
-        glBindTexture(GL_TEXTURE_2D, 0);
-
-        return texture;
-    }
-}
+#include "StateStack.hpp"
+#include "Texture.hpp"
 
 GameState::GameState(StateStack &stack, Context context)
     : State{stack, context}, mWorld{*context.window, *context.fonts, *context.textures, *context.shaders}, mPlayer{*context.player}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}
@@ -70,45 +45,48 @@ GameState::GameState(StateStack &stack, Context context)
         mShadersInitialized = false;
     }
 
+    auto &textures = *context.textures;
+    try
+    {
+        mNoiseTexture = &textures.get(Textures::ID::NOISE2D);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get noise texture: %s", e.what());
+        mNoiseTexture = nullptr;
+    }
+
     // Get and play game music from context
     auto &music = *context.music;
     try
     {
-        SDL_Log("GameState: Attempting to get music from manager...");
+        log("GameState: Attempting to get music from manager...");
         mGameMusic = &music.get(Music::ID::GAME_MUSIC);
         if (mGameMusic)
         {
-            SDL_Log("GameState: ✓ Got music reference from manager");
-
-            // Set volume to 100% to ensure it's audible
-            mGameMusic->setVolume(100.0f);
-            SDL_Log("GameState: Set volume to 100%%");
-            
-            mGameMusic->setLoop(true);
-            SDL_Log("GameState: Set loop to true");
 
             // Start the music - the periodic health check in update() will handle restarts if needed
             bool wasPlaying = mGameMusic->isPlaying();
-            SDL_Log("GameState: Music isPlaying before play(): %s", wasPlaying ? "true" : "false");
+            log("GameState: Music isPlaying before play(): " + std::string(wasPlaying ? "true" : "false"));
             
             if (!wasPlaying)
             {
-                SDL_Log("GameState: Starting game music...");
+                log("GameState: Starting game music...");
                 mGameMusic->play();
                 
                 // Check immediately after
                 bool nowPlaying = mGameMusic->isPlaying();
-                SDL_Log("GameState: Music isPlaying after play(): %s", nowPlaying ? "true" : "false");
+                log("GameState: Music isPlaying after play(): " + std::string(nowPlaying ? "true" : "false"));
             }
             else
             {
-                SDL_Log("GameState: Music already playing - keeping it running");
+                log("GameState: Music already playing - keeping it running");
             }
         }
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "GameState: ❌ Failed to get game music: %s", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get game music: %s", e.what());
         mGameMusic = nullptr;
     }
 
@@ -186,12 +164,6 @@ void GameState::initializeGraphicsResources() noexcept
 
     // Create textures for path tracing
     createPathTracerTextures();
-
-    // Create noise texture for compute-shader starfield
-    if (mNoiseTex == 0)
-    {
-        mNoiseTex = createNoiseTexture2D(256, 256);
-    }
 
     // Upload sphere data from World to GPU with extra capacity for dynamic spawning
     const auto &spheres = mWorld.getSpheres();
@@ -347,7 +319,7 @@ void GameState::renderWithComputeShaders() const noexcept
 
         // Bind starfield noise texture sampler
         glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, mNoiseTex);
+        glBindTexture(GL_TEXTURE_2D, mNoiseTexture ? mNoiseTexture->get() : 0);
 
         // Dispatch compute shader with work groups (using 20x20 local work group size)
         GLuint groupsX = (mWindowWidth + 19) / 20;
@@ -376,7 +348,8 @@ void GameState::cleanupResources() noexcept
     GLSDLHelper::deleteBuffer(mShapeSSBO);
     GLSDLHelper::deleteTexture(mAccumTex);
     GLSDLHelper::deleteTexture(mDisplayTex);
-    GLSDLHelper::deleteTexture(mNoiseTex);
+    // Noise texture is now managed by TextureManager - don't delete it here
+    mNoiseTexture = nullptr;
 
     // Shaders are now managed by ShaderManager - don't delete them here
     mDisplayShader = nullptr;

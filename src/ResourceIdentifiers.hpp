@@ -83,12 +83,13 @@ namespace Textures
         LEVEL_FOUR = 6,
         LEVEL_FIVE = 7,
         LEVEL_SIX = 8,
-        SDL_LOGO = 9,
-        SFML_LOGO = 10,
-        SPLASH_TITLE_IMAGE = 11,
-        WALL_HORIZONTAL = 12,
-        WINDOW_ICON = 13,
-        TOTAL_IDS = 14
+        NOISE2D = 9,
+        SDL_LOGO = 10,
+        SFML_LOGO = 11,
+        SPLASH_TITLE_IMAGE = 12,
+        WALL_HORIZONTAL = 13,
+        WINDOW_ICON = 14,
+        TOTAL_IDS = 15
     };
 }
 

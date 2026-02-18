@@ -1,17 +1,20 @@
 #ifndef GAME_STATE_HPP
 #define GAME_STATE_HPP
 
+#include "Camera.hpp"
 #include "State.hpp"
 #include "World.hpp"
-#include "Shader.hpp"
-#include "Camera.hpp"
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
+
 #include <memory>
 
-class StateStack;
 class MusicPlayer;
+class Shader;
+class StateStack;
+class Texture;
+
 union SDL_Event;
 
 /// @brief Main game state managing physics, rendering, and input
@@ -50,12 +53,13 @@ private:
     Shader *mDisplayShader{nullptr};
     Shader *mComputeShader{nullptr};
 
+    Texture *mNoiseTexture{nullptr};
+
     // GPU resources
     GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres
     GLuint mVAO{0};        // Vertex Array Object for fullscreen quad
     GLuint mAccumTex{0};   // Accumulation texture for progressive rendering
     GLuint mDisplayTex{0}; // Display texture for final output
-    GLuint mNoiseTex{0};   // Noise texture for starfield synthesis
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
