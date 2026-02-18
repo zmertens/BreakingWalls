@@ -55,6 +55,7 @@ private:
     GLuint mVAO{0};        // Vertex Array Object for fullscreen quad
     GLuint mAccumTex{0};   // Accumulation texture for progressive rendering
     GLuint mDisplayTex{0}; // Display texture for final output
+    GLuint mNoiseTex{0};   // Noise texture for starfield synthesis
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};

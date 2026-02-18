@@ -8,6 +8,16 @@
 #define MAX_BOUNCES 8
 #define EPSILON 0.001
 
+// Starfield parameters
+#define PI 3.14159265359
+#define TWO_PI 6.28318530718
+#define FLIGHT_SPEED 8.0
+#define STAR_SIZE 0.6
+#define STAR_CORE_SIZE 0.14
+#define STAR_THRESHOLD 0.775
+#define BLACK_HOLE_THRESHOLD 0.9995
+#define BLACK_HOLE_DISTORTION 0.03
+
 // Material types (must match C++ MaterialType enum)
 #define LAMBERTIAN 0
 #define METAL 1
@@ -24,7 +34,8 @@ uint pcg_hash(uint seed) {
 }
 
 float random(uvec2 pixel, uint sampleIndex, uint bounce) {
-    uint seed = pixel.x + pixel.y * 1920u + sampleIndex * 12345u + bounce * 67890u;
+    uint seed = (pixel.x * 73856093u) ^ (pixel.y * 19349663u) ^
+                (sampleIndex * 83492791u) ^ (bounce * 2654435761u);
     return float(pcg_hash(seed)) / float(0xffffffffu);
 }
 
@@ -101,6 +112,8 @@ uniform Camera uCamera;
 uniform uint uBatch;
 uniform uint uSamplesPerBatch;
 uniform uint uSphereCount;  // Actual number of spheres to check
+uniform float uTime;
+uniform sampler2D uNoiseTex;
 
 // Shader storage buffer for spheres
 layout (std430, binding = 1) buffer SphereBuffer {
@@ -228,9 +241,104 @@ bool scatter(in HitRecord hit, in Ray rayIn, out vec3 attenuation, out Ray scatt
 // Sky / Background
 // ============================================================================
 
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+float noise2D(vec2 uv) {
+    return texture(uNoiseTex, fract(uv)).r;
+}
+
+float hash12(vec2 p) {
+    vec2 h = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return fract(sin(h.x + h.y) * 43758.5453123);
+}
+
+vec2 hash22(vec2 p) {
+    return vec2(hash12(p), hash12(p + vec2(19.19, 73.41)));
+}
+
+vec3 getStarGlowColor(float starDistance, float angle, float hue) {
+    float progress = 1.0 - starDistance;
+    float spikes = mix(pow(abs(sin(angle * 2.5)), 8.0), 1.0, progress);
+    return hsv2rgb(vec3(hue, 0.3, 1.0)) * (0.4 * progress * progress * spikes);
+}
+
+vec3 starfieldColor(vec3 direction, uvec2 pixel, uint sampleIndex) {
+    vec3 dir = normalize(direction);
+
+    // Spherical projection for stable infinite starfield
+    float lon = atan(dir.z, dir.x);
+    float lat = asin(clamp(dir.y, -1.0, 1.0));
+    vec2 uv = vec2(lon / TWO_PI + 0.5, lat / PI + 0.5);
+
+    float flight = uTime * FLIGHT_SPEED;
+
+    vec2 flow = vec2(flight * 0.0018, -flight * 0.0035);
+    vec2 warpedUv = uv + flow;
+
+    // Simulated black-hole lensing regions (pull UVs inward a bit)
+    vec2 bhCell = floor(warpedUv * vec2(24.0, 12.0));
+    vec2 bhRnd = hash22(bhCell + vec2(91.7, 13.3));
+    float bhPresence = step(BLACK_HOLE_THRESHOLD, 0.98 + 0.02 * bhRnd.x);
+    vec2 bhCenter = (bhCell + bhRnd) / vec2(24.0, 12.0);
+    vec2 toBH = bhCenter - warpedUv;
+    float bhDist = length(toBH * vec2(24.0, 12.0));
+    if (bhPresence > 0.5 && bhDist < 0.8) {
+        warpedUv += normalize(toBH + vec2(1e-4)) * (BLACK_HOLE_DISTORTION * (0.8 - bhDist));
+    }
+
+    // Star clusters and sparse thresholds
+    vec2 clusterUv = warpedUv * vec2(120.0, 60.0);
+    vec2 cell = floor(clusterUv);
+    vec2 local = fract(clusterUv) - 0.5;
+
+    float clusterA = noise2D(cell * 0.007 + vec2(0.724, 0.111));
+    float clusterB = noise2D(cell.yx * 0.009 + vec2(0.333, 0.777));
+    float clusterMask = step(STAR_THRESHOLD, clusterA) * step(STAR_THRESHOLD, clusterB);
+
+    vec2 starRnd = hash22(cell + vec2(37.0, 59.0));
+    vec2 starPos = starRnd - 0.5;
+    vec2 d = local - starPos * (1.0 - STAR_SIZE);
+    float distNorm = length(d) / max(STAR_SIZE, 0.001);
+
+    float starSeed = hash12(cell + starRnd + vec2(float(sampleIndex) * 0.0001));
+    float twinkle = 0.8 + 0.2 * sin(uTime * 6.5 + starSeed * 80.0 + float((pixel.x + pixel.y) & 255u) * 0.035);
+    float hue = fract(starSeed * 1.7 + clusterA * 0.23);
+
+    float core = smoothstep(STAR_CORE_SIZE, 0.0, distNorm);
+    float glow = smoothstep(1.0, STAR_CORE_SIZE, distNorm);
+    float angle = atan(d.y, d.x);
+    vec3 glowColor = getStarGlowColor(clamp(distNorm, 0.0, 1.0), angle, hue);
+
+    vec3 coreColor = hsv2rgb(vec3(hue, 0.18, 1.0));
+    vec3 stars = clusterMask * twinkle * (coreColor * core * 1.8 + glowColor * glow * 1.2);
+
+    // Nebula layers inspired by Shadertoy sample style
+    vec2 nebUv = warpedUv * vec2(5.0, 2.8) + vec2(flight * 0.0007, -flight * 0.0002);
+    float n0 = noise2D(nebUv);
+    float n1 = noise2D(nebUv * 2.3 + vec2(0.17, 0.53));
+    float n2 = noise2D(nebUv * 4.7 + vec2(0.63, 0.21));
+    float neb = pow(max(0.0, n0 * 0.55 + n1 * 0.30 + n2 * 0.15), 2.1);
+    vec3 nebula = hsv2rgb(vec3(fract(warpedUv.x + warpedUv.y * 0.21 + flight * 0.00012), 0.85, neb * 0.34));
+
+    // Optional mild forward streak to suggest flight
+    float streak = pow(max(0.0, 1.0 - abs(local.x + local.y * 0.2) * 2.4), 8.0) * clusterMask * 0.08;
+    stars += vec3(streak);
+
+    // Black-hole core darkening
+    float bhCore = (bhPresence > 0.5) ? smoothstep(0.18, 0.0, bhDist) : 0.0;
+
+    vec3 baseSpace = vec3(0.003, 0.004, 0.010);
+    vec3 col = baseSpace + nebula + stars;
+    col *= (1.0 - bhCore);
+    return col;
+}
+
 vec3 skyColor(vec3 direction) {
-    float t = 0.5 * (normalize(direction).y + 1.0);
-    return mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t);
+    return starfieldColor(direction, uvec2(0u), 0u);
 }
 
 // ============================================================================
@@ -256,7 +364,7 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
             }
         } else {
             // Hit sky
-            color *= skyColor(ray.direction);
+            color *= starfieldColor(ray.direction, pixel, sampleIndex);
             return color;
         }
 

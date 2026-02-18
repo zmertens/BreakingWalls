@@ -3,6 +3,8 @@
 #include <SDL3/SDL.h>
 
 #include <cmath>
+#include <random>
+#include <vector>
 
 #include <glm/glm.hpp>
 #include <glad/glad.h>
@@ -15,6 +17,32 @@
 #include "SoundPlayer.hpp"
 #include "StateStack.hpp"
 #include "Sphere.hpp"
+
+namespace
+{
+    GLuint createNoiseTexture2D(int width, int height) noexcept
+    {
+        std::vector<unsigned char> data(static_cast<size_t>(width) * static_cast<size_t>(height));
+        std::mt19937 rng(1337);
+        std::uniform_int_distribution<int> distribution(0, 255);
+        for (auto &value : data)
+        {
+            value = static_cast<unsigned char>(distribution(rng));
+        }
+
+        GLuint texture = 0;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, data.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        return texture;
+    }
+}
 
 GameState::GameState(StateStack &stack, Context context)
     : State{stack, context}, mWorld{*context.window, *context.fonts, *context.textures, *context.shaders}, mPlayer{*context.player}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}
@@ -159,6 +187,12 @@ void GameState::initializeGraphicsResources() noexcept
     // Create textures for path tracing
     createPathTracerTextures();
 
+    // Create noise texture for compute-shader starfield
+    if (mNoiseTex == 0)
+    {
+        mNoiseTex = createNoiseTexture2D(256, 256);
+    }
+
     // Upload sphere data from World to GPU with extra capacity for dynamic spawning
     const auto &spheres = mWorld.getSpheres();
 
@@ -179,6 +213,17 @@ void GameState::initializeGraphicsResources() noexcept
 
 void GameState::createPathTracerTextures() noexcept
 {
+    if (mAccumTex != 0)
+    {
+        GLSDLHelper::deleteTexture(mAccumTex);
+        mAccumTex = 0;
+    }
+    if (mDisplayTex != 0)
+    {
+        GLSDLHelper::deleteTexture(mDisplayTex);
+        mDisplayTex = 0;
+    }
+
     // Create accumulation texture for progressive rendering using helper
     mAccumTex = GLSDLHelper::createPathTracerTexture(
         static_cast<GLsizei>(mWindowWidth),
@@ -225,6 +270,9 @@ void GameState::renderWithComputeShaders() const noexcept
 
     // Check if camera has moved - if so, reset accumulation
     checkCameraMovement();
+
+    // Animated starfield: reset progressive accumulation each frame to prevent ghost trails
+    mCurrentBatch = 0;
 
     // Update sphere data on GPU every frame (physics may have changed positions)
     const auto &spheres = mWorld.getSpheres();
@@ -279,10 +327,16 @@ void GameState::renderWithComputeShaders() const noexcept
 
         // Set sphere count uniform (NEW - tells shader how many spheres to check)
         mComputeShader->setUniform("uSphereCount", static_cast<uint32_t>(spheres.size()));
+        mComputeShader->setUniform("uTime", static_cast<GLfloat>(SDL_GetTicks()) / 1000.0f);
+        mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(2));
 
         // Bind both textures as images for compute shader
         glBindImageTexture(0, mAccumTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
         glBindImageTexture(1, mDisplayTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+
+        // Bind starfield noise texture sampler
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, mNoiseTex);
 
         // Dispatch compute shader with work groups (using 20x20 local work group size)
         GLuint groupsX = (mWindowWidth + 19) / 20;
@@ -311,6 +365,7 @@ void GameState::cleanupResources() noexcept
     GLSDLHelper::deleteBuffer(mShapeSSBO);
     GLSDLHelper::deleteTexture(mAccumTex);
     GLSDLHelper::deleteTexture(mDisplayTex);
+    GLSDLHelper::deleteTexture(mNoiseTex);
 
     // Shaders are now managed by ShaderManager - don't delete them here
     mDisplayShader = nullptr;
