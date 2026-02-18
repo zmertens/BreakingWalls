@@ -112,6 +112,12 @@ uniform Camera uCamera;
 uniform uint uBatch;
 uniform uint uSamplesPerBatch;
 uniform uint uSphereCount;  // Actual number of spheres to check
+uniform vec3 uGroundPlanePoint;
+uniform vec3 uGroundPlaneNormal;
+uniform vec3 uGroundPlaneAlbedo;
+uniform uint uGroundPlaneMaterialType;
+uniform float uGroundPlaneFuzz;
+uniform float uGroundPlaneRefractiveIndex;
 uniform float uTime;
 uniform sampler2D uNoiseTex;
 
@@ -171,6 +177,31 @@ bool hitWorld(in Ray ray, float tMin, float tMax, out HitRecord hit) {
     }
 
     return hitAnything;
+}
+
+bool planeIntersect(in Ray ray, float tMin, float tMax, out HitRecord hit) {
+    vec3 planeNormal = normalize(uGroundPlaneNormal);
+    float denom = dot(planeNormal, ray.direction);
+
+    if (abs(denom) < EPSILON) {
+        return false;
+    }
+
+    float t = dot(uGroundPlanePoint - ray.origin, planeNormal) / denom;
+    if (t < tMin || t > tMax) {
+        return false;
+    }
+
+    hit.t = t;
+    hit.point = ray.origin + ray.direction * t;
+    hit.frontFace = dot(ray.direction, planeNormal) < 0.0;
+    hit.normal = hit.frontFace ? planeNormal : -planeNormal;
+    hit.materialType = uGroundPlaneMaterialType;
+    hit.albedo = uGroundPlaneAlbedo;
+    hit.fuzz = uGroundPlaneFuzz;
+    hit.refractiveIndex = uGroundPlaneRefractiveIndex;
+
+    return true;
 }
 
 // ============================================================================
@@ -350,8 +381,20 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
 
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit;
+        HitRecord sphereHit;
+        HitRecord planeHit;
+        bool hasSphereHit = hitWorld(ray, EPSILON, uCamera.far, sphereHit);
+        bool hasPlaneHit = planeIntersect(ray, EPSILON, uCamera.far, planeHit);
 
-        if (hitWorld(ray, EPSILON, uCamera.far, hit)) {
+        if (hasSphereHit && hasPlaneHit) {
+            hit = (sphereHit.t < planeHit.t) ? sphereHit : planeHit;
+        } else if (hasSphereHit) {
+            hit = sphereHit;
+        } else if (hasPlaneHit) {
+            hit = planeHit;
+        }
+
+        if (hasSphereHit || hasPlaneHit) {
             vec3 attenuation;
             Ray scattered;
 

@@ -18,6 +18,7 @@
 #include "View.hpp"
 #include "Material.hpp"
 #include "Animation.hpp"
+#include "Plane.hpp"
 
 class Camera;
 class Player;
@@ -42,6 +43,7 @@ public:
 
     const std::vector<Sphere> &getSpheres() const noexcept { return mSpheres; }
     std::vector<Sphere> &getSpheres() noexcept { return mSpheres; }
+    const Plane &getGroundPlane() const noexcept { return mGroundPlane; }
 
     void updateSphereChunks(const glm::vec3 &cameraPosition) noexcept;
     glm::vec3 getMazeSpawnPosition() const noexcept { return mPlayerSpawnPosition; }
@@ -137,6 +139,7 @@ private:
 
     std::vector<Sphere> mSpheres;
     std::vector<b2BodyId> mSphereBodyIds;
+    Plane mGroundPlane;
 
     // Modern C++ worker pool
     static constexpr size_t NUM_WORKER_THREADS = 4;

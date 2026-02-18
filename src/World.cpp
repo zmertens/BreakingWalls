@@ -27,7 +27,21 @@
 #include <cctype>
 
 World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders)
-    : mWindow{window}, mWorldView{window.getView()}, mFonts{fonts}, mTextures{textures}, mShaders{shaders}, mWorldId{b2_nullWorldId}, mMazeWallsBodyId{b2_nullBodyId}, mIsPanning{false}, mLastMousePosition{0.f, 0.f}, mLastChunkUpdatePosition{}, mPlayerSpawnPosition{}
+    : mWindow{window},
+      mWorldView{window.getView()},
+      mFonts{fonts},
+      mTextures{textures},
+      mShaders{shaders},
+      mWorldId{b2_nullWorldId},
+      mMazeWallsBodyId{b2_nullBodyId},
+      mIsPanning{false},
+      mLastMousePosition{0.f, 0.f},
+      mGroundPlane{
+          glm::vec3(0.0f, 0.0f, 0.0f),
+          glm::vec3(0.0f, 1.0f, 0.0f),
+          Material(glm::vec3(0.72f, 0.74f, 0.78f), Material::MaterialType::METAL, 0.02f, 1.0f)},
+      mLastChunkUpdatePosition{},
+      mPlayerSpawnPosition{}
 {
 }
 
@@ -497,16 +511,6 @@ void World::initPathTracerScene() noexcept
         return;
     }
 
-    // Ground sphere (large Lambertian) - static body, always present
-    mSpheres.emplace_back(
-        glm::vec3(0.0f, -1000.0f, 0.0f),
-        1000.0f,
-        glm::vec3(0.5f, 0.5f, 0.5f),
-        MaterialType::LAMBERTIAN,
-        0.0f,
-        0.0f);
-    mSphereBodyIds.push_back(b2_nullBodyId);
-
     // Center glass sphere - dynamic physics body (hero sphere, always present)
     mSpheres.emplace_back(
         glm::vec3(0.0f, 1.0f, 0.0f),
@@ -601,8 +605,7 @@ void World::initPathTracerScene() noexcept
 void World::syncPhysicsToSpheres() noexcept
 {
     // Sync physics body positions back to 3D sphere positions
-    // Skip index 0 (ground sphere has no body)
-    for (size_t i = 1; i < mSpheres.size() && i < mSphereBodyIds.size(); ++i)
+    for (size_t i = 0; i < mSpheres.size() && i < mSphereBodyIds.size(); ++i)
     {
         b2BodyId bodyId = mSphereBodyIds[i];
         if (b2Body_IsValid(bodyId))

@@ -327,6 +327,17 @@ void GameState::renderWithComputeShaders() const noexcept
 
         // Set sphere count uniform (NEW - tells shader how many spheres to check)
         mComputeShader->setUniform("uSphereCount", static_cast<uint32_t>(spheres.size()));
+
+        // Set infinite reflective ground plane uniforms
+        const Plane &groundPlane = mWorld.getGroundPlane();
+        const Material &groundMaterial = groundPlane.getMaterial();
+        mComputeShader->setUniform("uGroundPlanePoint", groundPlane.getPoint());
+        mComputeShader->setUniform("uGroundPlaneNormal", groundPlane.getNormal());
+        mComputeShader->setUniform("uGroundPlaneAlbedo", groundMaterial.getAlbedo());
+        mComputeShader->setUniform("uGroundPlaneMaterialType", static_cast<GLuint>(groundMaterial.getType()));
+        mComputeShader->setUniform("uGroundPlaneFuzz", groundMaterial.getFuzz());
+        mComputeShader->setUniform("uGroundPlaneRefractiveIndex", groundMaterial.getRefractiveIndex());
+
         mComputeShader->setUniform("uTime", static_cast<GLfloat>(SDL_GetTicks()) / 1000.0f);
         mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(2));
 
