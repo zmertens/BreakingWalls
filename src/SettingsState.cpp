@@ -22,7 +22,7 @@ void SettingsState::draw() const noexcept
     // Draw the game background FIRST, before any ImGui calls
     const auto &window = *getContext().window;
 
-    ImGui::PushFont(getContext().fonts->get(Fonts::ID::LIMELIGHT).get());
+    ImGui::PushFont(getContext().fonts->get(Fonts::ID::COUSINE_REGULAR).get());
 
     // Apply color schema (matching MenuState)
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.016f, 0.047f, 0.024f, 0.95f));

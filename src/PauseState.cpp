@@ -63,9 +63,6 @@ void PauseState::draw() const noexcept
     ImGui::End();
     ImGui::PopStyleColor(10);
     ImGui::PopFont();
-
-    // auto& window = *getContext().window;
-    // window.draw(mBackgroundShape);
 }
 
 bool PauseState::update(float dt, unsigned int subSteps) noexcept

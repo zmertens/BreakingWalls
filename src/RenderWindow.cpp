@@ -75,11 +75,6 @@ bool RenderWindow::isOpen() const noexcept
 
 void RenderWindow::close() noexcept
 {
-    // Just null out the pointers to signal the window is closed
-    // Don't destroy the actual SDL resources - that's SDLHelper's job
-    // during proper cleanup in its destructor
-    SDL_Log("RenderWindow::close() - Marking window as closed\n");
-
     mWindow = nullptr;
 }
 
@@ -109,4 +104,9 @@ void RenderWindow::setVsync(bool enabled) const noexcept
     }
     // SDL3: 1 = vsync enabled, 0 = vsync disabled
     SDL_GL_SetSwapInterval(enabled ? 1 : 0);
+}
+
+SDL_Window *RenderWindow::getSDLWindow() const noexcept
+{
+    return mWindow;
 }

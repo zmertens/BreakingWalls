@@ -1,7 +1,7 @@
 #ifndef RENDER_WINDOW_HPP
 #define RENDER_WINDOW_HPP
 
-#include "RenderStates.hpp"
+#include "Events.hpp"
 #include "View.hpp"
 
 struct SDL_Window;
@@ -13,7 +13,7 @@ class RenderWindow
 public:
     explicit RenderWindow(SDL_Window *window);
 
-    virtual ~RenderWindow() = default;
+    ~RenderWindow() = default;
 
     // Delete copy constructor and copy assignment operator
     // because RenderWindow contains std::unique_ptr which is not copyable
@@ -28,11 +28,6 @@ public:
     void setView(const View &view);
 
     [[nodiscard]] View getView() const noexcept;
-
-    /// @brief Draw a drawable object (like RenderWindow)
-    /// @tparam T Any type with a draw(RenderStates) method
-    template <typename T>
-    void draw(const T &drawable) const noexcept;
 
     void beginFrame() const noexcept;
 
@@ -53,20 +48,11 @@ public:
     void setVsync(bool enabled) const noexcept;
 
     /// @brief Get the SDL window for direct access
-    [[nodiscard]] SDL_Window *getSDLWindow() const noexcept { return mWindow; }
+    [[nodiscard]] SDL_Window *getSDLWindow() const noexcept;
 
 private:
     SDL_Window *mWindow;
     View mCurrentView;
 };
-
-template <typename T>
-void RenderWindow::draw(const T &drawable) const noexcept
-{
-    RenderStates states;
-    // Apply view transform if needed (for camera/scrolling)
-    // states.transform could be modified based on mCurrentView here
-    drawable.draw(states);
-}
 
 #endif // RENDER_WINDOW_HPP
