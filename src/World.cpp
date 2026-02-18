@@ -13,7 +13,7 @@
 
 #include <box2d/box2d.h>
 
-#include <SDL3/SDL_log.h>
+#include <SDL3/SDL.h>
 
 #include <SFML/Network.hpp>
 
@@ -28,7 +28,6 @@
 
 World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders)
     : mWindow{window},
-      mWorldView{window.getView()},
       mFonts{fonts},
       mTextures{textures},
       mShaders{shaders},
@@ -379,8 +378,6 @@ void World::update(float dt)
     // Process any completed chunk generation work
     processCompletedChunks();
 
-    mWindow.setView(mWorldView);
-
     if (b2World_IsValid(mWorldId))
     {
         b2World_Step(mWorldId, dt, 4);
@@ -406,12 +403,6 @@ void World::handleEvent(const SDL_Event &event)
         switch (event.key.key)
         {
         }
-    case SDL_EVENT_MOUSE_WHEEL:
-        if (event.wheel.y > 0)
-            mWorldView.zoom(1.1f);
-        else if (event.wheel.y < 0)
-            mWorldView.zoom(0.9f);
-        break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (event.button.button == SDL_BUTTON_MIDDLE)
         {
@@ -431,15 +422,6 @@ void World::handleEvent(const SDL_Event &event)
             SDL_FPoint currentMousePosition = {static_cast<float>(event.motion.x), static_cast<float>(event.motion.y)};
             SDL_FPoint delta = {currentMousePosition.x - mLastMousePosition.x, currentMousePosition.y - mLastMousePosition.y};
             mLastMousePosition = currentMousePosition;
-
-            if (SDL_GetModState() & SDL_KMOD_SHIFT)
-            {
-                mWorldView.rotate(delta.x);
-            }
-            else
-            {
-                mWorldView.move(-delta.x, -delta.y);
-            }
         }
         break;
     }

@@ -1,5 +1,7 @@
 #include "StateStack.hpp"
 
+#include <SDL3/SDL_log.h>
+
 #include <stdexcept>
 
 StateStack::StateStack(State::Context context)

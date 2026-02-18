@@ -3,6 +3,8 @@
 
 #include <box2d/box2d.h>
 
+#include <SDL3/SDL_rect.h>
+
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -15,7 +17,6 @@
 
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
-#include "View.hpp"
 #include "Material.hpp"
 #include "Animation.hpp"
 #include "Plane.hpp"
@@ -25,6 +26,8 @@ class Player;
 class RenderWindow;
 class Shader;
 class Sphere;
+
+union SDL_Event;
 
 class World final
 {
@@ -126,7 +129,6 @@ private:
     static constexpr auto FORCE_DUE_TO_GRAVITY = 9.8f;
 
     RenderWindow &mWindow;
-    View mWorldView;
     FontManager &mFonts;
     TextureManager &mTextures;
     ShaderManager &mShaders; // Added for billboard shader access

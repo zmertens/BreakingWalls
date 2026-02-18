@@ -2,10 +2,8 @@
 #define RENDER_WINDOW_HPP
 
 #include "Events.hpp"
-#include "View.hpp"
 
 struct SDL_Window;
-class View;
 
 /// @brief SDL-based RenderWindow that mimics SFML's sf::RenderWindow interface
 class RenderWindow
@@ -23,11 +21,6 @@ public:
     // Allow move constructor and move assignment operator
     RenderWindow(RenderWindow &&) = default;
     RenderWindow &operator=(RenderWindow &&) = default;
-
-    /// @brief Set the current view (camera) for rendering
-    void setView(const View &view);
-
-    [[nodiscard]] View getView() const noexcept;
 
     void beginFrame() const noexcept;
 
@@ -52,7 +45,6 @@ public:
 
 private:
     SDL_Window *mWindow;
-    View mCurrentView;
 };
 
 #endif // RENDER_WINDOW_HPP

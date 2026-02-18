@@ -2,6 +2,8 @@
 
 #include <dearimgui/imgui.h>
 
+#include <SDL3/SDL.h>
+
 #include "Font.hpp"
 #include "MenuState.hpp"
 #include "ResourceManager.hpp"
