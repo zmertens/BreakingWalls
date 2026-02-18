@@ -307,18 +307,44 @@ vec3 starfieldColor(vec3 direction, uvec2 pixel, uint sampleIndex) {
 
     float flight = uTime * FLIGHT_SPEED;
 
-    vec2 flow = vec2(flight * 0.0018, -flight * 0.0035);
+    // Forward (mostly straight) tunnel-like motion inspired by Shadertoy sample.
+    // We avoid strong lateral panning so movement reads as "flying ahead".
+    vec2 tunnelUv = dir.xy / max(0.2, dir.z + 1.15);
+    vec3 tunnelCol = vec3(0.0);
+    float s = 0.0;
+    float v = 0.0;
+    vec3 init = vec3(0.0, 0.0, flight * 0.002);
+    for (int r = 0; r < 28; ++r)
+    {
+        vec3 p = init + s * vec3(tunnelUv, 0.055);
+        p.z = fract(p.z);
+
+        for (int i = 0; i < 5; ++i)
+        {
+            float d = max(dot(p, p), 1e-4);
+            p = abs(p * 2.04) / d - 0.9;
+        }
+
+        float pd = max(dot(p, p), 1e-4);
+        v += pow(pd, 0.7) * 0.048;
+        tunnelCol += vec3(v * 0.22 + 0.36, 8.0 - s * 1.8, 0.12 + v) * v * 0.00004;
+        s += 0.032;
+    }
+    tunnelCol = tanh(tunnelCol);
+
+    // Keep a light world-space drift so stars still feel cosmic, but not aimless.
+    vec2 flow = vec2(0.0, -flight * 0.0025);
     vec2 warpedUv = uv + flow;
 
-    // Simulated black-hole lensing regions (pull UVs inward a bit)
+    // Simulated black-hole lensing regions (localized distortion only)
     vec2 bhCell = floor(warpedUv * vec2(24.0, 12.0));
     vec2 bhRnd = hash22(bhCell + vec2(91.7, 13.3));
     float bhPresence = step(BLACK_HOLE_THRESHOLD, 0.98 + 0.02 * bhRnd.x);
     vec2 bhCenter = (bhCell + bhRnd) / vec2(24.0, 12.0);
     vec2 toBH = bhCenter - warpedUv;
     float bhDist = length(toBH * vec2(24.0, 12.0));
-    if (bhPresence > 0.5 && bhDist < 0.8) {
-        warpedUv += normalize(toBH + vec2(1e-4)) * (BLACK_HOLE_DISTORTION * (0.8 - bhDist));
+    if (bhPresence > 0.5 && bhDist < 0.65) {
+        warpedUv += normalize(toBH + vec2(1e-4)) * (BLACK_HOLE_DISTORTION * (0.65 - bhDist));
     }
 
     // Star clusters and sparse thresholds
@@ -363,7 +389,7 @@ vec3 starfieldColor(vec3 direction, uvec2 pixel, uint sampleIndex) {
     float bhCore = (bhPresence > 0.5) ? smoothstep(0.18, 0.0, bhDist) : 0.0;
 
     vec3 baseSpace = vec3(0.003, 0.004, 0.010);
-    vec3 col = baseSpace + nebula + stars;
+    vec3 col = baseSpace + nebula + stars + tunnelCol * 0.85;
     col *= (1.0 - bhCore);
     return col;
 }

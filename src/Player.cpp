@@ -6,6 +6,13 @@
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
+
+namespace
+{
+    constexpr float kGroundPlaneY = 0.0f;
+}
+
 Player::Player() : mIsActive(true), mIsOnGround(false)
 {
     // Camera movement controls (WASD + QE for vertical)
@@ -104,6 +111,29 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
                     break;
                 }
             }
+        }
+    }
+
+    // Keep player/camera above the infinite ground plane
+    if (camera.getMode() == CameraMode::THIRD_PERSON)
+    {
+        float clampedY = std::max(mPosition.y, kGroundPlaneY);
+        if (clampedY != mPosition.y)
+        {
+            mPosition.y = clampedY;
+            mAnimator.setPosition(mPosition);
+            camera.setFollowTarget(mPosition);
+            camera.updateThirdPersonPosition();
+        }
+    }
+    else
+    {
+        glm::vec3 cameraPos = camera.getPosition();
+        float clampedY = std::max(cameraPos.y, kGroundPlaneY);
+        if (clampedY != cameraPos.y)
+        {
+            cameraPos.y = clampedY;
+            camera.setPosition(cameraPos);
         }
     }
 
@@ -406,7 +436,8 @@ AnimationRect Player::getCurrentAnimationFrame() const
 void Player::setPosition(const glm::vec3 &position) noexcept
 {
     mPosition = position;
-    mAnimator.setPosition(position);
+    mPosition.y = std::max(mPosition.y, kGroundPlaneY);
+    mAnimator.setPosition(mPosition);
 }
 
 void Player::updateAnimationState()

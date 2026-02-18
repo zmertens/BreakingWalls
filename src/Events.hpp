@@ -10,7 +10,7 @@ namespace Events
         LIGHTSPEED = 1 << 0,
         COLLISION = 1 << 1,
         ENTANGLEMENT = 1 << 2,
-        TOTAL = 1 << 3
+        BREAKING_WALLS = 1 << 3
     };
 }
 
