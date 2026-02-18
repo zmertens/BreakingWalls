@@ -2,15 +2,16 @@
 
 #include <SDL3/SDL.h>
 
-#include <filesystem>
-#include <thread>
-#include <deque>
-#include <mutex>
-#include <condition_variable>
 #include <atomic>
-#include <optional>
 #include <algorithm>
 #include <cctype>
+#include <condition_variable>
+#include <deque>
+#include <filesystem>
+#include <functional>
+#include <thread>
+#include <mutex>
+#include <optional>
 
 #include <MazeBuilder/configurator.h>
 #include <MazeBuilder/create.h>
@@ -32,6 +33,12 @@
 #include <fonts/Cousine_Regular.h>
 #include <fonts/Limelight_Regular.h>
 #include <fonts/nunito_sans.h>
+
+extern "C"
+{
+    float simplex2(float x, float y, int octaves, float persistence, float lacunarity);
+    float simplex3(float x, float y, float z, int octaves, float persistence, float lacunarity);
+}
 
 // Resource Keys
 namespace JSONKeys
@@ -556,7 +563,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
             // Handle window icon separately (special case, not managed by TextureManager)
             loadWindowIcon(resources);
 
-            loadNoiseTexture2D();
+            loadProceduralTextures();
 
             loadAudio();
         }
@@ -834,17 +841,32 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
     }
 }
 
-void LoadingState::loadNoiseTexture2D() noexcept
+void LoadingState::loadProceduralTextures() noexcept
 {
     auto &textures = *getContext().textures;
 
     try
     {
-        textures.load(Textures::ID::NOISE2D, 256, 256, 2);
-        log("LoadingState: Noise texture loaded successfully");
+        auto generator = [](std::vector<std::uint8_t> &buffer, int width, int height)
+        {
+            for (int y = 0; y < height; ++y)
+            {
+                for (int x = 0; x < width; ++x)
+                {
+                    float value = simplex2(static_cast<float>(x) / 64.f, static_cast<float>(y) / 64.f, 4, 0.5f, 2.f);
+                    buffer[y * width + x] = static_cast<Uint8>((value + 1.f) * 127.5f); // Map from [-1,1] to [0,255]
+                }
+            }
+        };
+
+        textures.load(Textures::ID::PATH_TRACER_ACCUM, 512, 512, {}, 0);
+        textures.load(Textures::ID::PATH_TRACER_DISPLAY, 512, 512, {}, 0);
+        textures.load(Textures::ID::NOISE2D, 256, 256, generator, 2);
+
+        log("LoadingState: Procedural textures loaded successfully");
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load noise texture: %s\n", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load procedural textures: %s\n", e.what());
     }
 }

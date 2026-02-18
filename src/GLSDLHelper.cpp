@@ -304,19 +304,6 @@ void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void 
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, offset, size, data);
 }
 
-GLuint GLSDLHelper::createPathTracerTexture(GLsizei width, GLsizei height) noexcept
-{
-    GLuint texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, width, height);
-    return texture;
-}
-
 void GLSDLHelper::deleteVAO(GLuint &vao) noexcept
 {
     if (vao != 0)
@@ -496,7 +483,6 @@ void GLSDLHelper::renderBillboardSprite(
     }
 
     // Bind texture
-    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textureId);
 
     // Draw single point - geometry shader expands to quad

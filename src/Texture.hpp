@@ -2,6 +2,7 @@
 #define TEXTURE_HPP
 
 #include <cstdint>
+#include <functional>
 #include <string_view>
 
 struct SDL_Window;
@@ -35,12 +36,14 @@ public:
     [[nodiscard]] int getHeight() const noexcept;
 
     /// Create an empty texture for use as a render target
-    bool loadTarget(int w, int h) noexcept;
+    bool loadRGBA32F(int width, int height, std::uint32_t channelOffset = 0) noexcept;
 
     /// Load texture from file using stb_image
     bool loadFromFile(std::string_view filepath, std::uint32_t channelOffset = 0) noexcept;
 
-    bool loadNoiseTexture2D(int width, int height, const std::uint32_t channelOffset = 0) noexcept;
+    bool loadProceduralTextures(int width, int height,
+        const std::function<void(std::vector<std::uint8_t>&, int, int)> &generator,
+        std::uint32_t channelOffset = 0) noexcept;
 
     /// Load texture from raw RGBA memory data
     bool loadFromMemory(const std::uint8_t *data, int width, int height,
@@ -48,7 +51,7 @@ public:
 
     /// Update existing texture from raw RGBA memory data efficiently
     bool updateFromMemory(const std::uint8_t *data, int width, int height,
-                          std::uint32_t channel_offset = 0, bool rotate_180 = false) noexcept;
+                          std::uint32_t channelOffset = 0, bool rotate_180 = false) noexcept;
 
     static constexpr int MAX_TEXTURE_WIDTH = 8192;
     static constexpr int MAX_TEXTURE_HEIGHT = 8192;

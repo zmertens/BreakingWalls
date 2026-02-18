@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -36,7 +37,9 @@ public:
     // Texture loading
     void load(Identifier id, std::string_view filename, std::uint32_t channelOffset);
 
-    void load(Identifier id, unsigned int width, unsigned int height, std::uint32_t channelOffset);
+    void load(Identifier id, unsigned int width, unsigned int height,
+              const std::function<void(std::vector<std::uint8_t>&, int, int)> &generator,
+              std::uint32_t channelOffset);
 
     // Font loading
     void load(Identifier id, const void *data, const std::size_t capacity);
@@ -95,12 +98,14 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
 }
 
 template <typename Resource, typename Identifier>
-void ResourceManager<Resource, Identifier>::load(Identifier id, unsigned int width, unsigned int height, std::uint32_t channelOffset)
+void ResourceManager<Resource, Identifier>::load(Identifier id, unsigned int width, unsigned int height,
+    const std::function<void(std::vector<std::uint8_t>&, int, int)> &generator,
+    std::uint32_t channelOffset)
 {
     // Create and load resource
     auto resource = std::make_unique<Resource>();
 
-    if (!resource->loadNoiseTexture2D(width, height, channelOffset))
+    if (!resource->loadProceduralTextures(width, height, generator, channelOffset))
     {
         throw std::runtime_error("ResourceManager::load - Failed to load noise texture");
     }

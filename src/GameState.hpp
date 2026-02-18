@@ -68,13 +68,13 @@ private:
     Shader *mDisplayShader{nullptr};
     Shader *mComputeShader{nullptr};
 
+    Texture *mAccumTex{nullptr};
+    Texture *mDisplayTex{nullptr};
     Texture *mNoiseTexture{nullptr};
 
     // GPU resources
     GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres
     GLuint mVAO{0};        // Vertex Array Object for fullscreen quad
-    GLuint mAccumTex{0};   // Accumulation texture for progressive rendering
-    GLuint mDisplayTex{0}; // Display texture for final output
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};

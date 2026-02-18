@@ -72,6 +72,8 @@ GameState::GameState(StateStack &stack, Context context)
     auto &textures = *context.textures;
     try
     {
+        mAccumTex = &textures.get(Textures::ID::PATH_TRACER_ACCUM);
+        mDisplayTex = &textures.get(Textures::ID::PATH_TRACER_DISPLAY);
         mNoiseTexture = &textures.get(Textures::ID::NOISE2D);
     }
     catch (const std::exception &e)
@@ -221,30 +223,36 @@ void GameState::updateRenderResolution() noexcept
 
 void GameState::createPathTracerTextures() noexcept
 {
-    if (mAccumTex != 0)
+    // Update existing textures to new resolution
+    // (They were initially created at 512x512 in LoadingState)
+    if (!mAccumTex || !mDisplayTex)
     {
-        GLSDLHelper::deleteTexture(mAccumTex);
-        mAccumTex = 0;
-    }
-    if (mDisplayTex != 0)
-    {
-        GLSDLHelper::deleteTexture(mDisplayTex);
-        mDisplayTex = 0;
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Path tracer textures not initialized!");
+        return;
     }
 
-    // Create accumulation texture for progressive rendering using helper
-    mAccumTex = GLSDLHelper::createPathTracerTexture(
-        static_cast<GLsizei>(mRenderWidth),
-        static_cast<GLsizei>(mRenderHeight));
+    bool accumSuccess = mAccumTex->loadRGBA32F(
+        static_cast<int>(mRenderWidth),
+        static_cast<int>(mRenderHeight),
+        0);
 
-    // Create display texture for final output using helper
-    mDisplayTex = GLSDLHelper::createPathTracerTexture(
-        static_cast<GLsizei>(mRenderWidth),
-        static_cast<GLsizei>(mRenderHeight));
+    bool displaySuccess = mDisplayTex->loadRGBA32F(
+        static_cast<int>(mRenderWidth),
+        static_cast<int>(mRenderHeight),
+        0);
 
-    log("GameState: Path tracer textures created (window/internal):\t" +
+    if (!accumSuccess || !displaySuccess)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
+                     "GameState: Failed to resize path tracer textures (accum: %d, display: %d)",
+                     accumSuccess, displaySuccess);
+        return;
+    }
+
+    log("GameState: Path tracer textures recreated (window/internal):\t" +
         std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " / " +
-        std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight));
+        std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight) +
+        " (IDs: " + std::to_string(mAccumTex->get()) + ", " + std::to_string(mDisplayTex->get()) + ")");
 }
 
 bool GameState::checkCameraMovement() const noexcept
@@ -279,9 +287,6 @@ void GameState::renderWithComputeShaders() const noexcept
 
     // Check if camera has moved - if so, reset accumulation
     checkCameraMovement();
-
-    // Animated starfield: reset progressive accumulation each frame to prevent ghost trails
-    mCurrentBatch = 0;
 
     // Update sphere data on GPU every frame (physics may have changed positions)
     const auto &spheres = mWorld.getSpheres();
@@ -335,6 +340,8 @@ void GameState::renderWithComputeShaders() const noexcept
         // Set sphere count uniform (NEW - tells shader how many spheres to check)
         mComputeShader->setUniform("uSphereCount", static_cast<uint32_t>(spheres.size()));
 
+        static constexpr auto NOISE_TEXTURE_UNIT = 2;
+
         // Set infinite reflective ground plane uniforms
         const Plane &groundPlane = mWorld.getGroundPlane();
         const Material &groundMaterial = groundPlane.getMaterial();
@@ -346,13 +353,14 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uGroundPlaneRefractiveIndex", groundMaterial.getRefractiveIndex());
 
         mComputeShader->setUniform("uTime", static_cast<GLfloat>(SDL_GetTicks()) / 1000.0f);
-        mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(2));
+        mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(NOISE_TEXTURE_UNIT));
 
         // Bind both textures as images for compute shader
-        glBindImageTexture(0, mAccumTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
-        glBindImageTexture(1, mDisplayTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+        glBindImageTexture(0, mAccumTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+        glBindImageTexture(1, mDisplayTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
-        // Bind starfield noise texture sampler
+        // Bind starfield noise texture sampler to texture unit 2
+        glActiveTexture(GL_TEXTURE0 + NOISE_TEXTURE_UNIT);
         glBindTexture(GL_TEXTURE_2D, mNoiseTexture ? mNoiseTexture->get() : 0);
 
         // Dispatch compute shader with work groups (using 20x20 local work group size)
@@ -371,7 +379,7 @@ void GameState::renderWithComputeShaders() const noexcept
     mDisplayShader->setUniform("uTexture2D", 0);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, mDisplayTex);
+    glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
@@ -380,9 +388,9 @@ void GameState::cleanupResources() noexcept
 {
     GLSDLHelper::deleteVAO(mVAO);
     GLSDLHelper::deleteBuffer(mShapeSSBO);
-    GLSDLHelper::deleteTexture(mAccumTex);
-    GLSDLHelper::deleteTexture(mDisplayTex);
-    // Noise texture is now managed by TextureManager - don't delete it here
+    
+    mAccumTex = nullptr;
+    mDisplayTex = nullptr;
     mNoiseTexture = nullptr;
 
     // Shaders are now managed by ShaderManager - don't delete them here

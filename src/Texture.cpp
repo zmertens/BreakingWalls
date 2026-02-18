@@ -15,7 +15,7 @@
 namespace
 {
     /// Create a rotated copy of RGBA texture data (180 degrees)
-    std::vector<std::uint8_t> create_rotated_180(const std::uint8_t *data, int width, int height) noexcept
+    std::vector<std::uint8_t> rotate180(const std::uint8_t *data, int width, int height) noexcept
     {
         if (data == nullptr || width <= 0 || height <= 0)
         {
@@ -108,29 +108,22 @@ int Texture::getHeight() const noexcept
     return mHeight;
 }
 
-bool Texture::loadTarget(const int w, const int h) noexcept
+bool Texture::loadRGBA32F(const int width, const int height, const std::uint32_t channelOffset) noexcept
 {
     this->free();
 
-    mWidth = w;
-    mHeight = h;
+    mWidth = width;
+    mHeight = height;
 
     glGenTextures(1, &mTextureId);
+    glActiveTexture(GL_TEXTURE0 + channelOffset);
     glBindTexture(GL_TEXTURE_2D, mTextureId);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    // Create empty texture for render target
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-
-    if (const GLenum error = glGetError(); error != GL_NO_ERROR)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error creating render target %dx%d: 0x%x\n", w, h, error);
-        return false;
-    }
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, width, height);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     return true;
 }
@@ -187,26 +180,36 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
 
     return true;
 }
-#include <random>
-bool Texture::loadNoiseTexture2D(int width, int height, const std::uint32_t channelOffset) noexcept
+
+bool Texture::loadProceduralTextures(int width, int height,
+    const std::function<void(std::vector<std::uint8_t>&, int, int)> &generator,
+    const std::uint32_t channelOffset) noexcept
 {
-    std::vector<unsigned char> data(static_cast<size_t>(width) * static_cast<size_t>(height));
-    std::mt19937 rng(1337);
-    std::uniform_int_distribution<int> distribution(0, 255);
-    for (auto &value : data)
+    this->free();
+
+    // If no generator provided, create an RGBA32F texture for render targets (path tracer)
+    if (!generator)
     {
-        value = static_cast<unsigned char>(distribution(rng));
+        return loadRGBA32F(width, height, channelOffset);
     }
+
+    // Otherwise, create procedural R8 texture (noise, etc.)
+    std::vector<unsigned char> data(static_cast<size_t>(width) * static_cast<size_t>(height));
+    generator(data, width, height);
 
     glGenTextures(1, &mTextureId);
     glActiveTexture(GL_TEXTURE0 + channelOffset);
     glBindTexture(GL_TEXTURE_2D, mTextureId);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, data.data());
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    mWidth = width;
+    mHeight = height;
+    mBytes = data.data();
 
     return true;
 }
@@ -228,7 +231,7 @@ bool Texture::loadFromMemory(const std::uint8_t *data, const int width, const in
 
     if (rotate_180)
     {
-        rotated_buffer = create_rotated_180(data, width, height);
+        rotated_buffer = rotate180(data, width, height);
         if (rotated_buffer.empty())
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create rotated texture copy\n");
@@ -301,7 +304,7 @@ bool Texture::updateFromMemory(const std::uint8_t *data, const int width, const 
 
     if (rotate_180)
     {
-        rotated_buffer = create_rotated_180(data, width, height);
+        rotated_buffer = rotate180(data, width, height);
         if (rotated_buffer.empty())
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create rotated texture copy\n");

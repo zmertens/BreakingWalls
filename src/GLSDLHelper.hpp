@@ -56,13 +56,7 @@ public:
     /// @param size Size in bytes
     /// @param data Pointer to the data
     static void updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void *data) noexcept;
-
-    /// Create a 2D texture for path tracing with RGBA32F format
-    /// @param width Texture width
-    /// @param height Texture height
-    /// @return The generated texture handle
-    static GLuint createPathTracerTexture(GLsizei width, GLsizei height) noexcept;
-
+    
     /// Delete a Vertex Array Object
     /// @param vao Reference to VAO handle (will be set to 0 after deletion)
     static void deleteVAO(GLuint &vao) noexcept;
