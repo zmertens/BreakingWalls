@@ -199,6 +199,19 @@ bool planeIntersect(in Ray ray, float tMin, float tMax, out HitRecord hit) {
 }
 
 // ============================================================================
+// Grid Function for Ground Plane
+// ============================================================================
+
+float grid(vec2 uv, float perspective) {
+    vec2 size = vec2(uv.y, uv.y * uv.y * 0.2) * 0.01;
+    uv += vec2(0.0, uTime * 4.0 * (perspective + 0.05));
+    uv = abs(fract(uv) - 0.5);
+    vec2 lines = smoothstep(size, vec2(0.0), uv);
+    lines += smoothstep(size * 5.0, vec2(0.0), uv) * 0.4 * perspective;
+    return clamp(lines.x + lines.y, 0.0, 3.0);
+}
+
+// ============================================================================
 // Material Scattering Functions
 // ============================================================================
 
@@ -374,13 +387,20 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
         HitRecord planeHit;
         bool hasSphereHit = hitWorld(ray, EPSILON, uCamera.far, sphereHit);
         bool hasPlaneHit = planeIntersect(ray, EPSILON, uCamera.far, planeHit);
+        bool hitIsPlane = false;
 
         if (hasSphereHit && hasPlaneHit) {
-            hit = (sphereHit.t < planeHit.t) ? sphereHit : planeHit;
+            if (sphereHit.t < planeHit.t) {
+                hit = sphereHit;
+            } else {
+                hit = planeHit;
+                hitIsPlane = true;
+            }
         } else if (hasSphereHit) {
             hit = sphereHit;
         } else if (hasPlaneHit) {
             hit = planeHit;
+            hitIsPlane = true;
         }
 
         if (hasSphereHit || hasPlaneHit) {
@@ -388,6 +408,17 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
             Ray scattered;
 
             if (scatter(hit, ray, attenuation, scattered, pixel, sampleIndex, bounce)) {
+                // Apply grid overlay to ground plane
+                if (hitIsPlane) {
+                    // Use hit point XZ coordinates for grid pattern
+                    vec2 gridUV = hit.point.xz * 0.3;  // Scale factor for grid size
+                    float gridVal = grid(gridUV, 0.8);
+                    
+                    // Blend grid with ground plane color - more prominent
+                    vec3 gridColor = vec3(0.0, 1.0, 1.0);  // Cyan grid color
+                    attenuation = mix(attenuation, gridColor, gridVal * 0.6);
+                }
+                
                 color *= attenuation;
                 ray = scattered;
             } else {
