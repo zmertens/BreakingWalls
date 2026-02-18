@@ -7,6 +7,7 @@ namespace Events
 {
     enum class Cause : std::int32_t
     {
+        WORMHOLE = 0,
         LIGHTSPEED = 1 << 0,
         COLLISION = 1 << 1,
         ENTANGLEMENT = 1 << 2,

@@ -297,6 +297,19 @@ struct PhysicsGame::PhysicsGameImpl
         {
             ImGui::Text("FPS: %d", mSmoothedFPS);
             ImGui::Text("Frame Time: %.2f ms", mSmoothedFrameTime);
+
+            if (const auto gameState = mStateStack->peekState<GameState *>(); gameState)
+            {
+                const auto windowSize = gameState->getWindowDimensions();
+                const auto renderSize = gameState->getRenderDimensions();
+                const float renderScale = gameState->getRenderScale();
+
+                ImGui::Separator();
+                ImGui::Text("Window: %d x %d", windowSize.x, windowSize.y);
+                ImGui::Text("Render: %d x %d", renderSize.x, renderSize.y);
+                ImGui::Text("Scale: %.2fx", renderScale);
+            }
+
             ImGui::End();
         }
     }

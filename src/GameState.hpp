@@ -8,6 +8,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
+#include <cstddef>
 #include <memory>
 
 class MusicPlayer;
@@ -37,6 +38,20 @@ public:
     /// Get reference to Camera (for multiplayer rendering)
     Camera &getCamera() noexcept { return mCamera; }
     const Camera &getCamera() const noexcept { return mCamera; }
+
+    /// Get current window dimensions (display output size)
+    glm::ivec2 getWindowDimensions() const noexcept { return {mWindowWidth, mWindowHeight}; }
+
+    /// Get internal path tracer render dimensions (compute workload size)
+    glm::ivec2 getRenderDimensions() const noexcept { return {mRenderWidth, mRenderHeight}; }
+
+    /// Get render scale relative to window size
+    float getRenderScale() const noexcept
+    {
+        return (mWindowWidth > 0 && mWindowHeight > 0)
+                   ? static_cast<float>(mRenderWidth) / static_cast<float>(mWindowWidth)
+                   : 1.0f;
+    }
 
 private:
     World mWorld;    // Manages both 2D physics and 3D sphere scene
@@ -74,9 +89,19 @@ private:
     bool mShadersInitialized{false};
     int mWindowWidth{1280};
     int mWindowHeight{720};
+    int mRenderWidth{1280};
+    int mRenderHeight{720};
+
+    mutable std::size_t mShapeSSBOCapacityBytes{0};
+
+    static constexpr std::size_t kTargetRenderPixels = 1600ull * 900ull;
+    static constexpr float kMinRenderScale = 0.60f;
 
     /// Initialize GPU graphics resources for compute shader rendering
     void initializeGraphicsResources() noexcept;
+
+    /// Recompute internal render resolution from current window size
+    void updateRenderResolution() noexcept;
 
     /// Create textures for path tracing (accumulation + display)
     void createPathTracerTextures() noexcept;

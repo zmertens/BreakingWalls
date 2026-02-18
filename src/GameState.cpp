@@ -19,6 +19,30 @@
 #include "StateStack.hpp"
 #include "Texture.hpp"
 
+namespace
+{
+    std::pair<int, int> computeRenderResolution(int windowWidth, int windowHeight, std::size_t targetPixels, float minScale) noexcept
+    {
+        if (windowWidth <= 0 || windowHeight <= 0)
+        {
+            return {1, 1};
+        }
+
+        const std::size_t windowPixels = static_cast<std::size_t>(windowWidth) * static_cast<std::size_t>(windowHeight);
+        float scale = 1.0f;
+
+        if (windowPixels > targetPixels)
+        {
+            scale = std::sqrt(static_cast<float>(targetPixels) / static_cast<float>(windowPixels));
+            scale = std::max(scale, minScale);
+        }
+
+        const int renderWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(windowWidth) * scale)));
+        const int renderHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(windowHeight) * scale)));
+        return {renderWidth, renderHeight};
+    }
+}
+
 GameState::GameState(StateStack &stack, Context context)
     : State{stack, context}, mWorld{*context.window, *context.fonts, *context.textures, *context.shaders}, mPlayer{*context.player}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}
       // Initialize camera at maze spawn position (will be updated after first chunk loads)
@@ -162,6 +186,8 @@ void GameState::initializeGraphicsResources() noexcept
     // Create SSBO for sphere data using helper
     mShapeSSBO = GLSDLHelper::createAndBindSSBO(1);
 
+    updateRenderResolution();
+
     // Create textures for path tracing
     createPathTracerTextures();
 
@@ -174,6 +200,7 @@ void GameState::initializeGraphicsResources() noexcept
     size_t bufferSize = initialCapacity * sizeof(Sphere);
 
     GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(bufferSize), nullptr);
+    mShapeSSBOCapacityBytes = bufferSize;
 
     // Upload initial sphere data
     if (!spheres.empty())
@@ -181,6 +208,15 @@ void GameState::initializeGraphicsResources() noexcept
         GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(spheres.size() * sizeof(Sphere)), spheres.data());
     }
     log("GameState: Graphics pipeline initialization complete");
+}
+
+void GameState::updateRenderResolution() noexcept
+{
+    const auto [newRenderWidth, newRenderHeight] =
+        computeRenderResolution(mWindowWidth, mWindowHeight, kTargetRenderPixels, kMinRenderScale);
+
+    mRenderWidth = newRenderWidth;
+    mRenderHeight = newRenderHeight;
 }
 
 void GameState::createPathTracerTextures() noexcept
@@ -198,16 +234,17 @@ void GameState::createPathTracerTextures() noexcept
 
     // Create accumulation texture for progressive rendering using helper
     mAccumTex = GLSDLHelper::createPathTracerTexture(
-        static_cast<GLsizei>(mWindowWidth),
-        static_cast<GLsizei>(mWindowHeight));
+        static_cast<GLsizei>(mRenderWidth),
+        static_cast<GLsizei>(mRenderHeight));
 
     // Create display texture for final output using helper
     mDisplayTex = GLSDLHelper::createPathTracerTexture(
-        static_cast<GLsizei>(mWindowWidth),
-        static_cast<GLsizei>(mWindowHeight));
+        static_cast<GLsizei>(mRenderWidth),
+        static_cast<GLsizei>(mRenderHeight));
 
-    log("GameState: Path tracer textures created:\t" +
-        std::to_string(mWindowWidth) + ", " + std::to_string(mWindowHeight));
+    log("GameState: Path tracer textures created (window/internal):\t" +
+        std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " / " +
+        std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight));
 }
 
 bool GameState::checkCameraMovement() const noexcept
@@ -257,19 +294,17 @@ void GameState::renderWithComputeShaders() const noexcept
     }
 
     // Calculate required buffer size
-    size_t requiredSize = spheres.size() * sizeof(Sphere);
+    const std::size_t requiredSize = spheres.size() * sizeof(Sphere);
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
 
     // Check if we need to reallocate the buffer (sphere count changed)
-    GLint currentBufferSize = 0;
-    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &currentBufferSize);
-
-    if (static_cast<size_t>(currentBufferSize) < requiredSize)
+    if (mShapeSSBOCapacityBytes < requiredSize)
     {
         // Reallocating buffer with new size (add some headroom to avoid frequent reallocations)
-        size_t newSize = requiredSize * 2;
+        const std::size_t newSize = requiredSize * 2;
         GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(newSize), spheres.data());
+        mShapeSSBOCapacityBytes = newSize;
     }
     else
     {
@@ -283,7 +318,7 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->bind();
 
         // Calculate aspect ratio
-        float ar = static_cast<float>(mWindowWidth) / static_cast<float>(mWindowHeight);
+        float ar = static_cast<float>(mRenderWidth) / static_cast<float>(mRenderHeight);
 
         // Set camera uniforms (following Compute.cpp renderPathTracer)
         mComputeShader->setUniform("uCamera.eye", mCamera.getPosition());
@@ -318,12 +353,11 @@ void GameState::renderWithComputeShaders() const noexcept
         glBindImageTexture(1, mDisplayTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
         // Bind starfield noise texture sampler
-        glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D, mNoiseTexture ? mNoiseTexture->get() : 0);
 
         // Dispatch compute shader with work groups (using 20x20 local work group size)
-        GLuint groupsX = (mWindowWidth + 19) / 20;
-        GLuint groupsY = (mWindowHeight + 19) / 20;
+        GLuint groupsX = (mRenderWidth + 19) / 20;
+        GLuint groupsY = (mRenderHeight + 19) / 20;
         glDispatchCompute(groupsX, groupsY, 1);
 
         // Memory barrier to ensure compute shader writes are visible
@@ -435,11 +469,15 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept {
             mWindowHeight = newH;
             // Update OpenGL viewport to match new window size
             glViewport(0, 0, mWindowWidth, mWindowHeight);
+            // Update internal rendering resolution for path tracer
+            updateRenderResolution();
             // Recreate path tracer textures
             createPathTracerTextures();
             // Reset accumulation for new size
             mCurrentBatch = 0;
-            log("GameState: Window resized, path tracer textures recreated: " + std::to_string(mWindowWidth) + ", " + std::to_string(mWindowHeight));
+            log("GameState: Window resized, path tracer textures recreated (window/internal): " +
+                std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " / " +
+                std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight));
         }
     }
     
