@@ -11,12 +11,6 @@
 // Starfield parameters
 #define PI 3.14159265359
 #define TWO_PI 6.28318530718
-#define FLIGHT_SPEED 8.0
-#define STAR_SIZE 0.6
-#define STAR_CORE_SIZE 0.14
-#define STAR_THRESHOLD 0.775
-#define BLACK_HOLE_THRESHOLD 0.9995
-#define BLACK_HOLE_DISTORTION 0.03
 
 // Material types (must match C++ MaterialType enum)
 #define LAMBERTIAN 0
@@ -291,107 +285,76 @@ vec2 hash22(vec2 p) {
     return vec2(hash12(p), hash12(p + vec2(19.19, 73.41)));
 }
 
-vec3 getStarGlowColor(float starDistance, float angle, float hue) {
-    float progress = 1.0 - starDistance;
-    float spikes = mix(pow(abs(sin(angle * 2.5)), 8.0), 1.0, progress);
-    return hsv2rgb(vec3(hue, 0.3, 1.0)) * (0.4 * progress * progress * spikes);
+float hash21(vec2 co) {
+    return fract(sin(dot(co.xy,vec2(1.9898,7.233)))*45758.5433);
+}
+
+// Star noise function - creates a clean starfield effect
+float starnoise(vec3 rd) {
+    float c = 0.0;
+    vec3 p = normalize(rd) * 300.0;
+    for (float i = 0.0; i < 4.0; i++) {
+        vec3 q = fract(p) - 0.5;
+        vec3 id = floor(p);
+        float c2 = smoothstep(0.5, 0.0, length(q));
+        c2 *= step(hash21(id.xz/id.y), 0.06 - i*i*0.005);
+        c += c2;
+        p = p*0.6 + 0.5*p*mat3(3.0/5.0, 0.0, 4.0/5.0, 0.0, 1.0, 0.0, -4.0/5.0, 0.0, 3.0/5.0);
+    }
+    c *= c;
+    float g = dot(sin(rd*10.512), cos(rd.yzx*10.512));
+    c *= smoothstep(-3.14, -0.9, g)*0.5 + 0.5*smoothstep(-0.3, 1.0, g);
+    return c*c;
+}
+
+// Add sun/sunset effect at the center
+void addSun(vec3 rd, vec3 sunDir, inout vec3 col) {
+    float sun = smoothstep(0.21, 0.2, distance(rd, sunDir));
+    
+    if (sun > 0.0) {
+        float yd = (rd.y - sunDir.y);
+        float a = sin(3.1 * exp(-(yd) * 14.0));
+        sun *= smoothstep(-0.8, 0.0, a);
+        col = mix(col, vec3(1.0, 0.8, 0.4) * 0.75, sun);
+    }
 }
 
 vec3 starfieldColor(vec3 direction, uvec2 pixel, uint sampleIndex) {
-    vec3 dir = normalize(direction);
-
-    // Spherical projection for stable infinite starfield
-    float lon = atan(dir.z, dir.x);
-    float lat = asin(clamp(dir.y, -1.0, 1.0));
-    vec2 uv = vec2(lon / TWO_PI + 0.5, lat / PI + 0.5);
-
-    float flight = uTime * FLIGHT_SPEED;
-
-    // Forward (mostly straight) tunnel-like motion inspired by Shadertoy sample.
-    // We avoid strong lateral panning so movement reads as "flying ahead".
-    vec2 tunnelUv = dir.xy / max(0.2, dir.z + 1.15);
-    vec3 tunnelCol = vec3(0.0);
-    float s = 0.0;
-    float v = 0.0;
-    vec3 init = vec3(0.0, 0.0, flight * 0.002);
-    for (int r = 0; r < 28; ++r)
-    {
-        vec3 p = init + s * vec3(tunnelUv, 0.055);
-        p.z = fract(p.z);
-
-        for (int i = 0; i < 5; ++i)
-        {
-            float d = max(dot(p, p), 1e-4);
-            p = abs(p * 2.04) / d - 0.9;
-        }
-
-        float pd = max(dot(p, p), 1e-4);
-        v += pow(pd, 0.7) * 0.048;
-        tunnelCol += vec3(v * 0.22 + 0.36, 8.0 - s * 1.8, 0.12 + v) * v * 0.00004;
-        s += 0.032;
-    }
-    tunnelCol = tanh(tunnelCol);
-
-    // Keep a light world-space drift so stars still feel cosmic, but not aimless.
-    vec2 flow = vec2(0.0, -flight * 0.0025);
-    vec2 warpedUv = uv + flow;
-
-    // Simulated black-hole lensing regions (localized distortion only)
-    vec2 bhCell = floor(warpedUv * vec2(24.0, 12.0));
-    vec2 bhRnd = hash22(bhCell + vec2(91.7, 13.3));
-    float bhPresence = step(BLACK_HOLE_THRESHOLD, 0.98 + 0.02 * bhRnd.x);
-    vec2 bhCenter = (bhCell + bhRnd) / vec2(24.0, 12.0);
-    vec2 toBH = bhCenter - warpedUv;
-    float bhDist = length(toBH * vec2(24.0, 12.0));
-    if (bhPresence > 0.5 && bhDist < 0.65) {
-        warpedUv += normalize(toBH + vec2(1e-4)) * (BLACK_HOLE_DISTORTION * (0.65 - bhDist));
-    }
-
-    // Star clusters and sparse thresholds
-    vec2 clusterUv = warpedUv * vec2(120.0, 60.0);
-    vec2 cell = floor(clusterUv);
-    vec2 local = fract(clusterUv) - 0.5;
-
-    float clusterA = noise2D(cell * 0.007 + vec2(0.724, 0.111));
-    float clusterB = noise2D(cell.yx * 0.009 + vec2(0.333, 0.777));
-    float clusterMask = step(STAR_THRESHOLD, clusterA) * step(STAR_THRESHOLD, clusterB);
-
-    vec2 starRnd = hash22(cell + vec2(37.0, 59.0));
-    vec2 starPos = starRnd - 0.5;
-    vec2 d = local - starPos * (1.0 - STAR_SIZE);
-    float distNorm = length(d) / max(STAR_SIZE, 0.001);
-
-    float starSeed = hash12(cell + starRnd + vec2(float(sampleIndex) * 0.0001));
-    float twinkle = 0.8 + 0.2 * sin(uTime * 6.5 + starSeed * 80.0 + float((pixel.x + pixel.y) & 255u) * 0.035);
-    float hue = fract(starSeed * 1.7 + clusterA * 0.23);
-
-    float core = smoothstep(STAR_CORE_SIZE, 0.0, distNorm);
-    float glow = smoothstep(1.0, STAR_CORE_SIZE, distNorm);
-    float angle = atan(d.y, d.x);
-    vec3 glowColor = getStarGlowColor(clamp(distNorm, 0.0, 1.0), angle, hue);
-
-    vec3 coreColor = hsv2rgb(vec3(hue, 0.18, 1.0));
-    vec3 stars = clusterMask * twinkle * (coreColor * core * 1.8 + glowColor * glow * 1.2);
-
-    // Nebula layers inspired by Shadertoy sample style
-    vec2 nebUv = warpedUv * vec2(5.0, 2.8) + vec2(flight * 0.0007, -flight * 0.0002);
-    float n0 = noise2D(nebUv);
-    float n1 = noise2D(nebUv * 2.3 + vec2(0.17, 0.53));
-    float n2 = noise2D(nebUv * 4.7 + vec2(0.63, 0.21));
-    float neb = pow(max(0.0, n0 * 0.55 + n1 * 0.30 + n2 * 0.15), 2.1);
-    vec3 nebula = hsv2rgb(vec3(fract(warpedUv.x + warpedUv.y * 0.21 + flight * 0.00012), 0.85, neb * 0.34));
-
-    // Optional mild forward streak to suggest flight
-    float streak = pow(max(0.0, 1.0 - abs(local.x + local.y * 0.2) * 2.4), 8.0) * clusterMask * 0.08;
-    stars += vec3(streak);
-
-    // Black-hole core darkening
-    float bhCore = (bhPresence > 0.5) ? smoothstep(0.18, 0.0, bhDist) : 0.0;
-
-    vec3 baseSpace = vec3(0.003, 0.004, 0.010);
-    vec3 col = baseSpace + nebula + stars + tunnelCol * 0.85;
-    col *= (1.0 - bhCore);
-    return col;
+    vec3 rd = normalize(direction);
+    
+    // Create sun direction - pointing down towards horizon for sunset
+    vec3 sunDir = normalize(vec3(0.0, -0.125 + 0.05*sin(0.1*uTime), 1.0));
+    
+    // Horizon distance for sunset effect (rd.y = 0 is horizon)
+    float horizonDist = abs(rd.y);
+    float sunsetBlend = smoothstep(0.4, -0.2, rd.y);  // Strong effect near and below horizon
+    
+    // Sky gradient base - purple at top
+    vec3 skyTop = vec3(0.2, 0.1, 0.4);
+    
+    // Sunset colors - warm orange/red at horizon
+    vec3 sunsetBot = vec3(1.0, 0.5, 0.2);  // Golden orange
+    vec3 sunsetMid = vec3(0.8, 0.2, 0.4);  // Red-magenta
+    
+    // Blend sky color based on vertical position
+    vec3 sky = mix(skyTop, sunsetMid, sunsetBlend * 0.7);
+    sky = mix(sky, sunsetBot, sunsetBlend);
+    
+    // Add atmospheric haze/fog effect using noise texture
+    float noiseFog = texture(uNoiseTex, vec2(0.5 + 0.05*rd.x/max(0.1, rd.z), 0.0)).x;
+    float atmosphericHaze = mix(0.1, 1.0, sunsetBlend) * (0.7 + 0.3 * noiseFog);
+    
+    // Stars - reduce visibility near horizon to show sunset
+    float starVisibility = smoothstep(-0.1, 0.3, rd.y);  // Fade stars at horizon
+    float st = starnoise(rd) * starVisibility;
+    
+    // Combine with proper layering
+    vec3 col = mix(sky, vec3(st), 0.6 * starVisibility);
+    
+    // Enhance glow at sun location
+    addSun(rd, sunDir, col);
+    
+    return clamp(col, 0.0, 1.0);
 }
 
 vec3 skyColor(vec3 direction) {
