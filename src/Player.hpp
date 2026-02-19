@@ -82,6 +82,19 @@ public:
     /// Check if player is moving
     [[nodiscard]] bool isMoving() const noexcept { return mIsMoving; }
 
+    // ========================================================================
+    // Endless runner scoring
+    // ========================================================================
+
+    [[nodiscard]] int getScore() const noexcept { return mScore; }
+    [[nodiscard]] float getDistance() const noexcept { return mDistance; }
+    [[nodiscard]] float getMultiplier() const noexcept { return mMultiplier; }
+
+    void addDistance(float delta) noexcept;
+    void setScore(int score) noexcept { mScore = score; }
+    void setMultiplier(float mult) noexcept { mMultiplier = mult; }
+    void resetScore() noexcept;
+
 private:
     void initializeActions();
     static bool isRealtimeAction(Action action);
@@ -105,6 +118,11 @@ private:
     bool mMovingBackward{false};
     bool mMovingLeft{false};
     bool mMovingRight{false};
+
+    // Endless runner scoring
+    int mScore{0};
+    float mDistance{0.0f};
+    float mMultiplier{1.0f};
 };
 
 #endif // PLAYER_HPP

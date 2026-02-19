@@ -409,6 +409,25 @@ void Player::setPosition(const glm::vec3 &position) noexcept
     mAnimator.setPosition(position);
 }
 
+void Player::addDistance(float delta) noexcept
+{
+    mDistance += delta;
+
+    // Every 10 units = 1 point, scaled by multiplier
+    int newScore = static_cast<int>(mDistance / 10.0f * mMultiplier);
+    if (newScore > mScore)
+    {
+        mScore = newScore;
+    }
+}
+
+void Player::resetScore() noexcept
+{
+    mScore = 0;
+    mDistance = 0.0f;
+    mMultiplier = 1.0f;
+}
+
 void Player::updateAnimationState()
 {
     CharacterAnimState newState = CharacterAnimState::IDLE;

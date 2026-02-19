@@ -383,6 +383,21 @@ void World::draw() const noexcept
     // World only manages physics and sphere data
 }
 
+bool World::checkPlayerCollision(const glm::vec3 &position, float playerRadius) const noexcept
+{
+    for (const auto &sphere : mSpheres)
+    {
+        glm::vec3 center = sphere.getCenter();
+        float combinedRadius = sphere.getRadius() + playerRadius;
+        float distSq = glm::dot(position - center, position - center);
+        if (distSq < combinedRadius * combinedRadius)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void World::handleEvent(const SDL_Event &event)
 {
     switch (event.type)

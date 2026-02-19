@@ -70,6 +70,15 @@ private:
     int mWindowWidth{1280};
     int mWindowHeight{720};
 
+    // ========================================================================
+    // Endless runner state
+    // ========================================================================
+    static constexpr float BASE_FORWARD_SPEED = 50.0f; ///< Units per second
+    static constexpr float MAX_SPEED_MULTIPLIER = 2.5f;
+    float mSpeedMultiplier{1.0f};
+    bool mGameOver{false};
+    int mHighScore{0};
+
     /// Initialize GPU graphics resources for compute shader rendering
     void initializeGraphicsResources() noexcept;
 

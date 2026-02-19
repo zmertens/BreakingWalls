@@ -46,6 +46,9 @@ public:
     void updateSphereChunks(const glm::vec3 &cameraPosition) noexcept;
     glm::vec3 getMazeSpawnPosition() const noexcept { return mPlayerSpawnPosition; }
 
+    /// Check if the player at `position` (radius ~2 units) collides with any sphere obstacle
+    bool checkPlayerCollision(const glm::vec3 &position, float playerRadius = 2.0f) const noexcept;
+
     // ========================================================================
     // Character rendering for third-person mode
     // ========================================================================

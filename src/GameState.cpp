@@ -7,6 +7,8 @@
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 
+#include <dearimgui/imgui.h>
+
 #include "GLSDLHelper.hpp"
 #include "MusicPlayer.hpp"
 #include "Player.hpp"
@@ -141,6 +143,71 @@ void GameState::draw() const noexcept
 
     // REMOVED: mWorld.draw() - World no longer handles rendering
     // All rendering is now done via compute shaders above
+
+    // ========================================================================
+    // Score HUD overlay
+    // ========================================================================
+    constexpr ImGuiWindowFlags overlayFlags = ImGuiWindowFlags_NoDecoration |
+                                              ImGuiWindowFlags_AlwaysAutoResize |
+                                              ImGuiWindowFlags_NoSavedSettings |
+                                              ImGuiWindowFlags_NoFocusOnAppearing |
+                                              ImGuiWindowFlags_NoNav |
+                                              ImGuiWindowFlags_NoMove;
+
+    // Apply green color scheme consistent with MenuState
+    ImGui::PushStyleColor(ImGuiCol_WindowBg,  ImVec4(0.016f, 0.047f, 0.024f, 0.75f));
+    ImGui::PushStyleColor(ImGuiCol_Text,       ImVec4(0.933f, 1.0f,   0.8f,   1.0f));
+
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.75f);
+
+    if (ImGui::Begin("Score", nullptr, overlayFlags))
+    {
+        ImGui::Text("SCORE: %d", mPlayer.getScore());
+        ImGui::Text("Distance: %.0fm", mPlayer.getDistance());
+        if (mSpeedMultiplier > 1.0f)
+        {
+            ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f),
+                               "Speed: %.1fx", mSpeedMultiplier);
+        }
+        if (mHighScore > 0)
+        {
+            ImGui::Separator();
+            ImGui::Text("Best: %d", mHighScore);
+        }
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor(2);
+
+    // ========================================================================
+    // Game Over overlay
+    // ========================================================================
+    if (mGameOver)
+    {
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_Text,      ImVec4(0.933f, 1.0f, 0.8f, 1.0f));
+
+        ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f,
+                      ImGui::GetIO().DisplaySize.y * 0.5f);
+        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowBgAlpha(0.85f);
+
+        if (ImGui::Begin("Game Over", nullptr, overlayFlags))
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "GAME OVER");
+            ImGui::Separator();
+            ImGui::Text("Score:    %d", mPlayer.getScore());
+            ImGui::Text("Distance: %.0fm", mPlayer.getDistance());
+            ImGui::Text("Best:     %d", mHighScore);
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f),
+                               "Press R to Restart");
+        }
+        ImGui::End();
+
+        ImGui::PopStyleColor(2);
+    }
 }
 
 void GameState::initializeGraphicsResources() noexcept
@@ -340,6 +407,12 @@ void GameState::updateSounds() noexcept
 
 bool GameState::update(float dt, unsigned int subSteps) noexcept
 {
+    // If game over, skip normal update (only handle restart via handleEvent)
+    if (mGameOver)
+    {
+        return true;
+    }
+
     // Periodic music health check
     static float musicCheckTimer = 0.0f;
     musicCheckTimer += dt;
@@ -367,7 +440,38 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     // Update sounds: set listener position based on camera and remove stopped sounds
     updateSounds();
 
-    // Handle camera input through Player (using action bindings)
+    // ========================================================================
+    // Endless runner: automatic forward movement
+    // ========================================================================
+    float forwardSpeed = BASE_FORWARD_SPEED * mSpeedMultiplier;
+    glm::vec3 forwardMovement = mCamera.getTarget() * forwardSpeed * dt;
+    glm::vec3 newCamPos = mCamera.getPosition() + forwardMovement;
+    mCamera.setPosition(newCamPos);
+    mPlayer.setPosition(newCamPos);
+
+    // Track distance and award points
+    float distanceThisFrame = forwardSpeed * dt;
+    mPlayer.addDistance(distanceThisFrame);
+
+    // Progressive speed: +10% every 500 points, capped at MAX_SPEED_MULTIPLIER
+    int score = mPlayer.getScore();
+    float newMultiplier = 1.0f + static_cast<float>(score / 500) * 0.1f;
+    if (newMultiplier > MAX_SPEED_MULTIPLIER)
+        newMultiplier = MAX_SPEED_MULTIPLIER;
+    mSpeedMultiplier = newMultiplier;
+
+    // Collision detection with world spheres
+    if (mWorld.checkPlayerCollision(mCamera.getPosition()))
+    {
+        mGameOver = true;
+        if (mPlayer.getScore() > mHighScore)
+        {
+            mHighScore = mPlayer.getScore();
+        }
+        return true;
+    }
+
+    // Handle camera input through Player (using action bindings) - lateral movement only
     mPlayer.handleRealtimeInput(mCamera, dt);
 
     // Update player animation
@@ -414,15 +518,35 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
             log("Path tracing accumulation reset");
         }
 
-        // Play sound when camera is reset (R key handled by Player now)
+        // R key: restart if game over, otherwise reset camera
         if (event.key.scancode == SDL_SCANCODE_R)
         {
-            glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
-            if (auto *sounds = getContext().sounds)
+            if (mGameOver)
             {
-                sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{resetPos.x, resetPos.z});
+                // Restart: reset player score/position and resume
+                mPlayer.resetScore();
+                mSpeedMultiplier = 1.0f;
+                mGameOver = false;
+
+                // Reset camera/player to spawn position
+                glm::vec3 spawnPos = mWorld.getMazeSpawnPosition();
+                spawnPos.y += 50.0f;
+                spawnPos.z += 50.0f;
+                mCamera.setPosition(spawnPos);
+                mPlayer.setPosition(spawnPos);
+                mCurrentBatch = 0;
+
+                log("GameState: Game restarted");
             }
-            log("Camera reset to initial position");
+            else
+            {
+                glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
+                if (auto *sounds = getContext().sounds)
+                {
+                    sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{resetPos.x, resetPos.z});
+                }
+                log("Camera reset to initial position");
+            }
         }
     }
 
