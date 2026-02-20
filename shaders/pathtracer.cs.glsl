@@ -257,7 +257,7 @@ bool testPlaneShadow(in Ray shadowRay, float maxDist) {
 }
 
 float calculateShadow(vec3 hitPoint, vec3 normal) {
-    // Create shadow ray from hit point towards light
+    // Create shadow ray from hit point away from light (opposite of light direction)
     vec3 shadowRayOrigin = hitPoint + normal * 0.01;  // Slightly offset to avoid self-intersection
     Ray shadowRay = Ray(shadowRayOrigin, -uLightDir);
     
@@ -442,8 +442,8 @@ void addSun(vec3 rd, vec3 sunDir, inout vec3 col) {
 vec3 starfieldColor(vec3 direction, uvec2 pixel, uint sampleIndex) {
     vec3 rd = normalize(direction);
     
-    // Create sun direction - pointing down towards horizon for sunset
-    vec3 sunDir = normalize(vec3(0.0, -0.125 + 0.05*sin(0.1*uTime), 1.0));
+    // Create sun direction - pointing down towards horizon for sunset at +X
+    vec3 sunDir = normalize(vec3(1.0, -0.125 + 0.05*sin(0.1*uTime), 0.0));
     
     // Horizon distance for sunset effect (rd.y = 0 is horizon)
     float horizonDist = abs(rd.y);

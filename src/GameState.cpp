@@ -25,11 +25,11 @@
 
 namespace
 {
-    constexpr float kRunnerLockedSunYawDeg = 90.0f; // +Z heading
+    constexpr float kRunnerLockedSunYawDeg = 0.0f; // +X heading (toward sunset)
 
     glm::vec3 computeSunDirection(float timeSeconds) noexcept
     {
-        return glm::normalize(glm::vec3(0.0f, -0.125f + 0.05f * std::sin(0.1f * timeSeconds), 1.0f));
+        return glm::normalize(glm::vec3(1.0f, -0.125f + 0.05f * std::sin(0.1f * timeSeconds), 0.0f));
     }
 
     std::pair<int, int> computeRenderResolution(int windowWidth, int windowHeight, std::size_t targetPixels, float minScale) noexcept
@@ -160,6 +160,7 @@ GameState::GameState(StateStack &stack, Context context)
     mRunnerRng.seed(static_cast<unsigned int>(std::abs(spawnPos.x) + std::abs(spawnPos.z) + 1337.0f));
     syncRunnerSettingsFromOptions();
     resetRunnerRun();
+    mWorld.updateSphereChunks(mPlayer.getPosition());
 
     // Initialize GPU graphics pipeline following Compute.cpp approach
     if (mShadersInitialized)
@@ -481,8 +482,10 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     updateRunnerGameplay(dt);
 
-    // Update sphere chunks based on camera position for dynamic spawning
-    mWorld.updateSphereChunks(mCamera.getPosition());
+    // Keep chunks near player but biased forward for visible into-sun flow
+    glm::vec3 chunkAnchor = mPlayer.getPosition();
+    chunkAnchor.x += mRunnerPickupSpawnAhead;
+    mWorld.updateSphereChunks(chunkAnchor);
 
     // Update sounds: set listener position based on camera and remove stopped sounds
     updateSounds();
@@ -652,43 +655,25 @@ void GameState::updateRunnerGameplay(float dt) noexcept
         return;
     }
 
-    if (!mRunLost)
-    {
-        mRunnerDistance += mRunnerSpeed * dt;
-    }
+    // Keep forward flow continuous; reset is optional when points drop below zero.
+    mRunnerDistance += mRunnerSpeed * dt;
 
     glm::vec3 playerPos = mPlayer.getPosition();
-    playerPos.x = std::clamp(playerPos.x, -mRunnerStrafeLimit, mRunnerStrafeLimit);
+    playerPos.z = std::clamp(playerPos.z, -mRunnerStrafeLimit, mRunnerStrafeLimit);
     playerPos.y = std::max(playerPos.y, 0.0f);
-    playerPos.z = mRunnerDistance;
+    playerPos.x = mRunnerDistance;
 
     mPlayer.setPosition(playerPos);
     mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
     mCamera.setFollowTarget(playerPos);
     mCamera.updateThirdPersonPosition();
 
-    spawnPointEvents();
     processRunnerCollisions(dt);
 }
 
 void GameState::spawnPointEvents() noexcept
 {
-    const float minX = -mRunnerStrafeLimit;
-    const float maxX = mRunnerStrafeLimit;
-
-    std::uniform_real_distribution<float> xDistribution(minX, maxX);
-    std::uniform_int_distribution<int> pointsDistribution(mRunnerPickupMinValue, mRunnerPickupMaxValue);
-
-    const float spawnLimit = mRunnerDistance + mRunnerPickupSpawnAhead;
-    while (mRunnerNextPickupZ <= spawnLimit)
-    {
-        RunnerPointEvent event;
-        event.position = glm::vec3(xDistribution(mRunnerRng), 1.0f, mRunnerNextPickupZ);
-        event.value = pointsDistribution(mRunnerRng);
-        event.consumed = false;
-        mRunnerPointEvents.push_back(event);
-        mRunnerNextPickupZ += mRunnerPickupSpacing;
-    }
+    // Deprecated in runner-v2: points now come directly from sphere collisions.
 }
 
 void GameState::processRunnerCollisions(float dt) noexcept
@@ -700,36 +685,25 @@ void GameState::processRunnerCollisions(float dt) noexcept
 
     const glm::vec3 playerPos = mPlayer.getPosition();
 
-    for (auto &event : mRunnerPointEvents)
-    {
-        if (event.consumed)
-        {
-            continue;
-        }
-
-        const glm::vec2 delta2D = glm::vec2(event.position.x - playerPos.x, event.position.z - playerPos.z);
-        const float captureDistanceSquared = mRunnerPickupCaptureRadius * mRunnerPickupCaptureRadius;
-        if (glm::dot(delta2D, delta2D) <= captureDistanceSquared)
-        {
-            mPlayerPoints += event.value;
-            event.consumed = true;
-        }
-    }
-
-    mRunnerPointEvents.erase(
-        std::remove_if(
-            mRunnerPointEvents.begin(),
-            mRunnerPointEvents.end(),
-            [this](const RunnerPointEvent &event)
-            {
-                return event.consumed || (event.position.z < mRunnerDistance - mRunnerPickupSpacing);
-            }),
-        mRunnerPointEvents.end());
-
     if (mRunnerCollisionTimer <= 0.0f)
     {
         const auto &spheres = mWorld.getSpheres();
-        bool hitObstacle = false;
+        bool hitSphere = false;
+        int scoreDelta = 0;
+
+        auto scoreForSphere = [this](const Sphere &sphere) -> int
+        {
+            switch (sphere.getMaterialType())
+            {
+            case Material::MaterialType::METAL:
+                return -mRunnerObstaclePenalty;
+            case Material::MaterialType::DIELECTRIC:
+                return std::max(10, mRunnerPickupMaxValue);
+            case Material::MaterialType::LAMBERTIAN:
+            default:
+                return std::max(5, mRunnerPickupMaxValue / 2);
+            }
+        };
 
         for (const auto &sphere : spheres)
         {
@@ -738,14 +712,15 @@ void GameState::processRunnerCollisions(float dt) noexcept
             const float combinedRadius = sphere.getRadius() + mRunnerPlayerRadius;
             if (glm::dot(delta2D, delta2D) <= combinedRadius * combinedRadius)
             {
-                hitObstacle = true;
+                hitSphere = true;
+                scoreDelta = scoreForSphere(sphere);
                 break;
             }
         }
 
-        if (hitObstacle)
+        if (hitSphere)
         {
-            mPlayerPoints -= mRunnerObstaclePenalty;
+            mPlayerPoints += scoreDelta;
             mRunnerCollisionTimer = mRunnerCollisionCooldown;
 
             if (auto *sounds = getContext().sounds)
@@ -809,19 +784,16 @@ void GameState::drawRunnerHud() const noexcept
 
     if (ImGui::Begin("Arcade HUD", nullptr, hudFlags))
     {
+        const int lambertBonus = std::max(5, mRunnerPickupMaxValue / 2);
+        const int dielectricBonus = std::max(10, mRunnerPickupMaxValue);
+
         ImGui::Text("Points: %d", mPlayerPoints);
         ImGui::Text("Distance: %.0f", mRunnerDistance);
         ImGui::Text("Speed: %.1f", mRunnerSpeed);
-
-        int nearbyCount = 0;
-        for (const auto &event : mRunnerPointEvents)
-        {
-            if (!event.consumed && event.position.z >= mRunnerDistance)
-            {
-                ++nearbyCount;
-            }
-        }
-        ImGui::Text("Upcoming point events: %d", nearbyCount);
+        ImGui::Text("Sphere scoring: Metal %d  Lambert +%d  Glass +%d",
+                    -mRunnerObstaclePenalty,
+                    lambertBonus,
+                    dielectricBonus);
 
         if (mRunLost)
         {
