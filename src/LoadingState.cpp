@@ -62,6 +62,8 @@ namespace JSONKeys
     constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";
     constexpr std::string_view SHADER_PARTICLES_COMPUTE = "shader_particles_cs_glsl";
     constexpr std::string_view SHADER_PATHTRACER_COMPUTE = "shader_pathtracer_cs_glsl";
+    constexpr std::string_view SHADER_PARTICLES_VERTEX = "shader_particles_vert_glsl";
+    constexpr std::string_view SHADER_PARTICLES_FRAGMENT = "shader_particles_frag_glsl";
     constexpr std::string_view SHADER_SCREEN_VERTEX = "shader_screen_vert_glsl";
     constexpr std::string_view SHADER_SCREEN_FRAGMENT = "shader_screen_frag_glsl";
     constexpr std::string_view SOUND_GENERATE = "generate_ogg";
@@ -737,8 +739,6 @@ void LoadingState::loadShaders() noexcept
             return JSONUtils::getResourcePath(std::string(key), resources, resourcePathPrefix);
         };
 
-        // Load display shader (vertex + fragment)
-        // @TODO connect shader filenames from mResources
         auto displayShader = std::make_unique<Shader>();
         displayShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SCREEN_VERTEX));
         displayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SCREEN_FRAGMENT));
@@ -748,6 +748,13 @@ void LoadingState::loadShaders() noexcept
 
         // Insert display shader into manager (using vertex ID as the combined shader program ID)
         shaders.insert(Shaders::ID::GLSL_FULLSCREEN_QUAD, std::move(displayShader));
+
+        auto particlesDisplayShader = std::make_unique<Shader>();
+        particlesDisplayShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_PARTICLES_VERTEX));
+        particlesDisplayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_PARTICLES_FRAGMENT));
+        particlesDisplayShader->linkProgram();
+        log("LoadingState: Particles display shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP, std::move(particlesDisplayShader));
 
         // Load compute shader for path tracing
         auto computeShader = std::make_unique<Shader>();

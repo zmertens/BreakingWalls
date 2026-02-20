@@ -45,7 +45,7 @@ private:
 
     mutable bool mParticlesInitialized{false};
     mutable Shader *mParticlesComputeShader{nullptr};
-    mutable std::unique_ptr<Shader> mParticlesRenderShader;
+    mutable Shader *mParticlesRenderShader{nullptr};
 
     mutable GLuint mParticlesVAO{0};
     mutable GLuint mParticlesAttractorVAO{0};
@@ -70,11 +70,14 @@ private:
     mutable float mParticleDtScale{0.2f};
     mutable float mParticlePointSize{1.0f};
     mutable float mAttractorPointSize{5.0f};
+    mutable float mParticleResetIntervalSeconds{10.0f};
+    mutable float mParticleResetAccumulator{0.0f};
     mutable glm::vec4 mBlackHoleBase1{5.0f, 0.0f, 0.0f, 1.0f};
     mutable glm::vec4 mBlackHoleBase2{-5.0f, 0.0f, 0.0f, 1.0f};
 
     void initializeParticleScene() const noexcept;
     void renderParticleScene() const noexcept;
+    void resetParticleSimulation() const noexcept;
     void cleanupParticleScene() noexcept;
     void updateParticleProjection() const noexcept;
 };

@@ -14,6 +14,8 @@
 	"shader_billboard_geom_glsl": "shaders/billboard.geom.glsl",
 	"shader_pathtracer_cs_glsl": "shaders/pathtracer.cs.glsl",
 	"shader_particles_cs_glsl": "shaders/particles.cs.glsl",
+	"shader_particles_frag_glsl": "shaders/particles.frag.glsl",
+	"shader_particles_vert_glsl": "shaders/particles.vert.glsl",
 	"network_url": "http://localhost:3000",
 	"character_default_image": "textures/character_beige_front.png",
 	"characters_spritesheet": "textures/spritesheet-characters-default.png",

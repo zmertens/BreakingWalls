@@ -24,33 +24,6 @@
 #include "SoundPlayer.hpp"
 #include "StateStack.hpp"
 
-namespace
-{
-    constexpr const char *kParticlesRenderVertexShader = R"(
-#version 430 core
-
-layout (location = 0) in vec4 VertexPosition;
-uniform mat4 MVP;
-
-void main()
-{
-    gl_Position = MVP * VertexPosition;
-}
-)";
-
-    constexpr const char *kParticlesRenderFragmentShader = R"(
-#version 430 core
-
-uniform vec4 Color;
-layout (location = 0) out vec4 FragColor;
-
-void main()
-{
-    FragColor = Color;
-}
-)";
-}
-
 MenuState::MenuState(StateStack &stack, Context context)
     : State(stack, context), mSelectedMenuItem(MenuItem::NEW_GAME), mShowMainMenu(true), mItemSelectedFlags{}, mMusic{}
 {
@@ -104,7 +77,7 @@ void MenuState::draw() const noexcept
 
     if (ImGui::Begin("Main Menu", &mShowMainMenu, ImGuiWindowFlags_NoCollapse))
     {
-        ImGui::Text("Welcome to MazeBuilder Physics");
+        ImGui::Text("Main Menu");
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -116,6 +89,7 @@ void MenuState::draw() const noexcept
             ImGui::SliderFloat("Particle Mass", &mParticleMass, 0.01f, 2.0f, "%.3f");
             ImGui::SliderFloat("Max Distance", &mParticleMaxDist, 5.0f, 120.0f, "%.1f");
             ImGui::SliderFloat("DeltaT Scale", &mParticleDtScale, 0.01f, 1.0f, "%.3f");
+            ImGui::SliderFloat("Reset Interval (s)", &mParticleResetIntervalSeconds, 5.0f, 30.0f, "%.1f");
             ImGui::SliderFloat("Particle Size", &mParticlePointSize, 1.0f, 6.0f, "%.1f");
             ImGui::SliderFloat("Attractor Size", &mAttractorPointSize, 2.0f, 14.0f, "%.1f");
             ImGui::Spacing();
@@ -170,8 +144,6 @@ void MenuState::draw() const noexcept
             // Close the menu window to trigger state transition in update()
             mShowMainMenu = false;
         }
-
-        ImGui::SameLine();
     }
     ImGui::End();
 
@@ -292,19 +264,12 @@ void MenuState::initializeParticleScene() const noexcept
 
     try
     {
-        mParticlesRenderShader = std::make_unique<Shader>();
-        mParticlesRenderShader->compileAndAttachShader(Shader::ShaderType::VERTEX,
-                                                       "MenuState::ParticlesRenderVS",
-                                                       kParticlesRenderVertexShader);
-        mParticlesRenderShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT,
-                                                       "MenuState::ParticlesRenderFS",
-                                                       kParticlesRenderFragmentShader);
-        mParticlesRenderShader->linkProgram();
+        mParticlesRenderShader = &getContext().shaders->get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
     }
     catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "MenuState: Failed to build particle render shader: %s", e.what());
-        mParticlesRenderShader.reset();
+        mParticlesRenderShader = nullptr;
         return;
     }
 
@@ -396,6 +361,13 @@ void MenuState::renderParticleScene() const noexcept
     const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
     mParticleDeltaT = (mParticleTime == 0.0f) ? 0.0f : std::min(0.033f, now - mParticleTime);
     mParticleTime = now;
+    mParticleResetAccumulator += mParticleDeltaT;
+
+    if (mParticleResetAccumulator >= mParticleResetIntervalSeconds)
+    {
+        resetParticleSimulation();
+        mParticleResetAccumulator = 0.0f;
+    }
 
     mParticleAngle += mParticleSpeed * mParticleDeltaT;
     if (mParticleAngle > 360.0f)
@@ -455,8 +427,57 @@ void MenuState::renderParticleScene() const noexcept
     glBindVertexArray(mParticlesAttractorVAO);
     glDrawArrays(GL_POINTS, 0, 2);
 
+    glUseProgram(0);
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    glDisable(GL_DEPTH_TEST);
+}
+
+void MenuState::resetParticleSimulation() const noexcept
+{
+    if (mTotalParticles == 0 || mParticlesPosSSBO == 0 || mParticlesVelSSBO == 0)
+    {
+        return;
+    }
+
+    std::vector<GLfloat> resetPositions;
+    resetPositions.reserve(static_cast<size_t>(mTotalParticles) * 4u);
+
+    const GLfloat dx = 2.0f / static_cast<GLfloat>(mParticleGrid.x - 1);
+    const GLfloat dy = 2.0f / static_cast<GLfloat>(mParticleGrid.y - 1);
+    const GLfloat dz = 2.0f / static_cast<GLfloat>(mParticleGrid.z - 1);
+    const glm::mat4 centerTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, -1.0f, -1.0f));
+
+    for (int i = 0; i < mParticleGrid.x; ++i)
+    {
+        for (int j = 0; j < mParticleGrid.y; ++j)
+        {
+            for (int k = 0; k < mParticleGrid.z; ++k)
+            {
+                glm::vec4 p(dx * static_cast<GLfloat>(i),
+                            dy * static_cast<GLfloat>(j),
+                            dz * static_cast<GLfloat>(k),
+                            1.0f);
+                p = centerTransform * p;
+                resetPositions.push_back(p.x);
+                resetPositions.push_back(p.y);
+                resetPositions.push_back(p.z);
+                resetPositions.push_back(p.w);
+            }
+        }
+    }
+
+    std::vector<GLfloat> resetVelocities(static_cast<size_t>(mTotalParticles) * 4u, 0.0f);
+    const GLsizeiptr bufferSize = static_cast<GLsizeiptr>(static_cast<size_t>(mTotalParticles) * 4u * sizeof(GLfloat));
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mParticlesPosSSBO);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bufferSize, resetPositions.data());
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mParticlesVelSSBO);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bufferSize, resetVelocities.data());
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void MenuState::cleanupParticleScene() noexcept
@@ -487,7 +508,7 @@ void MenuState::cleanupParticleScene() noexcept
         mParticlesAttractorVBO = 0;
     }
 
-    mParticlesRenderShader.reset();
+    mParticlesRenderShader = nullptr;
     mParticlesComputeShader = nullptr;
     mParticlesInitialized = false;
 }
