@@ -76,6 +76,7 @@ private:
     // Shader references from context
     Shader *mDisplayShader{nullptr};
     Shader *mComputeShader{nullptr};
+    Shader *mCompositeShader{nullptr};
 
     Texture *mAccumTex{nullptr};
     Texture *mDisplayTex{nullptr};
@@ -84,6 +85,9 @@ private:
     // GPU resources
     GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres
     GLuint mVAO{0};        // Vertex Array Object for fullscreen quad
+    GLuint mBillboardFBO{0};
+    GLuint mBillboardColorTex{0};
+    GLuint mBillboardDepthRbo{0};
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
@@ -138,8 +142,14 @@ private:
     /// Create textures for path tracing (accumulation + display)
     void createPathTracerTextures() noexcept;
 
+    /// Create or resize composite render targets for billboard blending
+    void createCompositeTargets() noexcept;
+
     /// Render using compute shaders (path tracing)
     void renderWithComputeShaders() const noexcept;
+
+    /// Composite billboard and path traced scene
+    void renderCompositeScene() const noexcept;
 
     /// Render player character (third-person mode only)
     void renderPlayerCharacter() const noexcept;

@@ -60,6 +60,8 @@ namespace JSONKeys
     constexpr std::string_view SHADER_BILLBOARD_VERTEX = "shader_billboard_vert_glsl";
     constexpr std::string_view SHADER_BILLBOARD_FRAGMENT = "shader_billboard_frag_glsl";
     constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";
+    constexpr std::string_view SHADER_COMPOSITE_VERTEX = "shader_composite_vert_glsl";
+    constexpr std::string_view SHADER_COMPOSITE_FRAGMENT = "shader_composite_frag_glsl";
     constexpr std::string_view SHADER_PARTICLES_COMPUTE = "shader_particles_cs_glsl";
     constexpr std::string_view SHADER_PATHTRACER_COMPUTE = "shader_pathtracer_cs_glsl";
     constexpr std::string_view SHADER_PARTICLES_VERTEX = "shader_particles_vert_glsl";
@@ -755,6 +757,13 @@ void LoadingState::loadShaders() noexcept
         particlesDisplayShader->linkProgram();
         log("LoadingState: Particles display shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP, std::move(particlesDisplayShader));
+
+        auto compositeShader = std::make_unique<Shader>();
+        compositeShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_COMPOSITE_VERTEX));
+        compositeShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_COMPOSITE_FRAGMENT));
+        compositeShader->linkProgram();
+        log("LoadingState: Composite shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_COMPOSITE_SCENE, std::move(compositeShader));
 
         // Load compute shader for path tracing
         auto computeShader = std::make_unique<Shader>();

@@ -482,7 +482,10 @@ void GLSDLHelper::renderBillboardSprite(
         renderCount++;
     }
 
-    // Bind texture
+    // Bind texture on unit 0 to match SpriteTex sampler
+    GLint prevActiveTexture = GL_TEXTURE0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textureId);
 
     // Draw single point - geometry shader expands to quad
@@ -498,6 +501,7 @@ void GLSDLHelper::renderBillboardSprite(
     }
 
     // Restore previous OpenGL state
+    glActiveTexture(static_cast<GLenum>(prevActiveTexture));
     if (!blendEnabled)
     {
         glDisable(GL_BLEND);

@@ -55,7 +55,7 @@ namespace
 }
 
 GameState::GameState(StateStack &stack, Context context)
-    : State{stack, context}, mWorld{*context.window, *context.fonts, *context.textures, *context.shaders}, mPlayer{*context.player}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}
+    : State{stack, context}, mWorld{*context.window, *context.fonts, *context.textures, *context.shaders}, mPlayer{*context.player}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mCompositeShader{nullptr}
       // Initialize camera at maze spawn position (will be updated after first chunk loads)
       ,
       mCamera{glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f}
@@ -78,6 +78,19 @@ GameState::GameState(StateStack &stack, Context context)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
         mShadersInitialized = false;
+    }
+
+    if (mShadersInitialized)
+    {
+        try
+        {
+            mCompositeShader = &shaders.get(Shaders::ID::GLSL_COMPOSITE_SCENE);
+        }
+        catch (const std::exception &e)
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Composite shader unavailable: %s", e.what());
+            mCompositeShader = nullptr;
+        }
     }
 
     auto &textures = *context.textures;
@@ -193,6 +206,11 @@ void GameState::draw() const noexcept
         // Render player character in third-person mode AFTER path tracer
         // The billboard uses depth testing so it will appear in front
         renderPlayerCharacter();
+
+        if (mCompositeShader && mBillboardFBO != 0 && mBillboardColorTex != 0)
+        {
+            renderCompositeScene();
+        }
     }
 
     // REMOVED: mWorld.draw() - World no longer handles rendering
@@ -218,6 +236,7 @@ void GameState::initializeGraphicsResources() noexcept
 
     // Create textures for path tracing
     createPathTracerTextures();
+    createCompositeTargets();
 
     // Upload sphere data from World to GPU with extra capacity for dynamic spawning
     const auto &spheres = mWorld.getSpheres();
@@ -279,6 +298,49 @@ void GameState::createPathTracerTextures() noexcept
         std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " / " +
         std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight) +
         " (IDs: " + std::to_string(mAccumTex->get()) + ", " + std::to_string(mDisplayTex->get()) + ")");
+}
+
+void GameState::createCompositeTargets() noexcept
+{
+    if (mWindowWidth <= 0 || mWindowHeight <= 0)
+    {
+        return;
+    }
+
+    if (mBillboardColorTex == 0)
+    {
+        glGenTextures(1, &mBillboardColorTex);
+    }
+    glBindTexture(GL_TEXTURE_2D, mBillboardColorTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
+
+    if (mBillboardDepthRbo == 0)
+    {
+        glGenRenderbuffers(1, &mBillboardDepthRbo);
+    }
+    glBindRenderbuffer(GL_RENDERBUFFER, mBillboardDepthRbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, mWindowWidth, mWindowHeight);
+
+    if (mBillboardFBO == 0)
+    {
+        glGenFramebuffers(1, &mBillboardFBO);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mBillboardColorTex, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mBillboardDepthRbo);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Billboard framebuffer incomplete");
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
 }
 
 bool GameState::checkCameraMovement() const noexcept
@@ -407,6 +469,11 @@ void GameState::renderWithComputeShaders() const noexcept
         mCurrentBatch++;
     }
 
+    if (mCompositeShader && mBillboardFBO != 0 && mBillboardColorTex != 0)
+    {
+        return;
+    }
+
     // Display the current result
     mDisplayShader->bind();
     mDisplayShader->setUniform("uTexture2D", 0);
@@ -417,10 +484,50 @@ void GameState::renderWithComputeShaders() const noexcept
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
+void GameState::renderCompositeScene() const noexcept
+{
+    if (!mCompositeShader || !mDisplayTex || mBillboardColorTex == 0)
+    {
+        return;
+    }
+
+    mCompositeShader->bind();
+    mCompositeShader->setUniform("uSceneTex", 0);
+    mCompositeShader->setUniform("uBillboardTex", 1);
+    mCompositeShader->setUniform("uInvResolution", glm::vec2(1.0f / static_cast<float>(mWindowWidth), 1.0f / static_cast<float>(mWindowHeight)));
+    mCompositeShader->setUniform("uBloomThreshold", 0.45f);
+    mCompositeShader->setUniform("uBloomStrength", 0.65f);
+    mCompositeShader->setUniform("uSpriteAlpha", 1.0f);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, mBillboardColorTex);
+
+    glBindVertexArray(mVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
 void GameState::cleanupResources() noexcept
 {
     GLSDLHelper::deleteVAO(mVAO);
     GLSDLHelper::deleteBuffer(mShapeSSBO);
+
+    if (mBillboardFBO != 0)
+    {
+        glDeleteFramebuffers(1, &mBillboardFBO);
+        mBillboardFBO = 0;
+    }
+    if (mBillboardColorTex != 0)
+    {
+        glDeleteTextures(1, &mBillboardColorTex);
+        mBillboardColorTex = 0;
+    }
+    if (mBillboardDepthRbo != 0)
+    {
+        glDeleteRenderbuffers(1, &mBillboardDepthRbo);
+        mBillboardDepthRbo = 0;
+    }
     
     mAccumTex = nullptr;
     mDisplayTex = nullptr;
@@ -429,6 +536,7 @@ void GameState::cleanupResources() noexcept
     // Shaders are now managed by ShaderManager - don't delete them here
     mDisplayShader = nullptr;
     mComputeShader = nullptr;
+    mCompositeShader = nullptr;
 
     log("GameState: OpenGL resources cleaned up");
 }
@@ -520,6 +628,7 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept {
             updateRenderResolution();
             // Recreate path tracer textures
             createPathTracerTextures();
+            createCompositeTargets();
             // Reset accumulation for new size
             mCurrentBatch = 0;
             log("GameState: Window resized, path tracer textures recreated (window/internal): " +
@@ -603,6 +712,14 @@ void GameState::renderPlayerCharacter() const noexcept
         return;
     }
 
+    if (mCompositeShader && mBillboardFBO != 0)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
+        glViewport(0, 0, mWindowWidth, mWindowHeight);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    }
+
     // The path tracer draws a fullscreen 2D quad which doesn't use depth properly.
     // Clear the depth buffer so our 3D billboard can render.
     glClear(GL_DEPTH_BUFFER_BIT);
@@ -616,6 +733,11 @@ void GameState::renderPlayerCharacter() const noexcept
 
     // Delegate to World for actual rendering
     mWorld.renderPlayerCharacter(mPlayer, mCamera);
+
+    if (mCompositeShader && mBillboardFBO != 0)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
 }
 
 void GameState::syncRunnerSettingsFromOptions() noexcept

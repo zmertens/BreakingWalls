@@ -58,7 +58,8 @@ namespace Shaders
         GLSL_FULLSCREEN_QUAD_MVP = 2,
         GLSL_PATH_TRACER_COMPUTE = 3,
         GLSL_PARTICLES_COMPUTE = 4,
-        GLSL_TOTAL_SHADERS = 5
+        GLSL_COMPOSITE_SCENE = 5,
+        GLSL_TOTAL_SHADERS = 6
     };
 }
 
