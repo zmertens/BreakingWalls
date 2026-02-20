@@ -332,6 +332,8 @@ void GameState::createCompositeTargets() noexcept
     glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mBillboardColorTex, 0);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mBillboardDepthRbo);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
     {
@@ -718,6 +720,7 @@ void GameState::renderPlayerCharacter() const noexcept
         glViewport(0, 0, mWindowWidth, mWindowHeight);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
     }
 
     // The path tracer draws a fullscreen 2D quad which doesn't use depth properly.
@@ -760,10 +763,13 @@ void GameState::syncRunnerSettingsFromOptions() noexcept
         mRunnerPickupSpacing = std::max(4.0f, opts.mRunnerPickupSpacing);
         mRunnerObstaclePenalty = std::max(1, opts.mRunnerObstaclePenalty);
         mRunnerCollisionCooldown = std::max(0.05f, opts.mRunnerCollisionCooldown);
+        mWorld.setRunnerTuning(mRunnerStrafeLimit, mRunnerPickupSpawnAhead, mRunnerSpeed + 8.0f);
     }
     catch (const std::exception &)
     {
     }
+
+    mWorld.setRunnerTuning(mRunnerStrafeLimit, mRunnerPickupSpawnAhead, mRunnerSpeed + 8.0f);
 }
 
 void GameState::updateRunnerGameplay(float dt) noexcept
@@ -778,9 +784,11 @@ void GameState::updateRunnerGameplay(float dt) noexcept
 
     glm::vec3 playerPos = mPlayer.getPosition();
     playerPos.z = std::clamp(playerPos.z, -mRunnerStrafeLimit, mRunnerStrafeLimit);
+    playerPos.y = std::max(playerPos.y, 1.0f);
     playerPos.x = mRunnerDistance;
 
     mPlayer.setPosition(playerPos);
+    mWorld.setRunnerPlayerPosition(playerPos);
     mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
     mCamera.setFollowTarget(playerPos);
     mCamera.updateThirdPersonPosition();
@@ -804,13 +812,13 @@ void GameState::processRunnerCollisions(float dt) noexcept
 
     if (mRunnerCollisionTimer <= 0.0f)
     {
-        const auto &spheres = mWorld.getSpheres();
-        bool hitSphere = false;
-        int scoreDelta = 0;
+        int accumulatedScoreDelta = 0;
+        bool hadPenalty = false;
+        bool hadBonus = false;
 
-        auto scoreForSphere = [this](const Sphere &sphere) -> int
+        auto scoreForMaterial = [this](Material::MaterialType materialType) -> int
         {
-            switch (sphere.getMaterialType())
+            switch (materialType)
             {
             case Material::MaterialType::METAL:
                 return -mRunnerObstaclePenalty;
@@ -822,23 +830,35 @@ void GameState::processRunnerCollisions(float dt) noexcept
             }
         };
 
-        for (const auto &sphere : spheres)
+        const auto collisionEvents = mWorld.consumeRunnerCollisionEvents();
+        for (const auto &event : collisionEvents)
         {
-            const glm::vec3 center = sphere.getCenter();
-            const glm::vec2 delta2D = glm::vec2(center.x - playerPos.x, center.z - playerPos.z);
-            const float combinedRadius = sphere.getRadius() + mRunnerPlayerRadius;
-            if (glm::dot(delta2D, delta2D) <= combinedRadius * combinedRadius)
+            const int scoreDelta = scoreForMaterial(event.materialType);
+            accumulatedScoreDelta += scoreDelta;
+
+            if (scoreDelta < 0)
             {
-                hitSphere = true;
-                scoreDelta = scoreForSphere(sphere);
-                break;
+                hadPenalty = true;
+            }
+            else
+            {
+                hadBonus = true;
             }
         }
 
-        if (hitSphere)
+        if (accumulatedScoreDelta != 0)
         {
-            mPlayerPoints += scoreDelta;
+            mPlayerPoints += accumulatedScoreDelta;
             mRunnerCollisionTimer = mRunnerCollisionCooldown;
+
+            if (hadPenalty)
+            {
+                mPlayer.triggerCollisionAnimation(false);
+            }
+            else if (hadBonus)
+            {
+                mPlayer.triggerCollisionAnimation(true);
+            }
 
             if (auto *sounds = getContext().sounds)
             {
@@ -874,6 +894,8 @@ void GameState::resetRunnerRun() noexcept
 
     mRunnerNextPickupZ = current.z + mRunnerPickupSpacing;
     mPlayer.setPosition(current);
+    mWorld.setRunnerPlayerPosition(current);
+    mWorld.consumeRunnerCollisionEvents();
     mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
     mCamera.setFollowTarget(current);
     mCamera.updateThirdPersonPosition();

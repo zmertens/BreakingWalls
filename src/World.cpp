@@ -25,6 +25,22 @@
 #include <algorithm>
 #include <sstream>
 #include <cctype>
+#include <cmath>
+#include <cstdint>
+
+namespace
+{
+    constexpr std::uintptr_t kBodyTagSphereBase = 10;
+    constexpr std::uintptr_t kBodyTagRunnerPlayer = 2;
+    constexpr std::uintptr_t kBodyTagRunnerBounds = 3;
+
+    float randomFloat(float low, float high)
+    {
+        static thread_local std::mt19937 rng{13371337u};
+        std::uniform_real_distribution<float> distribution(low, high);
+        return distribution(rng);
+    }
+}
 
 World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders)
     : mWindow{window},
@@ -33,6 +49,10 @@ World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures,
       mShaders{shaders},
       mWorldId{b2_nullWorldId},
       mMazeWallsBodyId{b2_nullBodyId},
+      mRunnerBoundsBodyId{b2_nullBodyId},
+      mRunnerPlayerBodyId{b2_nullBodyId},
+      mRunnerBoundNegZShapeId{b2_nullShapeId},
+      mRunnerBoundPosZShapeId{b2_nullShapeId},
       mIsPanning{false},
       mLastMousePosition{0.f, 0.f},
       mGroundPlane{
@@ -40,7 +60,8 @@ World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures,
           glm::vec3(0.0f, 1.0f, 0.0f),
           Material(glm::vec3(0.72f, 0.74f, 0.78f), Material::MaterialType::METAL, 0.02f, 1.0f)},
       mLastChunkUpdatePosition{},
-      mPlayerSpawnPosition{}
+      mPlayerSpawnPosition{},
+      mRunnerPlayerPosition{}
 {
 }
 
@@ -52,7 +73,7 @@ World::~World()
 void World::init() noexcept
 {
     b2WorldDef worldDef = b2DefaultWorldDef();
-    worldDef.gravity = {0.0f, FORCE_DUE_TO_GRAVITY};
+    worldDef.gravity = {0.0f, 0.0f};
 
     mWorldId = b2CreateWorld(&worldDef);
 
@@ -62,8 +83,10 @@ void World::init() noexcept
 
     mSpheres.reserve(TOTAL_SPHERES * 4);
     mSphereBodyIds.reserve(TOTAL_SPHERES * 4);
+    mRunnerCollisionEvents.reserve(32);
 
     mLastChunkUpdatePosition = glm::vec3(std::numeric_limits<float>::max());
+    mRunnerSpawnTimer = 0.0f;
 
     // Initialize modern worker pool
     initWorkerPool();
@@ -216,59 +239,8 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord &coord) const no
         // Parse maze cells - now returns spawn position in work item
         result.cells = parseMazeCells(mazeStr, coord, result.spawnPosition, result.hasSpawnPosition);
 
-        // Generate spheres (without physics bodies)
-        std::mt19937 generator(coord.x * 73856093 ^ coord.z * 19349663);
-
-        auto getRandomFloat = [&generator](float low, float high) -> float
-        {
-            std::uniform_real_distribution<float> distribution(low, high);
-            return distribution(generator);
-        };
-
-        for (const auto &cell : result.cells)
-        {
-            // Use SPHERE_SPAWN_RATE constant (1%)
-            if (getRandomFloat(0.0f, 1.0f) > SPHERE_SPAWN_RATE)
-            {
-                continue;
-            }
-
-            MaterialType matType = getMaterialForDistance(cell.distance);
-
-            float density, fuzz = 0.0f, refractIdx = 1.5f;
-            glm::vec3 albedo;
-
-            if (matType == MaterialType::METAL)
-            {
-                density = 2.5f;
-                albedo = glm::vec3(
-                    getRandomFloat(0.6f, 1.0f),
-                    getRandomFloat(0.6f, 1.0f),
-                    getRandomFloat(0.6f, 1.0f));
-                fuzz = getRandomFloat(0.0f, 0.3f);
-            }
-            else if (matType == MaterialType::DIELECTRIC)
-            {
-                density = 0.8f;
-                albedo = glm::vec3(1.0f);
-                refractIdx = 1.5f;
-            }
-            else
-            {
-                density = 1.0f;
-                albedo = glm::vec3(
-                    getRandomFloat(0.2f, 0.8f),
-                    getRandomFloat(0.2f, 0.8f),
-                    getRandomFloat(0.2f, 0.8f));
-            }
-
-            float ypos = 5.0f + (cell.distance % 10) * 2.0f;
-            float radius = getRandomFloat(2.0f, 5.0f);
-
-            glm::vec3 center(cell.worldX, ypos, cell.worldZ);
-
-            result.spheres.emplace_back(center, radius, albedo, matType, fuzz, refractIdx);
-        }
+        // Runner mode now owns sphere spawning and movement directly in Box2D.
+        // Chunk generation still provides maze cells/spawn metadata, but no static chunk spheres.
     }
     catch (const std::exception &e)
     {
@@ -328,6 +300,8 @@ void World::processCompletedChunks() noexcept
                         {
                             b2ShapeDef shapeDef = b2DefaultShapeDef();
                             shapeDef.density = sphere.getMaterialType() == MaterialType::METAL ? 2.5f : (sphere.getMaterialType() == MaterialType::DIELECTRIC ? 0.8f : 1.0f);
+                            shapeDef.enableContactEvents = true;
+                            shapeDef.enableHitEvents = true;
 
                             b2Circle circle = {{0.0f, 0.0f}, sphere.getRadius()};
                             b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
@@ -342,6 +316,9 @@ void World::processCompletedChunks() noexcept
                             filter.categoryBits = 0x0004;
                             filter.maskBits = 0xFFFF;
                             b2Shape_SetFilter(shapeId, filter);
+
+                            b2Body_SetUserData(bodyId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
+                            b2Shape_SetUserData(shapeId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
                         }
 
                         mSphereBodyIds.push_back(bodyId);
@@ -380,7 +357,17 @@ void World::update(float dt)
 
     if (b2World_IsValid(mWorldId))
     {
+        if (b2Body_IsValid(mRunnerPlayerBodyId))
+        {
+            b2Body_SetTransform(mRunnerPlayerBodyId, {mRunnerPlayerPosition.x, mRunnerPlayerPosition.z}, b2MakeRot(0.0f));
+            b2Body_SetLinearVelocity(mRunnerPlayerBodyId, {0.0f, 0.0f});
+            b2Body_SetAwake(mRunnerPlayerBodyId, true);
+        }
+
+        updateRunnerSpheres(dt);
         b2World_Step(mWorldId, dt, 4);
+        processRunnerContactEvents();
+        pruneRunnerSpheres();
 
         // Sync physics body positions to 3D sphere positions for path tracer
         syncPhysicsToSpheres();
@@ -476,14 +463,18 @@ void World::destroyWorld()
     mSpheres.clear();
     mChunkSphereIndices.clear();
     mLoadedChunks.clear();
+    mRunnerCollisionEvents.clear();
+    mRunnerBoundsBodyId = b2_nullBodyId;
+    mRunnerPlayerBodyId = b2_nullBodyId;
+    mRunnerBoundNegZShapeId = b2_nullShapeId;
+    mRunnerBoundPosZShapeId = b2_nullShapeId;
 }
 
 void World::initPathTracerScene() noexcept
 {
-    using MaterialType = Material::MaterialType;
-
     mSpheres.clear();
     mSphereBodyIds.clear();
+    mRunnerCollisionEvents.clear();
     mLoadedChunks.clear();
     mChunkSphereIndices.clear();
 
@@ -493,95 +484,24 @@ void World::initPathTracerScene() noexcept
         return;
     }
 
-    // Center glass sphere - dynamic physics body (hero sphere, always present)
-    mSpheres.emplace_back(
-        glm::vec3(0.0f, 1.0f, 0.0f),
-        1.0f,
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        MaterialType::DIELECTRIC,
-        0.0f,
-        1.5f);
+    createRunnerBounds();
 
-    {
-        b2BodyDef bodyDef = b2DefaultBodyDef();
-        bodyDef.type = b2_dynamicBody;
-        bodyDef.position = {0.0f, 1.0f};
-        bodyDef.linearDamping = 0.1f;
-        bodyDef.angularDamping = 0.3f;
+    b2BodyDef playerBodyDef = b2DefaultBodyDef();
+    playerBodyDef.type = b2_kinematicBody;
+    playerBodyDef.position = {mRunnerPlayerPosition.x, mRunnerPlayerPosition.z};
+    playerBodyDef.fixedRotation = true;
+    mRunnerPlayerBodyId = b2CreateBody(mWorldId, &playerBodyDef);
 
-        b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
+    b2ShapeDef playerShapeDef = b2DefaultShapeDef();
+    playerShapeDef.density = 1.0f;
+    playerShapeDef.enableContactEvents = true;
 
-        b2ShapeDef shapeDef = b2DefaultShapeDef();
-        shapeDef.density = 0.8f;
-
-        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
-        b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
-        b2Shape_SetFriction(shapeId, 0.3f);
-        b2Shape_SetRestitution(shapeId, 0.4f);
-        b2Body_SetAwake(bodyId, true);
-
-        mSphereBodyIds.push_back(bodyId);
-    }
-
-    // Left diffuse sphere (hero sphere, always present)
-    mSpheres.emplace_back(
-        glm::vec3(-4.0f, 1.0f, 0.0f),
-        1.0f,
-        glm::vec3(0.4f, 0.2f, 0.1f),
-        MaterialType::LAMBERTIAN,
-        0.0f,
-        0.0f);
-
-    {
-        b2BodyDef bodyDef = b2DefaultBodyDef();
-        bodyDef.type = b2_dynamicBody;
-        bodyDef.position = {-4.0f, 1.0f};
-        bodyDef.linearDamping = 0.2f;
-        bodyDef.angularDamping = 0.3f;
-
-        b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
-
-        b2ShapeDef shapeDef = b2DefaultShapeDef();
-        shapeDef.density = 1.0f;
-
-        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
-        b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
-        b2Shape_SetFriction(shapeId, 0.5f);
-        b2Shape_SetRestitution(shapeId, 0.3f);
-        b2Body_SetAwake(bodyId, true);
-
-        mSphereBodyIds.push_back(bodyId);
-    }
-
-    // Right metal sphere (hero sphere, always present)
-    mSpheres.emplace_back(
-        glm::vec3(4.0f, 1.0f, 0.0f),
-        1.0f,
-        glm::vec3(0.7f, 0.6f, 0.5f),
-        MaterialType::METAL,
-        0.0f,
-        0.0f);
-
-    {
-        b2BodyDef bodyDef = b2DefaultBodyDef();
-        bodyDef.type = b2_dynamicBody;
-        bodyDef.position = {4.0f, 1.0f};
-        bodyDef.linearDamping = 0.1f;
-        bodyDef.angularDamping = 0.3f;
-
-        b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
-
-        b2ShapeDef shapeDef = b2DefaultShapeDef();
-        shapeDef.density = 2.5f;
-
-        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
-        b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
-        b2Shape_SetFriction(shapeId, 0.2f);
-        b2Shape_SetRestitution(shapeId, 0.5f);
-        b2Body_SetAwake(bodyId, true);
-
-        mSphereBodyIds.push_back(bodyId);
-    }
+    b2Circle playerCircle = {{0.0f, 0.0f}, RUNNER_PLAYER_RADIUS};
+    b2ShapeId playerShapeId = b2CreateCircleShape(mRunnerPlayerBodyId, &playerShapeDef, &playerCircle);
+    b2Shape_SetFriction(playerShapeId, 0.0f);
+    b2Shape_SetRestitution(playerShapeId, 0.0f);
+    b2Shape_SetUserData(playerShapeId, reinterpret_cast<void *>(kBodyTagRunnerPlayer));
+    b2Body_SetUserData(mRunnerPlayerBodyId, reinterpret_cast<void *>(kBodyTagRunnerPlayer));
 }
 
 void World::syncPhysicsToSpheres() noexcept
@@ -603,6 +523,281 @@ void World::syncPhysicsToSpheres() noexcept
             newCenter.z = pos.y;
             mSpheres[i].setCenter(newCenter);
         }
+    }
+}
+
+void World::setRunnerPlayerPosition(const glm::vec3 &playerPosition) noexcept
+{
+    mRunnerPlayerPosition = playerPosition;
+}
+
+void World::setRunnerTuning(float strafeLimit, float spawnAheadDistance, float sphereSpeed) noexcept
+{
+    mRunnerStrafeLimit = std::max(4.0f, strafeLimit);
+    mRunnerSpawnAheadDistance = std::max(30.0f, spawnAheadDistance);
+    mRunnerSphereSpeed = std::max(8.0f, sphereSpeed);
+
+    createRunnerBounds();
+}
+
+std::vector<World::RunnerCollisionEvent> World::consumeRunnerCollisionEvents() noexcept
+{
+    std::vector<RunnerCollisionEvent> events;
+    events.swap(mRunnerCollisionEvents);
+    return events;
+}
+
+void World::createRunnerBounds() noexcept
+{
+    if (!b2World_IsValid(mWorldId))
+    {
+        return;
+    }
+
+    if (!b2Body_IsValid(mRunnerBoundsBodyId))
+    {
+        b2BodyDef boundsBodyDef = b2DefaultBodyDef();
+        boundsBodyDef.type = b2_staticBody;
+        boundsBodyDef.position = {0.0f, 0.0f};
+        mRunnerBoundsBodyId = b2CreateBody(mWorldId, &boundsBodyDef);
+        b2Body_SetUserData(mRunnerBoundsBodyId, reinterpret_cast<void *>(kBodyTagRunnerBounds));
+    }
+
+    if (!b2Body_IsValid(mRunnerBoundsBodyId))
+    {
+        return;
+    }
+
+    if (b2Shape_IsValid(mRunnerBoundNegZShapeId))
+    {
+        b2DestroyShape(mRunnerBoundNegZShapeId, false);
+        mRunnerBoundNegZShapeId = b2_nullShapeId;
+    }
+    if (b2Shape_IsValid(mRunnerBoundPosZShapeId))
+    {
+        b2DestroyShape(mRunnerBoundPosZShapeId, false);
+        mRunnerBoundPosZShapeId = b2_nullShapeId;
+    }
+
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 0.0f;
+
+    b2Segment negZ = {{-RUNNER_BOUNDS_HALF_WIDTH, -mRunnerStrafeLimit}, {RUNNER_BOUNDS_HALF_WIDTH, -mRunnerStrafeLimit}};
+    b2Segment posZ = {{-RUNNER_BOUNDS_HALF_WIDTH, mRunnerStrafeLimit}, {RUNNER_BOUNDS_HALF_WIDTH, mRunnerStrafeLimit}};
+
+    mRunnerBoundNegZShapeId = b2CreateSegmentShape(mRunnerBoundsBodyId, &shapeDef, &negZ);
+    mRunnerBoundPosZShapeId = b2CreateSegmentShape(mRunnerBoundsBodyId, &shapeDef, &posZ);
+    b2Shape_SetFriction(mRunnerBoundNegZShapeId, 0.9f);
+    b2Shape_SetRestitution(mRunnerBoundNegZShapeId, 0.2f);
+    b2Shape_SetFriction(mRunnerBoundPosZShapeId, 0.9f);
+    b2Shape_SetRestitution(mRunnerBoundPosZShapeId, 0.2f);
+}
+
+void World::updateRunnerSpheres(float dt) noexcept
+{
+    if (dt <= 0.0f)
+    {
+        return;
+    }
+
+    mRunnerSpawnTimer += dt;
+    while (mRunnerSpawnTimer >= RUNNER_SPAWN_INTERVAL_SECONDS)
+    {
+        mRunnerSpawnTimer -= RUNNER_SPAWN_INTERVAL_SECONDS;
+        spawnRunnerSphere();
+    }
+}
+
+void World::spawnRunnerSphere() noexcept
+{
+    using MaterialType = Material::MaterialType;
+
+    if (!b2World_IsValid(mWorldId))
+    {
+        return;
+    }
+
+    const float zLimit = std::max(1.0f, mRunnerStrafeLimit - RUNNER_SPAWN_Z_MARGIN);
+    const float spawnZ = randomFloat(-zLimit, zLimit);
+    const float spawnX = mRunnerPlayerPosition.x + mRunnerSpawnAheadDistance + randomFloat(-6.0f, 6.0f);
+    const float radius = randomFloat(0.9f, 2.2f);
+
+    const float materialPick = randomFloat(0.0f, 1.0f);
+    MaterialType matType = MaterialType::LAMBERTIAN;
+    glm::vec3 albedo = glm::vec3(0.55f, 0.55f, 0.55f);
+    float fuzz = 0.0f;
+    float refractIdx = 1.5f;
+    float density = 1.0f;
+
+    if (materialPick < 0.25f)
+    {
+        matType = MaterialType::METAL;
+        albedo = glm::vec3(0.8f, 0.78f, 0.72f);
+        fuzz = 0.08f;
+        density = 2.2f;
+    }
+    else if (materialPick > 0.78f)
+    {
+        matType = MaterialType::DIELECTRIC;
+        albedo = glm::vec3(1.0f);
+        density = 0.9f;
+    }
+
+    glm::vec3 center(spawnX, radius, spawnZ);
+    mSpheres.emplace_back(center, radius, albedo, matType, fuzz, refractIdx);
+
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_dynamicBody;
+    bodyDef.position = {center.x, center.z};
+    bodyDef.linearDamping = 0.05f;
+    bodyDef.angularDamping = 0.12f;
+    bodyDef.fixedRotation = false;
+
+    b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
+    if (!b2Body_IsValid(bodyId))
+    {
+        mSpheres.pop_back();
+        return;
+    }
+
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = density;
+    shapeDef.enableContactEvents = true;
+    shapeDef.enableHitEvents = true;
+
+    b2Circle circle = {{0.0f, 0.0f}, radius};
+    b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
+    b2Shape_SetFriction(shapeId, 0.6f);
+    b2Shape_SetRestitution(shapeId, matType == MaterialType::DIELECTRIC ? 0.45f : 0.18f);
+
+    const size_t sphereIndex = mSpheres.size() - 1;
+    b2Body_SetUserData(bodyId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
+    b2Shape_SetUserData(shapeId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
+
+    glm::vec2 towardPlayer = glm::vec2(mRunnerPlayerPosition.x - center.x, mRunnerPlayerPosition.z - center.z);
+    if (glm::length(towardPlayer) < 0.001f)
+    {
+        towardPlayer = glm::vec2(-1.0f, 0.0f);
+    }
+    else
+    {
+        towardPlayer = glm::normalize(towardPlayer);
+    }
+
+    const float speed = mRunnerSphereSpeed + randomFloat(-5.0f, 7.0f);
+    b2Body_SetLinearVelocity(bodyId, {towardPlayer.x * speed, towardPlayer.y * speed});
+    b2Body_SetAwake(bodyId, true);
+
+    mSphereBodyIds.push_back(bodyId);
+}
+
+void World::processRunnerContactEvents() noexcept
+{
+    if (!b2World_IsValid(mWorldId))
+    {
+        return;
+    }
+
+    const b2ContactEvents contactEvents = b2World_GetContactEvents(mWorldId);
+
+    auto isPlayerBody = [](std::uintptr_t tag) noexcept
+    {
+        return tag == kBodyTagRunnerPlayer;
+    };
+
+    auto sphereIndexFromTag = [](std::uintptr_t tag) noexcept -> size_t
+    {
+        return static_cast<size_t>(tag - kBodyTagSphereBase);
+    };
+
+    for (int i = 0; i < contactEvents.beginCount; ++i)
+    {
+        const b2ContactBeginTouchEvent &event = contactEvents.beginEvents[i];
+
+        if (!b2Shape_IsValid(event.shapeIdA) || !b2Shape_IsValid(event.shapeIdB))
+        {
+            continue;
+        }
+
+        const b2BodyId bodyA = b2Shape_GetBody(event.shapeIdA);
+        const b2BodyId bodyB = b2Shape_GetBody(event.shapeIdB);
+        const std::uintptr_t tagA = reinterpret_cast<std::uintptr_t>(b2Body_GetUserData(bodyA));
+        const std::uintptr_t tagB = reinterpret_cast<std::uintptr_t>(b2Body_GetUserData(bodyB));
+
+        bool playerA = isPlayerBody(tagA);
+        bool playerB = isPlayerBody(tagB);
+        if (playerA == playerB)
+        {
+            continue;
+        }
+
+        const std::uintptr_t sphereTag = playerA ? tagB : tagA;
+        if (sphereTag < kBodyTagSphereBase)
+        {
+            continue;
+        }
+
+        const size_t sphereIndex = sphereIndexFromTag(sphereTag);
+        if (sphereIndex >= mSpheres.size())
+        {
+            continue;
+        }
+
+        RunnerCollisionEvent runnerEvent;
+        runnerEvent.materialType = mSpheres[sphereIndex].getMaterialType();
+        runnerEvent.impactSpeed = event.manifold.pointCount > 0 ? event.manifold.points[0].normalVelocity : 0.0f;
+        mRunnerCollisionEvents.push_back(runnerEvent);
+    }
+}
+
+void World::pruneRunnerSpheres() noexcept
+{
+    size_t idx = RUNNER_PERSISTENT_SPHERES;
+    while (idx < mSpheres.size() && idx < mSphereBodyIds.size())
+    {
+        b2BodyId bodyId = mSphereBodyIds[idx];
+        if (!b2Body_IsValid(bodyId))
+        {
+            const size_t lastIdx = mSpheres.size() - 1;
+            if (idx != lastIdx)
+            {
+                mSpheres[idx] = mSpheres[lastIdx];
+                mSphereBodyIds[idx] = mSphereBodyIds[lastIdx];
+                if (b2Body_IsValid(mSphereBodyIds[idx]))
+                {
+                    b2Body_SetUserData(mSphereBodyIds[idx], reinterpret_cast<void *>(kBodyTagSphereBase + idx));
+                }
+            }
+            mSpheres.pop_back();
+            mSphereBodyIds.pop_back();
+            continue;
+        }
+
+        const b2Vec2 pos = b2Body_GetPosition(bodyId);
+        const bool behindPlayer = pos.x < (mRunnerPlayerPosition.x - RUNNER_DESPAWN_BEHIND_DISTANCE);
+        const bool outsideZBounds = std::fabs(pos.y) > (mRunnerStrafeLimit + 12.0f);
+
+        if (behindPlayer || outsideZBounds)
+        {
+            b2DestroyBody(bodyId);
+
+            const size_t lastIdx = mSpheres.size() - 1;
+            if (idx != lastIdx)
+            {
+                mSpheres[idx] = mSpheres[lastIdx];
+                mSphereBodyIds[idx] = mSphereBodyIds[lastIdx];
+                if (b2Body_IsValid(mSphereBodyIds[idx]))
+                {
+                    b2Body_SetUserData(mSphereBodyIds[idx], reinterpret_cast<void *>(kBodyTagSphereBase + idx));
+                }
+            }
+
+            mSpheres.pop_back();
+            mSphereBodyIds.pop_back();
+            continue;
+        }
+
+        ++idx;
     }
 }
 
@@ -732,6 +927,11 @@ void World::unloadChunk(const ChunkCoord &coord) noexcept
 
             mSpheres[idx] = mSpheres[lastIdx];
             mSphereBodyIds[idx] = mSphereBodyIds[lastIdx];
+
+            if (b2Body_IsValid(mSphereBodyIds[idx]))
+            {
+                b2Body_SetUserData(mSphereBodyIds[idx], reinterpret_cast<void *>(kBodyTagSphereBase + idx));
+            }
         }
 
         // Remove last element

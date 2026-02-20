@@ -156,6 +156,11 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
 
     // Update animation state
     updateAnimationState();
+
+    if (mCollisionAnimTimer > 0.0f)
+    {
+        mCollisionAnimTimer = std::max(0.0f, mCollisionAnimTimer - dt);
+    }
 }
 
 bool Player::isRealtimeAction(Action action)
@@ -500,8 +505,21 @@ void Player::setPosition(const glm::vec3 &position) noexcept
     mAnimator.setPosition(mPosition);
 }
 
+void Player::triggerCollisionAnimation(bool positiveCollision) noexcept
+{
+    mCollisionAnimState = positiveCollision ? CharacterAnimState::ATTACK : CharacterAnimState::DEATH;
+    mCollisionAnimTimer = positiveCollision ? 0.22f : 0.32f;
+    mAnimator.setState(mCollisionAnimState, true);
+}
+
 void Player::updateAnimationState()
 {
+    if (mCollisionAnimTimer > 0.0f)
+    {
+        mAnimator.setState(mCollisionAnimState);
+        return;
+    }
+
     CharacterAnimState newState = CharacterAnimState::IDLE;
 
     if (!mIsOnGround)

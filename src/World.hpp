@@ -35,6 +35,12 @@ class World final
     friend class Player;
 
 public:
+    struct RunnerCollisionEvent
+    {
+        Material::MaterialType materialType{Material::MaterialType::LAMBERTIAN};
+        float impactSpeed{0.0f};
+    };
+
     explicit World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders);
     ~World(); // Defined in .cpp to avoid incomplete type issues
 
@@ -47,6 +53,9 @@ public:
     const std::vector<Sphere> &getSpheres() const noexcept { return mSpheres; }
     std::vector<Sphere> &getSpheres() noexcept { return mSpheres; }
     const Plane &getGroundPlane() const noexcept { return mGroundPlane; }
+    void setRunnerPlayerPosition(const glm::vec3 &playerPosition) noexcept;
+    void setRunnerTuning(float strafeLimit, float spawnAheadDistance, float sphereSpeed) noexcept;
+    std::vector<RunnerCollisionEvent> consumeRunnerCollisionEvents() noexcept;
 
     void updateSphereChunks(const glm::vec3 &cameraPosition) noexcept;
     glm::vec3 getMazeSpawnPosition() const noexcept { return mPlayerSpawnPosition; }
@@ -74,6 +83,11 @@ public:
 private:
     void initPathTracerScene() noexcept;
     void syncPhysicsToSpheres() noexcept;
+    void createRunnerBounds() noexcept;
+    void updateRunnerSpheres(float dt) noexcept;
+    void spawnRunnerSphere() noexcept;
+    void processRunnerContactEvents() noexcept;
+    void pruneRunnerSpheres() noexcept;
 
     struct ChunkCoord
     {
@@ -135,12 +149,17 @@ private:
 
     b2WorldId mWorldId;
     b2BodyId mMazeWallsBodyId;
+    b2BodyId mRunnerBoundsBodyId;
+    b2BodyId mRunnerPlayerBodyId;
+    b2ShapeId mRunnerBoundNegZShapeId;
+    b2ShapeId mRunnerBoundPosZShapeId;
 
     bool mIsPanning;
     SDL_FPoint mLastMousePosition;
 
     std::vector<Sphere> mSpheres;
     std::vector<b2BodyId> mSphereBodyIds;
+    std::vector<RunnerCollisionEvent> mRunnerCollisionEvents;
     Plane mGroundPlane;
 
     // Modern C++ worker pool
@@ -172,8 +191,19 @@ private:
 
     glm::vec3 mLastChunkUpdatePosition;
     glm::vec3 mPlayerSpawnPosition;
+    glm::vec3 mRunnerPlayerPosition;
+    float mRunnerSpawnTimer{0.0f};
+    float mRunnerStrafeLimit{35.0f};
+    float mRunnerSpawnAheadDistance{140.0f};
+    float mRunnerSphereSpeed{40.0f};
 
     static constexpr int TOTAL_SPHERES = 200;
+    static constexpr size_t RUNNER_PERSISTENT_SPHERES = 0;
+    static constexpr float RUNNER_SPAWN_INTERVAL_SECONDS = 0.22f;
+    static constexpr float RUNNER_DESPAWN_BEHIND_DISTANCE = 45.0f;
+    static constexpr float RUNNER_SPAWN_Z_MARGIN = 2.0f;
+    static constexpr float RUNNER_BOUNDS_HALF_WIDTH = 9000.0f;
+    static constexpr float RUNNER_PLAYER_RADIUS = 1.0f;
 
     // Character sprite sheet dimensions (for animation rendering)
     static constexpr int CHARACTER_TILE_SIZE = 128;

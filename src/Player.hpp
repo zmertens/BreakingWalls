@@ -86,6 +86,9 @@ public:
     /// Check if player is moving
     [[nodiscard]] bool isMoving() const noexcept { return mIsMoving; }
 
+    /// Trigger transient animation override from runner collision events
+    void triggerCollisionAnimation(bool positiveCollision) noexcept;
+
 private:
     void initializeActions();
     static bool isRealtimeAction(Action action);
@@ -110,6 +113,8 @@ private:
     bool mMovingLeft{false};
     bool mMovingRight{false};
     bool mIsJumping{false};
+    float mCollisionAnimTimer{0.0f};
+    CharacterAnimState mCollisionAnimState{CharacterAnimState::IDLE};
 
     // Vertical locomotion
     float mVerticalVelocity{0.0f};
