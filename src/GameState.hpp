@@ -9,7 +9,9 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>
+#include <random>
 #include <memory>
+#include <vector>
 
 class MusicPlayer;
 class Shader;
@@ -54,6 +56,13 @@ public:
     }
 
 private:
+    struct RunnerPointEvent
+    {
+        glm::vec3 position{};
+        int value{0};
+        bool consumed{false};
+    };
+
     World mWorld;    // Manages both 2D physics and 3D sphere scene
     Player &mPlayer; // Restored for camera input handling
 
@@ -97,6 +106,29 @@ private:
     static constexpr std::size_t kTargetRenderPixels = 1600ull * 900ull;
     static constexpr float kMinRenderScale = 0.60f;
 
+    // Single-player endless runner arcade state
+    bool mArcadeModeEnabled{true};
+    int mPlayerPoints{0};
+    float mRunnerDistance{0.0f};
+    float mRunnerSpeed{30.0f};
+    float mRunnerStrafeLimit{35.0f};
+    float mRunnerPlayerRadius{1.0f};
+    float mRunnerCollisionCooldown{0.40f};
+    float mRunnerCollisionTimer{0.0f};
+    float mRunnerPickupSpacing{18.0f};
+    float mRunnerNextPickupZ{0.0f};
+    float mRunnerPickupSpawnAhead{120.0f};
+    float mRunnerPickupCaptureRadius{3.2f};
+    int mRunnerPickupMinValue{-25};
+    int mRunnerPickupMaxValue{40};
+    int mRunnerObstaclePenalty{25};
+    int mRunnerStartingPoints{100};
+    bool mRunLost{false};
+    mutable int mLastAnnouncedPoints{0};
+    mutable float mHudUpdateTimer{0.0f};
+    std::vector<RunnerPointEvent> mRunnerPointEvents;
+    std::mt19937 mRunnerRng{1337u};
+
     /// Initialize GPU graphics resources for compute shader rendering
     void initializeGraphicsResources() noexcept;
 
@@ -117,6 +149,24 @@ private:
 
     /// Update listener position and remove stopped sounds
     void updateSounds() noexcept;
+
+    /// Pull latest runner settings from OptionsManager
+    void syncRunnerSettingsFromOptions() noexcept;
+
+    /// Advance endless-runner gameplay and points
+    void updateRunnerGameplay(float dt) noexcept;
+
+    /// Spawn point events in front of the player
+    void spawnPointEvents() noexcept;
+
+    /// Resolve point pickups and obstacle penalties
+    void processRunnerCollisions(float dt) noexcept;
+
+    /// Reset the active run after point loss
+    void resetRunnerRun() noexcept;
+
+    /// Draw lightweight arcade HUD
+    void drawRunnerHud() const noexcept;
 
     /// Clean up OpenGL resources
     void cleanupResources() noexcept;

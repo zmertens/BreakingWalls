@@ -2,15 +2,19 @@
 
 #include <SDL3/SDL.h>
 
+#include <dearimgui/imgui.h>
+
 #include <cmath>
 #include <random>
 #include <vector>
+#include <algorithm>
 
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 
 #include "GLSDLHelper.hpp"
 #include "MusicPlayer.hpp"
+#include "Options.hpp"
 #include "Player.hpp"
 #include "ResourceManager.hpp"
 #include "Shader.hpp"
@@ -21,6 +25,13 @@
 
 namespace
 {
+    constexpr float kRunnerLockedSunYawDeg = 90.0f; // +Z heading
+
+    glm::vec3 computeSunDirection(float timeSeconds) noexcept
+    {
+        return glm::normalize(glm::vec3(0.0f, -0.125f + 0.05f * std::sin(0.1f * timeSeconds), 1.0f));
+    }
+
     std::pair<int, int> computeRenderResolution(int windowWidth, int windowHeight, std::size_t targetPixels, float minScale) noexcept
     {
         if (windowWidth <= 0 || windowHeight <= 0)
@@ -128,6 +139,14 @@ GameState::GameState(StateStack &stack, Context context)
     // Set initial player position
     mPlayer.setPosition(spawnPos);
 
+    // Default to third-person for arcade runner readability
+    mCamera.setMode(CameraMode::THIRD_PERSON);
+    mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
+    mCamera.setFollowTarget(spawnPos);
+    mCamera.setThirdPersonDistance(15.0f);
+    mCamera.setThirdPersonHeight(8.0f);
+    mCamera.updateThirdPersonPosition();
+
     log("GameState: Camera spawned at:\t" +
         std::to_string(spawnPos.x) + ", " +
         std::to_string(spawnPos.y) + ", " +
@@ -137,6 +156,10 @@ GameState::GameState(StateStack &stack, Context context)
     mLastCameraPosition = mCamera.getPosition();
     mLastCameraYaw = mCamera.getYaw();
     mLastCameraPitch = mCamera.getPitch();
+
+    mRunnerRng.seed(static_cast<unsigned int>(std::abs(spawnPos.x) + std::abs(spawnPos.z) + 1337.0f));
+    syncRunnerSettingsFromOptions();
+    resetRunnerRun();
 
     // Initialize GPU graphics pipeline following Compute.cpp approach
     if (mShadersInitialized)
@@ -173,6 +196,8 @@ void GameState::draw() const noexcept
 
     // REMOVED: mWorld.draw() - World no longer handles rendering
     // All rendering is now done via compute shaders above
+
+    drawRunnerHud();
 }
 
 void GameState::initializeGraphicsResources() noexcept
@@ -352,18 +377,15 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uGroundPlaneFuzz", groundMaterial.getFuzz());
         mComputeShader->setUniform("uGroundPlaneRefractiveIndex", groundMaterial.getRefractiveIndex());
 
-        mComputeShader->setUniform("uTime", static_cast<GLfloat>(SDL_GetTicks()) / 1000.0f);
+        const float timeSeconds = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+        mComputeShader->setUniform("uTime", static_cast<GLfloat>(timeSeconds));
         mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(NOISE_TEXTURE_UNIT));
         
         // Shadow casting uniforms
         mComputeShader->setUniform("uPlayerPos", mPlayer.getPosition());
         mComputeShader->setUniform("uPlayerRadius", 1.0f);  // Player shadow radius
         
-        // Headlamp light direction - follows camera direction slightly downward
-        glm::vec3 cameraDir = glm::normalize(mCamera.getTarget() - mCamera.getPosition());
-        // Blend camera direction with a slight downward angle for headlamp effect
-        glm::vec3 headlampDir = glm::normalize(glm::mix(cameraDir, glm::vec3(0.0f, -1.0f, 0.0f), 0.3f));
-        mComputeShader->setUniform("uLightDir", headlampDir);
+        mComputeShader->setUniform("uLightDir", computeSunDirection(timeSeconds));
 
         // Bind both textures as images for compute shader
         glBindImageTexture(0, mAccumTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
@@ -452,14 +474,18 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     mWorld.update(dt);
 
+    syncRunnerSettingsFromOptions();
+
+    // Handle camera input through Player (A/D strafing remains useful in runner mode)
+    mPlayer.handleRealtimeInput(mCamera, dt);
+
+    updateRunnerGameplay(dt);
+
     // Update sphere chunks based on camera position for dynamic spawning
     mWorld.updateSphereChunks(mCamera.getPosition());
 
     // Update sounds: set listener position based on camera and remove stopped sounds
     updateSounds();
-
-    // Handle camera input through Player (using action bindings)
-    mPlayer.handleRealtimeInput(mCamera, dt);
 
     // Update player animation
     mPlayer.updateAnimation(dt);
@@ -507,6 +533,12 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept {
 
     if (event.type == SDL_EVENT_KEY_DOWN)
     {
+        if (event.key.scancode == SDL_SCANCODE_RETURN && mRunLost)
+        {
+            resetRunnerRun();
+            return true;
+        }
+
         if (event.key.scancode == SDL_SCANCODE_ESCAPE)
         {
             requestStackPush(States::ID::PAUSE);
@@ -544,7 +576,14 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept {
         if (mouseState & SDL_BUTTON_RMASK)
         {
             const float sensitivity = 0.35f;
-            mCamera.rotate(event.motion.xrel * sensitivity, -event.motion.yrel * sensitivity);
+            if (mArcadeModeEnabled && mCamera.getMode() == CameraMode::THIRD_PERSON)
+            {
+                mCamera.rotate(0.0f, -event.motion.yrel * sensitivity);
+            }
+            else
+            {
+                mCamera.rotate(event.motion.xrel * sensitivity, -event.motion.yrel * sensitivity);
+            }
         }
     }
 
@@ -578,4 +617,218 @@ void GameState::renderPlayerCharacter() const noexcept
 
     // Delegate to World for actual rendering
     mWorld.renderPlayerCharacter(mPlayer, mCamera);
+}
+
+void GameState::syncRunnerSettingsFromOptions() noexcept
+{
+    auto *optionsManager = getContext().options;
+    if (!optionsManager)
+    {
+        return;
+    }
+
+    try
+    {
+        const auto &opts = optionsManager->get(GUIOptions::ID::DE_FACTO);
+        mArcadeModeEnabled = opts.mArcadeModeEnabled;
+        mRunnerSpeed = std::max(5.0f, opts.mRunnerSpeed);
+        mRunnerStrafeLimit = std::max(5.0f, opts.mRunnerStrafeLimit);
+        mRunnerStartingPoints = std::max(1, opts.mRunnerStartingPoints);
+        mRunnerPickupMinValue = std::min(opts.mRunnerPickupMinValue, opts.mRunnerPickupMaxValue);
+        mRunnerPickupMaxValue = std::max(opts.mRunnerPickupMinValue, opts.mRunnerPickupMaxValue);
+        mRunnerPickupSpacing = std::max(4.0f, opts.mRunnerPickupSpacing);
+        mRunnerObstaclePenalty = std::max(1, opts.mRunnerObstaclePenalty);
+        mRunnerCollisionCooldown = std::max(0.05f, opts.mRunnerCollisionCooldown);
+    }
+    catch (const std::exception &)
+    {
+    }
+}
+
+void GameState::updateRunnerGameplay(float dt) noexcept
+{
+    if (!mArcadeModeEnabled || dt <= 0.0f)
+    {
+        return;
+    }
+
+    if (!mRunLost)
+    {
+        mRunnerDistance += mRunnerSpeed * dt;
+    }
+
+    glm::vec3 playerPos = mPlayer.getPosition();
+    playerPos.x = std::clamp(playerPos.x, -mRunnerStrafeLimit, mRunnerStrafeLimit);
+    playerPos.y = std::max(playerPos.y, 0.0f);
+    playerPos.z = mRunnerDistance;
+
+    mPlayer.setPosition(playerPos);
+    mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
+    mCamera.setFollowTarget(playerPos);
+    mCamera.updateThirdPersonPosition();
+
+    spawnPointEvents();
+    processRunnerCollisions(dt);
+}
+
+void GameState::spawnPointEvents() noexcept
+{
+    const float minX = -mRunnerStrafeLimit;
+    const float maxX = mRunnerStrafeLimit;
+
+    std::uniform_real_distribution<float> xDistribution(minX, maxX);
+    std::uniform_int_distribution<int> pointsDistribution(mRunnerPickupMinValue, mRunnerPickupMaxValue);
+
+    const float spawnLimit = mRunnerDistance + mRunnerPickupSpawnAhead;
+    while (mRunnerNextPickupZ <= spawnLimit)
+    {
+        RunnerPointEvent event;
+        event.position = glm::vec3(xDistribution(mRunnerRng), 1.0f, mRunnerNextPickupZ);
+        event.value = pointsDistribution(mRunnerRng);
+        event.consumed = false;
+        mRunnerPointEvents.push_back(event);
+        mRunnerNextPickupZ += mRunnerPickupSpacing;
+    }
+}
+
+void GameState::processRunnerCollisions(float dt) noexcept
+{
+    if (mRunnerCollisionTimer > 0.0f)
+    {
+        mRunnerCollisionTimer = std::max(0.0f, mRunnerCollisionTimer - dt);
+    }
+
+    const glm::vec3 playerPos = mPlayer.getPosition();
+
+    for (auto &event : mRunnerPointEvents)
+    {
+        if (event.consumed)
+        {
+            continue;
+        }
+
+        const glm::vec2 delta2D = glm::vec2(event.position.x - playerPos.x, event.position.z - playerPos.z);
+        const float captureDistanceSquared = mRunnerPickupCaptureRadius * mRunnerPickupCaptureRadius;
+        if (glm::dot(delta2D, delta2D) <= captureDistanceSquared)
+        {
+            mPlayerPoints += event.value;
+            event.consumed = true;
+        }
+    }
+
+    mRunnerPointEvents.erase(
+        std::remove_if(
+            mRunnerPointEvents.begin(),
+            mRunnerPointEvents.end(),
+            [this](const RunnerPointEvent &event)
+            {
+                return event.consumed || (event.position.z < mRunnerDistance - mRunnerPickupSpacing);
+            }),
+        mRunnerPointEvents.end());
+
+    if (mRunnerCollisionTimer <= 0.0f)
+    {
+        const auto &spheres = mWorld.getSpheres();
+        bool hitObstacle = false;
+
+        for (const auto &sphere : spheres)
+        {
+            const glm::vec3 center = sphere.getCenter();
+            const glm::vec2 delta2D = glm::vec2(center.x - playerPos.x, center.z - playerPos.z);
+            const float combinedRadius = sphere.getRadius() + mRunnerPlayerRadius;
+            if (glm::dot(delta2D, delta2D) <= combinedRadius * combinedRadius)
+            {
+                hitObstacle = true;
+                break;
+            }
+        }
+
+        if (hitObstacle)
+        {
+            mPlayerPoints -= mRunnerObstaclePenalty;
+            mRunnerCollisionTimer = mRunnerCollisionCooldown;
+
+            if (auto *sounds = getContext().sounds)
+            {
+                sounds->play(SoundEffect::ID::THROW, sf::Vector2f{playerPos.x, playerPos.z});
+            }
+        }
+    }
+
+    if (mPlayerPoints < 0)
+    {
+        mRunLost = true;
+    }
+
+    if (mPlayerPoints != mLastAnnouncedPoints)
+    {
+        mLastAnnouncedPoints = mPlayerPoints;
+        mCurrentBatch = 0;
+    }
+}
+
+void GameState::resetRunnerRun() noexcept
+{
+    mPlayerPoints = mRunnerStartingPoints;
+    mRunnerDistance = 0.0f;
+    mRunnerCollisionTimer = 0.0f;
+    mRunnerPointEvents.clear();
+    mRunLost = false;
+
+    glm::vec3 current = mPlayer.getPosition();
+    current.x = 0.0f;
+    current.y = std::max(current.y, 0.0f);
+    current.z = 0.0f;
+
+    mRunnerNextPickupZ = current.z + mRunnerPickupSpacing;
+    mPlayer.setPosition(current);
+    mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
+    mCamera.setFollowTarget(current);
+    mCamera.updateThirdPersonPosition();
+
+    mLastAnnouncedPoints = mPlayerPoints;
+    mCurrentBatch = 0;
+}
+
+void GameState::drawRunnerHud() const noexcept
+{
+    if (!mArcadeModeEnabled)
+    {
+        return;
+    }
+
+    ImGui::SetNextWindowPos(ImVec2(16.0f, 16.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.42f);
+
+    constexpr ImGuiWindowFlags hudFlags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav;
+
+    if (ImGui::Begin("Arcade HUD", nullptr, hudFlags))
+    {
+        ImGui::Text("Points: %d", mPlayerPoints);
+        ImGui::Text("Distance: %.0f", mRunnerDistance);
+        ImGui::Text("Speed: %.1f", mRunnerSpeed);
+
+        int nearbyCount = 0;
+        for (const auto &event : mRunnerPointEvents)
+        {
+            if (!event.consumed && event.position.z >= mRunnerDistance)
+            {
+                ++nearbyCount;
+            }
+        }
+        ImGui::Text("Upcoming point events: %d", nearbyCount);
+
+        if (mRunLost)
+        {
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Points below zero!");
+            ImGui::Text("Press Enter to reset run");
+        }
+    }
+    ImGui::End();
 }

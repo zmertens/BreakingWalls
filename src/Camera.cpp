@@ -160,6 +160,30 @@ float Camera::getPitch() const
     return mPitch;
 }
 
+void Camera::setYawPitch(float yaw, float pitch, bool clampPitch, bool wrapYaw)
+{
+    mYaw = yaw;
+    mPitch = pitch;
+
+    if (clampPitch)
+    {
+        if (mPitch > scMaxPitchValue)
+            mPitch = scMaxPitchValue;
+        if (mPitch < -scMaxPitchValue)
+            mPitch = -scMaxPitchValue;
+    }
+
+    if (wrapYaw)
+    {
+        if (mYaw > scMaxYawValue)
+            mYaw = -scMaxYawValue;
+        if (mYaw < -scMaxYawValue)
+            mYaw = scMaxYawValue;
+    }
+
+    updateVectors();
+}
+
 void Camera::updateVectors()
 {
     static const glm::vec3 yAxis = glm::vec3(0.0f, 1.0f, 0.0f);

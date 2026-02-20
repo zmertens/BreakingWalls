@@ -23,6 +23,15 @@
 	"player_speed_default": 0.3451,
 	"enemy_hitpoints_default": 50,
 	"enemy_speed_default": 0.3451,
+	"arcade_mode_enabled": true,
+	"runner_speed": 30.0,
+	"runner_strafe_limit": 35.0,
+	"runner_starting_points": 100,
+	"runner_pickup_min_value": -25,
+	"runner_pickup_max_value": 40,
+	"runner_pickup_spacing": 18.0,
+	"runner_obstacle_penalty": 25,
+	"runner_collision_cooldown": 0.4,
 	"level_defaults": [
 		{
 			"rows": 20,

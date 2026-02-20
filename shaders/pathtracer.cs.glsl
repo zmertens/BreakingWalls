@@ -259,7 +259,7 @@ bool testPlaneShadow(in Ray shadowRay, float maxDist) {
 float calculateShadow(vec3 hitPoint, vec3 normal) {
     // Create shadow ray from hit point towards light
     vec3 shadowRayOrigin = hitPoint + normal * 0.01;  // Slightly offset to avoid self-intersection
-    Ray shadowRay = Ray(shadowRayOrigin, uLightDir);
+    Ray shadowRay = Ray(shadowRayOrigin, -uLightDir);
     
     // Check if hit point is a significant distance from player (to avoid shadowing player itself)
     float distToPlayer = length(hitPoint - uPlayerPos);

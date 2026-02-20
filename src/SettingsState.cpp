@@ -4,7 +4,12 @@
 
 #include <dearimgui/imgui.h>
 
+#include <algorithm>
+#include <cctype>
+#include <unordered_map>
+
 #include "Font.hpp"
+#include "JsonUtils.hpp"
 #include "MusicPlayer.hpp"
 #include "Options.hpp"
 #include "ResourceIdentifiers.hpp"
@@ -54,6 +59,15 @@ void SettingsState::draw() const noexcept
     static bool enableMusic = true;
     static bool enableSound = true;
     static bool showDebugOverlay = false;
+    static bool arcadeModeEnabled = true;
+    static float runnerSpeed = 30.0f;
+    static float runnerStrafeLimit = 35.0f;
+    static int runnerStartingPoints = 100;
+    static int runnerPickupMinValue = -25;
+    static int runnerPickupMaxValue = 40;
+    static float runnerPickupSpacing = 18.0f;
+    static int runnerObstaclePenalty = 25;
+    static float runnerCollisionCooldown = 0.40f;
 
     if (!initialized)
     {
@@ -70,10 +84,102 @@ void SettingsState::draw() const noexcept
             enableMusic = opts.mEnableMusic;
             enableSound = opts.mEnableSound;
             showDebugOverlay = opts.mShowDebugOverlay;
+            arcadeModeEnabled = opts.mArcadeModeEnabled;
+            runnerSpeed = opts.mRunnerSpeed;
+            runnerStrafeLimit = opts.mRunnerStrafeLimit;
+            runnerStartingPoints = opts.mRunnerStartingPoints;
+            runnerPickupMinValue = opts.mRunnerPickupMinValue;
+            runnerPickupMaxValue = opts.mRunnerPickupMaxValue;
+            runnerPickupSpacing = opts.mRunnerPickupSpacing;
+            runnerObstaclePenalty = opts.mRunnerObstaclePenalty;
+            runnerCollisionCooldown = opts.mRunnerCollisionCooldown;
         }
         catch (const std::exception &)
         {
             // Options not loaded yet, use defaults
+        }
+
+        // Try to load arcade defaults from JSON (physics.json)
+        try
+        {
+            std::unordered_map<std::string, std::string> resources;
+            JSONUtils::loadConfiguration("physics.json", resources);
+
+            const auto readStringValue = [&resources](const char *key) -> std::string
+            {
+                auto it = resources.find(key);
+                if (it == resources.end())
+                {
+                    return "";
+                }
+                return JSONUtils::extractJsonValue(it->second);
+            };
+
+            const auto readFloatValue = [&readStringValue](const char *key, float fallback) -> float
+            {
+                const std::string raw = readStringValue(key);
+                if (raw.empty())
+                {
+                    return fallback;
+                }
+
+                try
+                {
+                    return std::stof(raw);
+                }
+                catch (...)
+                {
+                    return fallback;
+                }
+            };
+
+            const auto readIntValue = [&readStringValue](const char *key, int fallback) -> int
+            {
+                const std::string raw = readStringValue(key);
+                if (raw.empty())
+                {
+                    return fallback;
+                }
+
+                try
+                {
+                    return std::stoi(raw);
+                }
+                catch (...)
+                {
+                    return fallback;
+                }
+            };
+
+            const auto readBoolValue = [&readStringValue](const char *key, bool fallback) -> bool
+            {
+                std::string raw = readStringValue(key);
+                std::transform(raw.begin(), raw.end(), raw.begin(), [](unsigned char c)
+                               { return static_cast<char>(std::tolower(c)); });
+                if (raw == "true" || raw == "1")
+                {
+                    return true;
+                }
+                if (raw == "false" || raw == "0")
+                {
+                    return false;
+                }
+                return fallback;
+            };
+
+            arcadeModeEnabled = readBoolValue("arcade_mode_enabled", arcadeModeEnabled);
+            runnerSpeed = readFloatValue("runner_speed", runnerSpeed);
+            runnerStrafeLimit = readFloatValue("runner_strafe_limit", runnerStrafeLimit);
+            runnerStartingPoints = readIntValue("runner_starting_points", runnerStartingPoints);
+            runnerPickupMinValue = readIntValue("runner_pickup_min_value", runnerPickupMinValue);
+            runnerPickupMaxValue = readIntValue("runner_pickup_max_value", runnerPickupMaxValue);
+            runnerPickupSpacing = readFloatValue("runner_pickup_spacing", runnerPickupSpacing);
+            runnerObstaclePenalty = readIntValue("runner_obstacle_penalty", runnerObstaclePenalty);
+            runnerCollisionCooldown = readFloatValue("runner_collision_cooldown", runnerCollisionCooldown);
+        }
+        catch (const std::exception &)
+        {
+            // JSON unavailable - keep current defaults
         }
         initialized = true;
     }
@@ -121,6 +227,29 @@ void SettingsState::draw() const noexcept
         ImGui::Separator();
         ImGui::Spacing();
 
+        // Arcade runner gameplay settings
+        ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "Arcade Runner Settings:");
+        ImGui::Spacing();
+
+        ImGui::Checkbox("Enable Arcade Runner", &arcadeModeEnabled);
+        ImGui::SliderFloat("Runner Speed", &runnerSpeed, 5.0f, 100.0f, "%.1f");
+        ImGui::SliderFloat("Strafe Limit", &runnerStrafeLimit, 5.0f, 100.0f, "%.1f");
+        ImGui::SliderInt("Starting Points", &runnerStartingPoints, 1, 500);
+        ImGui::SliderInt("Pickup Min Value", &runnerPickupMinValue, -100, 0);
+        ImGui::SliderInt("Pickup Max Value", &runnerPickupMaxValue, 1, 150);
+        ImGui::SliderFloat("Pickup Spacing", &runnerPickupSpacing, 4.0f, 50.0f, "%.1f");
+        ImGui::SliderInt("Obstacle Penalty", &runnerObstaclePenalty, 1, 200);
+        ImGui::SliderFloat("Collision Cooldown", &runnerCollisionCooldown, 0.05f, 2.0f, "%.2f s");
+
+        if (runnerPickupMinValue > runnerPickupMaxValue)
+        {
+            runnerPickupMinValue = runnerPickupMaxValue;
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
         // Action buttons
         if (ImGui::Button("Apply Settings", ImVec2(150, 40)))
         {
@@ -134,7 +263,16 @@ void SettingsState::draw() const noexcept
                 .mVsync = vsync,
                 .mMasterVolume = masterVolume,
                 .mMusicVolume = musicVolume,
-                .mSfxVolume = sfxVolume});
+                .mSfxVolume = sfxVolume,
+                .mArcadeModeEnabled = arcadeModeEnabled,
+                .mRunnerSpeed = runnerSpeed,
+                .mRunnerStrafeLimit = runnerStrafeLimit,
+                .mRunnerStartingPoints = runnerStartingPoints,
+                .mRunnerPickupMinValue = runnerPickupMinValue,
+                .mRunnerPickupMaxValue = runnerPickupMaxValue,
+                .mRunnerPickupSpacing = runnerPickupSpacing,
+                .mRunnerObstaclePenalty = runnerObstaclePenalty,
+                .mRunnerCollisionCooldown = runnerCollisionCooldown});
         }
 
         ImGui::SameLine();
@@ -151,6 +289,15 @@ void SettingsState::draw() const noexcept
             enableMusic = true;
             enableSound = true;
             showDebugOverlay = false;
+            arcadeModeEnabled = true;
+            runnerSpeed = 30.0f;
+            runnerStrafeLimit = 35.0f;
+            runnerStartingPoints = 100;
+            runnerPickupMinValue = -25;
+            runnerPickupMaxValue = 40;
+            runnerPickupSpacing = 18.0f;
+            runnerObstaclePenalty = 25;
+            runnerCollisionCooldown = 0.40f;
         }
 
         ImGui::SameLine();
@@ -233,6 +380,15 @@ void SettingsState::applySettings(const Options &options) const noexcept
             opts.mEnableMusic = options.mEnableMusic;
             opts.mEnableSound = options.mEnableSound;
             opts.mShowDebugOverlay = options.mShowDebugOverlay;
+            opts.mArcadeModeEnabled = options.mArcadeModeEnabled;
+            opts.mRunnerSpeed = options.mRunnerSpeed;
+            opts.mRunnerStrafeLimit = options.mRunnerStrafeLimit;
+            opts.mRunnerStartingPoints = options.mRunnerStartingPoints;
+            opts.mRunnerPickupMinValue = options.mRunnerPickupMinValue;
+            opts.mRunnerPickupMaxValue = options.mRunnerPickupMaxValue;
+            opts.mRunnerPickupSpacing = options.mRunnerPickupSpacing;
+            opts.mRunnerObstaclePenalty = options.mRunnerObstaclePenalty;
+            opts.mRunnerCollisionCooldown = options.mRunnerCollisionCooldown;
         }
         catch (const std::exception &)
         {

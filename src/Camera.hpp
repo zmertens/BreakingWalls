@@ -68,6 +68,9 @@ public:
     [[nodiscard]] float getYaw() const;
     [[nodiscard]] float getPitch() const;
 
+    /// Force camera yaw/pitch and refresh basis vectors
+    void setYawPitch(float yaw, float pitch, bool clampPitch = true, bool wrapYaw = true);
+
     // ========================================================================
     // Third-person camera support
     // ========================================================================
