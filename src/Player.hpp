@@ -27,6 +27,7 @@ public:
         MOVE_RIGHT,
         MOVE_UP,
         MOVE_DOWN,
+        JUMP,
         // Camera rotation actions
         ROTATE_LEFT,
         ROTATE_RIGHT,
@@ -76,6 +77,9 @@ public:
     /// Set player's 3D position
     void setPosition(const glm::vec3 &position) noexcept;
 
+    /// Trigger a jump if grounded
+    void jump() noexcept;
+
     /// Get player's facing direction (yaw in degrees)
     [[nodiscard]] float getFacingDirection() const noexcept { return mFacingDirection; }
 
@@ -105,6 +109,10 @@ private:
     bool mMovingBackward{false};
     bool mMovingLeft{false};
     bool mMovingRight{false};
+    bool mIsJumping{false};
+
+    // Vertical locomotion
+    float mVerticalVelocity{0.0f};
 };
 
 #endif // PLAYER_HPP

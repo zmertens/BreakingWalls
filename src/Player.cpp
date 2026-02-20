@@ -11,6 +11,8 @@
 namespace
 {
     constexpr float kGroundPlaneY = 0.0f;
+    constexpr float kPlayerGravity = 40.0f;
+    constexpr float kPlayerJumpVelocity = 14.0f;
 }
 
 Player::Player() : mIsActive(true), mIsOnGround(false)
@@ -22,6 +24,7 @@ Player::Player() : mIsActive(true), mIsOnGround(false)
     mKeyBinding[SDL_SCANCODE_D] = Action::MOVE_RIGHT;
     mKeyBinding[SDL_SCANCODE_Q] = Action::MOVE_UP;
     mKeyBinding[SDL_SCANCODE_E] = Action::MOVE_DOWN;
+    mKeyBinding[SDL_SCANCODE_SPACE] = Action::JUMP;
 
     // Camera rotation controls (Arrow keys)
     mKeyBinding[SDL_SCANCODE_LEFT] = Action::ROTATE_LEFT;
@@ -31,7 +34,6 @@ Player::Player() : mIsActive(true), mIsOnGround(false)
 
     // Special actions (discrete events)
     mKeyBinding[SDL_SCANCODE_R] = Action::RESET_CAMERA;
-    mKeyBinding[SDL_SCANCODE_SPACE] = Action::RESET_ACCUMULATION;
     mKeyBinding[SDL_SCANCODE_V] = Action::TOGGLE_PERSPECTIVE;
 
     initializeActions();
@@ -75,6 +77,7 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
     mMovingLeft = false;
     mMovingRight = false;
     mIsMoving = false;
+    mIsJumping = false;
 
     for (auto &pair : mKeyBinding)
     {
@@ -107,6 +110,10 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
                     mMovingRight = true;
                     mIsMoving = true;
                     break;
+                case Action::JUMP:
+                    mIsJumping = true;
+                    mIsMoving = true;
+                    break;
                 default:
                     break;
                 }
@@ -114,36 +121,34 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
         }
     }
 
-    // Keep player/camera above the infinite ground plane
-    if (camera.getMode() == CameraMode::THIRD_PERSON)
+    // Apply gravity and vertical motion
+    mVerticalVelocity -= kPlayerGravity * dt;
+    mPosition.y += mVerticalVelocity * dt;
+
+    if (mPosition.y <= kGroundPlaneY)
     {
-        float clampedY = std::max(mPosition.y, kGroundPlaneY);
-        if (clampedY != mPosition.y)
-        {
-            mPosition.y = clampedY;
-            mAnimator.setPosition(mPosition);
-            camera.setFollowTarget(mPosition);
-            camera.updateThirdPersonPosition();
-        }
+        mPosition.y = kGroundPlaneY;
+        mVerticalVelocity = 0.0f;
+        mIsOnGround = true;
     }
     else
     {
-        glm::vec3 cameraPos = camera.getPosition();
-        float clampedY = std::max(cameraPos.y, kGroundPlaneY);
-        if (clampedY != cameraPos.y)
-        {
-            cameraPos.y = clampedY;
-            camera.setPosition(cameraPos);
-        }
+        mIsOnGround = false;
     }
 
     // Update player position to match camera (for third person, player IS the focus)
     if (camera.getMode() == CameraMode::FIRST_PERSON)
     {
-        mPosition = camera.getPosition();
+        glm::vec3 cameraPos = camera.getPosition();
+        cameraPos.y = mPosition.y;
+        camera.setPosition(cameraPos);
+        mPosition = cameraPos;
     }
-    // In third person, player position is updated separately
-    // and camera follows the player
+    else
+    {
+        camera.setFollowTarget(mPosition);
+        camera.updateThirdPersonPosition();
+    }
 
     // Update facing direction based on camera yaw
     mFacingDirection = camera.getYaw();
@@ -163,6 +168,7 @@ bool Player::isRealtimeAction(Action action)
     case Action::MOVE_RIGHT:
     case Action::MOVE_UP:
     case Action::MOVE_DOWN:
+    case Action::JUMP:
     case Action::ROTATE_LEFT:
     case Action::ROTATE_RIGHT:
     case Action::ROTATE_UP:
@@ -373,13 +379,6 @@ void Player::initializeActions()
         }
     };
 
-    mCameraActions[Action::RESET_ACCUMULATION] = [](Camera &, float)
-    {
-        // This action needs to be handled in GameState (resetting mCurrentBatch)
-        // We'll just mark it as a valid action here
-        // GameState will need to detect when this key is pressed
-    };
-
     mCameraActions[Action::TOGGLE_PERSPECTIVE] = [this](Camera &camera, float)
     {
         // Toggle between first and third person
@@ -390,16 +389,32 @@ void Player::initializeActions()
             camera.setThirdPersonDistance(15.0f); // Set distance behind player
             camera.setThirdPersonHeight(8.0f);    // Set height above player
             camera.updateThirdPersonPosition();
-            SDL_Log("Player: Switched to THIRD-PERSON camera (pos: %.1f, %.1f, %.1f)",
-                    mPosition.x, mPosition.y, mPosition.z);
         }
         else
         {
             camera.setMode(CameraMode::FIRST_PERSON);
             camera.setPosition(mPosition);
-            SDL_Log("Player: Switched to FIRST-PERSON camera");
         }
     };
+
+    mCameraActions[Action::JUMP] = [this](Camera &camera, float)
+    {
+        jump();
+    };
+}
+
+void Player::jump() noexcept
+{
+    if (!mIsActive)
+    {
+        return;
+    }
+
+    if (mIsOnGround)
+    {
+        mVerticalVelocity = kPlayerJumpVelocity;
+        mIsOnGround = false;
+    }
 }
 
 void Player::assignKey(Action action, std::uint32_t key)
@@ -472,7 +487,16 @@ AnimationRect Player::getCurrentAnimationFrame() const
 void Player::setPosition(const glm::vec3 &position) noexcept
 {
     mPosition = position;
-    mPosition.y = std::max(mPosition.y, kGroundPlaneY);
+    if (mPosition.y <= kGroundPlaneY)
+    {
+        mPosition.y = kGroundPlaneY;
+        mVerticalVelocity = 0.0f;
+        mIsOnGround = true;
+    }
+    else
+    {
+        mIsOnGround = false;
+    }
     mAnimator.setPosition(mPosition);
 }
 
@@ -480,7 +504,11 @@ void Player::updateAnimationState()
 {
     CharacterAnimState newState = CharacterAnimState::IDLE;
 
-    if (mIsMoving)
+    if (!mIsOnGround)
+    {
+        newState = CharacterAnimState::JUMP;
+    }
+    else if (mIsMoving)
     {
         if (mMovingForward)
         {
@@ -497,6 +525,10 @@ void Player::updateAnimationState()
         else if (mMovingRight)
         {
             newState = CharacterAnimState::WALK_RIGHT;
+        }
+        else if (mIsJumping)
+        {
+            newState = CharacterAnimState::JUMP;
         }
     }
 

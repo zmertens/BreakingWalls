@@ -56,7 +56,7 @@ void World::init() noexcept
 
     mWorldId = b2CreateWorld(&worldDef);
 
-    mPlayerSpawnPosition = glm::vec3(0.0f, 10.0f, 0.0f);
+    mPlayerSpawnPosition = glm::vec3(0.0f, 1.0f, 0.0f);
 
     initPathTracerScene();
 
@@ -933,20 +933,6 @@ void World::renderPlayerCharacter(const Player &player, const Camera &camera) co
     float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
     glm::mat4 viewMatrix = camera.getLookAt();
     glm::mat4 projMatrix = camera.getPerspective(aspectRatio);
-
-    // Debug log first render
-    static bool firstRender = true;
-    if (firstRender)
-    {
-        glm::vec3 camPos = camera.getActualPosition();
-        SDL_Log("World: Rendering player billboard:");
-        SDL_Log("  Player pos: (%.1f, %.1f, %.1f)", playerPos.x, playerPos.y, playerPos.z);
-        SDL_Log("  Camera pos: (%.1f, %.1f, %.1f)", camPos.x, camPos.y, camPos.z);
-        SDL_Log("  Frame: %d,%d,%d,%d, texture: %u (%dx%d)",
-                frame.left, frame.top, frame.width, frame.height,
-                spriteSheet->get(), spriteSheet->getWidth(), spriteSheet->getHeight());
-        firstRender = false;
-    }
 
     // Render the character as a billboard sprite using geometry shader
     GLSDLHelper::renderBillboardSprite(

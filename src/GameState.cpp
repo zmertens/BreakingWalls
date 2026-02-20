@@ -547,17 +547,13 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept {
             requestStackPush(States::ID::PAUSE);
         }
 
-        // Reset accumulation with SPACE (handled separately since it's not a camera action)
+        // Jump with SPACE
         if (event.key.scancode == SDL_SCANCODE_SPACE)
         {
-            mCurrentBatch = 0;
-
-            // Play non-spatialized UI sound
             if (auto *sounds = getContext().sounds)
             {
-                sounds->play(SoundEffect::ID::SELECT);
+                sounds->play(SoundEffect::ID::SELECT, sf::Vector2f{mPlayer.getPosition().x, mPlayer.getPosition().z});
             }
-            log("Path tracing accumulation reset");
         }
 
         // Play sound when camera is reset (R key handled by Player now)
@@ -660,7 +656,6 @@ void GameState::updateRunnerGameplay(float dt) noexcept
 
     glm::vec3 playerPos = mPlayer.getPosition();
     playerPos.z = std::clamp(playerPos.z, -mRunnerStrafeLimit, mRunnerStrafeLimit);
-    playerPos.y = std::max(playerPos.y, 0.0f);
     playerPos.x = mRunnerDistance;
 
     mPlayer.setPosition(playerPos);
