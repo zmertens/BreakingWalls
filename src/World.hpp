@@ -173,7 +173,7 @@ private:
     glm::vec3 mLastChunkUpdatePosition;
     glm::vec3 mPlayerSpawnPosition;
 
-    static constexpr int TOTAL_SPHERES = 2'000;
+    static constexpr int TOTAL_SPHERES = 200;
 
     // Character sprite sheet dimensions (for animation rendering)
     static constexpr int CHARACTER_TILE_SIZE = 128;
