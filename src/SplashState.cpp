@@ -86,6 +86,9 @@ void SplashState::draw() const noexcept
     ImGui::PopStyleVar();
 
     ImGui::PopFont();
+
+    glClearColor(0.3, 0.3, 0.3, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
 }
 
 bool SplashState::update(float dt, unsigned int subSteps) noexcept
