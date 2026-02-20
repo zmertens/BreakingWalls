@@ -56,7 +56,8 @@ namespace Shaders
         GLSL_BILLBOARD_SPRITE = 0,
         GLSL_FULLSCREEN_QUAD = 1,
         GLSL_PATH_TRACER_COMPUTE = 2,
-        GLSL_TOTAL_SHADERS = 3
+        GLSL_PARTICLES_COMPUTE = 3,
+        GLSL_TOTAL_SHADERS = 4
     };
 }
 

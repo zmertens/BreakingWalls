@@ -60,6 +60,7 @@ namespace JSONKeys
     constexpr std::string_view SHADER_BILLBOARD_VERTEX = "shader_billboard_vert_glsl";
     constexpr std::string_view SHADER_BILLBOARD_FRAGMENT = "shader_billboard_frag_glsl";
     constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";
+    constexpr std::string_view SHADER_PARTICLES_COMPUTE = "shader_particles_cs_glsl";
     constexpr std::string_view SHADER_PATHTRACER_COMPUTE = "shader_pathtracer_cs_glsl";
     constexpr std::string_view SHADER_SCREEN_VERTEX = "shader_screen_vert_glsl";
     constexpr std::string_view SHADER_SCREEN_FRAGMENT = "shader_screen_frag_glsl";
@@ -753,10 +754,14 @@ void LoadingState::loadShaders() noexcept
         computeShader->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PATHTRACER_COMPUTE));
         computeShader->linkProgram();
 
-        log("LoadingState: Compute shader compiled and linked");
+        auto computeShader2 = std::make_unique<Shader>();
+        computeShader2->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PARTICLES_COMPUTE));
+        computeShader2->linkProgram();
 
-        // Insert compute shader into manager
+        log("LoadingState: Compute shaders compiled and linked");
+
         shaders.insert(Shaders::ID::GLSL_PATH_TRACER_COMPUTE, std::move(computeShader));
+        shaders.insert(Shaders::ID::GLSL_PARTICLES_COMPUTE, std::move(computeShader2));
 
         // Load billboard shader for character sprites (vertex + geometry + fragment)
         auto billboardShader = std::make_unique<Shader>();

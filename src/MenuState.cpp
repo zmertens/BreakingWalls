@@ -5,9 +5,13 @@
 #include <glad/glad.h>
 
 #include <array>
+#include <cmath>
 #include <string>
+#include <vector>
 
 #include <dearimgui/imgui.h>
+
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "Font.hpp"
 #include "GameState.hpp"
@@ -16,8 +20,36 @@
 #include "Player.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
+#include "Shader.hpp"
 #include "SoundPlayer.hpp"
 #include "StateStack.hpp"
+
+namespace
+{
+    constexpr const char *kParticlesRenderVertexShader = R"(
+#version 430 core
+
+layout (location = 0) in vec4 VertexPosition;
+uniform mat4 MVP;
+
+void main()
+{
+    gl_Position = MVP * VertexPosition;
+}
+)";
+
+    constexpr const char *kParticlesRenderFragmentShader = R"(
+#version 430 core
+
+uniform vec4 Color;
+layout (location = 0) out vec4 FragColor;
+
+void main()
+{
+    FragColor = Color;
+}
+)";
+}
 
 MenuState::MenuState(StateStack &stack, Context context)
     : State(stack, context), mSelectedMenuItem(MenuItem::NEW_GAME), mShowMainMenu(true), mItemSelectedFlags{}, mMusic{}
@@ -27,8 +59,16 @@ MenuState::MenuState(StateStack &stack, Context context)
     mItemSelectedFlags[static_cast<size_t>(mSelectedMenuItem)] = true;
 }
 
+MenuState::~MenuState()
+{
+    cleanupParticleScene();
+}
+
 void MenuState::draw() const noexcept
 {
+    initializeParticleScene();
+    renderParticleScene();
+
     if (!mShowMainMenu)
     {
 
@@ -68,6 +108,19 @@ void MenuState::draw() const noexcept
         ImGui::Separator();
         ImGui::Spacing();
 
+        if (ImGui::CollapsingHeader("Particle Scene", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::SliderFloat("Gravity #1", &mParticleGravity1, 10.0f, 3000.0f, "%.1f");
+            ImGui::SliderFloat("Gravity #2", &mParticleGravity2, 10.0f, 3000.0f, "%.1f");
+            ImGui::SliderFloat("Orbit Speed", &mParticleSpeed, 1.0f, 120.0f, "%.1f");
+            ImGui::SliderFloat("Particle Mass", &mParticleMass, 0.01f, 2.0f, "%.3f");
+            ImGui::SliderFloat("Max Distance", &mParticleMaxDist, 5.0f, 120.0f, "%.1f");
+            ImGui::SliderFloat("DeltaT Scale", &mParticleDtScale, 0.01f, 1.0f, "%.3f");
+            ImGui::SliderFloat("Particle Size", &mParticlePointSize, 1.0f, 6.0f, "%.1f");
+            ImGui::SliderFloat("Attractor Size", &mAttractorPointSize, 2.0f, 14.0f, "%.1f");
+            ImGui::Spacing();
+        }
+
         // Navigation options
         ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "Navigation Options:");
         ImGui::Spacing();
@@ -88,7 +141,7 @@ void MenuState::draw() const noexcept
                 }
                 *flag = true;
                 mSelectedMenuItem = static_cast<MenuItem>(i);
-                SDL_Log("Navigation: %s selected", menuItems[i].c_str());
+                log("Navigation: " + menuItems[i] + " selected");
             }
             ImGui::Spacing();
         }
@@ -112,7 +165,7 @@ void MenuState::draw() const noexcept
         // Action buttons
         if (ImGui::Button("Confirm Selection", ImVec2(180, 40)))
         {
-            SDL_Log("Confirmed selection: %u", static_cast<unsigned int>(mSelectedMenuItem));
+            log("Confirmed selection: " + std::to_string(static_cast<unsigned int>(mSelectedMenuItem)));
             getContext().sounds->play(SoundEffect::ID::SELECT);
             // Close the menu window to trigger state transition in update()
             mShowMainMenu = false;
@@ -125,12 +178,6 @@ void MenuState::draw() const noexcept
     ImGui::PopStyleColor(10);
 
     ImGui::PopFont();
-
-    glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // Draw the game background first so ImGui renders on top of it
-    auto &window = *getContext().window;
 }
 
 bool MenuState::update(float dt, unsigned int subSteps) noexcept
@@ -195,6 +242,17 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
 
 bool MenuState::handleEvent(const SDL_Event &event) noexcept
 {
+    if (event.type == SDL_EVENT_WINDOW_RESIZED)
+    {
+        const int newWidth = event.window.data1;
+        const int newHeight = event.window.data2;
+        if (newWidth > 0 && newHeight > 0)
+        {
+            mWindowWidth = newWidth;
+            mWindowHeight = newHeight;
+            updateParticleProjection();
+        }
+    }
 
     if (event.type == SDL_EVENT_KEY_DOWN)
     {
@@ -206,4 +264,242 @@ bool MenuState::handleEvent(const SDL_Event &event) noexcept
     }
 
     return true;
+}
+
+void MenuState::initializeParticleScene() const noexcept
+{
+    if (mParticlesInitialized)
+    {
+        return;
+    }
+
+    if (auto *window = getContext().window; window != nullptr)
+    {
+        SDL_GetWindowSize(window->getSDLWindow(), &mWindowWidth, &mWindowHeight);
+    }
+    updateParticleProjection();
+
+    try
+    {
+        mParticlesComputeShader = &getContext().shaders->get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "MenuState: Failed to get particle compute shader: %s", e.what());
+        mParticlesComputeShader = nullptr;
+        return;
+    }
+
+    try
+    {
+        mParticlesRenderShader = std::make_unique<Shader>();
+        mParticlesRenderShader->compileAndAttachShader(Shader::ShaderType::VERTEX,
+                                                       "MenuState::ParticlesRenderVS",
+                                                       kParticlesRenderVertexShader);
+        mParticlesRenderShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT,
+                                                       "MenuState::ParticlesRenderFS",
+                                                       kParticlesRenderFragmentShader);
+        mParticlesRenderShader->linkProgram();
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "MenuState: Failed to build particle render shader: %s", e.what());
+        mParticlesRenderShader.reset();
+        return;
+    }
+
+    mTotalParticles = static_cast<GLuint>(mParticleGrid.x * mParticleGrid.y * mParticleGrid.z);
+    if (mTotalParticles == 0)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "MenuState: Particle scene has zero particles");
+        return;
+    }
+
+    std::vector<GLfloat> initPos;
+    initPos.reserve(static_cast<size_t>(mTotalParticles) * 4u);
+    std::vector<GLfloat> initVel(static_cast<size_t>(mTotalParticles) * 4u, 0.0f);
+
+    const GLfloat dx = 2.0f / static_cast<GLfloat>(mParticleGrid.x - 1);
+    const GLfloat dy = 2.0f / static_cast<GLfloat>(mParticleGrid.y - 1);
+    const GLfloat dz = 2.0f / static_cast<GLfloat>(mParticleGrid.z - 1);
+    const glm::mat4 centerTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, -1.0f, -1.0f));
+
+    for (int i = 0; i < mParticleGrid.x; ++i)
+    {
+        for (int j = 0; j < mParticleGrid.y; ++j)
+        {
+            for (int k = 0; k < mParticleGrid.z; ++k)
+            {
+                glm::vec4 p(dx * static_cast<GLfloat>(i),
+                            dy * static_cast<GLfloat>(j),
+                            dz * static_cast<GLfloat>(k),
+                            1.0f);
+                p = centerTransform * p;
+                initPos.push_back(p.x);
+                initPos.push_back(p.y);
+                initPos.push_back(p.z);
+                initPos.push_back(p.w);
+            }
+        }
+    }
+
+    const GLsizeiptr bufferSize = static_cast<GLsizeiptr>(static_cast<size_t>(mTotalParticles) * 4u * sizeof(GLfloat));
+
+    glGenBuffers(1, &mParticlesPosSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mParticlesPosSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, initPos.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mParticlesPosSSBO);
+
+    glGenBuffers(1, &mParticlesVelSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mParticlesVelSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, initVel.data(), GL_DYNAMIC_COPY);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mParticlesVelSSBO);
+
+    glGenVertexArrays(1, &mParticlesVAO);
+    glBindVertexArray(mParticlesVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, mParticlesPosSSBO);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
+
+    glGenBuffers(1, &mParticlesAttractorVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, mParticlesAttractorVBO);
+    const GLfloat attractorData[] = {
+        mBlackHoleBase1.x, mBlackHoleBase1.y, mBlackHoleBase1.z, mBlackHoleBase1.w,
+        mBlackHoleBase2.x, mBlackHoleBase2.y, mBlackHoleBase2.z, mBlackHoleBase2.w};
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(sizeof(attractorData)), attractorData, GL_DYNAMIC_DRAW);
+
+    glGenVertexArrays(1, &mParticlesAttractorVAO);
+    glBindVertexArray(mParticlesAttractorVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, mParticlesAttractorVBO);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    mParticlesInitialized = true;
+    log("MenuState: Particle scene initialized");
+}
+
+void MenuState::renderParticleScene() const noexcept
+{
+    if (!mParticlesInitialized || !mParticlesComputeShader || !mParticlesRenderShader || mTotalParticles == 0)
+    {
+        return;
+    }
+
+    const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
+    mParticleDeltaT = (mParticleTime == 0.0f) ? 0.0f : std::min(0.033f, now - mParticleTime);
+    mParticleTime = now;
+
+    mParticleAngle += mParticleSpeed * mParticleDeltaT;
+    if (mParticleAngle > 360.0f)
+    {
+        mParticleAngle -= 360.0f;
+    }
+
+    const glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(mParticleAngle), glm::vec3(0.0f, 0.0f, 1.0f));
+    const glm::vec3 attractor1 = glm::vec3(rotation * mBlackHoleBase1);
+    const glm::vec3 attractor2 = glm::vec3(rotation * mBlackHoleBase2);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mParticlesPosSSBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mParticlesVelSSBO);
+
+    mParticlesComputeShader->bind();
+    mParticlesComputeShader->setUniform("BlackHolePos1", attractor1);
+    mParticlesComputeShader->setUniform("BlackHolePos2", attractor2);
+    const float clampedMass = std::max(0.0001f, mParticleMass);
+    mParticlesComputeShader->setUniform("Gravity1", mParticleGravity1);
+    mParticlesComputeShader->setUniform("Gravity2", mParticleGravity2);
+    mParticlesComputeShader->setUniform("ParticleMass", clampedMass);
+    mParticlesComputeShader->setUniform("ParticleInvMass", 1.0f / clampedMass);
+    mParticlesComputeShader->setUniform("DeltaT", std::max(0.0001f, mParticleDeltaT * mParticleDtScale));
+    mParticlesComputeShader->setUniform("MaxDist", mParticleMaxDist);
+    mParticlesComputeShader->setUniform("ParticleCount", mTotalParticles);
+
+    const GLuint groupsX = (mTotalParticles + 999u) / 1000u;
+    glDispatchCompute(groupsX, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+
+    glViewport(0, 0, mWindowWidth, mWindowHeight);
+    glClearColor(0.015f, 0.025f, 0.035f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    const glm::mat4 view = glm::lookAt(glm::vec3(2.0f, 0.0f, 20.0f),
+                                       glm::vec3(0.0f, 0.0f, 0.0f),
+                                       glm::vec3(0.0f, 1.0f, 0.0f));
+    const glm::mat4 mvp = mParticleProjection * view;
+
+    mParticlesRenderShader->bind();
+    mParticlesRenderShader->setUniform("MVP", mvp);
+
+    glEnable(GL_DEPTH_TEST);
+    glPointSize(mParticlePointSize);
+    mParticlesRenderShader->setUniform("Color", glm::vec4(0.92f, 0.98f, 1.0f, 0.16f));
+    glBindVertexArray(mParticlesVAO);
+    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(mTotalParticles));
+
+    const GLfloat attractorData[] = {
+        attractor1.x, attractor1.y, attractor1.z, 1.0f,
+        attractor2.x, attractor2.y, attractor2.z, 1.0f};
+    glBindBuffer(GL_ARRAY_BUFFER, mParticlesAttractorVBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(sizeof(attractorData)), attractorData);
+
+    glPointSize(mAttractorPointSize);
+    mParticlesRenderShader->setUniform("Color", glm::vec4(1.0f, 0.9f, 0.35f, 1.0f));
+    glBindVertexArray(mParticlesAttractorVAO);
+    glDrawArrays(GL_POINTS, 0, 2);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void MenuState::cleanupParticleScene() noexcept
+{
+    if (mParticlesVAO != 0)
+    {
+        glDeleteVertexArrays(1, &mParticlesVAO);
+        mParticlesVAO = 0;
+    }
+    if (mParticlesAttractorVAO != 0)
+    {
+        glDeleteVertexArrays(1, &mParticlesAttractorVAO);
+        mParticlesAttractorVAO = 0;
+    }
+    if (mParticlesPosSSBO != 0)
+    {
+        glDeleteBuffers(1, &mParticlesPosSSBO);
+        mParticlesPosSSBO = 0;
+    }
+    if (mParticlesVelSSBO != 0)
+    {
+        glDeleteBuffers(1, &mParticlesVelSSBO);
+        mParticlesVelSSBO = 0;
+    }
+    if (mParticlesAttractorVBO != 0)
+    {
+        glDeleteBuffers(1, &mParticlesAttractorVBO);
+        mParticlesAttractorVBO = 0;
+    }
+
+    mParticlesRenderShader.reset();
+    mParticlesComputeShader = nullptr;
+    mParticlesInitialized = false;
+}
+
+void MenuState::updateParticleProjection() const noexcept
+{
+    if (mWindowWidth <= 0 || mWindowHeight <= 0)
+    {
+        mWindowWidth = 1;
+        mWindowHeight = 1;
+    }
+
+    const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(mWindowHeight);
+    mParticleProjection = glm::perspective(glm::radians(50.0f), aspectRatio, 1.0f, 100.0f);
 }

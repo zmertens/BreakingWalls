@@ -37,8 +37,8 @@ void StateStack::draw() const noexcept
         return;
     }
 
-    // Draw from the first opaque state to the top
-    for (auto it = mStack.rbegin(); it != mStack.rend(); ++it)
+    // Draw from bottom to top so overlay states (pause/menu) render last
+    for (auto it = mStack.cbegin(); it != mStack.cend(); ++it)
     {
         (*it)->draw();
     }
