@@ -140,7 +140,7 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 {
     auto initFunc = [this, title, width, height]()
     {
-        if (!SDL_SetAppMetadata("Maze builder with physics", title.data(),
+        if (!SDL_SetAppMetadata("Breaking Walls with physics", title.data(),
                                 "c++;cozy;game;simulation;physics"))
         {
             return;
@@ -188,9 +188,6 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
             return;
         }
 
-        SDL_Log("OpenGL Version: %s\n", glGetString(GL_VERSION));
-        SDL_Log("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
-
         SDL_GL_SetSwapInterval(1);
 
 #if defined(BREAKING_WALLS_DEBUG)
@@ -198,6 +195,8 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
         glEnable(GL_DEBUG_OUTPUT);
         glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
         SDL_Log("OpenGL and SDL initialized successfully.");
+        SDL_Log("OpenGL Version: %s\n", glGetString(GL_VERSION));
+        SDL_Log("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
 #endif
     };
 
@@ -408,15 +407,6 @@ void GLSDLHelper::renderBillboardSprite(
         return;
     }
 
-    // Debug: Log shader program ID on first render
-    static bool firstCall = true;
-    if (firstCall)
-    {
-        SDL_Log("Billboard: Using shader program %u", billboardShader.getProgramHandle());
-        SDL_Log("Billboard: VAO=%u, VBO=%u", sBillboardVAO, sBillboardVBO);
-        firstCall = false;
-    }
-
     // Save current OpenGL state
     GLboolean depthTestEnabled;
     GLboolean blendEnabled;
@@ -451,32 +441,6 @@ void GLSDLHelper::renderBillboardSprite(
 
     const glm::vec4 uvRect(u, v, u + uWidth, v + vHeight);
 
-    // Debug log first few renders
-    static int renderCount = 0;
-    if (renderCount < 5)
-    {
-        SDL_Log("Billboard render #%d: pos=(%.1f,%.1f,%.1f) size=%.1f uv=(%.3f,%.3f,%.3f,%.3f) tex=%u",
-                renderCount, worldPosition.x, worldPosition.y, worldPosition.z,
-                halfSize, u, v, uWidth, vHeight, textureId);
-
-        // Log the position in view space (should give us an idea if it's visible)
-        glm::vec4 viewPos = modelViewMatrix * glm::vec4(0, 0, 0, 1);
-        SDL_Log("  View space pos: (%.1f, %.1f, %.1f)", viewPos.x, viewPos.y, viewPos.z);
-
-        // Log clip space position
-        glm::vec4 clipPos = projMatrix * viewPos;
-        SDL_Log("  Clip space pos: (%.1f, %.1f, %.1f, %.1f)", clipPos.x, clipPos.y, clipPos.z, clipPos.w);
-
-        // NDC position
-        if (clipPos.w != 0)
-        {
-            glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
-            SDL_Log("  NDC pos: (%.2f, %.2f, %.2f) - should be in [-1,1]", ndc.x, ndc.y, ndc.z);
-        }
-
-        renderCount++;
-    }
-
     renderBillboardSpriteUV(
         billboardShader,
         textureId,
@@ -490,12 +454,7 @@ void GLSDLHelper::renderBillboardSprite(
         true,
         false);
 
-    // Check for OpenGL errors
-    GLenum err = glGetError();
-    if (err != GL_NO_ERROR)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Billboard: OpenGL error after draw: 0x%x", err);
-    }
+    checkForOpenGLError(__FILE__, __LINE__);
 
     // Restore previous OpenGL state
     if (!blendEnabled)
@@ -567,4 +526,9 @@ void GLSDLHelper::renderBillboardSpriteUV(
     glBindVertexArray(0);
 
     glActiveTexture(static_cast<GLenum>(prevActiveTexture));
+}
+
+bool GLSDLHelper::isBillboardInitialized() noexcept
+{ 
+    return sBillboardInitialized;
 }

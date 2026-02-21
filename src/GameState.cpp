@@ -292,12 +292,12 @@ GameState::GameState(StateStack &stack, Context context)
             // Start the music - the periodic health check in update() will handle restarts if needed
             bool wasPlaying = mGameMusic->isPlaying();
             log("GameState: Music isPlaying before play(): " + std::string(wasPlaying ? "true" : "false"));
-            
+
             if (!wasPlaying)
             {
                 log("GameState: Starting game music...");
                 mGameMusic->play();
-                
+
                 // Check immediately after
                 bool nowPlaying = mGameMusic->isPlaying();
                 log("GameState: Music isPlaying after play(): " + std::string(nowPlaying ? "true" : "false"));
@@ -433,7 +433,7 @@ void GameState::initializeGraphicsResources() noexcept
             {
                 mWindowWidth = width;
                 mWindowHeight = height;
-                SDL_Log("GameState: Initial window size in pixels: %dx%d", mWindowWidth, mWindowHeight);
+                log("GameState: Initial window size in pixels: " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight));
             }
         }
     }
@@ -453,8 +453,8 @@ void GameState::initializeGraphicsResources() noexcept
     // Create textures for path tracing
     createPathTracerTextures();
     createCompositeTargets();
-    initializeShadowResources();  // Initialize shadow rendering
-    initializeReflectionResources();  // Initialize reflection rendering
+    initializeShadowResources();     // Initialize shadow rendering
+    initializeReflectionResources(); // Initialize reflection rendering
 
     // Upload sphere data from World to GPU with extra capacity for dynamic spawning
     const auto &spheres = mWorld.getSpheres();
@@ -515,7 +515,7 @@ void GameState::createPathTracerTextures() noexcept
 
     if (!accumSuccess || !displaySuccess)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
                      "GameState: Failed to resize path tracer textures (accum: %d, display: %d)",
                      accumSuccess, displaySuccess);
         return;
@@ -574,8 +574,8 @@ void GameState::createCompositeTargets() noexcept
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
-    glReadBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
+    glDrawBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
+    glReadBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindRenderbuffer(GL_RENDERBUFFER, 0);
 }
@@ -642,23 +642,23 @@ void GameState::initializeShadowResources() noexcept
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
-    glReadBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
+    glDrawBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
+    glReadBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
     glBindTexture(GL_TEXTURE_2D, 0);
 
     mShadowsInitialized = true;
-    SDL_Log("GameState: Shadow resources initialized");
 }
 
 void GameState::initializeReflectionResources() noexcept
 {
     if (mWindowWidth <= 0 || mWindowHeight <= 0)
     {
-        SDL_Log("GameState: initializeReflectionResources() early return - invalid dimensions: %dx%d", mWindowWidth, mWindowHeight);
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION,
+            "GameState: initializeReflectionResources() early return - invalid dimensions: %dx%d",
+            mWindowWidth, mWindowHeight);
         return;
     }
-
-    SDL_Log("GameState: initializeReflectionResources() START - creating texture size %dx%d", mWindowWidth, mWindowHeight);
 
     // Always unbind and validate before reallocation
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -670,7 +670,7 @@ void GameState::initializeReflectionResources() noexcept
     {
         glDeleteTextures(1, &mReflectionColorTex);
         mReflectionColorTex = 0;
-        SDL_Log("GameState: Deleted old reflection texture");
+        log("GameState: Deleted old reflection texture");
     }
     if (mReflectionDepthRbo != 0)
     {
@@ -681,7 +681,7 @@ void GameState::initializeReflectionResources() noexcept
     {
         glDeleteFramebuffers(1, &mReflectionFBO);
         mReflectionFBO = 0;
-        SDL_Log("GameState: Deleted old reflection FBO");
+        log("GameState: Deleted old reflection FBO");
     }
 
     // Create reflection color texture
@@ -692,12 +692,11 @@ void GameState::initializeReflectionResources() noexcept
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
-    
+
     // Verify texture size was created correctly
     GLint texWidth = 0, texHeight = 0;
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texWidth);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
-    SDL_Log("GameState: Reflection texture created - requested %dx%d, actual %dx%d", mWindowWidth, mWindowHeight, texWidth, texHeight);
 
     // Create reflection depth buffer
     glGenRenderbuffers(1, &mReflectionDepthRbo);
@@ -718,7 +717,6 @@ void GameState::initializeReflectionResources() noexcept
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Reflection framebuffer incomplete: 0x%x", fboStatus);
         return;
     }
-    SDL_Log("GameState: Reflection FBO created successfully");
 
     // Clear the framebuffer to ensure no stale data
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -726,13 +724,12 @@ void GameState::initializeReflectionResources() noexcept
 
     // Explicitly unbind before returning
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
-    glReadBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
+    glDrawBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
+    glReadBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindRenderbuffer(GL_RENDERBUFFER, 0);
 
     mReflectionsInitialized = true;
-    SDL_Log("GameState: Reflection resources initialized COMPLETE (size: %dx%d, tex=%u, fbo=%u)", mWindowWidth, mWindowHeight, mReflectionColorTex, mReflectionFBO);
 }
 
 void GameState::initializeWalkParticles() noexcept
@@ -1020,7 +1017,7 @@ void GameState::renderPlayerReflection() const noexcept
     glBindFramebuffer(GL_FRAMEBUFFER, mReflectionFBO);
     GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    
+
     if (fboStatus != GL_FRAMEBUFFER_COMPLETE)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Reflection FBO invalid, skipping reflection: 0x%x", fboStatus);
@@ -1033,21 +1030,17 @@ void GameState::renderPlayerReflection() const noexcept
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texWidth);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
     glBindTexture(GL_TEXTURE_2D, 0);
-    
+
     if (texWidth != mWindowWidth || texHeight != mWindowHeight)
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, 
-                    "GameState: Reflection texture size mismatch! Expected %dx%d, got %dx%d", 
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                    "GameState: Reflection texture size mismatch! Expected %dx%d, got %dx%d",
                     mWindowWidth, mWindowHeight, texWidth, texHeight);
     }
 
     // Ensure clean state before rendering
     glFlush();
 
-    SDL_Log("GameState: renderPlayerReflection() - START");
-    SDL_Log("  Viewport: %dx%d", mWindowWidth, mWindowHeight);
-    SDL_Log("  Texture size: %dx%d", texWidth, texHeight);
-    
     // Render reflection to texture
     glBindFramebuffer(GL_FRAMEBUFFER, mReflectionFBO);
     glViewport(0, 0, mWindowWidth, mWindowHeight);
@@ -1061,17 +1054,11 @@ void GameState::renderPlayerReflection() const noexcept
     // Get camera matrices
     const int safeHeight = std::max(mWindowHeight, 1);
     const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
-    SDL_Log("  Aspect ratio: %.4f (width=%d, height=%d, safeHeight=%d)", 
-            aspectRatio, mWindowWidth, mWindowHeight, safeHeight);
-
     // Render reflected player - mirror model position across the actual ground plane
     const float groundY = mWorld.getGroundPlane().getPoint().y;
     const glm::vec3 modelPos = mPlayer.getPosition() + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f);
     glm::vec3 reflectedModelPos = modelPos;
     reflectedModelPos.y = (2.0f * groundY) - modelPos.y;
-    SDL_Log("  Player model pos: (%.2f, %.2f, %.2f)", modelPos.x, modelPos.y, modelPos.z);
-    SDL_Log("  Player reflected model pos: (%.2f, %.2f, %.2f)", reflectedModelPos.x, reflectedModelPos.y, reflectedModelPos.z);
-
     if (mSkinnedModelShader)
     {
         auto *models = getContext().models;
@@ -1104,8 +1091,6 @@ void GameState::renderPlayerReflection() const noexcept
                         viewMatrix,
                         projMatrix,
                         mModelAnimTimeSeconds);
-                    
-                    SDL_Log("  Reflection rendered successfully");
                 }
             }
             catch (const std::exception &e)
@@ -1118,7 +1103,6 @@ void GameState::renderPlayerReflection() const noexcept
     // Ensure reflection rendering completes before unbinding
     glFlush();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    SDL_Log("GameState: renderPlayerReflection() - END");
 }
 
 void GameState::renderWithComputeShaders() const noexcept
@@ -1153,7 +1137,6 @@ void GameState::renderWithComputeShaders() const noexcept
 
     const std::size_t totalSphereCount = renderSpheres.size();
     const std::size_t primarySphereCount = totalSphereCount;
-
 
     // Safety check: ensure we have spheres to render
     if (renderSpheres.empty())
@@ -1235,8 +1218,6 @@ void GameState::renderWithComputeShaders() const noexcept
         }
     }
 
-
-
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mTriangleSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, mTriangleSSBO);
 
@@ -1253,7 +1234,7 @@ void GameState::renderWithComputeShaders() const noexcept
         {
             GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(triangleBytes), traceTriangles.data());
         }
-        
+
         // Ensure SSBO data is visible to compute shader before dispatch
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
     }
@@ -1317,11 +1298,11 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uTime", static_cast<GLfloat>(timeSeconds));
         mComputeShader->setUniform("uHistoryBlend", historyBlend);
         mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(NOISE_TEXTURE_UNIT));
-        
+
         // Shadow casting uniforms
         mComputeShader->setUniform("uPlayerPos", mPlayer.getPosition() + glm::vec3(0.0f, kPlayerShadowCenterYOffset, 0.0f));
         mComputeShader->setUniform("uPlayerRadius", kPlayerProxyRadius);
-        
+
         mComputeShader->setUniform("uLightDir", computeSunDirection(timeSeconds));
 
         // Bind both textures as images for compute shader
@@ -1373,11 +1354,6 @@ void GameState::renderCompositeScene() const noexcept
     {
         return;
     }
-
-    SDL_Log("GameState: renderCompositeScene() - viewport will be set to %dx%d", mWindowWidth, mWindowHeight);
-    SDL_Log("GameState: renderCompositeScene() - binding textures: scene=%u billboard=%u shadow=%u reflection=%u", 
-            mDisplayTex ? mDisplayTex->get() : 0, mBillboardColorTex, mShadowTexture, mReflectionColorTex);
-
     // Ensure we're rendering to the main framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, mWindowWidth, mWindowHeight);
@@ -1394,8 +1370,6 @@ void GameState::renderCompositeScene() const noexcept
     mCompositeShader->setUniform("uShadowStrength", 0.65f);
     mCompositeShader->setUniform("uEnableShadows", mShadowsInitialized && mShadowTexture != 0);
     mCompositeShader->setUniform("uEnableReflections", mReflectionsInitialized && mReflectionColorTex != 0);
-    SDL_Log("GameState: renderCompositeScene() - reflections enabled: %d (initialized=%d, tex=%u)", 
-            (mReflectionsInitialized && mReflectionColorTex != 0) ? 1 : 0, mReflectionsInitialized ? 1 : 0, mReflectionColorTex);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
@@ -1409,7 +1383,6 @@ void GameState::renderCompositeScene() const noexcept
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
-
 
 void GameState::cleanupResources() noexcept
 {
@@ -1486,7 +1459,7 @@ void GameState::cleanupResources() noexcept
     mWalkParticlesInitialized = false;
     mWalkParticlesComputeShader = nullptr;
     mWalkParticlesRenderShader = nullptr;
-    
+
     mAccumTex = nullptr;
     mDisplayTex = nullptr;
     mNoiseTexture = nullptr;
@@ -1523,7 +1496,7 @@ void GameState::updateSounds() noexcept
 bool GameState::update(float dt, unsigned int subSteps) noexcept
 {
     // Window resize is now handled in handleEvent() with DPI-aware pixel detection
-    
+
     const glm::vec3 playerPosBeforeUpdate = mPlayer.getPosition();
 
     if (dt > 0.0f)
@@ -1603,9 +1576,11 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     return true;
 }
 
-bool GameState::handleEvent(const SDL_Event &event) noexcept {
+bool GameState::handleEvent(const SDL_Event &event) noexcept
+{
     // Handle window resize event - query physical pixels to handle DPI scaling
-    if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+    if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+    {
         // Always query the actual pixel size from SDL instead of trusting event data
         // This ensures we get physical pixels on DPI-scaled displays
         if (auto *window = getContext().window; window != nullptr)
@@ -1614,10 +1589,9 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept {
             {
                 int newW = 0, newH = 0;
                 SDL_GetWindowSizeInPixels(sdlWindow, &newW, &newH);
-                
-                if (newW > 0 && newH > 0 && (newW != mWindowWidth || newH != mWindowHeight)) {
-                    SDL_Log("GameState::handleEvent() - Resize detected: %dx%d -> %dx%d", 
-                            mWindowWidth, mWindowHeight, newW, newH);
+
+                if (newW > 0 && newH > 0 && (newW != mWindowWidth || newH != mWindowHeight))
+                {
                     mWindowWidth = newW;
                     mWindowHeight = newH;
                     // Update OpenGL viewport to match new window size
@@ -1631,13 +1605,12 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept {
                     initializeReflectionResources();
                     // Reset accumulation for new size
                     mCurrentBatch = 0;
-                    SDL_Log("GameState: Window resized to physical pixels %dx%d (internal: %dx%d)", 
-                            mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight);
+                    log("GameState: Window resized to physical pixels " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " with render resolution " + std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight));
                 }
             }
         }
     }
-    
+
     // World still handles mouse panning for the 2D view
     mWorld.handleEvent(event);
 
@@ -1801,8 +1774,8 @@ void GameState::renderPlayerCharacter() const noexcept
     if (mCompositeShader && mBillboardFBO != 0)
     {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
-        glReadBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
+        glDrawBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
+        glReadBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
     }
 }
 
@@ -2224,4 +2197,11 @@ void GameState::drawRunnerScorePopups() const noexcept
         drawList->AddText(ImGui::GetFont(), fontSize, ImVec2(textPos.x + 1.0f, textPos.y + 1.0f), shadowColor, label.c_str());
         drawList->AddText(ImGui::GetFont(), fontSize, textPos, textColor, label.c_str());
     }
+}
+
+float GameState::getRenderScale() const noexcept
+{
+    return (mWindowWidth > 0 && mWindowHeight > 0)
+               ? static_cast<float>(mRenderWidth) / static_cast<float>(mWindowWidth)
+               : 1.0f;
 }

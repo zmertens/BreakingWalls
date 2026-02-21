@@ -619,6 +619,7 @@ void LoadingState::loadResources() noexcept
         loadFonts();
         loadLevels();
         loadShaders();
+        loadNetworkConfig();
     }
 }
 
@@ -849,6 +850,34 @@ void LoadingState::loadShaders() noexcept
     catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Shader initialization failed: %s", e.what());
+    }
+}
+
+void LoadingState::loadNetworkConfig() noexcept
+{
+    auto &httpClient = *getContext().httpClient;
+
+    try
+    {
+        const auto resources = resourceLoader().getResources();
+        const std::string url = JSONUtils::getResourcePath(
+            std::string(JSONKeys::NETWORK_URL), resources, resourceLoader().getResourcePathPrefix());
+
+        if (url.empty())
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
+                "LoadingState: NETWORK_URL resource key not found in configuration");
+        }
+        else
+        {
+            httpClient.setServerURL(url);
+            log("LoadingState: Found network URL: " + url);
+            log("LoadingState: Network configuration loaded successfully");
+        }
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load network configuration: %s", e.what());
     }
 }
 

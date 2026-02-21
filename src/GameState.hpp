@@ -48,12 +48,7 @@ public:
     glm::ivec2 getRenderDimensions() const noexcept { return {mRenderWidth, mRenderHeight}; }
 
     /// Get render scale relative to window size
-    float getRenderScale() const noexcept
-    {
-        return (mWindowWidth > 0 && mWindowHeight > 0)
-                   ? static_cast<float>(mRenderWidth) / static_cast<float>(mWindowWidth)
-                   : 1.0f;
-    }
+    float getRenderScale() const noexcept;
 
 private:
     struct RunnerPointEvent

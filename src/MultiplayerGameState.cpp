@@ -21,7 +21,6 @@
 
 namespace
 {
-    constexpr std::string_view NETWORK_URL_KEY = "network_url";
     constexpr float NETWORK_SEND_INTERVAL = 0.25f;
     constexpr float NETWORK_REGISTRATION_INTERVAL = 15.0f;
     constexpr float NETWORK_DISCOVERY_INTERVAL = 5.0f;

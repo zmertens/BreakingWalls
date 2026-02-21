@@ -125,7 +125,7 @@ private:
     float mFar;
 
     // Third-person camera support
-    CameraMode mMode{CameraMode::FIRST_PERSON};
+    CameraMode mMode{CameraMode::THIRD_PERSON};
     glm::vec3 mFollowTarget{0.0f};     ///< Position to follow in third person
     float mThirdPersonDistance{10.0f}; ///< Distance behind target
     float mThirdPersonHeight{5.0f};    ///< Height above target

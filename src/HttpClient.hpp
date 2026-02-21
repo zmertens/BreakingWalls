@@ -8,19 +8,17 @@ class HttpClient
 {
 public:
     // Packets originated in the client
-	enum PacketType
-	{
-		POSITION_UPDATE,
+    enum PacketType
+    {
+        POSITION_UPDATE,
         // format: [Int32:packetType]
-		LOBBY_STATUS,
+        LOBBY_STATUS,
         // format: [Int32:packetType] [Int32:playerCount] [Int32:minPlayers] [Int32:isReady]
-		LOBBY_READY 
-	};
+        LOBBY_READY
+    };
 
-
-    /// @brief Constructor
-    /// @param network_data Network data for initializing the HTTP client (e.g. server URL)
-    explicit HttpClient(const std::string &network_data);
+    void setServerURL(const std::string &url) noexcept;
+    [[nodiscard]] std::string getServerURL() const noexcept;
 
     /// @brief Issue a GET request and return the response body (empty on failure)
     /// @param path Absolute path on server (e.g. "/mazes/networks/data")
@@ -41,10 +39,10 @@ private:
     /// @brief Parse server URL and extract host and port
     void parseServerURL() noexcept;
 
-    std::string m_network_data;
-    std::string m_server_url;
-    std::string m_host;
-    unsigned short m_port;
+    std::string mNetworkData;
+    std::string mServerURL;
+    std::string mHost;
+    unsigned short mPort;
 };
 
 #endif // HTTP_CLIENT_HPP

@@ -74,38 +74,8 @@ struct PhysicsGame::PhysicsGameImpl
     std::string mWindowTitle;
     std::string mResourcePath;
     const int INIT_WINDOW_W, INIT_WINDOW_H;
-
-    static std::string resolveNetworkUrl(std::string_view resourcePath)
-    {
-        static constexpr std::string_view fallbackUrl = "http://localhost:3000";
-
-        if (resourcePath.empty())
-        {
-            return std::string{fallbackUrl};
-        }
-
-        std::unordered_map<std::string, std::string> resources;
-        try
-        {
-            JSONUtils::loadConfiguration(std::string(resourcePath), resources);
-        }
-        catch (...)
-        {
-            return std::string{fallbackUrl};
-        }
-
-        auto it = resources.find("network_url");
-        if (it == resources.end())
-        {
-            return std::string{fallbackUrl};
-        }
-
-        const auto url = JSONUtils::extractJsonValue(it->second);
-        return url.empty() ? std::string{fallbackUrl} : url;
-    }
-
     PhysicsGameImpl(std::string_view title, int w, int h, std::string_view resourcePath = "")
-        : mWindowTitle{title}, mResourcePath{resourcePath}, INIT_WINDOW_W{w}, INIT_WINDOW_H{h}, mRenderWindow{nullptr}, mGLSDLHelper{}, mStateStack{nullptr}, mOptions{}, mSounds{nullptr}, mPlayer1{}, mHttpClient{resolveNetworkUrl(resourcePath)}
+        : mWindowTitle{title}, mResourcePath{resourcePath}, INIT_WINDOW_W{w}, INIT_WINDOW_H{h}, mRenderWindow{nullptr}, mGLSDLHelper{}, mStateStack{nullptr}, mOptions{}, mSounds{nullptr}, mPlayer1{}, mHttpClient{}
     {
         initSDL();
         if (!mGLSDLHelper.mWindow)

@@ -6,14 +6,16 @@ namespace States
     enum class ID : unsigned int
     {
         DONE = 0,
-        GAME = 1,
-        LOADING = 2,
-        MENU = 3,
-        MULTIPLAYER_GAME = 4,
-        PAUSE = 5,
-        RESETTING = 6,
-        SETTINGS = 7,
-        SPLASH = 8
+        ENTANGLEMENT = 1,
+        GAME = 2,
+        LIGHTSPEED = 3,
+        LOADING = 4,
+        MENU = 5,
+        MULTIPLAYER_GAME = 6,
+        PAUSE = 7,
+        SETTINGS = 8,
+        SPLASH = 9,
+        WORMHOLE = 10
     };
 }
 

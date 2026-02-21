@@ -9,20 +9,12 @@
 
 #include <glm/gtc/type_ptr.hpp>
 
-Shader::Shader()
-{
-    createProgram();
-}
-
-Shader::~Shader()
-{
-    cleanUp();
-}
-
 using ShaderType = Shader::ShaderType;
 
 void Shader::compileAndAttachShader(ShaderType shaderType, const std::string &filename)
 {
+    createProgram();
+
     std::string shaderCode = "";
     std::ifstream shaderFileStream;
     shaderFileStream.exceptions(std::ifstream::failbit | std::ifstream::badbit);
@@ -52,6 +44,8 @@ void Shader::compileAndAttachShader(ShaderType shaderType, const std::string &fi
 
 void Shader::compileAndAttachShader(ShaderType shaderType, const std::string &codeId, const GLchar *code)
 {
+    createProgram();
+
     mFileNames.emplace(shaderType, codeId);
     GLuint shaderId = compile(shaderType, code);
 
@@ -93,11 +87,11 @@ void Shader::cleanUp()
     {
         deleteProgram(mProgram);
     }
-    mGlslLocations.clear();
+    mGLSLLocations.clear();
     mFileNames.clear();
 }
 
-std::string Shader::getGlslUniforms() const
+std::string Shader::getGLSLUniforms() const
 {
     GLint numUniforms = 0;
     glGetProgramInterfaceiv(mProgram, GL_UNIFORM, GL_ACTIVE_RESOURCES, &numUniforms);
@@ -126,7 +120,7 @@ std::string Shader::getGlslUniforms() const
     return retString;
 }
 
-std::string Shader::getGlslAttribs() const
+std::string Shader::getGLSLAttribs() const
 {
     GLint numAttribs;
     glGetProgramInterfaceiv(mProgram, GL_PROGRAM_INPUT, GL_ACTIVE_RESOURCES, &numAttribs);
@@ -268,9 +262,9 @@ GLenum Shader::getShaderType(ShaderType shaderType) const
     }
 }
 
-std::unordered_map<std::string, GLint> Shader::getGlslLocations() const
+std::unordered_map<std::string, GLint> Shader::getGLSLLocations() const
 {
-    return mGlslLocations;
+    return mGLSLLocations;
 }
 
 std::unordered_map<ShaderType, std::string> Shader::getFileNames() const
@@ -338,7 +332,7 @@ void Shader::attach(GLuint shaderId)
 
 void Shader::createProgram()
 {
-    mProgram = glCreateProgram();
+    mProgram = (mProgram == 0) ? glCreateProgram() : mProgram;
 }
 
 void Shader::deleteShader(GLuint shaderId)
@@ -353,8 +347,8 @@ void Shader::deleteProgram(GLint shaderId)
 
 GLint Shader::getUniformLocation(const std::string &str)
 {
-    auto iter = mGlslLocations.find(str);
-    if (iter == mGlslLocations.end())
+    auto iter = mGLSLLocations.find(str);
+    if (iter == mGLSLLocations.end())
     {
         GLint loc = glGetUniformLocation(mProgram, str.c_str());
         if (loc == -1)
@@ -370,14 +364,14 @@ GLint Shader::getUniformLocation(const std::string &str)
         }
         else
         {
-            mGlslLocations.emplace(str, loc);
+            mGLSLLocations.emplace(str, loc);
         }
 
         return loc;
     }
     else
     {
-        return mGlslLocations.at(str);
+        return mGLSLLocations.at(str);
     }
 }
 

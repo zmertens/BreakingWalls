@@ -28,9 +28,6 @@ public:
     typedef std::unique_ptr<Shader> Ptr;
 
 public:
-    explicit Shader();
-    virtual ~Shader();
-
     /// Compile and attach a shader from file
     void compileAndAttachShader(ShaderType shaderType, const std::string &filename);
 
@@ -50,10 +47,10 @@ public:
     void cleanUp();
 
     /// Get introspection info about active uniforms
-    std::string getGlslUniforms() const;
+    std::string getGLSLUniforms() const;
 
     /// Get introspection info about active attributes
-    std::string getGlslAttribs() const;
+    std::string getGLSLAttribs() const;
 
     // Type-safe uniform setters
     void setUniform(const std::string &str, const glm::mat3 &matrix);
@@ -78,17 +75,13 @@ public:
 
     [[nodiscard]] unsigned int getProgramHandle() const;
     [[nodiscard]] GLenum getShaderType(ShaderType shaderType) const;
-    [[nodiscard]] std::unordered_map<std::string, GLint> getGlslLocations() const;
+    [[nodiscard]] std::unordered_map<std::string, GLint> getGLSLLocations() const;
     [[nodiscard]] std::unordered_map<ShaderType, std::string> getFileNames() const;
 
 private:
     GLint mProgram{0};
-    std::unordered_map<std::string, GLint> mGlslLocations;
+    std::unordered_map<std::string, GLint> mGLSLLocations;
     std::unordered_map<ShaderType, std::string> mFileNames;
-
-private:
-    Shader(const Shader &other) = delete;
-    Shader &operator=(const Shader &other) = delete;
 
     GLuint compile(ShaderType shaderType, const std::string &shaderCode);
     GLuint compile(ShaderType shaderType, const GLchar *shaderCode);

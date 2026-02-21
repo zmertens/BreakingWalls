@@ -2,6 +2,8 @@
 
 #include <assimp/Importer.hpp>
 #include <assimp/material.h>
+#include <assimp/matrix3x3.h>
+#include <assimp/matrix4x4.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 
@@ -359,7 +361,8 @@ bool GLTFModel::readFile(std::string_view filename)
     mBoneOffsets.clear();
     mBoneMeshNodeTransforms.clear();
     mPreferredAnimationIndex = -1;
-
+    
+    Assimp::Importer mImporter;
     mScene = mImporter.ReadFile(
         filename.data(),
         aiProcess_Triangulate |

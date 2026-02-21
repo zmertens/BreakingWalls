@@ -1,8 +1,6 @@
 #ifndef RENDER_WINDOW_HPP
 #define RENDER_WINDOW_HPP
 
-#include "Events.hpp"
-
 struct SDL_Window;
 
 /// @brief SDL-based RenderWindow that mimics SFML's sf::RenderWindow interface

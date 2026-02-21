@@ -58,7 +58,13 @@ public:
 
     void clear() noexcept
     {
-        mResourceMap.clear();
+        if constexpr (std::is_same_v<Resource, Shader>)
+        {
+            for (auto &[_, res] : mResourceMap)
+            {
+                res->cleanUp();
+            }
+        }
     }
 
     bool isEmpty() const noexcept { return mResourceMap.empty(); }

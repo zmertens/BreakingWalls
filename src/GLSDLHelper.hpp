@@ -19,15 +19,6 @@ public:
     SDL_GLContext mGLContext{};
     SDL_Window *mWindow{nullptr};
 
-private:
-    std::once_flag mInitializedFlag;
-
-    // Billboard sprite rendering resources
-    static GLuint sBillboardVAO;
-    static GLuint sBillboardVBO;
-    static bool sBillboardInitialized;
-
-public:
     void init(std::string_view title, int width, int height) noexcept;
 
     void destroyAndQuit() noexcept;
@@ -116,7 +107,15 @@ public:
         const glm::vec2 &halfSizeXY = glm::vec2(0.0f)) noexcept;
 
     /// Check if billboard rendering is initialized
-    [[nodiscard]] static bool isBillboardInitialized() noexcept { return sBillboardInitialized; }
+    [[nodiscard]] static bool isBillboardInitialized() noexcept;
+
+private:
+    std::once_flag mInitializedFlag;
+
+    // Billboard sprite rendering resources
+    static GLuint sBillboardVAO;
+    static GLuint sBillboardVBO;
+    static bool sBillboardInitialized;
 };
 
 #endif // GLSDL_HELPER_HPP

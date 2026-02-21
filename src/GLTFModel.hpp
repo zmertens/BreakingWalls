@@ -1,9 +1,6 @@
 #ifndef GLTF_MODEL_HPP
 #define GLTF_MODEL_HPP
 
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -15,10 +12,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include <assimp/matrix4x4.h>
+
 struct aiAnimation;
 struct aiMesh;
 struct aiNode;
 struct aiNodeAnim;
+struct aiScene;
 
 class Shader;
 
@@ -137,7 +137,6 @@ private:
     [[nodiscard]] static glm::mat4 toGlm(const aiMatrix4x4 &matrix);
 
 private:
-    Assimp::Importer mImporter;
     const aiScene *mScene{nullptr};
     glm::mat4 mGlobalInverseTransform{1.0f};
 

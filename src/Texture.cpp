@@ -43,11 +43,6 @@ namespace
     }
 } // anonymous namespace
 
-Texture::~Texture() noexcept
-{
-    free();
-}
-
 Texture::Texture(Texture &&other) noexcept
     : mTextureId(other.mTextureId), mWidth(other.mWidth), mHeight(other.mHeight), mBytes(other.mBytes)
 {
@@ -55,6 +50,11 @@ Texture::Texture(Texture &&other) noexcept
     other.mWidth = 0;
     other.mHeight = 0;
     other.mBytes = nullptr;
+}
+
+Texture::~Texture() noexcept
+{
+    free();
 }
 
 Texture &Texture::operator=(Texture &&other) noexcept

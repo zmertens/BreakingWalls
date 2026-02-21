@@ -8,14 +8,18 @@
 
 namespace
 {
-    constexpr std::string_view NETWORK_URL_KEY = "network_url";
     constexpr unsigned short DefaultPort = 80;
 }
 
-HttpClient::HttpClient(const std::string &network_data)
-    : m_network_data(network_data), m_server_url(""), m_port(DefaultPort)
+void HttpClient::setServerURL(const std::string &url) noexcept
 {
+    mServerURL = url;
     parseServerURL();
+}
+
+std::string HttpClient::getServerURL() const noexcept
+{
+    return mServerURL;
 }
 
 void HttpClient::parseServerURL() noexcept
@@ -30,33 +34,33 @@ void HttpClient::parseServerURL() noexcept
     regex url_regex(R"(^https?://([^:/]+)(?::(\d+))?(?:/.*)?$)");
     smatch matches;
 
-    if (regex_match(m_network_data, matches, url_regex))
+    if (regex_match(mServerURL, matches, url_regex))
     {
-        m_host = matches[1].str();
-        if (m_host == "localhost")
+        mHost = matches[1].str();
+        if (mHost == "localhost")
         {
-            m_host = "127.0.0.1";
+            mHost = "127.0.0.1";
         }
         if (matches.size() > 2 && matches[2].matched)
         {
             try
             {
-                m_port = static_cast<unsigned short>(stoi(matches[2].str()));
+                mPort = static_cast<unsigned short>(stoi(matches[2].str()));
             }
             catch (const std::exception &e)
             {
-                m_port = 80;
+                mPort = 80;
             }
         }
     }
     else
     {
-        m_host = m_network_data;
-        if (m_host == "localhost")
+        mHost = mNetworkData.empty() ? "" : mNetworkData;
+        if (mHost == "localhost")
         {
-            m_host = "127.0.0.1";
+            mHost = "127.0.0.1";
         }
-        m_port = 80;
+        mPort = 80;
     }
 }
 
@@ -64,7 +68,7 @@ std::string HttpClient::get(const std::string &path)
 {
     try
     {
-        sf::Http http(m_host, m_port);
+        sf::Http http(mHost, mPort);
 
         sf::Http::Request request(path, sf::Http::Request::Method::Get);
         request.setHttpVersion(1, 0);
@@ -93,7 +97,7 @@ std::string HttpClient::post(
 {
     try
     {
-        sf::Http http(m_host, m_port);
+        sf::Http http(mHost, mPort);
 
         sf::Http::Request request(path, sf::Http::Request::Method::Post);
         request.setHttpVersion(1, 0);
@@ -120,5 +124,5 @@ std::string HttpClient::post(
 
 std::string_view HttpClient::getHostURL() const noexcept
 {
-    return m_host;
+    return mHost.empty() ? std::string_view{} : std::string_view(mHost);
 }
