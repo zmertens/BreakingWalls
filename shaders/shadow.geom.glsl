@@ -18,19 +18,22 @@ out vec2 vShadowCoord;
 void main()
 {
     // Project player position to screen space
-    vec4 playerClip = uProjectionMatrix * uViewMatrix * vec4(uPlayerPos, 1.0);
+    // Offset downward to cast shadow from feet, not center/head
+    vec3 feetPos = uPlayerPos - vec3(0.0, uPlayerRadius * 1.2, 0.0);  // Position at feet level
+    
+    vec4 playerClip = uProjectionMatrix * uViewMatrix * vec4(feetPos, 1.0);
     vec3 playerNDC = playerClip.xyz / playerClip.w;  // Normalize to [-1, 1]
     vec2 playerScreen = (playerNDC.xy + 1.0) * 0.5;  // Convert to [0, 1]
     
-    // Shadow quad dimensions in screen space
-    float shadowWidth = uPlayerRadius * 0.5 * uInvResolution.x;   // Scale to screen resolution
-    float shadowHeight = uPlayerRadius * 0.3 * uInvResolution.y;  // Shadow is flatter than wide
+    // Shadow quad dimensions in screen space (fixed, readable size)
+    float shadowWidth = 0.12;   // 12% of screen width on each side
+    float shadowHeight = 0.08;  // 8% of screen height above/below
     
-    // Offset shadow slightly below the character
-    float shadowOffsetY = -0.15;  // Slight offset downward
+    // No additional vertical offset - feet position is already low
+    float shadowOffsetY = 0.0;
     
     // Create quad corners in NDC space
-    // Shadow quad positioned below character in screen space
+    // Shadow quad positioned at feet in screen space
     
     // Top-left (-x, +y)
     vec2 topLeft = playerScreen + vec2(-shadowWidth, shadowOffsetY + shadowHeight);

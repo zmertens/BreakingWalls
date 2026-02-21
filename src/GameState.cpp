@@ -352,6 +352,12 @@ void GameState::draw() const noexcept
         // Render character shadow to shadow texture
         renderCharacterShadow();
 
+        // Render player reflection on ground plane
+        renderPlayerReflection();
+
+        // Reset viewport to main window before compositing
+        glViewport(0, 0, mWindowWidth, mWindowHeight);
+
         if (mCompositeShader && mBillboardFBO != 0 && mBillboardColorTex != 0)
         {
             renderCompositeScene();
@@ -374,11 +380,12 @@ void GameState::initializeGraphicsResources() noexcept
         {
             int width = 0;
             int height = 0;
-            SDL_GetWindowSize(sdlWindow, &width, &height);
+            SDL_GetWindowSizeInPixels(sdlWindow, &width, &height);
             if (width > 0 && height > 0)
             {
                 mWindowWidth = width;
                 mWindowHeight = height;
+                SDL_Log("GameState: Initial window size in pixels: %dx%d", mWindowWidth, mWindowHeight);
             }
         }
     }
@@ -399,6 +406,7 @@ void GameState::initializeGraphicsResources() noexcept
     createPathTracerTextures();
     createCompositeTargets();
     initializeShadowResources();  // Initialize shadow rendering
+    initializeReflectionResources();  // Initialize reflection rendering
 
     // Upload sphere data from World to GPU with extra capacity for dynamic spawning
     const auto &spheres = mWorld.getSpheres();
@@ -471,6 +479,12 @@ void GameState::createPathTracerTextures() noexcept
         " (IDs: " + std::to_string(mAccumTex->get()) + ", " + std::to_string(mDisplayTex->get()) + ")");
 }
 
+void GameState::handleWindowResize() noexcept
+{
+    // Window resize is now handled in handleEvent() with proper physical pixel detection
+    // This method is kept for future use but resize handling is in event loop
+}
+
 void GameState::createCompositeTargets() noexcept
 {
     if (mWindowWidth <= 0 || mWindowHeight <= 0)
@@ -512,22 +526,33 @@ void GameState::createCompositeTargets() noexcept
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
+    glReadBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindRenderbuffer(GL_RENDERBUFFER, 0);
 }
 
 void GameState::initializeShadowResources() noexcept
 {
-    if (mShadowsInitialized || mWindowWidth <= 0 || mWindowHeight <= 0)
+    if (mWindowWidth <= 0 || mWindowHeight <= 0)
     {
         return;
     }
 
-    // Create shadow map texture
-    if (mShadowTexture == 0)
+    // Delete existing resources if resizing
+    if (mShadowTexture != 0)
     {
-        glGenTextures(1, &mShadowTexture);
+        glDeleteTextures(1, &mShadowTexture);
+        mShadowTexture = 0;
     }
+    if (mShadowFBO != 0)
+    {
+        glDeleteFramebuffers(1, &mShadowFBO);
+        mShadowFBO = 0;
+    }
+
+    // Create shadow map texture
+    glGenTextures(1, &mShadowTexture);
     glBindTexture(GL_TEXTURE_2D, mShadowTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -536,10 +561,7 @@ void GameState::initializeShadowResources() noexcept
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
 
     // Create shadow FBO
-    if (mShadowFBO == 0)
-    {
-        glGenFramebuffers(1, &mShadowFBO);
-    }
+    glGenFramebuffers(1, &mShadowFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, mShadowFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mShadowTexture, 0);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -550,7 +572,11 @@ void GameState::initializeShadowResources() noexcept
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Shadow framebuffer incomplete");
     }
 
-    // Create shadow quad (single point that will be expanded to quad by geometry shader)
+    // Clear the framebuffer to ensure no stale data
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Create shadow quad (single point that will be expanded to quad by geometry shader) - only once
     if (mShadowVAO == 0)
     {
         glGenVertexArrays(1, &mShadowVAO);
@@ -568,10 +594,97 @@ void GameState::initializeShadowResources() noexcept
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
+    glReadBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
     glBindTexture(GL_TEXTURE_2D, 0);
 
     mShadowsInitialized = true;
     SDL_Log("GameState: Shadow resources initialized");
+}
+
+void GameState::initializeReflectionResources() noexcept
+{
+    if (mWindowWidth <= 0 || mWindowHeight <= 0)
+    {
+        SDL_Log("GameState: initializeReflectionResources() early return - invalid dimensions: %dx%d", mWindowWidth, mWindowHeight);
+        return;
+    }
+
+    SDL_Log("GameState: initializeReflectionResources() START - creating texture size %dx%d", mWindowWidth, mWindowHeight);
+
+    // Always unbind and validate before reallocation
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+    // Delete existing resources if resizing
+    if (mReflectionColorTex != 0)
+    {
+        glDeleteTextures(1, &mReflectionColorTex);
+        mReflectionColorTex = 0;
+        SDL_Log("GameState: Deleted old reflection texture");
+    }
+    if (mReflectionDepthRbo != 0)
+    {
+        glDeleteRenderbuffers(1, &mReflectionDepthRbo);
+        mReflectionDepthRbo = 0;
+    }
+    if (mReflectionFBO != 0)
+    {
+        glDeleteFramebuffers(1, &mReflectionFBO);
+        mReflectionFBO = 0;
+        SDL_Log("GameState: Deleted old reflection FBO");
+    }
+
+    // Create reflection color texture
+    glGenTextures(1, &mReflectionColorTex);
+    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
+    
+    // Verify texture size was created correctly
+    GLint texWidth = 0, texHeight = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texWidth);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
+    SDL_Log("GameState: Reflection texture created - requested %dx%d, actual %dx%d", mWindowWidth, mWindowHeight, texWidth, texHeight);
+
+    // Create reflection depth buffer
+    glGenRenderbuffers(1, &mReflectionDepthRbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, mReflectionDepthRbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, mWindowWidth, mWindowHeight);
+
+    // Create reflection FBO
+    glGenFramebuffers(1, &mReflectionFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, mReflectionFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mReflectionColorTex, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mReflectionDepthRbo);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (fboStatus != GL_FRAMEBUFFER_COMPLETE)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Reflection framebuffer incomplete: 0x%x", fboStatus);
+        return;
+    }
+    SDL_Log("GameState: Reflection FBO created successfully");
+
+    // Clear the framebuffer to ensure no stale data
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // Explicitly unbind before returning
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
+    glReadBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+    mReflectionsInitialized = true;
+    SDL_Log("GameState: Reflection resources initialized COMPLETE (size: %dx%d, tex=%u, fbo=%u)", mWindowWidth, mWindowHeight, mReflectionColorTex, mReflectionFBO);
 }
 
 void GameState::initializeWalkParticles() noexcept
@@ -781,6 +894,116 @@ void GameState::renderCharacterShadow() const noexcept
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+void GameState::renderPlayerReflection() const noexcept
+{
+    if (!mReflectionsInitialized || mReflectionFBO == 0 || mReflectionColorTex == 0)
+    {
+        return;
+    }
+
+    // Validate reflection FBO is still valid and matches window size
+    glBindFramebuffer(GL_FRAMEBUFFER, mReflectionFBO);
+    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    
+    if (fboStatus != GL_FRAMEBUFFER_COMPLETE)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Reflection FBO invalid, skipping reflection: 0x%x", fboStatus);
+        return;
+    }
+
+    // Verify texture size matches expected size
+    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex);
+    GLint texWidth = 0, texHeight = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texWidth);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    if (texWidth != mWindowWidth || texHeight != mWindowHeight)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, 
+                    "GameState: Reflection texture size mismatch! Expected %dx%d, got %dx%d", 
+                    mWindowWidth, mWindowHeight, texWidth, texHeight);
+    }
+
+    // Ensure clean state before rendering
+    glFlush();
+
+    SDL_Log("GameState: renderPlayerReflection() - START");
+    SDL_Log("  Viewport: %dx%d", mWindowWidth, mWindowHeight);
+    SDL_Log("  Texture size: %dx%d", texWidth, texHeight);
+    
+    // Render reflection to texture
+    glBindFramebuffer(GL_FRAMEBUFFER, mReflectionFBO);
+    glViewport(0, 0, mWindowWidth, mWindowHeight);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+
+    // Get camera matrices
+    const int safeHeight = std::max(mWindowHeight, 1);
+    const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
+    SDL_Log("  Aspect ratio: %.4f (width=%d, height=%d, safeHeight=%d)", 
+            aspectRatio, mWindowWidth, mWindowHeight, safeHeight);
+
+    // Render reflected player - mirror Y position below ground plane
+    glm::vec3 reflectedPos = mPlayer.getPosition();
+    SDL_Log("  Player original pos: (%.2f, %.2f, %.2f)", reflectedPos.x, reflectedPos.y, reflectedPos.z);
+    reflectedPos.y = -reflectedPos.y;  // Mirror across Y=0 plane
+    SDL_Log("  Player reflected pos: (%.2f, %.2f, %.2f)", reflectedPos.x, reflectedPos.y, reflectedPos.z);
+
+    if (mSkinnedModelShader)
+    {
+        auto *models = getContext().models;
+        if (models)
+        {
+            try
+            {
+                const GLTFModel &characterModel = models->get(Models::ID::STYLIZED_CHARACTER);
+                if (characterModel.isLoaded())
+                {
+                    const float timeSeconds = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+
+                    glm::mat4 modelMatrix(1.0f);
+                    modelMatrix = glm::translate(modelMatrix, reflectedPos + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f));
+                    modelMatrix = glm::rotate(modelMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+                    modelMatrix = glm::scale(modelMatrix, glm::vec3(kCharacterRasterScale));
+
+                    // Scale Y negative for reflection
+                    modelMatrix = glm::scale(modelMatrix, glm::vec3(1.0f, -1.0f, 1.0f));
+
+                    mSkinnedModelShader->bind();
+                    mSkinnedModelShader->setUniform("uSunDir", computeSunDirection(timeSeconds));
+
+                    glm::mat4 viewMatrix = mCamera.getLookAt();
+                    glm::mat4 projMatrix = mCamera.getPerspective(aspectRatio);
+
+                    characterModel.render(
+                        *mSkinnedModelShader,
+                        modelMatrix,
+                        viewMatrix,
+                        projMatrix,
+                        mModelAnimTimeSeconds);
+                    
+                    SDL_Log("  Reflection rendered successfully");
+                }
+            }
+            catch (const std::exception &e)
+            {
+                SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Reflection render failed: %s", e.what());
+            }
+        }
+    }
+
+    // Ensure reflection rendering completes before unbinding
+    glFlush();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    SDL_Log("GameState: renderPlayerReflection() - END");
+}
+
 void GameState::renderWithComputeShaders() const noexcept
 {
     if (!mComputeShader || !mDisplayShader)
@@ -795,17 +1018,7 @@ void GameState::renderWithComputeShaders() const noexcept
             int width = 0;
             int height = 0;
             SDL_GetWindowSize(sdlWindow, &width, &height);
-            if (width > 0 && height > 0 && (width != mWindowWidth || height != mWindowHeight))
-            {
-                mWindowWidth = width;
-                mWindowHeight = height;
-                glViewport(0, 0, mWindowWidth, mWindowHeight);
-                const_cast<GameState *>(this)->updateRenderResolution();
-                const_cast<GameState *>(this)->createPathTracerTextures();
-                const_cast<GameState *>(this)->createCompositeTargets();
-                const_cast<GameState *>(this)->initializeShadowResources();  // Also resize shadow texture
-                mCurrentBatch = 0;
-            }
+            // Window resize handling is done in update() for better state management
         }
     }
 
@@ -1039,16 +1252,28 @@ void GameState::renderCompositeScene() const noexcept
         return;
     }
 
+    SDL_Log("GameState: renderCompositeScene() - viewport will be set to %dx%d", mWindowWidth, mWindowHeight);
+    SDL_Log("GameState: renderCompositeScene() - binding textures: scene=%u billboard=%u shadow=%u reflection=%u", 
+            mDisplayTex ? mDisplayTex->get() : 0, mBillboardColorTex, mShadowTexture, mReflectionColorTex);
+
+    // Ensure we're rendering to the main framebuffer
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, mWindowWidth, mWindowHeight);
+
     mCompositeShader->bind();
     mCompositeShader->setUniform("uSceneTex", 0);
     mCompositeShader->setUniform("uBillboardTex", 1);
     mCompositeShader->setUniform("uShadowTex", 2);
+    mCompositeShader->setUniform("uReflectionTex", 3);
     mCompositeShader->setUniform("uInvResolution", glm::vec2(1.0f / static_cast<float>(mWindowWidth), 1.0f / static_cast<float>(mWindowHeight)));
     mCompositeShader->setUniform("uBloomThreshold", 0.65f);
     mCompositeShader->setUniform("uBloomStrength", 0.32f);
     mCompositeShader->setUniform("uSpriteAlpha", 1.0f);
     mCompositeShader->setUniform("uShadowStrength", 0.65f);
     mCompositeShader->setUniform("uEnableShadows", mShadowsInitialized && mShadowTexture != 0);
+    mCompositeShader->setUniform("uEnableReflections", mReflectionsInitialized && mReflectionColorTex != 0);
+    SDL_Log("GameState: renderCompositeScene() - reflections enabled: %d (initialized=%d, tex=%u)", 
+            (mReflectionsInitialized && mReflectionColorTex != 0) ? 1 : 0, mReflectionsInitialized ? 1 : 0, mReflectionColorTex);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
@@ -1056,6 +1281,8 @@ void GameState::renderCompositeScene() const noexcept
     glBindTexture(GL_TEXTURE_2D, mBillboardColorTex);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, mShadowTexture);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex);
 
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -1100,6 +1327,24 @@ void GameState::cleanupResources() noexcept
     GLSDLHelper::deleteVAO(mShadowVAO);
     GLSDLHelper::deleteBuffer(mShadowVBO);
     mShadowsInitialized = false;
+
+    // Clean up reflection resources
+    if (mReflectionFBO != 0)
+    {
+        glDeleteFramebuffers(1, &mReflectionFBO);
+        mReflectionFBO = 0;
+    }
+    if (mReflectionColorTex != 0)
+    {
+        glDeleteTextures(1, &mReflectionColorTex);
+        mReflectionColorTex = 0;
+    }
+    if (mReflectionDepthRbo != 0)
+    {
+        glDeleteRenderbuffers(1, &mReflectionDepthRbo);
+        mReflectionDepthRbo = 0;
+    }
+    mReflectionsInitialized = false;
 
     if (mWalkParticlesVAO != 0)
     {
@@ -1155,6 +1400,8 @@ void GameState::updateSounds() noexcept
 
 bool GameState::update(float dt, unsigned int subSteps) noexcept
 {
+    // Window resize is now handled in handleEvent() with DPI-aware pixel detection
+    
     const glm::vec3 playerPosBeforeUpdate = mPlayer.getPosition();
 
     if (dt > 0.0f)
@@ -1235,25 +1482,37 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 }
 
 bool GameState::handleEvent(const SDL_Event &event) noexcept {
-    // Handle window resize event
+    // Handle window resize event - query physical pixels to handle DPI scaling
     if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-        int newW = event.window.data1;
-        int newH = event.window.data2;
-        if (newW > 0 && newH > 0 && (newW != mWindowWidth || newH != mWindowHeight)) {
-            mWindowWidth = newW;
-            mWindowHeight = newH;
-            // Update OpenGL viewport to match new window size
-            glViewport(0, 0, mWindowWidth, mWindowHeight);
-            // Update internal rendering resolution for path tracer
-            updateRenderResolution();
-            // Recreate path tracer textures
-            createPathTracerTextures();
-            createCompositeTargets();
-            // Reset accumulation for new size
-            mCurrentBatch = 0;
-            log("GameState: Window resized, path tracer textures recreated (window/internal): " +
-                std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " / " +
-                std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight));
+        // Always query the actual pixel size from SDL instead of trusting event data
+        // This ensures we get physical pixels on DPI-scaled displays
+        if (auto *window = getContext().window; window != nullptr)
+        {
+            if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
+            {
+                int newW = 0, newH = 0;
+                SDL_GetWindowSizeInPixels(sdlWindow, &newW, &newH);
+                
+                if (newW > 0 && newH > 0 && (newW != mWindowWidth || newH != mWindowHeight)) {
+                    SDL_Log("GameState::handleEvent() - Resize detected: %dx%d -> %dx%d", 
+                            mWindowWidth, mWindowHeight, newW, newH);
+                    mWindowWidth = newW;
+                    mWindowHeight = newH;
+                    // Update OpenGL viewport to match new window size
+                    glViewport(0, 0, mWindowWidth, mWindowHeight);
+                    // Update internal rendering resolution for path tracer
+                    updateRenderResolution();
+                    // Recreate path tracer textures
+                    createPathTracerTextures();
+                    createCompositeTargets();
+                    initializeShadowResources();
+                    initializeReflectionResources();
+                    // Reset accumulation for new size
+                    mCurrentBatch = 0;
+                    SDL_Log("GameState: Window resized to physical pixels %dx%d (internal: %dx%d)", 
+                            mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight);
+                }
+            }
         }
     }
     
@@ -1419,6 +1678,8 @@ void GameState::renderPlayerCharacter() const noexcept
     if (mCompositeShader && mBillboardFBO != 0)
     {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
+        glReadBuffer(GL_BACK);  // CRITICAL: Reset to default for main framebuffer
     }
 }
 

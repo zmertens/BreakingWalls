@@ -105,6 +105,12 @@ private:
     GLuint mShadowVBO{0};              // Shadow quad VBO
     bool mShadowsInitialized{false};
 
+    // Reflection rendering resources
+    GLuint mReflectionFBO{0};          // Reflection render target
+    GLuint mReflectionColorTex{0};     // Reflection color texture
+    GLuint mReflectionDepthRbo{0};     // Reflection depth buffer
+    bool mReflectionsInitialized{false};
+
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
     uint32_t mSamplesPerBatch{4};
@@ -163,6 +169,9 @@ private:
     /// Recompute internal render resolution from current window size
     void updateRenderResolution() noexcept;
 
+    /// Check and handle window resize events
+    void handleWindowResize() noexcept;
+
     /// Create textures for path tracing (accumulation + display)
     void createPathTracerTextures() noexcept;
 
@@ -174,6 +183,12 @@ private:
 
     /// Render character shadow to shadow map with soft-shadow blur
     void renderCharacterShadow() const noexcept;
+
+    /// Initialize player reflection rendering resources
+    void initializeReflectionResources() noexcept;
+
+    /// Render reflected player character on ground plane
+    void renderPlayerReflection() const noexcept;
 
     /// Compile shader program used for skeletal model rendering
     void initializeSkinnedModelShader() noexcept;

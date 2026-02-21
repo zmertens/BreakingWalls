@@ -6,8 +6,8 @@ layout (location = 0) out vec4 FragColor;
 
 layout (binding = 0) uniform sampler2D uSceneTex;
 layout (binding = 1) uniform sampler2D uBillboardTex;
-layout (binding = 2) uniform sampler2D uShadowTex;          // Stencil shadow texture
-layout (binding = 3) uniform sampler2D uSoftShadowKernel;   // Soft shadow blur kernel
+layout (binding = 2) uniform sampler2D uShadowTex;          // Shadow texture
+layout (binding = 3) uniform sampler2D uReflectionTex;      // Player reflection texture
 
 uniform vec2 uInvResolution;
 uniform float uBloomThreshold;
@@ -15,6 +15,7 @@ uniform float uBloomStrength;
 uniform float uSpriteAlpha;
 uniform float uShadowStrength;           // Shadow intensity [0-1]
 uniform bool uEnableShadows;             // Toggle shadow rendering
+uniform bool uEnableReflections;         // Toggle reflection rendering
 
 vec3 bloomSample(vec2 uv)
 {
@@ -67,6 +68,18 @@ void main()
         // Shadow approaches 1.0 for full shadow, 0.0 for no shadow
         vec3 shadowTint = mix(composite, composite * 0.6, shadowFactor * uShadowStrength);
         composite = mix(composite, shadowTint, shadowFactor * uShadowStrength);
+    }
+
+    // Apply player reflection on ground plane
+    if (uEnableReflections)
+    {
+        vec4 reflectionSample = texture(uReflectionTex, vTexCoord);
+        if (reflectionSample.a > 0.001)
+        {
+            // Blend reflection with low opacity (ground plane blending)
+            float reflectionAlpha = reflectionSample.a * 0.3;  // 30% opacity for reflection
+            composite = mix(composite, reflectionSample.rgb, reflectionAlpha);
+        }
     }
 
     vec2 texel = uInvResolution;
