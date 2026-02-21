@@ -783,6 +783,13 @@ void GameState::renderWalkParticles() const noexcept
     const glm::vec3 footCenter = playerPos + glm::vec3(0.0f, 1.0f, 0.0f);
     const glm::vec3 attractor1 = footCenter + glm::vec3(-0.65f, 0.1f, 0.0f);
     const glm::vec3 attractor2 = footCenter + glm::vec3(0.65f, 0.1f, 0.0f);
+    const float scoreBoost = getScoreBracketBoost();
+
+    // Higher score tiers intensify particle presence.
+    const float particleMass = 0.35f + scoreBoost * 1.15f;
+    const float gravityScale = 1.0f + scoreBoost * 1.10f;
+    const float pointSize = 2.6f + scoreBoost * 2.2f;
+    const float particleAlpha = 0.22f + scoreBoost * 0.22f;
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mWalkParticlesPosSSBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mWalkParticlesVelSSBO);
@@ -790,9 +797,9 @@ void GameState::renderWalkParticles() const noexcept
     mWalkParticlesComputeShader->bind();
     mWalkParticlesComputeShader->setUniform("BlackHolePos1", attractor1);
     mWalkParticlesComputeShader->setUniform("BlackHolePos2", attractor2);
-    mWalkParticlesComputeShader->setUniform("Gravity1", 210.0f);
-    mWalkParticlesComputeShader->setUniform("Gravity2", 210.0f);
-    mWalkParticlesComputeShader->setUniform("ParticleInvMass", 1.0f / 0.35f);
+    mWalkParticlesComputeShader->setUniform("Gravity1", 210.0f * gravityScale);
+    mWalkParticlesComputeShader->setUniform("Gravity2", 210.0f * gravityScale);
+    mWalkParticlesComputeShader->setUniform("ParticleInvMass", 1.0f / std::max(0.05f, particleMass));
     mWalkParticlesComputeShader->setUniform("DeltaT", std::max(0.0001f, dt * 0.8f));
     mWalkParticlesComputeShader->setUniform("MaxDist", 4.5f);
     mWalkParticlesComputeShader->setUniform("ParticleCount", mWalkParticleCount);
@@ -812,11 +819,11 @@ void GameState::renderWalkParticles() const noexcept
 
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
-    glPointSize(2.6f);
+    glPointSize(pointSize);
 
     mWalkParticlesRenderShader->bind();
     mWalkParticlesRenderShader->setUniform("MVP", mvp);
-    mWalkParticlesRenderShader->setUniform("Color", glm::vec4(0.46f, 0.30f, 0.17f, 0.22f));
+    mWalkParticlesRenderShader->setUniform("Color", glm::vec4(0.46f, 0.30f, 0.17f, std::clamp(particleAlpha, 0.0f, 1.0f)));
     glBindVertexArray(mWalkParticlesVAO);
     glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(mWalkParticleCount));
 
@@ -852,9 +859,35 @@ bool GameState::checkCameraMovement() const noexcept
     return false;
 }
 
+float GameState::getScoreBracketBoost() const noexcept
+{
+    if (mPlayerPoints >= mMotionBlurBracket4Points)
+    {
+        return mMotionBlurBracket4Boost;
+    }
+    if (mPlayerPoints >= mMotionBlurBracket3Points)
+    {
+        return mMotionBlurBracket3Boost;
+    }
+    if (mPlayerPoints >= mMotionBlurBracket2Points)
+    {
+        return mMotionBlurBracket2Boost;
+    }
+    if (mPlayerPoints >= mMotionBlurBracket1Points)
+    {
+        return mMotionBlurBracket1Boost;
+    }
+    return 0.0f;
+}
+
 void GameState::renderCharacterShadow() const noexcept
 {
     if (!mShadowsInitialized || !mShadowShader || mShadowFBO == 0 || mShadowTexture == 0)
+    {
+        return;
+    }
+
+    if (mCamera.getMode() != CameraMode::THIRD_PERSON)
     {
         return;
     }
@@ -873,18 +906,52 @@ void GameState::renderCharacterShadow() const noexcept
     float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(mWindowHeight);
     glm::mat4 view = mCamera.getLookAt();
     glm::mat4 projection = mCamera.getPerspective(aspectRatio);
+    const float timeSeconds = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+    const glm::vec3 lightDir = computeSunDirection(timeSeconds);
+    const float groundY = mWorld.getGroundPlane().getPoint().y;
 
-    // Render shadow quad using geometry shader expansion
+    // Render billboard shadows by projecting sprite footprint along light direction onto the ground plane
     mShadowShader->bind();
     mShadowShader->setUniform("uViewMatrix", view);
     mShadowShader->setUniform("uProjectionMatrix", projection);
-    mShadowShader->setUniform("uPlayerPos", mPlayer.getPosition());
-    mShadowShader->setUniform("uPlayerRadius", 1.35f);
+    mShadowShader->setUniform("uLightDir", lightDir);
+    mShadowShader->setUniform("uGroundY", groundY);
     mShadowShader->setUniform("uInvResolution", glm::vec2(1.0f / static_cast<float>(mWindowWidth), 1.0f / static_cast<float>(mWindowHeight)));
 
-    // Render shadow quad
     glBindVertexArray(mShadowVAO);
-    glDrawArrays(GL_POINTS, 0, 1);
+
+    auto drawBillboardShadow = [this](const glm::vec3 &spritePos, float billboardHalfSize)
+    {
+        mShadowShader->setUniform("uSpritePos", spritePos);
+        mShadowShader->setUniform("uSpriteHalfSize", billboardHalfSize);
+        glDrawArrays(GL_POINTS, 0, 1);
+    };
+
+    // Local character billboard shadow
+    drawBillboardShadow(mPlayer.getPosition(), 3.0f);
+
+    // Decorative trackside sprite shadows (same layout as renderTracksideBillboards)
+    if (mArcadeModeEnabled)
+    {
+        const glm::vec3 playerPos = mPlayer.getPosition();
+        constexpr int kBillboardsAhead = 9;
+        constexpr int kBillboardsBehind = 4;
+        constexpr float kBillboardSpacing = 28.0f;
+        constexpr float kBillboardHeight = 2.9f;
+        constexpr float kBorderMargin = 7.5f;
+
+        const float borderZ = mRunnerStrafeLimit + kBorderMargin;
+
+        for (int i = -kBillboardsBehind; i <= kBillboardsAhead; ++i)
+        {
+            const float x = playerPos.x + static_cast<float>(i) * kBillboardSpacing;
+            const float stagger = (i & 1) == 0 ? 0.0f : 2.0f;
+
+            drawBillboardShadow(glm::vec3(x, kBillboardHeight, borderZ + stagger), 3.0f);
+            drawBillboardShadow(glm::vec3(x, kBillboardHeight, -borderZ - stagger), 3.0f);
+        }
+    }
+
     glBindVertexArray(0);
 
     // Disable blending
@@ -1151,7 +1218,12 @@ void GameState::renderWithComputeShaders() const noexcept
     const float speed = mPlayerPlanarSpeedForFx;
     const float denom = std::max(0.001f, kMotionBlurFullSpeed - kMotionBlurMinSpeed);
     const float blurFactor = std::clamp((speed - kMotionBlurMinSpeed) / denom, 0.0f, 1.0f);
-    const float historyBlend = kStaticHistoryBlend + (kMovingHistoryBlend - kStaticHistoryBlend) * blurFactor;
+
+    // Score brackets: increase temporal blur as player points rise so movement feels faster.
+    const float scoreBlurBoost = getScoreBracketBoost();
+
+    const float effectiveBlurFactor = std::clamp(blurFactor + scoreBlurBoost, 0.0f, 1.0f);
+    const float historyBlend = kStaticHistoryBlend + (kMovingHistoryBlend - kStaticHistoryBlend) * effectiveBlurFactor;
 
     // Always compute each frame; temporal history blending controls persistence.
     if (mTotalBatches > 0u)
@@ -1740,6 +1812,17 @@ void GameState::syncRunnerSettingsFromOptions() noexcept
         mRunnerPickupSpacing = std::max(4.0f, opts.mRunnerPickupSpacing);
         mRunnerObstaclePenalty = std::max(1, opts.mRunnerObstaclePenalty);
         mRunnerCollisionCooldown = std::max(0.05f, opts.mRunnerCollisionCooldown);
+
+        mMotionBlurBracket1Points = std::max(0, opts.mMotionBlurBracket1Points);
+        mMotionBlurBracket2Points = std::max(mMotionBlurBracket1Points, opts.mMotionBlurBracket2Points);
+        mMotionBlurBracket3Points = std::max(mMotionBlurBracket2Points, opts.mMotionBlurBracket3Points);
+        mMotionBlurBracket4Points = std::max(mMotionBlurBracket3Points, opts.mMotionBlurBracket4Points);
+
+        mMotionBlurBracket1Boost = std::clamp(opts.mMotionBlurBracket1Boost, 0.0f, 1.0f);
+        mMotionBlurBracket2Boost = std::clamp(opts.mMotionBlurBracket2Boost, mMotionBlurBracket1Boost, 1.0f);
+        mMotionBlurBracket3Boost = std::clamp(opts.mMotionBlurBracket3Boost, mMotionBlurBracket2Boost, 1.0f);
+        mMotionBlurBracket4Boost = std::clamp(opts.mMotionBlurBracket4Boost, mMotionBlurBracket3Boost, 1.0f);
+
         mWorld.setRunnerTuning(mRunnerStrafeLimit, mRunnerPickupSpawnAhead, mRunnerSpeed + 8.0f);
     }
     catch (const std::exception &)

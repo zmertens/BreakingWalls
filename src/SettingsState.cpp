@@ -68,6 +68,14 @@ void SettingsState::draw() const noexcept
     static float runnerPickupSpacing = 18.0f;
     static int runnerObstaclePenalty = 25;
     static float runnerCollisionCooldown = 0.40f;
+    static int motionBlurBracket1Points = 300;
+    static int motionBlurBracket2Points = 500;
+    static int motionBlurBracket3Points = 800;
+    static int motionBlurBracket4Points = 1200;
+    static float motionBlurBracket1Boost = 0.10f;
+    static float motionBlurBracket2Boost = 0.18f;
+    static float motionBlurBracket3Boost = 0.28f;
+    static float motionBlurBracket4Boost = 0.38f;
 
     if (!initialized)
     {
@@ -93,6 +101,14 @@ void SettingsState::draw() const noexcept
             runnerPickupSpacing = opts.mRunnerPickupSpacing;
             runnerObstaclePenalty = opts.mRunnerObstaclePenalty;
             runnerCollisionCooldown = opts.mRunnerCollisionCooldown;
+            motionBlurBracket1Points = opts.mMotionBlurBracket1Points;
+            motionBlurBracket2Points = opts.mMotionBlurBracket2Points;
+            motionBlurBracket3Points = opts.mMotionBlurBracket3Points;
+            motionBlurBracket4Points = opts.mMotionBlurBracket4Points;
+            motionBlurBracket1Boost = opts.mMotionBlurBracket1Boost;
+            motionBlurBracket2Boost = opts.mMotionBlurBracket2Boost;
+            motionBlurBracket3Boost = opts.mMotionBlurBracket3Boost;
+            motionBlurBracket4Boost = opts.mMotionBlurBracket4Boost;
         }
         catch (const std::exception &)
         {
@@ -176,6 +192,14 @@ void SettingsState::draw() const noexcept
             runnerPickupSpacing = readFloatValue("runner_pickup_spacing", runnerPickupSpacing);
             runnerObstaclePenalty = readIntValue("runner_obstacle_penalty", runnerObstaclePenalty);
             runnerCollisionCooldown = readFloatValue("runner_collision_cooldown", runnerCollisionCooldown);
+            motionBlurBracket1Points = readIntValue("runner_motion_blur_bracket1_points", motionBlurBracket1Points);
+            motionBlurBracket2Points = readIntValue("runner_motion_blur_bracket2_points", motionBlurBracket2Points);
+            motionBlurBracket3Points = readIntValue("runner_motion_blur_bracket3_points", motionBlurBracket3Points);
+            motionBlurBracket4Points = readIntValue("runner_motion_blur_bracket4_points", motionBlurBracket4Points);
+            motionBlurBracket1Boost = readFloatValue("runner_motion_blur_bracket1_boost", motionBlurBracket1Boost);
+            motionBlurBracket2Boost = readFloatValue("runner_motion_blur_bracket2_boost", motionBlurBracket2Boost);
+            motionBlurBracket3Boost = readFloatValue("runner_motion_blur_bracket3_boost", motionBlurBracket3Boost);
+            motionBlurBracket4Boost = readFloatValue("runner_motion_blur_bracket4_boost", motionBlurBracket4Boost);
         }
         catch (const std::exception &)
         {
@@ -241,9 +265,46 @@ void SettingsState::draw() const noexcept
         ImGui::SliderInt("Obstacle Penalty", &runnerObstaclePenalty, 1, 200);
         ImGui::SliderFloat("Collision Cooldown", &runnerCollisionCooldown, 0.05f, 2.0f, "%.2f s");
 
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "Motion Blur Score Brackets:");
+        ImGui::SliderInt("Blur Bracket 1 Points", &motionBlurBracket1Points, 0, 3000);
+        ImGui::SliderInt("Blur Bracket 2 Points", &motionBlurBracket2Points, 0, 3000);
+        ImGui::SliderInt("Blur Bracket 3 Points", &motionBlurBracket3Points, 0, 3000);
+        ImGui::SliderInt("Blur Bracket 4 Points", &motionBlurBracket4Points, 0, 3000);
+        ImGui::SliderFloat("Blur Bracket 1 Boost", &motionBlurBracket1Boost, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Blur Bracket 2 Boost", &motionBlurBracket2Boost, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Blur Bracket 3 Boost", &motionBlurBracket3Boost, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Blur Bracket 4 Boost", &motionBlurBracket4Boost, 0.0f, 1.0f, "%.2f");
+
         if (runnerPickupMinValue > runnerPickupMaxValue)
         {
             runnerPickupMinValue = runnerPickupMaxValue;
+        }
+
+        if (motionBlurBracket2Points < motionBlurBracket1Points)
+        {
+            motionBlurBracket2Points = motionBlurBracket1Points;
+        }
+        if (motionBlurBracket3Points < motionBlurBracket2Points)
+        {
+            motionBlurBracket3Points = motionBlurBracket2Points;
+        }
+        if (motionBlurBracket4Points < motionBlurBracket3Points)
+        {
+            motionBlurBracket4Points = motionBlurBracket3Points;
+        }
+
+        if (motionBlurBracket2Boost < motionBlurBracket1Boost)
+        {
+            motionBlurBracket2Boost = motionBlurBracket1Boost;
+        }
+        if (motionBlurBracket3Boost < motionBlurBracket2Boost)
+        {
+            motionBlurBracket3Boost = motionBlurBracket2Boost;
+        }
+        if (motionBlurBracket4Boost < motionBlurBracket3Boost)
+        {
+            motionBlurBracket4Boost = motionBlurBracket3Boost;
         }
 
         ImGui::Spacing();
@@ -272,7 +333,15 @@ void SettingsState::draw() const noexcept
                 .mRunnerPickupMaxValue = runnerPickupMaxValue,
                 .mRunnerPickupSpacing = runnerPickupSpacing,
                 .mRunnerObstaclePenalty = runnerObstaclePenalty,
-                .mRunnerCollisionCooldown = runnerCollisionCooldown});
+                .mRunnerCollisionCooldown = runnerCollisionCooldown,
+                .mMotionBlurBracket1Points = motionBlurBracket1Points,
+                .mMotionBlurBracket2Points = motionBlurBracket2Points,
+                .mMotionBlurBracket3Points = motionBlurBracket3Points,
+                .mMotionBlurBracket4Points = motionBlurBracket4Points,
+                .mMotionBlurBracket1Boost = motionBlurBracket1Boost,
+                .mMotionBlurBracket2Boost = motionBlurBracket2Boost,
+                .mMotionBlurBracket3Boost = motionBlurBracket3Boost,
+                .mMotionBlurBracket4Boost = motionBlurBracket4Boost});
         }
 
         ImGui::SameLine();
@@ -298,6 +367,14 @@ void SettingsState::draw() const noexcept
             runnerPickupSpacing = 18.0f;
             runnerObstaclePenalty = 25;
             runnerCollisionCooldown = 0.40f;
+            motionBlurBracket1Points = 300;
+            motionBlurBracket2Points = 500;
+            motionBlurBracket3Points = 800;
+            motionBlurBracket4Points = 1200;
+            motionBlurBracket1Boost = 0.10f;
+            motionBlurBracket2Boost = 0.18f;
+            motionBlurBracket3Boost = 0.28f;
+            motionBlurBracket4Boost = 0.38f;
         }
 
         ImGui::SameLine();
@@ -406,6 +483,14 @@ void SettingsState::applySettings(const Options &options) const noexcept
             opts.mRunnerPickupSpacing = options.mRunnerPickupSpacing;
             opts.mRunnerObstaclePenalty = options.mRunnerObstaclePenalty;
             opts.mRunnerCollisionCooldown = options.mRunnerCollisionCooldown;
+            opts.mMotionBlurBracket1Points = options.mMotionBlurBracket1Points;
+            opts.mMotionBlurBracket2Points = options.mMotionBlurBracket2Points;
+            opts.mMotionBlurBracket3Points = options.mMotionBlurBracket3Points;
+            opts.mMotionBlurBracket4Points = options.mMotionBlurBracket4Points;
+            opts.mMotionBlurBracket1Boost = options.mMotionBlurBracket1Boost;
+            opts.mMotionBlurBracket2Boost = options.mMotionBlurBracket2Boost;
+            opts.mMotionBlurBracket3Boost = options.mMotionBlurBracket3Boost;
+            opts.mMotionBlurBracket4Boost = options.mMotionBlurBracket4Boost;
         }
         catch (const std::exception &)
         {

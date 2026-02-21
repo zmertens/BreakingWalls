@@ -150,6 +150,14 @@ private:
     int mRunnerPickupMaxValue{40};
     int mRunnerObstaclePenalty{25};
     int mRunnerStartingPoints{100};
+    int mMotionBlurBracket1Points{300};
+    int mMotionBlurBracket2Points{500};
+    int mMotionBlurBracket3Points{800};
+    int mMotionBlurBracket4Points{1200};
+    float mMotionBlurBracket1Boost{0.10f};
+    float mMotionBlurBracket2Boost{0.18f};
+    float mMotionBlurBracket3Boost{0.28f};
+    float mMotionBlurBracket4Boost{0.38f};
     bool mRunLost{false};
     mutable int mLastAnnouncedPoints{0};
     mutable float mHudUpdateTimer{0.0f};
@@ -213,6 +221,9 @@ private:
 
     /// Check if camera moved and reset accumulation if needed
     bool checkCameraMovement() const noexcept;
+
+    /// Compute score-based boost using configurable runner brackets
+    float getScoreBracketBoost() const noexcept;
 
     /// Update listener position and remove stopped sounds
     void updateSounds() noexcept;

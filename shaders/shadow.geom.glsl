@@ -1,73 +1,88 @@
 #version 430 core
 
-// Geometry shader to create a screen-space shadow quad
-// Renders shadow directly in screen space for simple screen-aligned shadow
+// Geometry shader to project billboard sprite shadows onto the ground plane.
 
 layout (points) in;
 layout (triangle_strip, max_vertices = 4) out;
 
-// Player/Character setup
-uniform vec3 uPlayerPos;           // Character center position (world space)
-uniform float uPlayerRadius;       // Character radius
+// Billboard sprite setup
+uniform vec3 uSpritePos;           // Billboard center position (world space)
+uniform float uSpriteHalfSize;     // Half-size used when rendering the billboard
+uniform vec3 uLightDir;            // Direction from sun toward the scene
+uniform float uGroundY;            // Ground plane height
 uniform mat4 uViewMatrix;          // Camera view matrix
 uniform mat4 uProjectionMatrix;    // Camera projection matrix
 uniform vec2 uInvResolution;       // 1.0 / screen resolution
 
 out vec2 vShadowCoord;
 
+vec3 projectToGround(vec3 worldPos, vec3 lightDir, float groundY)
+{
+    float dirY = lightDir.y;
+    if (abs(dirY) < 1e-3)
+    {
+        dirY = (dirY >= 0.0) ? 1e-3 : -1e-3;
+    }
+
+    float t = (groundY - worldPos.y) / dirY;
+    return worldPos + lightDir * t;
+}
+
 void main()
 {
-    // Project player position to screen space
-    // Offset downward to cast shadow from feet, not center/head
-    vec3 feetPos = uPlayerPos - vec3(0.0, uPlayerRadius * 1.2, 0.0);  // Position at feet level
-    
-    vec4 playerClip = uProjectionMatrix * uViewMatrix * vec4(feetPos, 1.0);
-    vec3 playerNDC = playerClip.xyz / playerClip.w;  // Normalize to [-1, 1]
-    vec2 playerScreen = (playerNDC.xy + 1.0) * 0.5;  // Convert to [0, 1]
-    
-    // Shadow quad dimensions in screen space (fixed, readable size)
-    float shadowWidth = 0.12;   // 12% of screen width on each side
-    float shadowHeight = 0.08;  // 8% of screen height above/below
-    
-    // No additional vertical offset - feet position is already low
-    float shadowOffsetY = 0.0;
-    
-    // Create quad corners in NDC space
-    // Shadow quad positioned at feet in screen space
-    
-    // Top-left (-x, +y)
-    vec2 topLeft = playerScreen + vec2(-shadowWidth, shadowOffsetY + shadowHeight);
-    
-    // Top-right (+x, +y)
-    vec2 topRight = playerScreen + vec2(shadowWidth, shadowOffsetY + shadowHeight);
-    
-    // Bottom-left (-x, -y)
-    vec2 bottomLeft = playerScreen + vec2(-shadowWidth, shadowOffsetY - shadowHeight);
-    
-    // Bottom-right (+x, -y)
-    vec2 bottomRight = playerScreen + vec2(shadowWidth, shadowOffsetY - shadowHeight);
-    
-    // Emit shadow quad in screen space (convert back to NDC)
-    
+    // Get camera right/up axes in world space from inverse view matrix.
+    mat3 invView = mat3(inverse(uViewMatrix));
+    vec3 camRight = normalize(invView[0]);
+    vec3 camUp = normalize(invView[1]);
+
+    // Estimate billboard feet point in world space.
+    vec3 feetPos = uSpritePos - camUp * (uSpriteHalfSize * 0.95);
+
+    vec3 lightDir = normalize(uLightDir);
+    vec3 projectedCenter = projectToGround(feetPos, lightDir, uGroundY);
+
+    // Build a ground-plane basis: light direction projected onto XZ plus perpendicular.
+    vec2 lightXZ = lightDir.xz;
+    float lightXZLen = length(lightXZ);
+    vec2 lightForward = (lightXZLen > 1e-4) ? (lightXZ / lightXZLen) : vec2(1.0, 0.0);
+    vec2 lightSide = vec2(-lightForward.y, lightForward.x);
+
+    float invLightY = 1.0 / max(abs(lightDir.y), 0.08);
+    float shadowWidth = uSpriteHalfSize * 0.55;
+    float shadowLength = uSpriteHalfSize * (0.90 + 0.65 * invLightY);
+
+    vec3 topLeftWorld = projectedCenter + vec3(lightSide.x * shadowWidth + lightForward.x * shadowLength,
+                                                0.0,
+                                                lightSide.y * shadowWidth + lightForward.y * shadowLength);
+    vec3 topRightWorld = projectedCenter + vec3(-lightSide.x * shadowWidth + lightForward.x * shadowLength,
+                                                 0.0,
+                                                 -lightSide.y * shadowWidth + lightForward.y * shadowLength);
+    vec3 bottomLeftWorld = projectedCenter + vec3(lightSide.x * shadowWidth - lightForward.x * shadowLength,
+                                                   0.0,
+                                                   lightSide.y * shadowWidth - lightForward.y * shadowLength);
+    vec3 bottomRightWorld = projectedCenter + vec3(-lightSide.x * shadowWidth - lightForward.x * shadowLength,
+                                                    0.0,
+                                                    -lightSide.y * shadowWidth - lightForward.y * shadowLength);
+
     // Top-left
-    gl_Position = vec4(topLeft * 2.0 - 1.0, playerNDC.z, 1.0);
+    gl_Position = uProjectionMatrix * uViewMatrix * vec4(topLeftWorld, 1.0);
     vShadowCoord = vec2(0.0, 1.0);
     EmitVertex();
-    
+
     // Top-right
-    gl_Position = vec4(topRight * 2.0 - 1.0, playerNDC.z, 1.0);
+    gl_Position = uProjectionMatrix * uViewMatrix * vec4(topRightWorld, 1.0);
     vShadowCoord = vec2(1.0, 1.0);
     EmitVertex();
-    
+
     // Bottom-left
-    gl_Position = vec4(bottomLeft * 2.0 - 1.0, playerNDC.z, 1.0);
+    gl_Position = uProjectionMatrix * uViewMatrix * vec4(bottomLeftWorld, 1.0);
     vShadowCoord = vec2(0.0, 0.0);
     EmitVertex();
-    
+
     // Bottom-right
-    gl_Position = vec4(bottomRight * 2.0 - 1.0, playerNDC.z, 1.0);
+    gl_Position = uProjectionMatrix * uViewMatrix * vec4(bottomRightWorld, 1.0);
     vShadowCoord = vec2(1.0, 0.0);
     EmitVertex();
-    
+
     EndPrimitive();
 }

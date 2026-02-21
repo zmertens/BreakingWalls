@@ -24,6 +24,16 @@ struct Options
     float mRunnerPickupSpacing{18.0f};
     int mRunnerObstaclePenalty{25};
     float mRunnerCollisionCooldown{0.40f};
+
+    // Motion blur score brackets
+    int mMotionBlurBracket1Points{300};
+    int mMotionBlurBracket2Points{500};
+    int mMotionBlurBracket3Points{800};
+    int mMotionBlurBracket4Points{1200};
+    float mMotionBlurBracket1Boost{0.10f};
+    float mMotionBlurBracket2Boost{0.18f};
+    float mMotionBlurBracket3Boost{0.28f};
+    float mMotionBlurBracket4Boost{0.38f};
 };
 
 #endif // OPTIONS_HPP
