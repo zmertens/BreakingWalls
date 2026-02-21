@@ -523,7 +523,8 @@ void GLSDLHelper::renderBillboardSpriteUV(
     const glm::vec4 &tintColor,
     bool flipX,
     bool flipY,
-    bool useRedAsAlpha) noexcept
+    bool useRedAsAlpha,
+    const glm::vec2 &halfSizeXY) noexcept
 {
     if (!sBillboardInitialized)
     {
@@ -548,6 +549,7 @@ void GLSDLHelper::renderBillboardSpriteUV(
     billboardShader.setUniform("ModelViewMatrix", modelViewMatrix);
     billboardShader.setUniform("ProjectionMatrix", projMatrix);
     billboardShader.setUniform("Size2", halfSize);
+    billboardShader.setUniform("SizeXY", halfSizeXY);
     billboardShader.setUniform("TexRect", glm::vec4(uMin, vMin, uMax, vMax));
     billboardShader.setUniform("SpriteTex", static_cast<GLint>(0));
     billboardShader.setUniform("TintColor", tintColor);

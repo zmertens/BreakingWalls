@@ -2171,6 +2171,17 @@ void GameState::drawRunnerScorePopups() const noexcept
                                                 ? glm::vec4(0.37f, 1.0f, 0.46f, alpha)
                                                 : glm::vec4(1.0f, 0.40f, 0.40f, alpha);
 
+                const float glyphWidth = std::max(0.001f, glyph->X1 - glyph->X0);
+                const float glyphHeight = std::max(0.001f, glyph->Y1 - glyph->Y0);
+                const float glyphAspect = std::clamp(glyphWidth / glyphHeight, 0.30f, 1.80f);
+                glm::vec2 charHalfSize(halfSize * glyphAspect, halfSize);
+
+                if (label[i] == '-')
+                {
+                    charHalfSize.x = halfSize * 0.95f;
+                    charHalfSize.y = halfSize * 0.28f;
+                }
+
                 GLSDLHelper::renderBillboardSpriteUV(
                     *billboardShader,
                     atlasTextureId,
@@ -2182,7 +2193,8 @@ void GameState::drawRunnerScorePopups() const noexcept
                     tintColor,
                     false,
                     false,
-                        false);
+                    false,
+                    charHalfSize);
             }
 
             continue;

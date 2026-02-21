@@ -112,7 +112,8 @@ public:
         const glm::vec4 &tintColor,
         bool flipX,
         bool flipY,
-        bool useRedAsAlpha) noexcept;
+        bool useRedAsAlpha,
+        const glm::vec2 &halfSizeXY = glm::vec2(0.0f)) noexcept;
 
     /// Check if billboard rendering is initialized
     [[nodiscard]] static bool isBillboardInitialized() noexcept { return sBillboardInitialized; }
