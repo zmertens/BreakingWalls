@@ -113,6 +113,10 @@ void main()
     vec3 L = normalize(-uSunDir);
     float ndotl = max(dot(N, L), 0.0);
 
+    // Approximate view direction toward camera-origin in view-like framing.
+    // Used only for a subtle stylized rim highlight.
+    vec3 V = normalize(-vWorldPos);
+
     float region = 0.5 + 0.5 * sin(vWorldPos.y * 2.4 + vWorldPos.x * 0.9);
     float grain = 0.5 + 0.5 * sin(vWorldPos.x * 8.7 + vWorldPos.z * 6.3 + vWorldPos.y * 3.1);
 
@@ -137,7 +141,20 @@ void main()
     float fresnel = pow(1.0 - max(dot(N, vec3(0.0, 1.0, 0.0)), 0.0), 2.0);
     color += vec3(0.12, 0.07, 0.04) * fresnel;
 
+    // Subtle synthwave-compatible cool rim light to separate player silhouette
+    // from earthy terrain without abandoning the brown palette.
+    float rim = pow(1.0 - max(dot(N, V), 0.0), 2.6);
+    vec3 rimColor = vec3(0.18, 0.30, 0.42);
+    color += rimColor * rim * 0.16;
+
+    // Gentle lift on lit regions so the character reads cleaner against the scene.
+    float highlight = smoothstep(0.35, 1.0, ndotl);
+    color += vec3(0.07, 0.05, 0.04) * highlight;
+
     color *= 0.86;
+
+    // Keep bloom contribution controlled but allow small punch-through on highlights.
+    color = min(color, vec3(1.18));
 
     FragColor = vec4(color, 1.0);
 }
@@ -928,7 +945,7 @@ void GameState::renderCharacterShadow() const noexcept
     };
 
     // Local character billboard shadow
-    drawBillboardShadow(mPlayer.getPosition(), 3.0f);
+    drawBillboardShadow(mPlayer.getPosition() + glm::vec3(0.0f, kPlayerShadowCenterYOffset, 0.0f), 3.0f);
 
     // Decorative trackside sprite shadows (same layout as renderTracksideBillboards)
     if (mArcadeModeEnabled)
@@ -1016,11 +1033,13 @@ void GameState::renderPlayerReflection() const noexcept
     SDL_Log("  Aspect ratio: %.4f (width=%d, height=%d, safeHeight=%d)", 
             aspectRatio, mWindowWidth, mWindowHeight, safeHeight);
 
-    // Render reflected player - mirror Y position below ground plane
-    glm::vec3 reflectedPos = mPlayer.getPosition();
-    SDL_Log("  Player original pos: (%.2f, %.2f, %.2f)", reflectedPos.x, reflectedPos.y, reflectedPos.z);
-    reflectedPos.y = -reflectedPos.y;  // Mirror across Y=0 plane
-    SDL_Log("  Player reflected pos: (%.2f, %.2f, %.2f)", reflectedPos.x, reflectedPos.y, reflectedPos.z);
+    // Render reflected player - mirror model position across the actual ground plane
+    const float groundY = mWorld.getGroundPlane().getPoint().y;
+    const glm::vec3 modelPos = mPlayer.getPosition() + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f);
+    glm::vec3 reflectedModelPos = modelPos;
+    reflectedModelPos.y = (2.0f * groundY) - modelPos.y;
+    SDL_Log("  Player model pos: (%.2f, %.2f, %.2f)", modelPos.x, modelPos.y, modelPos.z);
+    SDL_Log("  Player reflected model pos: (%.2f, %.2f, %.2f)", reflectedModelPos.x, reflectedModelPos.y, reflectedModelPos.z);
 
     if (mSkinnedModelShader)
     {
@@ -1035,7 +1054,7 @@ void GameState::renderPlayerReflection() const noexcept
                     const float timeSeconds = static_cast<float>(SDL_GetTicks()) / 1000.0f;
 
                     glm::mat4 modelMatrix(1.0f);
-                    modelMatrix = glm::translate(modelMatrix, reflectedPos + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f));
+                    modelMatrix = glm::translate(modelMatrix, reflectedModelPos);
                     modelMatrix = glm::rotate(modelMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
                     modelMatrix = glm::scale(modelMatrix, glm::vec3(kCharacterRasterScale));
 
