@@ -18,16 +18,16 @@
 #include "StateStack.hpp"
 
 SettingsState::SettingsState(StateStack &stack, Context context)
-    : State(stack, context), mShowText{true}, mShowSettingsWindow(true)
+    : State(stack, context), mShowText{true}, mFont{&context.getFontManager()->get(Fonts::ID::COUSINE_REGULAR)}, mShowSettingsWindow(true)
 {
 }
 
 void SettingsState::draw() const noexcept
 {
     // Draw the game background FIRST, before any ImGui calls
-    const auto &window = *getContext().window;
+    const auto &window = *getContext().getRenderWindow();
 
-    ImGui::PushFont(getContext().fonts->get(Fonts::ID::COUSINE_REGULAR).get());
+    ImGui::PushFont(mFont->get());
 
     // Apply color schema (matching MenuState)
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.016f, 0.047f, 0.024f, 0.95f));
@@ -45,7 +45,7 @@ void SettingsState::draw() const noexcept
     ImGui::SetNextWindowSize(ImVec2(500, 600), ImGuiCond_FirstUseEver);
 
     // Get current options from global OptionsManager
-    auto &optionsManager = *getContext().options;
+    auto &optionsManager = *getContext().getOptionsManager();
 
     // Use static variables to persist UI state between frames
     // Initialize from options on first access using a flag
@@ -113,97 +113,6 @@ void SettingsState::draw() const noexcept
         catch (const std::exception &)
         {
             // Options not loaded yet, use defaults
-        }
-
-        // Try to load arcade defaults from JSON (physics.json)
-        try
-        {
-            std::unordered_map<std::string, std::string> resources;
-            JSONUtils::loadConfiguration("physics.json", resources);
-
-            const auto readStringValue = [&resources](const char *key) -> std::string
-            {
-                auto it = resources.find(key);
-                if (it == resources.end())
-                {
-                    return "";
-                }
-                return JSONUtils::extractJsonValue(it->second);
-            };
-
-            const auto readFloatValue = [&readStringValue](const char *key, float fallback) -> float
-            {
-                const std::string raw = readStringValue(key);
-                if (raw.empty())
-                {
-                    return fallback;
-                }
-
-                try
-                {
-                    return std::stof(raw);
-                }
-                catch (...)
-                {
-                    return fallback;
-                }
-            };
-
-            const auto readIntValue = [&readStringValue](const char *key, int fallback) -> int
-            {
-                const std::string raw = readStringValue(key);
-                if (raw.empty())
-                {
-                    return fallback;
-                }
-
-                try
-                {
-                    return std::stoi(raw);
-                }
-                catch (...)
-                {
-                    return fallback;
-                }
-            };
-
-            const auto readBoolValue = [&readStringValue](const char *key, bool fallback) -> bool
-            {
-                std::string raw = readStringValue(key);
-                std::transform(raw.begin(), raw.end(), raw.begin(), [](unsigned char c)
-                               { return static_cast<char>(std::tolower(c)); });
-                if (raw == "true" || raw == "1")
-                {
-                    return true;
-                }
-                if (raw == "false" || raw == "0")
-                {
-                    return false;
-                }
-                return fallback;
-            };
-
-            arcadeModeEnabled = readBoolValue("arcade_mode_enabled", arcadeModeEnabled);
-            runnerSpeed = readFloatValue("runner_speed", runnerSpeed);
-            runnerStrafeLimit = readFloatValue("runner_strafe_limit", runnerStrafeLimit);
-            runnerStartingPoints = readIntValue("runner_starting_points", runnerStartingPoints);
-            runnerPickupMinValue = readIntValue("runner_pickup_min_value", runnerPickupMinValue);
-            runnerPickupMaxValue = readIntValue("runner_pickup_max_value", runnerPickupMaxValue);
-            runnerPickupSpacing = readFloatValue("runner_pickup_spacing", runnerPickupSpacing);
-            runnerObstaclePenalty = readIntValue("runner_obstacle_penalty", runnerObstaclePenalty);
-            runnerCollisionCooldown = readFloatValue("runner_collision_cooldown", runnerCollisionCooldown);
-            motionBlurBracket1Points = readIntValue("runner_motion_blur_bracket1_points", motionBlurBracket1Points);
-            motionBlurBracket2Points = readIntValue("runner_motion_blur_bracket2_points", motionBlurBracket2Points);
-            motionBlurBracket3Points = readIntValue("runner_motion_blur_bracket3_points", motionBlurBracket3Points);
-            motionBlurBracket4Points = readIntValue("runner_motion_blur_bracket4_points", motionBlurBracket4Points);
-            motionBlurBracket1Boost = readFloatValue("runner_motion_blur_bracket1_boost", motionBlurBracket1Boost);
-            motionBlurBracket2Boost = readFloatValue("runner_motion_blur_bracket2_boost", motionBlurBracket2Boost);
-            motionBlurBracket3Boost = readFloatValue("runner_motion_blur_bracket3_boost", motionBlurBracket3Boost);
-            motionBlurBracket4Boost = readFloatValue("runner_motion_blur_bracket4_boost", motionBlurBracket4Boost);
-        }
-        catch (const std::exception &)
-        {
-            // JSON unavailable - keep current defaults
         }
         initialized = true;
     }
@@ -314,7 +223,6 @@ void SettingsState::draw() const noexcept
         // Action buttons
         if (ImGui::Button("Apply Settings", ImVec2(150, 40)))
         {
-            log("Settings applied");
             applySettings(Options{
                 .mAntiAliasing = antialiasing,
                 .mEnableMusic = enableMusic,
@@ -348,7 +256,6 @@ void SettingsState::draw() const noexcept
 
         if (ImGui::Button("Reset to Default", ImVec2(150, 40)))
         {
-            log("Settings reset to default");
             masterVolume = 100.0f;
             musicVolume = 80.0f;
             sfxVolume = 90.0f;
@@ -381,7 +288,6 @@ void SettingsState::draw() const noexcept
 
         if (ImGui::Button("Back to Menu", ImVec2(150, 40)))
         {
-            log("Returning to menu");
             mShowSettingsWindow = false;
         }
     }
@@ -400,12 +306,8 @@ void SettingsState::draw() const noexcept
 
 void SettingsState::applySettings(const Options &options) const noexcept
 {
-    auto *window = getContext().window;
-    auto *sounds = getContext().sounds;
-    auto *musicManager = getContext().music;
-
     // Apply fullscreen
-    if (window)
+    if (auto *window = getContext().getRenderWindow(); window != nullptr)
     {
         window->setFullscreen(options.mFullscreen);
         window->setVsync(options.mVsync);
@@ -429,7 +331,7 @@ void SettingsState::applySettings(const Options &options) const noexcept
     }
 
     // Apply sound settings
-    if (sounds)
+    if (auto *sounds = getContext().getSoundPlayer(); sounds != nullptr)
     {
         sounds->setEnabled(options.mEnableSound);
         // Apply master volume * sfx volume
@@ -437,7 +339,7 @@ void SettingsState::applySettings(const Options &options) const noexcept
     }
 
     // Apply music settings to all music players
-    if (musicManager)
+    if (auto *musicManager = getContext().getMusicManager(); musicManager != nullptr)
     {
         try
         {
@@ -459,8 +361,7 @@ void SettingsState::applySettings(const Options &options) const noexcept
     }
 
     // Store settings in OptionsManager for persistence
-    auto *optionsManager = getContext().options;
-    if (optionsManager)
+    if (auto *optionsManager = getContext().getOptionsManager(); optionsManager != nullptr)
     {
         try
         {
@@ -497,11 +398,6 @@ void SettingsState::applySettings(const Options &options) const noexcept
             // Options not available
         }
     }
-
-    log("Applied settings: Fullscreen=" + std::to_string(options.mFullscreen) +
-        ", VSync=" + std::to_string(options.mVsync) +
-        ", Music=" + std::to_string(options.mEnableMusic) +
-        ", Sound=" + std::to_string(options.mEnableSound));
 }
 
 bool SettingsState::update(float dt, unsigned int subSteps) noexcept
@@ -526,6 +422,7 @@ bool SettingsState::handleEvent(const SDL_Event &event) noexcept
     {
         if (event.key.scancode == SDL_SCANCODE_ESCAPE)
         {
+            log("SettingsState: Escape key pressed, returning to menu...");
             mShowSettingsWindow = false;
         }
     }

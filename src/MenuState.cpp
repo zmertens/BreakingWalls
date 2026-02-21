@@ -25,7 +25,9 @@
 #include "StateStack.hpp"
 
 MenuState::MenuState(StateStack &stack, Context context)
-    : State(stack, context), mSelectedMenuItem(MenuItem::NEW_GAME), mShowMainMenu(true), mItemSelectedFlags{}, mMusic{}
+    : State(stack, context), mSelectedMenuItem(MenuItem::NEW_GAME), mShowMainMenu(true), mItemSelectedFlags{}, 
+    mFont{&context.getFontManager()->get(Fonts::ID::NUNITO_SANS)},
+    mMusic{&context.getMusicManager()->get(Music::ID::MENU_MUSIC)}
 {
     // initialize selection flags so UI shows correct selected item
     mItemSelectedFlags.fill(false);
@@ -52,7 +54,7 @@ void MenuState::draw() const noexcept
     using std::size_t;
     using std::string;
 
-    ImGui::PushFont(getContext().fonts->get(Fonts::ID::NUNITO_SANS).get());
+    ImGui::PushFont(mFont->get());
 
     if constexpr (false)
     {
@@ -103,7 +105,7 @@ void MenuState::draw() const noexcept
             "Resume", "New Game", "Network Game", "Settings", "Splash screen", "Quit"};
 
         // Use Selectable with bool* overload so ImGui keeps a consistent toggled state
-        const auto active = static_cast<size_t>(getContext().player->isActive());
+        const auto active = static_cast<size_t>(getContext().getPlayer()->isActive());
         for (size_t i{static_cast<size_t>(active ? 0 : 1)}; i < menuItems.size(); ++i)
         {
             if (bool *flag = &mItemSelectedFlags[i]; ImGui::Selectable(menuItems[i].c_str(), flag))
@@ -115,7 +117,6 @@ void MenuState::draw() const noexcept
                 }
                 *flag = true;
                 mSelectedMenuItem = static_cast<MenuItem>(i);
-                log("Navigation: " + menuItems[i] + " selected");
             }
             ImGui::Spacing();
         }
@@ -139,8 +140,7 @@ void MenuState::draw() const noexcept
         // Action buttons
         if (ImGui::Button("Confirm Selection", ImVec2(180, 40)))
         {
-            log("Confirmed selection: " + std::to_string(static_cast<unsigned int>(mSelectedMenuItem)));
-            getContext().sounds->play(SoundEffect::ID::SELECT);
+            getContext().getSoundPlayer()->play(SoundEffect::ID::SELECT);
             // Close the menu window to trigger state transition in update()
             mShowMainMenu = false;
         }
@@ -245,7 +245,7 @@ void MenuState::initializeParticleScene() const noexcept
         return;
     }
 
-    if (auto *window = getContext().window; window != nullptr)
+    if (auto *window = getContext().getRenderWindow(); window != nullptr)
     {
         SDL_GetWindowSize(window->getSDLWindow(), &mWindowWidth, &mWindowHeight);
     }
@@ -253,7 +253,7 @@ void MenuState::initializeParticleScene() const noexcept
 
     try
     {
-        mParticlesComputeShader = &getContext().shaders->get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
+        mParticlesComputeShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
     }
     catch (const std::exception &e)
     {
@@ -264,7 +264,7 @@ void MenuState::initializeParticleScene() const noexcept
 
     try
     {
-        mParticlesRenderShader = &getContext().shaders->get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
+        mParticlesRenderShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
     }
     catch (const std::exception &e)
     {
@@ -348,7 +348,6 @@ void MenuState::initializeParticleScene() const noexcept
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     mParticlesInitialized = true;
-    log("MenuState: Particle scene initialized");
 }
 
 void MenuState::renderParticleScene() const noexcept

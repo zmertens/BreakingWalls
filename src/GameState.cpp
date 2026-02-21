@@ -4,19 +4,19 @@
 
 #include <dearimgui/imgui.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <random>
 #include <vector>
-#include <algorithm>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glad/glad.h>
 
-#include "GLTFModel.hpp"
-#include "GLSDLHelper.hpp"
 #include "Font.hpp"
+#include "GLSDLHelper.hpp"
+#include "GLTFModel.hpp"
 #include "MusicPlayer.hpp"
 #include "Options.hpp"
 #include "Player.hpp"
@@ -219,7 +219,7 @@ void main()
 }
 
 GameState::GameState(StateStack &stack, Context context)
-    : State{stack, context}, mWorld{*context.window, *context.fonts, *context.textures, *context.shaders}, mPlayer{*context.player}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mCompositeShader{nullptr}, mSkinnedModelShader{nullptr}
+    : State{stack, context}, mWorld{*context.getRenderWindow(), *context.getFontManager(), *context.getTextureManager(), *context.getShaderManager()}, mPlayer{*context.getPlayer()}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mCompositeShader{nullptr}, mSkinnedModelShader{nullptr}
       // Initialize camera at maze spawn position (will be updated after first chunk loads)
       ,
       mCamera{glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f}
@@ -231,7 +231,7 @@ GameState::GameState(StateStack &stack, Context context)
     mPlayer.initializeAnimator(0);
 
     // Get shaders from context
-    auto &shaders = *context.shaders;
+    auto &shaders = *context.getShaderManager();
     try
     {
         mDisplayShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD);
@@ -267,7 +267,7 @@ GameState::GameState(StateStack &stack, Context context)
         }
     }
 
-    auto &textures = *context.textures;
+    auto &textures = *context.getTextureManager();
     try
     {
         mAccumTex = &textures.get(Textures::ID::PATH_TRACER_ACCUM);
@@ -281,30 +281,22 @@ GameState::GameState(StateStack &stack, Context context)
     }
 
     // Get and play game music from context
-    auto &music = *context.music;
+    auto &music = *context.getMusicManager();
     try
     {
-        log("GameState: Attempting to get music from manager...");
         mGameMusic = &music.get(Music::ID::GAME_MUSIC);
         if (mGameMusic)
         {
 
             // Start the music - the periodic health check in update() will handle restarts if needed
             bool wasPlaying = mGameMusic->isPlaying();
-            log("GameState: Music isPlaying before play(): " + std::string(wasPlaying ? "true" : "false"));
 
             if (!wasPlaying)
             {
-                log("GameState: Starting game music...");
                 mGameMusic->play();
 
                 // Check immediately after
                 bool nowPlaying = mGameMusic->isPlaying();
-                log("GameState: Music isPlaying after play(): " + std::string(nowPlaying ? "true" : "false"));
-            }
-            else
-            {
-                log("GameState: Music already playing - keeping it running");
             }
         }
     }
@@ -412,17 +404,12 @@ void GameState::draw() const noexcept
         }
     }
 
-    // REMOVED: mWorld.draw() - World no longer handles rendering
-    // All rendering is now done via compute shaders above
-
     drawRunnerHud();
 }
 
 void GameState::initializeGraphicsResources() noexcept
 {
-    log("GameState: Initializing OpenGL 4.3 graphics pipeline...");
-
-    if (auto *window = getContext().window; window != nullptr)
+    if (auto *window = getContext().getRenderWindow(); window != nullptr)
     {
         if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
         {
@@ -480,8 +467,6 @@ void GameState::initializeGraphicsResources() noexcept
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, mTriangleSSBO);
     GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(triangleBufferSize), nullptr);
     mTriangleSSBOCapacityBytes = triangleBufferSize;
-
-    log("GameState: Graphics pipeline initialization complete");
 }
 
 void GameState::updateRenderResolution() noexcept
@@ -741,8 +726,8 @@ void GameState::initializeWalkParticles() noexcept
 
     try
     {
-        mWalkParticlesComputeShader = &getContext().shaders->get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
-        mWalkParticlesRenderShader = &getContext().shaders->get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
+        mWalkParticlesComputeShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
+        mWalkParticlesRenderShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
     }
     catch (const std::exception &e)
     {
@@ -1061,7 +1046,7 @@ void GameState::renderPlayerReflection() const noexcept
     reflectedModelPos.y = (2.0f * groundY) - modelPos.y;
     if (mSkinnedModelShader)
     {
-        auto *models = getContext().models;
+        auto *models = getContext().getModelsManager();
         if (models)
         {
             try
@@ -1112,7 +1097,7 @@ void GameState::renderWithComputeShaders() const noexcept
         return;
     }
 
-    if (auto *window = getContext().window; window != nullptr)
+    if (auto *window = getContext().getRenderWindow(); window != nullptr)
     {
         if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
         {
@@ -1173,7 +1158,7 @@ void GameState::renderWithComputeShaders() const noexcept
         traceTriangles.reserve(kMaxPathTracerTriangles);
     }
 
-    auto *models = getContext().models;
+    auto *models = getContext().getModelsManager();
     if (kEnableTrianglePathTraceProxy && models)
     {
         try
@@ -1477,7 +1462,7 @@ void GameState::cleanupResources() noexcept
 void GameState::updateSounds() noexcept
 {
     // Get sound player from context
-    auto *sounds = getContext().sounds;
+    auto *sounds = getContext().getSoundPlayer();
     if (!sounds)
     {
         return;
@@ -1583,7 +1568,7 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
     {
         // Always query the actual pixel size from SDL instead of trusting event data
         // This ensures we get physical pixels on DPI-scaled displays
-        if (auto *window = getContext().window; window != nullptr)
+        if (auto *window = getContext().getRenderWindow(); window != nullptr)
         {
             if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
             {
@@ -1633,7 +1618,7 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
         // Jump with SPACE
         if (event.key.scancode == SDL_SCANCODE_SPACE)
         {
-            if (auto *sounds = getContext().sounds)
+            if (auto *sounds = getContext().getSoundPlayer())
             {
                 sounds->play(SoundEffect::ID::SELECT, sf::Vector2f{mPlayer.getPosition().x, mPlayer.getPosition().z});
             }
@@ -1643,7 +1628,7 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
         if (event.key.scancode == SDL_SCANCODE_R)
         {
             glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
-            if (auto *sounds = getContext().sounds)
+            if (auto *sounds = getContext().getSoundPlayer())
             {
                 sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{resetPos.x, resetPos.z});
             }
@@ -1709,7 +1694,7 @@ void GameState::renderPlayerCharacter() const noexcept
     bool renderedModel = false;
     if (mSkinnedModelShader)
     {
-        auto *models = getContext().models;
+        auto *models = getContext().getModelsManager();
         if (models)
         {
             GLboolean cullFaceWasEnabled = GL_FALSE;
@@ -1818,7 +1803,7 @@ void GameState::renderTracksideBillboards() const noexcept
 
 void GameState::syncRunnerSettingsFromOptions() noexcept
 {
-    auto *optionsManager = getContext().options;
+    auto *optionsManager = getContext().getOptionsManager();
     if (!optionsManager)
     {
         return;
@@ -1950,7 +1935,7 @@ void GameState::processRunnerCollisions(float dt) noexcept
                 mPlayer.triggerCollisionAnimation(true);
             }
 
-            if (auto *sounds = getContext().sounds)
+            if (auto *sounds = getContext().getSoundPlayer())
             {
                 sounds->play(SoundEffect::ID::THROW, sf::Vector2f{playerPos.x, playerPos.z});
             }
@@ -2062,7 +2047,7 @@ void GameState::drawRunnerScorePopups() const noexcept
     Shader *billboardShader = nullptr;
     try
     {
-        billboardShader = &getContext().shaders->get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
+        billboardShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
     }
     catch (const std::exception &)
     {
@@ -2072,7 +2057,7 @@ void GameState::drawRunnerScorePopups() const noexcept
     ImFont *font = nullptr;
     try
     {
-        font = getContext().fonts->get(Fonts::ID::COUSINE_REGULAR).get();
+        font = getContext().getFontManager()->get(Fonts::ID::COUSINE_REGULAR).get();
     }
     catch (const std::exception &)
     {

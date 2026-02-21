@@ -3,6 +3,7 @@
 
 #include "State.hpp"
 
+class Font;
 struct Options;
 
 class SettingsState : public State
@@ -19,6 +20,7 @@ private:
     void applySettings(const Options &options) const noexcept;
 
     bool mShowText;
+    Font *mFont;
 
     // Settings UI state variables
     mutable bool mShowSettingsWindow;

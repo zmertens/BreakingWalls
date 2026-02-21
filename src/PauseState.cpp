@@ -15,7 +15,7 @@ PauseState::PauseState(StateStack &stack, Context context)
 
 void PauseState::draw() const noexcept
 {
-    ImGui::PushFont(getContext().fonts->get(Fonts::ID::NUNITO_SANS).get());
+    ImGui::PushFont(getContext().getFontManager()->get(Fonts::ID::NUNITO_SANS).get());
 
     // Apply color schema
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.016f, 0.047f, 0.024f, 0.95f));     // #040c06
@@ -44,21 +44,18 @@ void PauseState::draw() const noexcept
         if (ImGui::Button("Resume Game", ImVec2(200, 40)))
         {
             mSelectedMenuItem = static_cast<unsigned int>(States::ID::GAME);
-            log("PauseState: Resume Game selected");
         }
         ImGui::Spacing();
 
         if (ImGui::Button("Main Menu", ImVec2(200, 40)))
         {
             mSelectedMenuItem = static_cast<unsigned int>(States::ID::MENU);
-            log("PauseState: Main Menu selected");
         }
         ImGui::Spacing();
 
         if (ImGui::Button("Exit Game", ImVec2(200, 40)))
         {
             mSelectedMenuItem = static_cast<unsigned int>(States::ID::DONE);
-            log("PauseState: Exit Game selected");
         }
         ImGui::Spacing();
     }

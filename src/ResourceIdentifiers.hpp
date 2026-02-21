@@ -112,9 +112,10 @@ class Font;
 class GLTFModel;
 class Level;
 class MusicPlayer;
-class Options;
 class Shader;
 class Texture;
+
+struct Options;
 
 // Forward declaration and a few type definitions
 template <typename Resource, typename Identifier>

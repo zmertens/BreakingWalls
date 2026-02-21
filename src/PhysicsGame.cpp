@@ -91,19 +91,8 @@ struct PhysicsGame::PhysicsGameImpl
         initDearImGui();
         initOptions();
 
-        mStateStack = std::make_unique<StateStack>(State::Context{
-            *mRenderWindow,
-            std::ref(mFonts),
-            std::ref(mLevels),
-            std::ref(mModels),
-            std::ref(mMusic),
-            std::ref(mOptions),
-            std::ref(mSoundBuffers),
-            *mSounds,
-            std::ref(mShaders),
-            std::ref(mTextures),
-            std::ref(mPlayer1),
-            std::ref(mHttpClient)});
+        mStateStack = std::make_unique<StateStack>(
+            State::Context().withRenderWindow(*mRenderWindow).withFontManager(mFonts).withLevelsManager(mLevels).withModelsManager(mModels).withMusicManager(mMusic).withOptionsManager(mOptions).withSoundBufferManager(mSoundBuffers).withSoundPlayer(*mSounds).withShaderManager(mShaders).withTextureManager(mTextures).withPlayer(mPlayer1).withHttpClient(mHttpClient));
 
         registerStates();
 

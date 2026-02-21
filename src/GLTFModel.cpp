@@ -347,9 +347,12 @@ namespace
     }
 }
 
+GLTFModel::GLTFModel() = default;
+
 GLTFModel::~GLTFModel()
 {
     clearGpuBuffers();
+    mImporter.reset();  // Explicitly release the importer before other cleanup
 }
 
 bool GLTFModel::readFile(std::string_view filename)
@@ -362,8 +365,8 @@ bool GLTFModel::readFile(std::string_view filename)
     mBoneMeshNodeTransforms.clear();
     mPreferredAnimationIndex = -1;
     
-    Assimp::Importer mImporter;
-    mScene = mImporter.ReadFile(
+    mImporter = std::make_unique<Assimp::Importer>();
+    mScene = mImporter->ReadFile(
         filename.data(),
         aiProcess_Triangulate |
             aiProcess_GenSmoothNormals |
@@ -377,7 +380,7 @@ bool GLTFModel::readFile(std::string_view filename)
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "GLTFModel: failed to load '%s': %s",
                      filename.data(),
-                     mImporter.GetErrorString());
+                     mImporter->GetErrorString());
         mScene = nullptr;
         return false;
     }
@@ -610,13 +613,6 @@ bool GLTFModel::readFile(std::string_view filename)
         }
     }
 
-    SDL_Log("GLTFModel: loaded '%s' with %u meshes, %u bones(mapped), %u mesh-bones(raw), %u animations",
-            filename.data(),
-            static_cast<unsigned int>(mMeshes.size()),
-            static_cast<unsigned int>(mBoneOffsets.size()),
-            static_cast<unsigned int>(totalMeshBones),
-            static_cast<unsigned int>(mScene->mNumAnimations));
-
     return true;
 }
 
@@ -779,6 +775,72 @@ bool GLTFModel::isLoaded() const noexcept
 std::size_t GLTFModel::getBoneCount() const noexcept
 {
     return mBoneOffsets.size();
+}
+
+std::vector<std::string> GLTFModel::getAnimationNames() const
+{
+    std::vector<std::string> names;
+    if (mScene && mScene->mNumAnimations > 0)
+    {
+        names.reserve(mScene->mNumAnimations);
+        for (unsigned int i = 0; i < mScene->mNumAnimations; ++i)
+        {
+            const auto *animation = mScene->mAnimations[i];
+            if (animation && animation->mName.length > 0)
+            {
+                names.push_back(animation->mName.C_Str());
+            }
+        }
+    }
+    return names;
+}
+
+std::string GLTFModel::getActiveAnimationName() const
+{
+    if (mScene && mPreferredAnimationIndex >= 0 && mPreferredAnimationIndex < static_cast<int>(mScene->mNumAnimations))
+    {
+        const auto *animation = mScene->mAnimations[mPreferredAnimationIndex];
+        if (animation && animation->mName.length > 0)
+        {
+            return animation->mName.C_Str();
+        }
+    }
+    return {};
+}
+
+std::vector<std::string> GLTFModel::getMeshes() const
+{
+    std::vector<std::string> meshNames;
+    if (mScene && mScene->mNumMeshes > 0)
+    {
+        meshNames.reserve(mScene->mNumMeshes);
+        for (unsigned int i = 0; i < mScene->mNumMeshes; ++i)
+        {
+            const auto *mesh = mScene->mMeshes[i];
+            if (mesh)
+            {
+                meshNames.push_back(mesh->mName.C_Str());
+            }
+        }
+    }
+    return meshNames;
+}
+
+std::size_t GLTFModel::getTotalMeshBones() const noexcept
+{
+    std::size_t total = 0;
+    if (mScene)
+    {
+        for (unsigned int i = 0; i < mScene->mNumMeshes; ++i)
+        {
+            const auto *mesh = mScene->mMeshes[i];
+            if (mesh)
+            {
+                total += mesh->mNumBones;
+            }
+        }
+    }
+    return total;
 }
 
 void GLTFModel::VertexBoneData::addBoneData(std::uint32_t boneId, float weight) noexcept

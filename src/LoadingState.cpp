@@ -24,6 +24,7 @@
 #include "JsonUtils.hpp"
 #include "Level.hpp"
 #include "MusicPlayer.hpp"
+#include "Options.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
 #include "SDLAudioStream.hpp"
@@ -200,7 +201,7 @@ public:
 
         mResourcePathPrefix = mazes::io_utils::getDirectoryPath(absolutePath) + "/";
 
-        SDL_Log("ResourceLoader: Resource path: %s, absolute: %s, prefix: %s\n",
+        SDL_Log("ResourceLoader: Resource path: %s,\nabsolute: %s,\nprefix: %s\n",
                 resourcePath.data(), absolutePath.c_str(), mResourcePathPrefix.c_str());
 
         std::unordered_map<std::string, std::string> resources{};
@@ -566,9 +567,9 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     {
         if (const auto resources = resourceLoader().getResources(); !resources.empty())
         {
-            log("Loading complete! Loaded %zu resources. Loading textures... " + std::to_string(resources.size()));
+            log("Loading complete! Loaded %zu resources. Loading getTextureManager()... " + std::to_string(resources.size()));
 
-            // Now actually load the textures from the worker-collected texture requests
+            // Now actually load the getTextureManager() from the worker-collected texture requests
             loadTexturesFromWorkerRequests();
             // Handle window icon separately (special case, not managed by TextureManager)
             loadWindowIcon(resources);
@@ -625,7 +626,7 @@ void LoadingState::loadResources() noexcept
 
 void LoadingState::loadFonts() noexcept
 {
-    auto &fonts = *getContext().fonts;
+    auto &fonts = *getContext().getFontManager();
 
     fonts.load(Fonts::ID::LIMELIGHT,
                Limelight_Regular_compressed_data,
@@ -642,7 +643,7 @@ void LoadingState::loadFonts() noexcept
 
 void LoadingState::loadAudio() noexcept
 {
-    auto &music = *getContext().music;
+    auto &music = *getContext().getMusicManager();
     // Use the same resource path prefix that was computed by the ResourceLoader
     auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
 
@@ -663,22 +664,12 @@ void LoadingState::loadAudio() noexcept
             log("LoadingState: Found music path: " + musicPath);
             log("LoadingState: Loading music into manager...");
 
+            const auto &options = *getContext().getOptionsManager();
             music.load(Music::ID::GAME_MUSIC,
                        std::string_view{musicPath},
-                       100.f, true);
+                       options.get(GUIOptions::ID::DE_FACTO).mMusicVolume, true);
 
-            log("LoadingState: Music resource loaded into manager successfully");
-
-            // Verify the music was loaded
-            try
-            {
-                auto &loadedMusic = music.get(Music::ID::GAME_MUSIC);
-                log("LoadingState: Music verified in manager");
-            }
-            catch (const std::exception &e)
-            {
-                log("LoadingState: Failed to verify music in manager: " + std::string(e.what()));
-            }
+            music.get(Music::ID::GAME_MUSIC).print();
         }
     }
     catch (const std::exception &e)
@@ -687,7 +678,7 @@ void LoadingState::loadAudio() noexcept
     }
 
     // Continue with existing sound effects loading...
-    auto &soundBuffers = *getContext().soundBuffers;
+    auto &soundBuffers = *getContext().getSoundBufferManager();
 
     try
     {
@@ -715,7 +706,7 @@ void LoadingState::loadAudio() noexcept
 
 void LoadingState::loadLevels() noexcept
 {
-    auto &levels = *getContext().levels;
+    auto &levels = *getContext().getLevelsManager();
     try
     {
         using mazes::configurator;
@@ -733,7 +724,7 @@ void LoadingState::loadLevels() noexcept
 
 void LoadingState::loadModels() noexcept
 {
-    auto &models = *getContext().models;
+    auto &models = *getContext().getModelsManager();
 
     try
     {
@@ -743,16 +734,19 @@ void LoadingState::loadModels() noexcept
 
         if (modelPath.empty())
         {
-            log("LoadingState: STYLIZED_CHARACTER_GLTF2_MODEL resource key not found in configuration");
+            log("LoadingState: model resource key not found in configuration");
         }
         else
         {
-            log("LoadingState: Found model path: " + modelPath);
-            log("LoadingState: Loading model into manager...");
-
             models.load(Models::ID::STYLIZED_CHARACTER, modelPath);
 
-            log("LoadingState: Model resource loaded into manager successfully");
+            log("LoadingState: Found model path: " + modelPath);
+            log("LoadingState: Loading model into manager...");
+            log("GLTFModel: loaded " + modelPath + " with " + std::to_string(static_cast<unsigned int>(models.get(Models::ID::STYLIZED_CHARACTER).getMeshes().size())) + " meshes, " +
+                std::to_string(static_cast<unsigned int>(models.get(Models::ID::STYLIZED_CHARACTER).getBoneCount())) + " bones(mapped), " +
+                std::to_string(static_cast<unsigned int>(models.get(Models::ID::STYLIZED_CHARACTER).getTotalMeshBones())) + " mesh-bones(raw), " +
+                std::to_string(static_cast<unsigned int>(models.get(Models::ID::STYLIZED_CHARACTER).getAnimationNames().size())) + " animations");
+
 
             // Verify the model was loaded
             try
@@ -774,7 +768,7 @@ void LoadingState::loadModels() noexcept
 
 void LoadingState::loadShaders() noexcept
 {
-    auto &shaders = *getContext().shaders;
+    auto &shaders = *getContext().getShaderManager();
 
     try
     {
@@ -855,15 +849,14 @@ void LoadingState::loadShaders() noexcept
 
 void LoadingState::loadNetworkConfig() noexcept
 {
-    auto &httpClient = *getContext().httpClient;
+    auto &httpClient = *getContext().getHttpClient();
 
     try
     {
         const auto resources = resourceLoader().getResources();
-        const std::string url = JSONUtils::getResourcePath(
-            std::string(JSONKeys::NETWORK_URL), resources, resourceLoader().getResourcePathPrefix());
 
-        if (url.empty())
+        if (const auto url = JSONUtils::getResourcePath(std::string(JSONKeys::NETWORK_URL), resources, resourceLoader().getResourcePathPrefix())
+        ; url.empty())
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
                 "LoadingState: NETWORK_URL resource key not found in configuration");
@@ -872,7 +865,6 @@ void LoadingState::loadNetworkConfig() noexcept
         {
             httpClient.setServerURL(url);
             log("LoadingState: Found network URL: " + url);
-            log("LoadingState: Network configuration loaded successfully");
         }
     }
     catch (const std::exception &e)
@@ -883,11 +875,9 @@ void LoadingState::loadNetworkConfig() noexcept
 
 void LoadingState::loadTexturesFromWorkerRequests() const noexcept
 {
-    auto &textures = *getContext().textures;
+    auto &textures = *getContext().getTextureManager();
 
     auto textureRequests = resourceLoader().getTextureLoadRequests();
-
-    log("Loading %zu textures on main thread...\n", textureRequests.size());
 
     try
     {
@@ -896,14 +886,14 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
             // TextureLoadRequest already has the full path constructed by processTextureRequest
             // Just use it directly without additional path resolution
             textures.load(request.id, std::string_view(request.path), 0u);
-            log("Loaded texture ID %d from: " + std::to_string(static_cast<int>(request.id)) + " " + request.path);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loaded texture: %s for ID: %d", request.path.c_str(), static_cast<int>(request.id));
         }
 
         loadProceduralTextures();
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load textures: %s\n", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load procedural textures: %s\n", e.what());
     }
 }
 
@@ -914,29 +904,24 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
     // Use the same resource path prefix that was computed by the ResourceLoader
     auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
 
-    log("LoadingState::loadWindowIcon - resourcePathPrefix: " + resourcePathPrefix);
-
     const string windowIconPath = JSONUtils::getResourcePath(
         std::string(JSONKeys::WINDOW_ICON), resources, resourcePathPrefix);
 
-    log("LoadingState: Window icon lookup - prefix: " + resourcePathPrefix + ", result path: " + windowIconPath);
-
     if (windowIconPath.empty())
     {
-        log("LoadingState: Window icon resource not found in configuration");
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Window icon resource not found in configuration");
 
         return;
     }
 
     if (SDL_Surface *icon = SDL_LoadBMP(windowIconPath.c_str()); icon != nullptr)
     {
-        if (auto *renderWindow = getContext().window; renderWindow != nullptr)
+        if (auto *renderWindow = getContext().getRenderWindow(); renderWindow != nullptr)
         {
             SDL_SetWindowIcon(renderWindow->getSDLWindow(), icon);
             SDL_DestroySurface(icon);
-            log("Loading window icon from:\t");
-            log(windowIconPath.c_str());
-            log("LoadingState: Window icon loaded successfully\n");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loading window icon from:\t%s", windowIconPath.c_str());
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Window icon loaded successfully\n");
         }
     }
     else
@@ -948,7 +933,7 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
 
 void LoadingState::loadProceduralTextures() const noexcept
 {
-    auto &textures = *getContext().textures;
+    auto &textures = *getContext().getTextureManager();
 
     try
     {
@@ -967,8 +952,6 @@ void LoadingState::loadProceduralTextures() const noexcept
         textures.load(Textures::ID::PATH_TRACER_ACCUM, 512, 512, {}, 0);
         textures.load(Textures::ID::PATH_TRACER_DISPLAY, 512, 512, {}, 0);
         textures.load(Textures::ID::NOISE2D, 256, 256, generator, 2);
-
-        log("LoadingState: Procedural textures loaded successfully");
     }
     catch (const std::exception &e)
     {

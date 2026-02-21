@@ -2,8 +2,10 @@
 #define STATE_HPP
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "HttpClient.hpp"
 #include "Loggable.hpp"
@@ -14,6 +16,8 @@
 #include "SoundPlayer.hpp"
 #include "StateIdentifiers.hpp"
 
+#include <MazeBuilder/configurator.h>
+
 class StateStack;
 
 union SDL_Event;
@@ -23,41 +27,113 @@ class State : public Loggable
 public:
     typedef std::unique_ptr<State> Ptr;
 
-    struct Context
+    // Named parameter idiom for passing shared context to states
+    struct Context final
     {
-        explicit Context(RenderWindow &window,
-                         FontManager &fonts,
-                         LevelsManager &levels,
-                         ModelsManager &models,
-                         MusicManager &music,
-                         OptionsManager &options,
-                         SoundBufferManager &soundBuffers,
-                         SoundPlayer &sounds,
-                         ShaderManager &shaders,
-                         TextureManager &textures,
-                         Player &player,
-                         HttpClient &httpClient);
+        [[nodiscard]] RenderWindow *getRenderWindow() const noexcept { return mWindow.value_or(nullptr); }
+        [[nodiscard]] FontManager *getFontManager() const noexcept { return mFonts.value_or(nullptr); }
+        [[nodiscard]] LevelsManager *getLevelsManager() const noexcept { return mLevels.value_or(nullptr); }
+        [[nodiscard]] ModelsManager *getModelsManager() const noexcept { return mModels.value_or(nullptr); }
+        [[nodiscard]] MusicManager *getMusicManager() const noexcept { return mMusic.value_or(nullptr); }
+        [[nodiscard]] OptionsManager *getOptionsManager() const noexcept { return mOptions.value_or(nullptr); }
+        [[nodiscard]] SoundBufferManager *getSoundBufferManager() const noexcept { return mSoundBuffers.value_or(nullptr); }
+        [[nodiscard]] SoundPlayer *getSoundPlayer() const noexcept { return mSounds.value_or(nullptr); }
+        [[nodiscard]] ShaderManager *getShaderManager() const noexcept { return mShaders.value_or(nullptr); }
+        [[nodiscard]] TextureManager *getTextureManager() const noexcept { return mTextures.value_or(nullptr); }
+        [[nodiscard]] Player *getPlayer() const noexcept { return mPlayer.value_or(nullptr); }
+        [[nodiscard]] HttpClient *getHttpClient() const noexcept { return mHttpClient.value_or(nullptr); }
 
-        RenderWindow *window;
-        FontManager *fonts;
-        LevelsManager *levels;
-        ModelsManager *models;
-        MusicManager *music;
-        OptionsManager *options;
-        SoundBufferManager *soundBuffers;
-        SoundPlayer *sounds;
-        ShaderManager *shaders;
-        TextureManager *textures;
-        Player *player;
-        HttpClient *httpClient;
-    };
+        Context &withRenderWindow(RenderWindow &window)
+        {
+            mWindow = &window;
+            return *this;
+        }
+
+        Context &withFontManager(FontManager &fonts)
+        {
+            mFonts = &fonts;
+            return *this;
+        }
+
+        Context &withLevelsManager(LevelsManager &levels)
+        {
+            mLevels = &levels;
+            return *this;
+        }
+
+        Context &withModelsManager(ModelsManager &models)
+        {
+            mModels = &models;
+            return *this;
+        }
+
+        Context &withMusicManager(MusicManager &music)
+        {
+            mMusic = &music;
+            return *this;
+        }
+
+        Context &withOptionsManager(OptionsManager &options)
+        {
+            mOptions = &options;
+            return *this;
+        }
+
+        Context &withSoundBufferManager(SoundBufferManager &soundBuffers)
+        {
+            mSoundBuffers = &soundBuffers;
+            return *this;
+        }
+
+        Context &withSoundPlayer(SoundPlayer &sounds)
+        {
+            mSounds = &sounds;
+            return *this;
+        }
+
+        Context &withShaderManager(ShaderManager &shaders)
+        {
+            mShaders = &shaders;
+            return *this;
+        }
+
+        Context &withTextureManager(TextureManager &textures)
+        {
+            mTextures = &textures;
+            return *this;
+        }
+
+        Context &withPlayer(Player &player)
+        {
+            mPlayer = &player;
+            return *this;
+        }
+
+        Context &withHttpClient(HttpClient &httpClient)
+        {
+            mHttpClient = &httpClient;
+            return *this;
+        }
+
+    private:
+        std::optional<RenderWindow *> mWindow;
+        std::optional<FontManager *> mFonts;
+        std::optional<LevelsManager *> mLevels;
+        std::optional<ModelsManager *> mModels;
+        std::optional<MusicManager *> mMusic;
+        std::optional<OptionsManager *> mOptions;
+        std::optional<SoundBufferManager *> mSoundBuffers;
+        std::optional<SoundPlayer *> mSounds;
+        std::optional<ShaderManager *> mShaders;
+        std::optional<TextureManager *> mTextures;
+        std::optional<Player *> mPlayer;
+        std::optional<HttpClient *> mHttpClient;
+    }; // Context struct
 
     explicit State(StateStack &stack, Context context);
 
     virtual ~State() = default;
 
-    // Delete copy constructor and copy assignment operator
-    // because State contains std::unique_ptr which is not copyable
     State(const State &) = delete;
     State &operator=(const State &) = delete;
 
@@ -69,7 +145,7 @@ public:
     virtual bool update(float dt, unsigned int subSteps) noexcept = 0;
     virtual bool handleEvent(const SDL_Event &event) noexcept = 0;
 
-    virtual void log(std::string_view message, const char delimiter = '\n') const noexcept override;
+    virtual void log(std::string_view message, const char delimiter = '\n') noexcept override;
     virtual std::string_view view() const noexcept override;
 
 protected:
@@ -81,7 +157,7 @@ protected:
 
     StateStack &getStack() const noexcept;
 
-    mutable std::string mLogs;
+    std::vector<std::string> mLogs;
 
 private:
     StateStack *mStack;

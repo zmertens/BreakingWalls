@@ -9,6 +9,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
+class Font;
 class MusicPlayer;
 class Shader;
 
@@ -34,6 +35,7 @@ private:
         COUNT = 6
     };
 
+    Font *mFont;
     MusicPlayer *mMusic;
 
     // Navigation state variables

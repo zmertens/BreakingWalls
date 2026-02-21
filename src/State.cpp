@@ -3,23 +3,10 @@
 #include "ResourceIdentifiers.hpp"
 #include "StateStack.hpp"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
-
-State::Context::Context(RenderWindow &window,
-                        FontManager &fonts,
-                        LevelsManager &levels,
-                        ModelsManager &models,
-                        MusicManager &music,
-                        OptionsManager &options,
-                        SoundBufferManager &soundBuffers,
-                        SoundPlayer &sounds,
-                        ShaderManager &shaders,
-                        TextureManager &textures, Player &player,
-                        HttpClient &httpClient)
-    : window{&window}, fonts{&fonts}, levels{&levels}, models{&models}, music{&music}, options{&options}, soundBuffers{&soundBuffers}, sounds{&sounds}, shaders{&shaders}, textures{&textures}, player{&player}, httpClient{&httpClient}
-{
-}
+#include <numeric>
 
 State::State(StateStack &stack, Context context)
     : mStack{&stack}, mContext{context}
@@ -54,12 +41,13 @@ StateStack &State::getStack() const noexcept
 /// @brief
 /// @param message
 /// @param delimiter '\n'
-void State::log(std::string_view message, const char delimiter) const noexcept
+void State::log(std::string_view message, const char delimiter) noexcept
 {
-    mLogs += std::string{message} + delimiter;
+    auto nextLine = std::string{message} + delimiter;
+    mLogs.emplace_back(std::move(nextLine));
 }
 
 std::string_view State::view() const noexcept
 {
-    return mLogs;
+    return std::accumulate(mLogs.cbegin(), mLogs.cend(), std::string{});
 }

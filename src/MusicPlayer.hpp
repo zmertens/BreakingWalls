@@ -48,6 +48,9 @@ public:
     /// @return true if playing
     bool isPlaying() const noexcept;
 
+    /// @brief Print music information for debugging
+    void print() const noexcept;
+
 private:
     class Impl;
     std::unique_ptr<Impl> mImpl;

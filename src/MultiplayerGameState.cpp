@@ -295,7 +295,7 @@ bool MultiplayerGameState::startListener()
 
 void MultiplayerGameState::startRegistration()
 {
-    if (mRegistrationInFlight || mDiscoveryInFlight || !getContext().httpClient)
+    if (mRegistrationInFlight || mDiscoveryInFlight || !getContext().getHttpClient())
     {
         return;
     }
@@ -313,7 +313,7 @@ void MultiplayerGameState::startRegistration()
             << "}";
 
     mRegistrationFuture = std::async(std::launch::async,
-                                     [client = getContext().httpClient, body = payload.str()]()
+                                     [client = getContext().getHttpClient(), body = payload.str()]()
                                      {
                                          try
                                          {
@@ -366,7 +366,7 @@ void MultiplayerGameState::pollRegistration()
 
 void MultiplayerGameState::startDiscovery()
 {
-    if (mDiscoveryInFlight || mRegistrationInFlight || !getContext().httpClient)
+    if (mDiscoveryInFlight || mRegistrationInFlight || !getContext().getHttpClient())
     {
         return;
     }
@@ -375,7 +375,7 @@ void MultiplayerGameState::startDiscovery()
     log("MultiplayerGameState: Starting discovery GET");
 
     mDiscoveryFuture = std::async(std::launch::async,
-                                  [client = getContext().httpClient]()
+                                  [client = getContext().getHttpClient()]()
                                   {
                                       try
                                       {
@@ -623,7 +623,7 @@ void MultiplayerGameState::sendLocalState(float dt)
 
     mSendAccumulator = 0.0f;
 
-    const auto &player = *getContext().player;
+    const auto &player = *getContext().getPlayer();
     const auto position = player.getPosition();
     const auto facing = player.getFacingDirection();
     const auto moving = player.isMoving();
@@ -650,12 +650,12 @@ void MultiplayerGameState::sendLocalState(float dt)
 
 std::string MultiplayerGameState::loadNetworkUrl() const
 {
-    if (!getContext().httpClient)
+    if (!getContext().getHttpClient())
     {
         return {};
     }
 
-    const auto hostUrl = getContext().httpClient->getHostURL();
+    const auto hostUrl = getContext().getHttpClient()->getHostURL();
     return std::string(hostUrl);
 }
 

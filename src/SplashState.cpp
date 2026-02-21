@@ -17,7 +17,7 @@
 #include "Texture.hpp"
 
 SplashState::SplashState(StateStack &stack, Context context)
-    : State(stack, context), mSplashTexture{&getContext().textures->get(Textures::ID::SPLASH_TITLE_IMAGE)}
+    : State(stack, context), mSplashTexture{&getContext().getTextureManager()->get(Textures::ID::SPLASH_TITLE_IMAGE)}
 {
 }
 
@@ -35,7 +35,7 @@ void SplashState::draw() const noexcept
     ImGuiIO &io = ImGui::GetIO();
     ImVec2 screenSize = io.DisplaySize;
 
-    ImGui::PushFont(getContext().fonts->get(Fonts::ID::NUNITO_SANS).get());
+    ImGui::PushFont(getContext().getFontManager()->get(Fonts::ID::NUNITO_SANS).get());
 
     // Draw the splash image to cover the whole screen
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
@@ -108,6 +108,7 @@ bool SplashState::handleEvent(const SDL_Event &event) noexcept
             return true;
         }
 
+        log("SplashState: Input received, transitioning to MenuState...");
         requestStateClear();
         requestStackPush(States::ID::MENU);
     }

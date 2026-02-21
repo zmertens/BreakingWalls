@@ -7,12 +7,18 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include <assimp/matrix4x4.h>
+
+namespace Assimp
+{
+    class Importer;
+}
 
 struct aiAnimation;
 struct aiMesh;
@@ -37,7 +43,7 @@ public:
         glm::vec4 materialParams{0.0f, 1.0f, 0.0f, 0.0f};
     };
 
-    GLTFModel() = default;
+    explicit GLTFModel();
     ~GLTFModel();
 
     GLTFModel(const GLTFModel &) = delete;
@@ -59,6 +65,12 @@ public:
 
     [[nodiscard]] bool isLoaded() const noexcept;
     [[nodiscard]] std::size_t getBoneCount() const noexcept;
+
+    [[nodiscard]] std::vector<std::string> getAnimationNames() const;
+    [[nodiscard]] std::string getActiveAnimationName() const;
+
+    [[nodiscard]] std::vector<std::string> getMeshes() const;
+    [[nodiscard]] std::size_t getTotalMeshBones() const noexcept;
 
 private:
     static constexpr std::uint32_t kMaxBonesPerVertex = 4;
@@ -137,6 +149,7 @@ private:
     [[nodiscard]] static glm::mat4 toGlm(const aiMatrix4x4 &matrix);
 
 private:
+    std::unique_ptr<Assimp::Importer> mImporter;
     const aiScene *mScene{nullptr};
     glm::mat4 mGlobalInverseTransform{1.0f};
 
