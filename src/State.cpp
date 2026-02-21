@@ -9,6 +9,7 @@
 State::Context::Context(RenderWindow &window,
                         FontManager &fonts,
                         LevelsManager &levels,
+                        ModelsManager &models,
                         MusicManager &music,
                         OptionsManager &options,
                         SoundBufferManager &soundBuffers,
@@ -16,7 +17,7 @@ State::Context::Context(RenderWindow &window,
                         ShaderManager &shaders,
                         TextureManager &textures, Player &player,
                         HttpClient &httpClient)
-    : window{&window}, fonts{&fonts}, levels{&levels}, music{&music}, options{&options}, soundBuffers{&soundBuffers}, sounds{&sounds}, shaders{&shaders}, textures{&textures}, player{&player}, httpClient{&httpClient}
+    : window{&window}, fonts{&fonts}, levels{&levels}, models{&models}, music{&music}, options{&options}, soundBuffers{&soundBuffers}, sounds{&sounds}, shaders{&shaders}, textures{&textures}, player{&player}, httpClient{&httpClient}
 {
 }
 

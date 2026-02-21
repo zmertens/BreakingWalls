@@ -20,6 +20,7 @@
 #include <MazeBuilder/singleton_base.h>
 
 #include "Font.hpp"
+#include "GLTFModel.hpp"
 #include "JsonUtils.hpp"
 #include "Level.hpp"
 #include "MusicPlayer.hpp"
@@ -68,6 +69,7 @@ namespace JSONKeys
     constexpr std::string_view SHADER_PARTICLES_FRAGMENT = "shader_particles_frag_glsl";
     constexpr std::string_view SHADER_SCREEN_VERTEX = "shader_screen_vert_glsl";
     constexpr std::string_view SHADER_SCREEN_FRAGMENT = "shader_screen_frag_glsl";
+    constexpr std::string_view STYLIZED_CHARACTER_GLTF2_MODEL = "stylized_character_gltf2";
     constexpr std::string_view SOUND_GENERATE = "generate_ogg";
     constexpr std::string_view SOUND_SELECT = "select_ogg";
     constexpr std::string_view SOUND_THROW = "throw_ogg";
@@ -567,10 +569,8 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
             loadTexturesFromWorkerRequests();
             // Handle window icon separately (special case, not managed by TextureManager)
             loadWindowIcon(resources);
-
-            loadProceduralTextures();
-
             loadAudio();
+            loadModels();
         }
 
         mHasFinished = true;
@@ -727,6 +727,47 @@ void LoadingState::loadLevels() noexcept
     }
 }
 
+void LoadingState::loadModels() noexcept
+{
+    auto &models = *getContext().models;
+
+    try
+    {
+        const auto resources = resourceLoader().getResources();
+        const std::string modelPath = JSONUtils::getResourcePath(
+            std::string(JSONKeys::STYLIZED_CHARACTER_GLTF2_MODEL), resources, resourceLoader().getResourcePathPrefix());
+
+        if (modelPath.empty())
+        {
+            log("LoadingState: STYLIZED_CHARACTER_GLTF2_MODEL resource key not found in configuration");
+        }
+        else
+        {
+            log("LoadingState: Found model path: " + modelPath);
+            log("LoadingState: Loading model into manager...");
+
+            models.load(Models::ID::STYLIZED_CHARACTER, modelPath);
+
+            log("LoadingState: Model resource loaded into manager successfully");
+
+            // Verify the model was loaded
+            try
+            {
+                auto &loadedModel = models.get(Models::ID::STYLIZED_CHARACTER);
+                log("LoadingState: Model verified in manager");
+            }
+            catch (const std::exception &e)
+            {
+                log("LoadingState: Failed to verify model in manager: " + std::string(e.what()));
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        log("LoadingState: Failed to load models: " + std::string(e.what()));
+    }
+}
+
 void LoadingState::loadShaders() noexcept
 {
     auto &shaders = *getContext().shaders;
@@ -816,6 +857,8 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
             textures.load(request.id, std::string_view(request.path), 0u);
             log("Loaded texture ID %d from: " + std::to_string(static_cast<int>(request.id)) + " " + request.path);
         }
+
+        loadProceduralTextures();
     }
     catch (const std::exception &e)
     {
@@ -823,7 +866,7 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
     }
 }
 
-void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::string> &resources) noexcept
+void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::string> &resources) const noexcept
 {
     using std::string;
 
@@ -862,7 +905,7 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
     }
 }
 
-void LoadingState::loadProceduralTextures() noexcept
+void LoadingState::loadProceduralTextures() const noexcept
 {
     auto &textures = *getContext().textures;
 

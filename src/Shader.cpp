@@ -176,6 +176,16 @@ void Shader::setUniform(const std::string &str, const glm::vec4 &vec)
     glUniform4f(getUniformLocation(str), vec.x, vec.y, vec.z, vec.w);
 }
 
+void Shader::setUniform(const std::string &str, const glm::mat4 *matrices, unsigned int count)
+{
+    if (!matrices || count == 0)
+    {
+        return;
+    }
+
+    glUniformMatrix4fv(getUniformLocation(str), count, GL_FALSE, glm::value_ptr(matrices[0]));
+}
+
 void Shader::setUniform(const std::string &str, GLfloat arr[][2], unsigned int count)
 {
     glUniform2fv(getUniformLocation(str), count, arr[0]);

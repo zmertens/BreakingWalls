@@ -58,7 +58,7 @@ World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures,
       mGroundPlane{
           glm::vec3(0.0f, 0.0f, 0.0f),
           glm::vec3(0.0f, 1.0f, 0.0f),
-          Material(glm::vec3(0.72f, 0.74f, 0.78f), Material::MaterialType::METAL, 0.02f, 1.0f)},
+          Material(glm::vec3(0.46f, 0.48f, 0.52f), Material::MaterialType::METAL, 0.22f, 1.0f)},
       mLastChunkUpdatePosition{},
       mPlayerSpawnPosition{},
       mRunnerPlayerPosition{}
@@ -502,6 +502,13 @@ void World::initPathTracerScene() noexcept
     b2Shape_SetRestitution(playerShapeId, 0.0f);
     b2Shape_SetUserData(playerShapeId, reinterpret_cast<void *>(kBodyTagRunnerPlayer));
     b2Body_SetUserData(mRunnerPlayerBodyId, reinterpret_cast<void *>(kBodyTagRunnerPlayer));
+
+    mRunnerSpawnTimer = 0.0f;
+    constexpr int kInitialRunnerSphereCount = 10;
+    for (int i = 0; i < kInitialRunnerSphereCount; ++i)
+    {
+        spawnRunnerSphere();
+    }
 }
 
 void World::syncPhysicsToSpheres() noexcept

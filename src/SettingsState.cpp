@@ -332,6 +332,23 @@ void SettingsState::applySettings(const Options &options) const noexcept
     {
         window->setFullscreen(options.mFullscreen);
         window->setVsync(options.mVsync);
+
+        if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
+        {
+            int width = 0;
+            int height = 0;
+            SDL_GetWindowSize(sdlWindow, &width, &height);
+
+            if (width > 0 && height > 0)
+            {
+                SDL_Event resizeEvent{};
+                resizeEvent.type = SDL_EVENT_WINDOW_RESIZED;
+                resizeEvent.window.windowID = SDL_GetWindowID(sdlWindow);
+                resizeEvent.window.data1 = width;
+                resizeEvent.window.data2 = height;
+                SDL_PushEvent(&resizeEvent);
+            }
+        }
     }
 
     // Apply sound settings

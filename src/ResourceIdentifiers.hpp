@@ -39,6 +39,15 @@ namespace Levels
     };
 }
 
+namespace Models
+{
+    enum class ID : unsigned int
+    {
+        STYLIZED_CHARACTER = 0,
+        TOTAL_MODELS = 1
+    };
+}
+
 namespace Music
 {
     enum class ID : unsigned int
@@ -99,6 +108,7 @@ namespace Textures
 }
 
 class Font;
+class GLTFModel;
 class Level;
 class MusicPlayer;
 class Options;
@@ -112,6 +122,7 @@ class ResourceManager;
 typedef ResourceManager<Font, Fonts::ID> FontManager;
 typedef ResourceManager<Options, GUIOptions::ID> OptionsManager;
 typedef ResourceManager<Level, Levels::ID> LevelsManager;
+typedef ResourceManager<GLTFModel, Models::ID> ModelsManager;
 typedef ResourceManager<MusicPlayer, Music::ID> MusicManager;
 typedef ResourceManager<Shader, Shaders::ID> ShaderManager;
 typedef ResourceManager<sf::SoundBuffer, SoundEffect::ID> SoundBufferManager;

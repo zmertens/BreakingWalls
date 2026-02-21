@@ -86,7 +86,7 @@ void MenuState::draw() const noexcept
             ImGui::SliderFloat("Gravity #1", &mParticleGravity1, 10.0f, 3000.0f, "%.1f");
             ImGui::SliderFloat("Gravity #2", &mParticleGravity2, 10.0f, 3000.0f, "%.1f");
             ImGui::SliderFloat("Orbit Speed", &mParticleSpeed, 1.0f, 120.0f, "%.1f");
-            ImGui::SliderFloat("Particle Mass", &mParticleMass, 0.01f, 2.0f, "%.3f");
+            // ImGui::SliderFloat("Particle Mass", &mParticleMass, 0.01f, 2.0f, "%.3f");
             ImGui::SliderFloat("Max Distance", &mParticleMaxDist, 5.0f, 120.0f, "%.1f");
             ImGui::SliderFloat("DeltaT Scale", &mParticleDtScale, 0.01f, 1.0f, "%.3f");
             ImGui::SliderFloat("Reset Interval (s)", &mParticleResetIntervalSeconds, 5.0f, 30.0f, "%.1f");
@@ -181,12 +181,12 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
         break;
 
     case MenuItem::NEW_GAME:
-        requestStackPop();
+        requestStateClear();
         requestStackPush(States::ID::GAME);
         break;
 
     case MenuItem::NETWORK_GAME:
-        requestStackPop();
+        requestStateClear();
         requestStackPush(States::ID::MULTIPLAYER_GAME);
         break;
 
@@ -214,7 +214,7 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
 
 bool MenuState::handleEvent(const SDL_Event &event) noexcept
 {
-    if (event.type == SDL_EVENT_WINDOW_RESIZED)
+    if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
     {
         const int newWidth = event.window.data1;
         const int newHeight = event.window.data2;
@@ -388,7 +388,7 @@ void MenuState::renderParticleScene() const noexcept
     const float clampedMass = std::max(0.0001f, mParticleMass);
     mParticlesComputeShader->setUniform("Gravity1", mParticleGravity1);
     mParticlesComputeShader->setUniform("Gravity2", mParticleGravity2);
-    mParticlesComputeShader->setUniform("ParticleMass", clampedMass);
+    // mParticlesComputeShader->setUniform("ParticleMass", clampedMass);
     mParticlesComputeShader->setUniform("ParticleInvMass", 1.0f / clampedMass);
     mParticlesComputeShader->setUniform("DeltaT", std::max(0.0001f, mParticleDeltaT * mParticleDtScale));
     mParticlesComputeShader->setUniform("MaxDist", mParticleMaxDist);

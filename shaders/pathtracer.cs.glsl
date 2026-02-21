@@ -4,6 +4,8 @@
 // Based on physically-based rendering principles
 
 #define MAX_SPHERES 200  // Increased for dynamic spawning
+#define MAX_TRIANGLES 2048
+#define MAX_TRIANGLE_SHADOW_TESTS 96
 #define MAX_LIGHTS 5
 #define MAX_BOUNCES 8
 #define EPSILON 0.001
@@ -89,6 +91,17 @@ struct Sphere {
     uint padding;
 };
 
+struct Triangle {
+    vec4 v0;
+    vec4 v1;
+    vec4 v2;
+    vec4 n0;
+    vec4 n1;
+    vec4 n2;
+    vec4 albedoAndMaterial;
+    vec4 materialParams;
+};
+
 // Hit record for ray intersections
 struct HitRecord {
     vec3 point;
@@ -106,6 +119,8 @@ uniform Camera uCamera;
 uniform uint uBatch;
 uniform uint uSamplesPerBatch;
 uniform uint uSphereCount;  // Actual number of spheres to check
+uniform uint uPrimaryRaySphereCount;  // Sphere count for primary rays (exclude reflection-only proxy)
+uniform uint uTriangleCount;
 uniform vec3 uGroundPlanePoint;
 uniform vec3 uGroundPlaneNormal;
 uniform vec3 uGroundPlaneAlbedo;
@@ -113,6 +128,7 @@ uniform uint uGroundPlaneMaterialType;
 uniform float uGroundPlaneFuzz;
 uniform float uGroundPlaneRefractiveIndex;
 uniform float uTime;
+uniform float uHistoryBlend;
 uniform sampler2D uNoiseTex;
 
 // Shadow casting uniforms
@@ -123,6 +139,10 @@ uniform vec3 uLightDir;           // Light direction (normalized)
 // Shader storage buffer for spheres
 layout (std430, binding = 1) buffer SphereBuffer {
     Sphere bSpheres[MAX_SPHERES];
+};
+
+layout (std430, binding = 2) buffer TriangleBuffer {
+    Triangle bTriangles[MAX_TRIANGLES];
 };
 
 // ============================================================================
@@ -162,12 +182,12 @@ bool sphereIntersect(in Sphere sphere, in Ray ray, float tMin, float tMax, out H
     return true;
 }
 
-bool hitWorld(in Ray ray, float tMin, float tMax, out HitRecord hit) {
+bool hitWorld(in Ray ray, float tMin, float tMax, uint sphereCount, out HitRecord hit) {
     HitRecord tempHit;
     bool hitAnything = false;
     float closest = tMax;
 
-    for (uint i = 0; i < uSphereCount; i++) {
+    for (uint i = 0; i < sphereCount; i++) {
         if (sphereIntersect(bSpheres[i], ray, tMin, closest, tempHit)) {
             hitAnything = true;
             closest = tempHit.t;
@@ -203,13 +223,81 @@ bool planeIntersect(in Ray ray, float tMin, float tMax, out HitRecord hit) {
     return true;
 }
 
+bool triangleIntersect(in Triangle triangle, in Ray ray, float tMin, float tMax, out HitRecord hit) {
+    vec3 v0 = triangle.v0.xyz;
+    vec3 v1 = triangle.v1.xyz;
+    vec3 v2 = triangle.v2.xyz;
+
+    vec3 edge1 = v1 - v0;
+    vec3 edge2 = v2 - v0;
+
+    vec3 pvec = cross(ray.direction, edge2);
+    float det = dot(edge1, pvec);
+    if (abs(det) < EPSILON) {
+        return false;
+    }
+
+    float invDet = 1.0 / det;
+    vec3 tvec = ray.origin - v0;
+    float u = dot(tvec, pvec) * invDet;
+    if (u < 0.0 || u > 1.0) {
+        return false;
+    }
+
+    vec3 qvec = cross(tvec, edge1);
+    float v = dot(ray.direction, qvec) * invDet;
+    if (v < 0.0 || (u + v) > 1.0) {
+        return false;
+    }
+
+    float t = dot(edge2, qvec) * invDet;
+    if (t < tMin || t > tMax) {
+        return false;
+    }
+
+    float w = 1.0 - u - v;
+    vec3 interpNormal = triangle.n0.xyz * w + triangle.n1.xyz * u + triangle.n2.xyz * v;
+    if (length(interpNormal) < EPSILON) {
+        interpNormal = cross(edge1, edge2);
+    }
+    interpNormal = normalize(interpNormal);
+
+    hit.t = t;
+    hit.point = ray.origin + ray.direction * t;
+    hit.frontFace = dot(ray.direction, interpNormal) < 0.0;
+    hit.normal = hit.frontFace ? interpNormal : -interpNormal;
+    hit.materialType = uint(triangle.albedoAndMaterial.w + 0.5);
+    hit.albedo = triangle.albedoAndMaterial.rgb;
+    hit.fuzz = triangle.materialParams.x;
+    hit.refractiveIndex = triangle.materialParams.y;
+
+    return true;
+}
+
+bool hitTriangles(in Ray ray, float tMin, float tMax, uint triangleCount, out HitRecord hit) {
+    HitRecord tempHit;
+    bool hitAnything = false;
+    float closest = tMax;
+
+    uint count = min(triangleCount, uint(MAX_TRIANGLES));
+    for (uint i = 0u; i < count; i++) {
+        if (triangleIntersect(bTriangles[i], ray, tMin, closest, tempHit)) {
+            hitAnything = true;
+            closest = tempHit.t;
+            hit = tempHit;
+        }
+    }
+
+    return hitAnything;
+}
+
 // ============================================================================
 // Shadow Ray Casting Functions
 // ============================================================================
 
 bool testPlayerShadow(in Ray shadowRay, float maxDist) {
     // Test if shadow ray intersects player sphere
-    vec3 oc = uPlayerPos - shadowRay.origin;
+    vec3 oc = shadowRay.origin - uPlayerPos;
     float a = dot(shadowRay.direction, shadowRay.direction);
     float halfB = dot(oc, shadowRay.direction);
     float c = dot(oc, oc) - uPlayerRadius * uPlayerRadius;
@@ -219,8 +307,13 @@ bool testPlayerShadow(in Ray shadowRay, float maxDist) {
     
     float sqrtD = sqrt(discriminant);
     float root = (-halfB - sqrtD) / a;
-    
-    // Check if intersection is within valid range
+    if (root > EPSILON && root < maxDist) {
+        return true;
+    }
+
+    // When the ray starts inside the sphere, the near root is negative;
+    // test the far root so nearby contact shadows remain stable.
+    root = (-halfB + sqrtD) / a;
     return root > EPSILON && root < maxDist;
 }
 
@@ -237,7 +330,11 @@ bool testSpheresShadow(in Ray shadowRay, float maxDist) {
         
         float sqrtD = sqrt(discriminant);
         float root = (-halfB - sqrtD) / a;
-        
+        if (root > EPSILON && root < maxDist) {
+            return true;
+        }
+
+        root = (-halfB + sqrtD) / a;
         if (root > EPSILON && root < maxDist) {
             return true;
         }
@@ -254,6 +351,26 @@ bool testPlaneShadow(in Ray shadowRay, float maxDist) {
     
     float t = dot(uGroundPlanePoint - shadowRay.origin, planeNormal) / denom;
     return t > EPSILON && t < maxDist;
+}
+
+bool testTrianglesShadow(in Ray shadowRay, float maxDist) {
+    uint total = min(uTriangleCount, uint(MAX_TRIANGLES));
+    uint count = min(total, uint(MAX_TRIANGLE_SHADOW_TESTS));
+    if (count == 0u) {
+        return false;
+    }
+
+    // Sample across the full triangle range instead of only the first N entries
+    // so large meshes still cast coherent shadows.
+    uint stride = max(1u, total / count);
+    for (uint s = 0u; s < count; s++) {
+        uint i = min(s * stride, total - 1u);
+        HitRecord tmp;
+        if (triangleIntersect(bTriangles[i], shadowRay, EPSILON, maxDist, tmp)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 float calculateShadow(vec3 hitPoint, vec3 normal) {
@@ -292,6 +409,11 @@ float calculateShadow(vec3 hitPoint, vec3 normal) {
     if (testSpheresShadow(shadowRay, maxDist)) {
         float sphereShadow = mix(0.35, 0.7, texture(uNoiseTex, hitPoint.xy * 0.2).r);
         shadowFactor = min(shadowFactor, sphereShadow);
+    }
+
+    if (testTrianglesShadow(shadowRay, maxDist)) {
+        float triShadow = mix(0.30, 0.65, texture(uNoiseTex, hitPoint.zy * 0.17).r);
+        shadowFactor = min(shadowFactor, triShadow);
     }
     
     // Ground plane adds subtle soft shadow with noise
@@ -492,25 +614,41 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
         HitRecord hit;
         HitRecord sphereHit;
         HitRecord planeHit;
-        bool hasSphereHit = hitWorld(ray, EPSILON, uCamera.far, sphereHit);
+        HitRecord triangleHit;
+        uint sphereCountForBounce = (bounce == 0u) ? uPrimaryRaySphereCount : uSphereCount;
+        bool hasSphereHit = hitWorld(ray, EPSILON, uCamera.far, sphereCountForBounce, sphereHit);
         bool hasPlaneHit = planeIntersect(ray, EPSILON, uCamera.far, planeHit);
+        uint triangleCountForBounce = (bounce == 0u)
+            ? uTriangleCount
+            : ((bounce == 1u) ? min(uTriangleCount, 32u) : 0u);
+        bool hasTriangleHit = hitTriangles(ray, EPSILON, uCamera.far, triangleCountForBounce, triangleHit);
         bool hitIsPlane = false;
 
-        if (hasSphereHit && hasPlaneHit) {
-            if (sphereHit.t < planeHit.t) {
-                hit = sphereHit;
-            } else {
-                hit = planeHit;
-                hitIsPlane = true;
-            }
-        } else if (hasSphereHit) {
+        bool hasAnyHit = false;
+        float closestT = uCamera.far;
+
+        if (hasSphereHit && sphereHit.t < closestT) {
             hit = sphereHit;
-        } else if (hasPlaneHit) {
+            closestT = sphereHit.t;
+            hasAnyHit = true;
+            hitIsPlane = false;
+        }
+
+        if (hasTriangleHit && triangleHit.t < closestT) {
+            hit = triangleHit;
+            closestT = triangleHit.t;
+            hasAnyHit = true;
+            hitIsPlane = false;
+        }
+
+        if (hasPlaneHit && planeHit.t < closestT) {
             hit = planeHit;
+            closestT = planeHit.t;
+            hasAnyHit = true;
             hitIsPlane = true;
         }
 
-        if (hasSphereHit || hasPlaneHit) {
+        if (hasAnyHit) {
             vec3 attenuation;
             Ray scattered;
 
@@ -594,20 +732,21 @@ void main() {
         accumulatedColor += color;
     }
 
-    // Accumulate with previous batches
-    if (uBatch > 0) {
+    // Per-frame sample average
+    vec3 batchColor = accumulatedColor / float(max(1u, uSamplesPerBatch));
+
+    // Smooth temporal accumulation (EMA-style) for natural, non-stuttering motion blur
+    vec3 historyColor = batchColor;
+    if (uBatch > 0u) {
         vec3 previous = imageLoad(uAccumTexture, ivec2(pixel)).rgb;
-        accumulatedColor += previous;
+        float historyBlend = clamp(uHistoryBlend, 0.0, 0.999);
+        historyColor = mix(batchColor, previous, historyBlend);
     }
 
-    imageStore(uAccumTexture, ivec2(pixel), vec4(accumulatedColor, 1.0));
-
-    // Compute average and apply gamma correction for display
-    uint totalSamples = (uBatch + 1) * uSamplesPerBatch;
-    vec3 averageColor = accumulatedColor / float(totalSamples);
+    imageStore(uAccumTexture, ivec2(pixel), vec4(historyColor, 1.0));
 
     // Gamma correction (gamma = 2.0)
-    averageColor = sqrt(averageColor);
+    vec3 averageColor = sqrt(historyColor);
 
     imageStore(uDisplayTexture, ivec2(pixel), vec4(averageColor, 1.0));
 }

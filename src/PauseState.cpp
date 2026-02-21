@@ -89,7 +89,7 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
         break;
     }
 
-    return true;
+    return false;
 }
 
 bool PauseState::handleEvent(const SDL_Event &event) noexcept
@@ -105,5 +105,5 @@ bool PauseState::handleEvent(const SDL_Event &event) noexcept
         }
     }
 
-    return true;
+    return false;
 }

@@ -14,7 +14,8 @@ uniform float uSpriteAlpha;
 
 vec3 bloomSample(vec2 uv)
 {
-    vec3 base = texture(uBillboardTex, uv).rgb;
+    vec4 src = texture(uBillboardTex, uv);
+    vec3 base = src.rgb * src.a;
     return max(base - vec3(uBloomThreshold), vec3(0.0));
 }
 

@@ -8,11 +8,12 @@
 #include <iostream>
 #include <string>
 
+#include "buildinfo.h"
 #include "PhysicsGame.hpp"
 
 #include <MazeBuilder/maze_builder.h>
 
-const auto WINDOW_TITLE{"Breaking Walls " + mazes::VERSION};
+const auto WINDOW_TITLE{"Breaking Walls " + std::string{bw::buildinfo::Version}};
 
 static constexpr auto WINDOW_WIDTH = 1280;
 static constexpr auto WINDOW_HEIGHT = 720;

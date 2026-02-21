@@ -24,6 +24,7 @@
 	"explosion_spritesheet": "textures/Explosion.png",
 	"ball_normal": "textures/bomb.png",
 	"wall_horizontal": "textures/brick_brown.png",
+	"stylized_character_gltf2": "models/stylized-character.glb",
 	"player_hitpoints_default": 100,
 	"player_speed_default": 0.3451,
 	"enemy_hitpoints_default": 50,

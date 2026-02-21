@@ -55,7 +55,7 @@ struct PhysicsGame::PhysicsGameImpl
     std::unique_ptr<StateStack> mStateStack;
 
     GLSDLHelper mGLSDLHelper;
-
+    ModelsManager mModels;
     FontManager mFonts;
     LevelsManager mLevels;
     MusicManager mMusic;
@@ -125,6 +125,7 @@ struct PhysicsGame::PhysicsGameImpl
             *mRenderWindow,
             std::ref(mFonts),
             std::ref(mLevels),
+            std::ref(mModels),
             std::ref(mMusic),
             std::ref(mOptions),
             std::ref(mSoundBuffers),

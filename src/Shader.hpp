@@ -61,6 +61,7 @@ public:
     void setUniform(const std::string &str, const glm::vec2 &vec);
     void setUniform(const std::string &str, const glm::vec3 &vec);
     void setUniform(const std::string &str, const glm::vec4 &vec);
+    void setUniform(const std::string &str, const glm::mat4 *matrices, unsigned int count);
     void setUniform(const std::string &str, GLfloat arr[][2], unsigned int count);
     void setUniform(const std::string &str, GLint arr[], unsigned int count);
     void setUniform(const std::string &str, GLfloat arr[], unsigned int count);

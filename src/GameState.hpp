@@ -77,6 +77,9 @@ private:
     Shader *mDisplayShader{nullptr};
     Shader *mComputeShader{nullptr};
     Shader *mCompositeShader{nullptr};
+    std::unique_ptr<Shader> mSkinnedModelShader;
+    mutable Shader *mWalkParticlesComputeShader{nullptr};
+    mutable Shader *mWalkParticlesRenderShader{nullptr};
 
     Texture *mAccumTex{nullptr};
     Texture *mDisplayTex{nullptr};
@@ -84,10 +87,14 @@ private:
 
     // GPU resources
     GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres
+    GLuint mTriangleSSBO{0};
     GLuint mVAO{0};        // Vertex Array Object for fullscreen quad
     GLuint mBillboardFBO{0};
     GLuint mBillboardColorTex{0};
     GLuint mBillboardDepthRbo{0};
+    GLuint mWalkParticlesVAO{0};
+    GLuint mWalkParticlesPosSSBO{0};
+    GLuint mWalkParticlesVelSSBO{0};
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
@@ -100,18 +107,19 @@ private:
     mutable float mLastCameraPitch{0.0f};
 
     bool mShadersInitialized{false};
-    int mWindowWidth{1280};
-    int mWindowHeight{720};
+    mutable int mWindowWidth{1280};
+    mutable int mWindowHeight{720};
     int mRenderWidth{1280};
     int mRenderHeight{720};
 
     mutable std::size_t mShapeSSBOCapacityBytes{0};
+    mutable std::size_t mTriangleSSBOCapacityBytes{0};
 
     static constexpr std::size_t kTargetRenderPixels = 1600ull * 900ull;
     static constexpr float kMinRenderScale = 0.60f;
 
     // Single-player endless runner arcade state
-    bool mArcadeModeEnabled{true};
+    bool mArcadeModeEnabled{false};
     int mPlayerPoints{0};
     float mRunnerDistance{0.0f};
     float mRunnerSpeed{30.0f};
@@ -130,6 +138,13 @@ private:
     bool mRunLost{false};
     mutable int mLastAnnouncedPoints{0};
     mutable float mHudUpdateTimer{0.0f};
+    mutable float mModelAnimTimeSeconds{0.0f};
+    mutable float mWalkParticlesTime{0.0f};
+    mutable bool mWalkParticlesInitialized{false};
+    mutable bool mHasLastFxPosition{false};
+    mutable glm::vec3 mLastFxPlayerPosition{0.0f};
+    mutable float mPlayerPlanarSpeedForFx{0.0f};
+    mutable GLuint mWalkParticleCount{1600};
     std::vector<RunnerPointEvent> mRunnerPointEvents;
     std::mt19937 mRunnerRng{1337u};
 
@@ -145,6 +160,9 @@ private:
     /// Create or resize composite render targets for billboard blending
     void createCompositeTargets() noexcept;
 
+    /// Compile shader program used for skeletal model rendering
+    void initializeSkinnedModelShader() noexcept;
+
     /// Render using compute shaders (path tracing)
     void renderWithComputeShaders() const noexcept;
 
@@ -153,6 +171,15 @@ private:
 
     /// Render player character (third-person mode only)
     void renderPlayerCharacter() const noexcept;
+
+    /// Render decorative billboard sprites along runner lane borders
+    void renderTracksideBillboards() const noexcept;
+
+    /// Ensure movement particle resources are initialized
+    void initializeWalkParticles() noexcept;
+
+    /// Render compute-driven particles around the player while walking
+    void renderWalkParticles() const noexcept;
 
     /// Check if camera moved and reset accumulation if needed
     bool checkCameraMovement() const noexcept;

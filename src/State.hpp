@@ -28,6 +28,7 @@ public:
         explicit Context(RenderWindow &window,
                          FontManager &fonts,
                          LevelsManager &levels,
+                         ModelsManager &models,
                          MusicManager &music,
                          OptionsManager &options,
                          SoundBufferManager &soundBuffers,
@@ -40,6 +41,7 @@ public:
         RenderWindow *window;
         FontManager *fonts;
         LevelsManager *levels;
+        ModelsManager *models;
         MusicManager *music;
         OptionsManager *options;
         SoundBufferManager *soundBuffers;

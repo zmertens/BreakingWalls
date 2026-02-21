@@ -31,13 +31,14 @@ private:
 
     void loadTexturesFromWorkerRequests() const noexcept;
 
-    void loadWindowIcon(const std::unordered_map<std::string, std::string> &resources) noexcept;
+    void loadWindowIcon(const std::unordered_map<std::string, std::string> &resources) const noexcept;
 
-    void loadProceduralTextures() noexcept;
+    void loadProceduralTextures() const noexcept;
 
     void loadAudio() noexcept;
     void loadFonts() noexcept;
     void loadLevels() noexcept;
+    void loadModels() noexcept;
     void loadShaders() noexcept;
 
     void setCompletion(float percent) noexcept;

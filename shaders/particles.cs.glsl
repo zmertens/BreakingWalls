@@ -8,7 +8,7 @@ uniform vec3 BlackHolePos1 = vec3(5,0,0);
 uniform float Gravity2 = 1000.0;
 uniform vec3 BlackHolePos2 = vec3(-5,0,0);
 
-uniform float ParticleMass = 0.1;
+// uniform float ParticleMass = 0.1;
 uniform float ParticleInvMass = 1.0 / 0.1;
 uniform float DeltaT = 0.0005;
 uniform float MaxDist = 45.0;
@@ -41,7 +41,13 @@ void main() {
 
   // Reset particles that get too far from the attractors
   if( dist > MaxDist ) {
-    Position[idx] = vec4(0,0,0,1);
+    vec3 center = 0.5 * (BlackHolePos1 + BlackHolePos2);
+    float fi = float(idx);
+    float jitterX = fract(sin(fi * 12.9898) * 43758.5453) - 0.5;
+    float jitterY = fract(sin(fi * 78.2331) * 15731.7431) * 0.35;
+    float jitterZ = fract(sin(fi * 45.1643) * 31337.1337) - 0.5;
+    Position[idx] = vec4(center + vec3(jitterX, jitterY, jitterZ), 1);
+    Velocity[idx] = vec4(0, 0, 0, 0);
   } else {
     // Apply simple Euler integrator
     vec3 a = force * ParticleInvMass;

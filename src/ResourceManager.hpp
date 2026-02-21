@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -15,6 +16,8 @@
 #include <MazeBuilder/configurator.h>
 
 #include <dearimgui/imgui.h>
+
+#include "GLTFModel.hpp"
 
 namespace mazes
 {
@@ -28,7 +31,7 @@ public:
     // Level loading
     void load(Identifier id, const std::vector<mazes::configurator> &configs, bool appendResults);
 
-    // SoundBuffer loading
+    // SoundBuffer loading and Model loading
     void load(Identifier id, std::string_view filename);
 
     // Music loading
@@ -88,9 +91,19 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
     // Create and load resource
     auto resource = std::make_unique<Resource>();
 
-    if (!resource->loadFromFile(filename))
+    if constexpr (std::is_same_v<Resource, GLTFModel>)
     {
-        throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
+        if (!resource->readFile(filename))
+        {
+            throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
+        }
+    }
+    else
+    {
+        if (!resource->loadFromFile(filename))
+        {
+            throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
+        }
     }
 
     // If loading successful, insert resource to map
