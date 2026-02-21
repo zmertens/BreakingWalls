@@ -207,6 +207,16 @@ GameState::GameState(StateStack &stack, Context context)
             SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Composite shader unavailable: %s", e.what());
             mCompositeShader = nullptr;
         }
+
+        try
+        {
+            mShadowShader = &shaders.get(Shaders::ID::GLSL_SHADOW_VOLUME);
+        }
+        catch (const std::exception &e)
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Shadow shader unavailable: %s", e.what());
+            mShadowShader = nullptr;
+        }
     }
 
     auto &textures = *context.textures;
@@ -339,6 +349,9 @@ void GameState::draw() const noexcept
         // Keep rasterized character overlay for readability even when triangle proxy is enabled.
         renderPlayerCharacter();
 
+        // Render character shadow to shadow texture
+        renderCharacterShadow();
+
         if (mCompositeShader && mBillboardFBO != 0 && mBillboardColorTex != 0)
         {
             renderCompositeScene();
@@ -385,6 +398,7 @@ void GameState::initializeGraphicsResources() noexcept
     // Create textures for path tracing
     createPathTracerTextures();
     createCompositeTargets();
+    initializeShadowResources();  // Initialize shadow rendering
 
     // Upload sphere data from World to GPU with extra capacity for dynamic spawning
     const auto &spheres = mWorld.getSpheres();
@@ -500,6 +514,64 @@ void GameState::createCompositeTargets() noexcept
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindRenderbuffer(GL_RENDERBUFFER, 0);
+}
+
+void GameState::initializeShadowResources() noexcept
+{
+    if (mShadowsInitialized || mWindowWidth <= 0 || mWindowHeight <= 0)
+    {
+        return;
+    }
+
+    // Create shadow map texture
+    if (mShadowTexture == 0)
+    {
+        glGenTextures(1, &mShadowTexture);
+    }
+    glBindTexture(GL_TEXTURE_2D, mShadowTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
+
+    // Create shadow FBO
+    if (mShadowFBO == 0)
+    {
+        glGenFramebuffers(1, &mShadowFBO);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, mShadowFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mShadowTexture, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Shadow framebuffer incomplete");
+    }
+
+    // Create shadow quad (single point that will be expanded to quad by geometry shader)
+    if (mShadowVAO == 0)
+    {
+        glGenVertexArrays(1, &mShadowVAO);
+        glGenBuffers(1, &mShadowVBO);
+
+        glBindVertexArray(mShadowVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, mShadowVBO);
+
+        // Single point at origin - geometry shader will expand to quad
+        float point = 0.0f;
+        glBufferData(GL_ARRAY_BUFFER, sizeof(float), &point, GL_STATIC_DRAW);
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindVertexArray(0);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    mShadowsInitialized = true;
+    SDL_Log("GameState: Shadow resources initialized");
 }
 
 void GameState::initializeWalkParticles() noexcept
@@ -667,6 +739,48 @@ bool GameState::checkCameraMovement() const noexcept
     return false;
 }
 
+void GameState::renderCharacterShadow() const noexcept
+{
+    if (!mShadowsInitialized || !mShadowShader || mShadowFBO == 0 || mShadowTexture == 0)
+    {
+        return;
+    }
+
+    // Render shadow to texture
+    glBindFramebuffer(GL_FRAMEBUFFER, mShadowFBO);
+    glViewport(0, 0, mWindowWidth, mWindowHeight);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Enable blending for soft shadow edges
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Get camera matrices (same as main rendering)
+    float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(mWindowHeight);
+    glm::mat4 view = mCamera.getLookAt();
+    glm::mat4 projection = mCamera.getPerspective(aspectRatio);
+
+    // Render shadow quad using geometry shader expansion
+    mShadowShader->bind();
+    mShadowShader->setUniform("uViewMatrix", view);
+    mShadowShader->setUniform("uProjectionMatrix", projection);
+    mShadowShader->setUniform("uPlayerPos", mPlayer.getPosition());
+    mShadowShader->setUniform("uPlayerRadius", 1.35f);
+    mShadowShader->setUniform("uInvResolution", glm::vec2(1.0f / static_cast<float>(mWindowWidth), 1.0f / static_cast<float>(mWindowHeight)));
+
+    // Render shadow quad
+    glBindVertexArray(mShadowVAO);
+    glDrawArrays(GL_POINTS, 0, 1);
+    glBindVertexArray(0);
+
+    // Disable blending
+    glDisable(GL_BLEND);
+
+    // Reset framebuffer
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void GameState::renderWithComputeShaders() const noexcept
 {
     if (!mComputeShader || !mDisplayShader)
@@ -689,6 +803,7 @@ void GameState::renderWithComputeShaders() const noexcept
                 const_cast<GameState *>(this)->updateRenderResolution();
                 const_cast<GameState *>(this)->createPathTracerTextures();
                 const_cast<GameState *>(this)->createCompositeTargets();
+                const_cast<GameState *>(this)->initializeShadowResources();  // Also resize shadow texture
                 mCurrentBatch = 0;
             }
         }
@@ -927,19 +1042,25 @@ void GameState::renderCompositeScene() const noexcept
     mCompositeShader->bind();
     mCompositeShader->setUniform("uSceneTex", 0);
     mCompositeShader->setUniform("uBillboardTex", 1);
+    mCompositeShader->setUniform("uShadowTex", 2);
     mCompositeShader->setUniform("uInvResolution", glm::vec2(1.0f / static_cast<float>(mWindowWidth), 1.0f / static_cast<float>(mWindowHeight)));
     mCompositeShader->setUniform("uBloomThreshold", 0.65f);
     mCompositeShader->setUniform("uBloomStrength", 0.32f);
     mCompositeShader->setUniform("uSpriteAlpha", 1.0f);
+    mCompositeShader->setUniform("uShadowStrength", 0.65f);
+    mCompositeShader->setUniform("uEnableShadows", mShadowsInitialized && mShadowTexture != 0);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, mBillboardColorTex);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, mShadowTexture);
 
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
+
 
 void GameState::cleanupResources() noexcept
 {
@@ -965,6 +1086,21 @@ void GameState::cleanupResources() noexcept
         mBillboardDepthRbo = 0;
     }
 
+    // Clean up shadow resources
+    if (mShadowFBO != 0)
+    {
+        glDeleteFramebuffers(1, &mShadowFBO);
+        mShadowFBO = 0;
+    }
+    if (mShadowTexture != 0)
+    {
+        glDeleteTextures(1, &mShadowTexture);
+        mShadowTexture = 0;
+    }
+    GLSDLHelper::deleteVAO(mShadowVAO);
+    GLSDLHelper::deleteBuffer(mShadowVBO);
+    mShadowsInitialized = false;
+
     if (mWalkParticlesVAO != 0)
     {
         glDeleteVertexArrays(1, &mWalkParticlesVAO);
@@ -987,11 +1123,13 @@ void GameState::cleanupResources() noexcept
     mAccumTex = nullptr;
     mDisplayTex = nullptr;
     mNoiseTexture = nullptr;
+    mSoftShadowKernel = nullptr;
 
     // Shaders are now managed by ShaderManager - don't delete them here
     mDisplayShader = nullptr;
     mComputeShader = nullptr;
     mCompositeShader = nullptr;
+    mShadowShader = nullptr;
 
     log("GameState: OpenGL resources cleaned up");
 }

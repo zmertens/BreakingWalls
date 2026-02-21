@@ -80,10 +80,12 @@ private:
     std::unique_ptr<Shader> mSkinnedModelShader;
     mutable Shader *mWalkParticlesComputeShader{nullptr};
     mutable Shader *mWalkParticlesRenderShader{nullptr};
+    mutable Shader *mShadowShader{nullptr};  // Shadow volume + stencil rendering
 
     Texture *mAccumTex{nullptr};
     Texture *mDisplayTex{nullptr};
     Texture *mNoiseTexture{nullptr};
+    Texture *mSoftShadowKernel{nullptr};    // Soft shadow gaussian kernel
 
     // GPU resources
     GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres
@@ -95,6 +97,13 @@ private:
     GLuint mWalkParticlesVAO{0};
     GLuint mWalkParticlesPosSSBO{0};
     GLuint mWalkParticlesVelSSBO{0};
+    
+    // Shadow rendering resources
+    GLuint mShadowFBO{0};              // Shadow render target
+    GLuint mShadowTexture{0};          // Shadow map texture
+    GLuint mShadowVAO{0};              // Shadow quad VAO
+    GLuint mShadowVBO{0};              // Shadow quad VBO
+    bool mShadowsInitialized{false};
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
@@ -159,6 +168,12 @@ private:
 
     /// Create or resize composite render targets for billboard blending
     void createCompositeTargets() noexcept;
+
+    /// Initialize shadow rendering resources (FBO, textures, shaders)
+    void initializeShadowResources() noexcept;
+
+    /// Render character shadow to shadow map with soft-shadow blur
+    void renderCharacterShadow() const noexcept;
 
     /// Compile shader program used for skeletal model rendering
     void initializeSkinnedModelShader() noexcept;

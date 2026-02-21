@@ -63,6 +63,9 @@ namespace JSONKeys
     constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";
     constexpr std::string_view SHADER_COMPOSITE_VERTEX = "shader_composite_vert_glsl";
     constexpr std::string_view SHADER_COMPOSITE_FRAGMENT = "shader_composite_frag_glsl";
+    constexpr std::string_view SHADER_SHADOW_VERTEX = "shader_shadow_vert_glsl";
+    constexpr std::string_view SHADER_SHADOW_GEOMETRY = "shader_shadow_geom_glsl";
+    constexpr std::string_view SHADER_SHADOW_FRAGMENT = "shader_shadow_frag_glsl";
     constexpr std::string_view SHADER_PARTICLES_COMPUTE = "shader_particles_cs_glsl";
     constexpr std::string_view SHADER_PATHTRACER_COMPUTE = "shader_pathtracer_cs_glsl";
     constexpr std::string_view SHADER_PARTICLES_VERTEX = "shader_particles_vert_glsl";
@@ -805,6 +808,15 @@ void LoadingState::loadShaders() noexcept
         compositeShader->linkProgram();
         log("LoadingState: Composite shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_COMPOSITE_SCENE, std::move(compositeShader));
+
+        // Load shadow volume shader for character shadow rendering (vertex + geometry + fragment)
+        auto shadowShader = std::make_unique<Shader>();
+        shadowShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SHADOW_VERTEX));
+        shadowShader->compileAndAttachShader(Shader::ShaderType::GEOMETRY, shaderPath(JSONKeys::SHADER_SHADOW_GEOMETRY));
+        shadowShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SHADOW_FRAGMENT));
+        shadowShader->linkProgram();
+        log("LoadingState: Shadow shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_SHADOW_VOLUME, std::move(shadowShader));
 
         // Load compute shader for path tracing
         auto computeShader = std::make_unique<Shader>();

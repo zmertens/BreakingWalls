@@ -68,7 +68,8 @@ namespace Shaders
         GLSL_PATH_TRACER_COMPUTE = 3,
         GLSL_PARTICLES_COMPUTE = 4,
         GLSL_COMPOSITE_SCENE = 5,
-        GLSL_TOTAL_SHADERS = 6
+        GLSL_SHADOW_VOLUME = 6,     // Shadow rendering (vert+geom+frag)
+        GLSL_TOTAL_SHADERS = 7
     };
 }
 
