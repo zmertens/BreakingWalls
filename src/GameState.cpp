@@ -5,6 +5,7 @@
 #include <dearimgui/imgui.h>
 
 #include <cmath>
+#include <cstdint>
 #include <random>
 #include <vector>
 #include <algorithm>
@@ -15,6 +16,7 @@
 
 #include "GLTFModel.hpp"
 #include "GLSDLHelper.hpp"
+#include "Font.hpp"
 #include "MusicPlayer.hpp"
 #include "Options.hpp"
 #include "Player.hpp"
@@ -184,6 +186,35 @@ void main()
         const int renderWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(windowWidth) * scale)));
         const int renderHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(windowHeight) * scale)));
         return {renderWidth, renderHeight};
+    }
+
+    bool projectWorldToScreen(const glm::vec3 &worldPos,
+                              const glm::mat4 &view,
+                              const glm::mat4 &projection,
+                              int windowWidth,
+                              int windowHeight,
+                              ImVec2 &outScreenPos) noexcept
+    {
+        if (windowWidth <= 0 || windowHeight <= 0)
+        {
+            return false;
+        }
+
+        const glm::vec4 clip = projection * view * glm::vec4(worldPos, 1.0f);
+        if (clip.w <= 0.0001f)
+        {
+            return false;
+        }
+
+        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        if (ndc.z < -1.0f || ndc.z > 1.0f)
+        {
+            return false;
+        }
+
+        outScreenPos.x = (ndc.x * 0.5f + 0.5f) * static_cast<float>(windowWidth);
+        outScreenPos.y = (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(windowHeight);
+        return true;
     }
 }
 
@@ -1764,6 +1795,7 @@ void GameState::renderPlayerCharacter() const noexcept
     }
 
     renderTracksideBillboards();
+    drawRunnerScorePopups();
     renderWalkParticles();
 
     if (mCompositeShader && mBillboardFBO != 0)
@@ -1873,6 +1905,7 @@ void GameState::updateRunnerGameplay(float dt) noexcept
     mCamera.updateThirdPersonPosition();
 
     processRunnerCollisions(dt);
+    updateRunnerScorePopups(dt);
 }
 
 void GameState::spawnPointEvents() noexcept
@@ -1914,6 +1947,11 @@ void GameState::processRunnerCollisions(float dt) noexcept
         {
             const int scoreDelta = scoreForMaterial(event.materialType);
             accumulatedScoreDelta += scoreDelta;
+
+            RunnerScorePopup popup;
+            popup.worldPosition = event.worldPosition + glm::vec3(0.0f, 1.65f, 0.0f);
+            popup.value = scoreDelta;
+            mRunnerScorePopups.push_back(popup);
 
             if (scoreDelta < 0)
             {
@@ -1958,12 +1996,29 @@ void GameState::processRunnerCollisions(float dt) noexcept
     }
 }
 
+void GameState::updateRunnerScorePopups(float dt) noexcept
+{
+    if (mRunnerScorePopups.empty() || dt <= 0.0f)
+    {
+        return;
+    }
+
+    for (auto &popup : mRunnerScorePopups)
+    {
+        popup.age += dt;
+    }
+
+    std::erase_if(mRunnerScorePopups, [](const RunnerScorePopup &popup)
+                  { return popup.age >= popup.lifetime; });
+}
+
 void GameState::resetRunnerRun() noexcept
 {
     mPlayerPoints = mRunnerStartingPoints;
     mRunnerDistance = 0.0f;
     mRunnerCollisionTimer = 0.0f;
     mRunnerPointEvents.clear();
+    mRunnerScorePopups.clear();
     mRunLost = false;
 
     glm::vec3 current = mPlayer.getPosition();
@@ -2017,4 +2072,144 @@ void GameState::drawRunnerHud() const noexcept
         }
     }
     ImGui::End();
+}
+
+void GameState::drawRunnerScorePopups() const noexcept
+{
+    if (mRunnerScorePopups.empty() || mCamera.getMode() != CameraMode::THIRD_PERSON)
+    {
+        return;
+    }
+
+    const int safeHeight = std::max(mWindowHeight, 1);
+    const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
+    const glm::mat4 view = mCamera.getLookAt();
+    const glm::mat4 projection = mCamera.getPerspective(aspectRatio);
+
+    Shader *billboardShader = nullptr;
+    try
+    {
+        billboardShader = &getContext().shaders->get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
+    }
+    catch (const std::exception &)
+    {
+        billboardShader = nullptr;
+    }
+
+    ImFont *font = nullptr;
+    try
+    {
+        font = getContext().fonts->get(Fonts::ID::COUSINE_REGULAR).get();
+    }
+    catch (const std::exception &)
+    {
+        font = nullptr;
+    }
+
+    GLuint atlasTextureId = 0;
+    int atlasWidth = 0;
+    int atlasHeight = 0;
+    ImFontBaked *fontBaked = nullptr;
+    if (font)
+    {
+        fontBaked = font->GetFontBaked(std::max(1.0f, font->LegacySize));
+    }
+
+    if (font && font->OwnerAtlas && font->OwnerAtlas->TexData)
+    {
+        const ImTextureID texId = font->OwnerAtlas->TexData->TexID;
+        if (texId != ImTextureID_Invalid)
+        {
+            atlasTextureId = static_cast<GLuint>(static_cast<std::uintptr_t>(texId));
+        }
+        atlasWidth = font->OwnerAtlas->TexData->Width;
+        atlasHeight = font->OwnerAtlas->TexData->Height;
+    }
+
+    const bool canRenderBillboards = (billboardShader != nullptr && atlasTextureId != 0 && atlasWidth > 0 && atlasHeight > 0 && fontBaked != nullptr);
+
+    ImDrawList *drawList = nullptr;
+    if (!canRenderBillboards)
+    {
+        drawList = ImGui::GetForegroundDrawList();
+    }
+
+    const glm::vec3 right = glm::normalize(mCamera.getRight());
+    constexpr float kPopupDigitHalfSize = 0.62f;
+    constexpr float kDigitSpacing = 0.85f;
+
+    for (const auto &popup : mRunnerScorePopups)
+    {
+        const float lifeT = std::clamp(popup.age / std::max(0.01f, popup.lifetime), 0.0f, 1.0f);
+        const float alpha = 1.0f - lifeT;
+        if (alpha <= 0.01f)
+        {
+            continue;
+        }
+
+        const std::string label = (popup.value > 0 ? "+" : "") + std::to_string(popup.value);
+        const glm::vec3 centerPos = popup.worldPosition + glm::vec3(0.0f, popup.riseSpeed * popup.age, 0.0f);
+
+        if (canRenderBillboards)
+        {
+            const float billboardScale = 1.0f + (1.0f - lifeT) * 0.22f;
+            const float halfSize = kPopupDigitHalfSize * billboardScale;
+            const float totalWidth = static_cast<float>(label.size()) * kDigitSpacing;
+            const glm::vec3 leftStart = centerPos - right * (totalWidth * 0.5f);
+
+            for (std::size_t i = 0; i < label.size(); ++i)
+            {
+                const ImFontGlyph *glyph = fontBaked->FindGlyphNoFallback(static_cast<ImWchar>(label[i]));
+                if (!glyph)
+                {
+                    continue;
+                }
+
+                const glm::vec3 charPos = leftStart + right * (static_cast<float>(i) * kDigitSpacing);
+                const glm::vec4 uvRect(glyph->U0, glyph->V0, glyph->U1, glyph->V1);
+                const glm::vec4 tintColor = (popup.value >= 0)
+                                                ? glm::vec4(0.37f, 1.0f, 0.46f, alpha)
+                                                : glm::vec4(1.0f, 0.40f, 0.40f, alpha);
+
+                GLSDLHelper::renderBillboardSpriteUV(
+                    *billboardShader,
+                    atlasTextureId,
+                    uvRect,
+                    charPos,
+                    halfSize,
+                    view,
+                    projection,
+                    tintColor,
+                    false,
+                    false,
+                        false);
+            }
+
+            continue;
+        }
+
+        if (!drawList)
+        {
+            continue;
+        }
+
+        ImVec2 screenPos{};
+        if (!projectWorldToScreen(centerPos, view, projection, mWindowWidth, mWindowHeight, screenPos))
+        {
+            continue;
+        }
+
+        const float fontScale = 1.0f + (1.0f - lifeT) * 0.22f;
+        const float fontSize = ImGui::GetFontSize() * fontScale;
+        const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
+        const ImVec2 textPos(screenPos.x - textSize.x * 0.5f, screenPos.y - textSize.y);
+
+        const ImU32 shadowColor = IM_COL32(0, 0, 0, static_cast<int>(150.0f * alpha));
+        const ImU32 textColor = popup.value >= 0
+                                    ? IM_COL32(94, 255, 118, static_cast<int>(255.0f * alpha))
+                                    : IM_COL32(255, 96, 96, static_cast<int>(255.0f * alpha));
+
+        drawList->AddText(ImGui::GetFont(), fontSize, ImVec2(textPos.x + 1.0f, textPos.y + 1.0f), shadowColor, label.c_str());
+        drawList->AddText(ImGui::GetFont(), fontSize, textPos, textColor, label.c_str());
+    }
 }

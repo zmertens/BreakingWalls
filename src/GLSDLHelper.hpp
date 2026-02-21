@@ -100,6 +100,20 @@ public:
         int sheetWidth,
         int sheetHeight) noexcept;
 
+    /// Render billboard using explicit UV rect (u0, v0, u1, v1) with tint and optional alpha-mask sampling
+    static void renderBillboardSpriteUV(
+        Shader &billboardShader,
+        GLuint textureId,
+        const glm::vec4 &uvRect,
+        const glm::vec3 &worldPosition,
+        float halfSize,
+        const glm::mat4 &viewMatrix,
+        const glm::mat4 &projMatrix,
+        const glm::vec4 &tintColor,
+        bool flipX,
+        bool flipY,
+        bool useRedAsAlpha) noexcept;
+
     /// Check if billboard rendering is initialized
     [[nodiscard]] static bool isBillboardInitialized() noexcept { return sBillboardInitialized; }
 };

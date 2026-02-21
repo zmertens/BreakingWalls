@@ -753,6 +753,7 @@ void World::processRunnerContactEvents() noexcept
         RunnerCollisionEvent runnerEvent;
         runnerEvent.materialType = mSpheres[sphereIndex].getMaterialType();
         runnerEvent.impactSpeed = event.manifold.pointCount > 0 ? event.manifold.points[0].normalVelocity : 0.0f;
+        runnerEvent.worldPosition = mSpheres[sphereIndex].getCenter();
         mRunnerCollisionEvents.push_back(runnerEvent);
     }
 }

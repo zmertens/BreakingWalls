@@ -63,6 +63,15 @@ private:
         bool consumed{false};
     };
 
+    struct RunnerScorePopup
+    {
+        glm::vec3 worldPosition{};
+        int value{0};
+        float age{0.0f};
+        float lifetime{1.05f};
+        float riseSpeed{3.2f};
+    };
+
     World mWorld;    // Manages both 2D physics and 3D sphere scene
     Player &mPlayer; // Restored for camera input handling
 
@@ -169,6 +178,7 @@ private:
     mutable float mPlayerPlanarSpeedForFx{0.0f};
     mutable GLuint mWalkParticleCount{1600};
     std::vector<RunnerPointEvent> mRunnerPointEvents;
+    std::vector<RunnerScorePopup> mRunnerScorePopups;
     std::mt19937 mRunnerRng{1337u};
 
     /// Initialize GPU graphics resources for compute shader rendering
@@ -240,11 +250,17 @@ private:
     /// Resolve point pickups and obstacle penalties
     void processRunnerCollisions(float dt) noexcept;
 
+    /// Advance and cull floating score popup labels
+    void updateRunnerScorePopups(float dt) noexcept;
+
     /// Reset the active run after point loss
     void resetRunnerRun() noexcept;
 
     /// Draw lightweight arcade HUD
     void drawRunnerHud() const noexcept;
+
+    /// Draw floating score labels above collision points
+    void drawRunnerScorePopups() const noexcept;
 
     /// Clean up OpenGL resources
     void cleanupResources() noexcept;

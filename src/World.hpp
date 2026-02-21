@@ -39,6 +39,7 @@ public:
     {
         Material::MaterialType materialType{Material::MaterialType::LAMBERTIAN};
         float impactSpeed{0.0f};
+        glm::vec3 worldPosition{0.0f};
     };
 
     explicit World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders);

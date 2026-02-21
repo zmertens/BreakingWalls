@@ -449,12 +449,7 @@ void GLSDLHelper::renderBillboardSprite(
     float uWidth = static_cast<float>(frameRect.width) / static_cast<float>(sheetWidth);
     float vHeight = static_cast<float>(frameRect.height) / static_cast<float>(sheetHeight);
 
-    // Set uniforms using Shader class methods
-    billboardShader.setUniform("ModelViewMatrix", modelViewMatrix);
-    billboardShader.setUniform("ProjectionMatrix", projMatrix);
-    billboardShader.setUniform("Size2", halfSize);
-    billboardShader.setUniform("TexRect", glm::vec4(u, v, uWidth, vHeight));
-    billboardShader.setUniform("SpriteTex", static_cast<GLint>(0));
+    const glm::vec4 uvRect(u, v, u + uWidth, v + vHeight);
 
     // Debug log first few renders
     static int renderCount = 0;
@@ -482,16 +477,18 @@ void GLSDLHelper::renderBillboardSprite(
         renderCount++;
     }
 
-    // Bind texture on unit 0 to match SpriteTex sampler
-    GLint prevActiveTexture = GL_TEXTURE0;
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTexture);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, textureId);
-
-    // Draw single point - geometry shader expands to quad
-    glBindVertexArray(sBillboardVAO);
-    glDrawArrays(GL_POINTS, 0, 1);
-    glBindVertexArray(0);
+    renderBillboardSpriteUV(
+        billboardShader,
+        textureId,
+        uvRect,
+        worldPosition,
+        halfSize,
+        viewMatrix,
+        projMatrix,
+        glm::vec4(1.0f),
+        true,
+        true,
+        false);
 
     // Check for OpenGL errors
     GLenum err = glGetError();
@@ -501,7 +498,6 @@ void GLSDLHelper::renderBillboardSprite(
     }
 
     // Restore previous OpenGL state
-    glActiveTexture(static_cast<GLenum>(prevActiveTexture));
     if (!blendEnabled)
     {
         glDisable(GL_BLEND);
@@ -514,4 +510,59 @@ void GLSDLHelper::renderBillboardSprite(
     {
         glDisable(GL_DEPTH_TEST);
     }
+}
+
+void GLSDLHelper::renderBillboardSpriteUV(
+    Shader &billboardShader,
+    GLuint textureId,
+    const glm::vec4 &uvRect,
+    const glm::vec3 &worldPosition,
+    float halfSize,
+    const glm::mat4 &viewMatrix,
+    const glm::mat4 &projMatrix,
+    const glm::vec4 &tintColor,
+    bool flipX,
+    bool flipY,
+    bool useRedAsAlpha) noexcept
+{
+    if (!sBillboardInitialized)
+    {
+        initializeBillboardRendering();
+    }
+
+    if (textureId == 0)
+    {
+        return;
+    }
+
+    billboardShader.bind();
+
+    const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), worldPosition);
+    const glm::mat4 modelViewMatrix = viewMatrix * modelMatrix;
+
+    const float uMin = std::min(uvRect.x, uvRect.z);
+    const float vMin = std::min(uvRect.y, uvRect.w);
+    const float uMax = std::max(uvRect.x, uvRect.z);
+    const float vMax = std::max(uvRect.y, uvRect.w);
+
+    billboardShader.setUniform("ModelViewMatrix", modelViewMatrix);
+    billboardShader.setUniform("ProjectionMatrix", projMatrix);
+    billboardShader.setUniform("Size2", halfSize);
+    billboardShader.setUniform("TexRect", glm::vec4(uMin, vMin, uMax, vMax));
+    billboardShader.setUniform("SpriteTex", static_cast<GLint>(0));
+    billboardShader.setUniform("TintColor", tintColor);
+    billboardShader.setUniform("FlipX", static_cast<GLint>(flipX ? 1 : 0));
+    billboardShader.setUniform("FlipY", static_cast<GLint>(flipY ? 1 : 0));
+    billboardShader.setUniform("UseRedAsAlpha", static_cast<GLint>(useRedAsAlpha ? 1 : 0));
+
+    GLint prevActiveTexture = GL_TEXTURE0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, textureId);
+
+    glBindVertexArray(sBillboardVAO);
+    glDrawArrays(GL_POINTS, 0, 1);
+    glBindVertexArray(0);
+
+    glActiveTexture(static_cast<GLenum>(prevActiveTexture));
 }
