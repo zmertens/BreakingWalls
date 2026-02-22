@@ -26,7 +26,7 @@
 #include "GameState.hpp"
 #include "GLSDLHelper.hpp"
 #include "HttpClient.hpp"
-#include "JsonUtils.hpp"
+#include "JSONUtils.hpp"
 #include "Level.hpp"
 #include "LoadingState.hpp"
 #include "MenuState.hpp"

@@ -2,7 +2,7 @@
 
 #include "Animation.hpp"
 #include "Camera.hpp"
-#include "JsonUtils.hpp"
+#include "JSONUtils.hpp"
 #include "Material.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceManager.hpp"

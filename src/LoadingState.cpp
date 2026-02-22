@@ -21,7 +21,7 @@
 
 #include "Font.hpp"
 #include "GLTFModel.hpp"
-#include "JsonUtils.hpp"
+#include "JSONUtils.hpp"
 #include "Level.hpp"
 #include "MusicPlayer.hpp"
 #include "Options.hpp"
@@ -64,15 +64,17 @@ namespace JSONKeys
     constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";
     constexpr std::string_view SHADER_COMPOSITE_VERTEX = "shader_composite_vert_glsl";
     constexpr std::string_view SHADER_COMPOSITE_FRAGMENT = "shader_composite_frag_glsl";
-    constexpr std::string_view SHADER_SHADOW_VERTEX = "shader_shadow_vert_glsl";
-    constexpr std::string_view SHADER_SHADOW_GEOMETRY = "shader_shadow_geom_glsl";
-    constexpr std::string_view SHADER_SHADOW_FRAGMENT = "shader_shadow_frag_glsl";
+    constexpr std::string_view SHADER_MODEL_VERTEX = "shader_model_vert_glsl";
+    constexpr std::string_view SHADER_MODEL_FRAGMENT = "shader_model_frag_glsl";
     constexpr std::string_view SHADER_PARTICLES_COMPUTE = "shader_particles_cs_glsl";
     constexpr std::string_view SHADER_PATHTRACER_COMPUTE = "shader_pathtracer_cs_glsl";
     constexpr std::string_view SHADER_PARTICLES_VERTEX = "shader_particles_vert_glsl";
     constexpr std::string_view SHADER_PARTICLES_FRAGMENT = "shader_particles_frag_glsl";
     constexpr std::string_view SHADER_SCREEN_VERTEX = "shader_screen_vert_glsl";
     constexpr std::string_view SHADER_SCREEN_FRAGMENT = "shader_screen_frag_glsl";
+    constexpr std::string_view SHADER_SHADOW_VERTEX = "shader_shadow_vert_glsl";
+    constexpr std::string_view SHADER_SHADOW_GEOMETRY = "shader_shadow_geom_glsl";
+    constexpr std::string_view SHADER_SHADOW_FRAGMENT = "shader_shadow_frag_glsl";
     constexpr std::string_view STYLIZED_CHARACTER_GLTF2_MODEL = "stylized_character_gltf2";
     constexpr std::string_view SOUND_GENERATE = "generate_ogg";
     constexpr std::string_view SOUND_SELECT = "select_ogg";
@@ -835,10 +837,16 @@ void LoadingState::loadShaders() noexcept
         billboardShader->linkProgram();
 
         log("LoadingState: Billboard shader compiled and linked");
-
         // Insert billboard shader into manager
         shaders.insert(Shaders::ID::GLSL_BILLBOARD_SPRITE, std::move(billboardShader));
 
+        auto modelShader = std::make_unique<Shader>();
+        modelShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MODEL_VERTEX));
+        modelShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_MODEL_FRAGMENT));
+        modelShader->linkProgram();
+        log("LoadingState: Model shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_MODEL_WITH_SKINNING, std::move(modelShader));
+        
         log("LoadingState: All shaders loaded successfully");
     }
     catch (const std::exception &e)

@@ -39,129 +39,6 @@ namespace
     constexpr float kCharacterPathTraceProxyScale = 1.42f;
     constexpr float kCharacterModelYOffset = 1.0f;
 
-    constexpr const char *kSkinnedModelVertexShader = R"GLSL(
-#version 430 core
-
-layout (location = 0) in vec3 Position;
-layout (location = 1) in vec2 TexCoord;
-layout (location = 2) in vec3 Normal;
-layout (location = 3) in ivec4 BoneIDs;
-layout (location = 4) in vec4 BoneWeights;
-
-uniform mat4 uModel;
-uniform mat4 uView;
-uniform mat4 uProjection;
-uniform mat4 uBones[200];
-uniform uint uBoneCount;
-
-out vec3 vWorldPos;
-out vec3 vWorldNormal;
-
-void main()
-{
-    mat4 skin = mat4(0.0);
-    float totalWeight = 0.0;
-
-    for (int i = 0; i < 4; ++i)
-    {
-        int boneId = BoneIDs[i];
-        float weight = BoneWeights[i];
-        if (weight <= 0.0)
-        {
-            continue;
-        }
-
-        if (boneId >= 0 && uint(boneId) < uBoneCount)
-        {
-            skin += uBones[boneId] * weight;
-            totalWeight += weight;
-        }
-    }
-
-    if (totalWeight <= 1e-6)
-    {
-        skin = mat4(1.0);
-    }
-    else
-    {
-        skin *= (1.0 / totalWeight);
-    }
-
-    vec4 localPos = skin * vec4(Position, 1.0);
-    vec3 localNormal = normalize((skin * vec4(Normal, 0.0)).xyz);
-
-    vec4 worldPos = uModel * localPos;
-    mat3 normalMat = mat3(transpose(inverse(uModel)));
-    vWorldNormal = normalize(normalMat * localNormal);
-    vWorldPos = worldPos.xyz;
-
-    gl_Position = uProjection * uView * worldPos;
-}
-)GLSL";
-
-    constexpr const char *kSkinnedModelFragmentShader = R"GLSL(
-#version 430 core
-
-in vec3 vWorldPos;
-in vec3 vWorldNormal;
-
-out vec4 FragColor;
-
-uniform vec3 uSunDir;
-
-void main()
-{
-    vec3 N = normalize(vWorldNormal);
-    vec3 L = normalize(-uSunDir);
-    float ndotl = max(dot(N, L), 0.0);
-
-    // Approximate view direction toward camera-origin in view-like framing.
-    // Used only for a subtle stylized rim highlight.
-    vec3 V = normalize(-vWorldPos);
-
-    float region = 0.5 + 0.5 * sin(vWorldPos.y * 2.4 + vWorldPos.x * 0.9);
-    float grain = 0.5 + 0.5 * sin(vWorldPos.x * 8.7 + vWorldPos.z * 6.3 + vWorldPos.y * 3.1);
-
-    vec3 base = vec3(0.34, 0.24, 0.17);
-    vec3 shadowTint = vec3(0.12, 0.08, 0.06);
-    vec3 litTint = vec3(0.68, 0.50, 0.33);
-
-    vec3 leatherTone = vec3(0.42, 0.27, 0.16);
-    vec3 clothTone = vec3(0.28, 0.20, 0.15);
-    vec3 skinTone = vec3(0.52, 0.34, 0.24);
-
-    vec3 detailTone = mix(clothTone, leatherTone, region);
-    detailTone = mix(detailTone, skinTone, clamp((vWorldPos.y - 2.0) * 0.35, 0.0, 1.0));
-    base = mix(base, detailTone, 0.45 + 0.18 * grain);
-
-    vec3 color = base * mix(shadowTint, litTint, ndotl);
-
-    color.r *= 0.96;
-    color.g *= 0.88;
-    color.b *= 0.76;
-
-    float fresnel = pow(1.0 - max(dot(N, vec3(0.0, 1.0, 0.0)), 0.0), 2.0);
-    color += vec3(0.12, 0.07, 0.04) * fresnel;
-
-    // Subtle synthwave-compatible cool rim light to separate player silhouette
-    // from earthy terrain without abandoning the brown palette.
-    float rim = pow(1.0 - max(dot(N, V), 0.0), 2.6);
-    vec3 rimColor = vec3(0.18, 0.30, 0.42);
-    color += rimColor * rim * 0.16;
-
-    // Gentle lift on lit regions so the character reads cleaner against the scene.
-    float highlight = smoothstep(0.35, 1.0, ndotl);
-    color += vec3(0.07, 0.05, 0.04) * highlight;
-
-    color *= 0.86;
-
-    // Keep bloom contribution controlled but allow small punch-through on highlights.
-    color = min(color, vec3(1.18));
-
-    FragColor = vec4(color, 1.0);
-}
-)GLSL";
-
     glm::vec3 computeSunDirection(float /*timeSeconds*/) noexcept
     {
         return glm::normalize(glm::vec3(-1.0f, -0.125f, 0.0f));
@@ -236,35 +113,17 @@ GameState::GameState(StateStack &stack, Context context)
     {
         mDisplayShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD);
         mComputeShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_COMPUTE);
+        mCompositeShader = &shaders.get(Shaders::ID::GLSL_COMPOSITE_SCENE);
+        mSkinnedModelShader = &shaders.get(Shaders::ID::GLSL_MODEL_WITH_SKINNING);
+        mShadowShader = &shaders.get(Shaders::ID::GLSL_SHADOW_VOLUME);
+        mWalkParticlesComputeShader = &shaders.get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
+        mWalkParticlesRenderShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
         mShadersInitialized = true;
     }
     catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
         mShadersInitialized = false;
-    }
-
-    if (mShadersInitialized)
-    {
-        try
-        {
-            mCompositeShader = &shaders.get(Shaders::ID::GLSL_COMPOSITE_SCENE);
-        }
-        catch (const std::exception &e)
-        {
-            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Composite shader unavailable: %s", e.what());
-            mCompositeShader = nullptr;
-        }
-
-        try
-        {
-            mShadowShader = &shaders.get(Shaders::ID::GLSL_SHADOW_VOLUME);
-        }
-        catch (const std::exception &e)
-        {
-            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Shadow shader unavailable: %s", e.what());
-            mShadowShader = nullptr;
-        }
     }
 
     auto &textures = *context.getTextureManager();
@@ -344,27 +203,10 @@ GameState::GameState(StateStack &stack, Context context)
     if (mShadersInitialized)
     {
         initializeGraphicsResources();
-        initializeSkinnedModelShader();
         initializeWalkParticles();
 
         // Initialize billboard rendering for character sprites
         GLSDLHelper::initializeBillboardRendering();
-    }
-}
-
-void GameState::initializeSkinnedModelShader() noexcept
-{
-    try
-    {
-        mSkinnedModelShader = std::make_unique<Shader>();
-        mSkinnedModelShader->compileAndAttachShader(Shader::ShaderType::VERTEX, "skinned_model.vs", kSkinnedModelVertexShader);
-        mSkinnedModelShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, "skinned_model.fs", kSkinnedModelFragmentShader);
-        mSkinnedModelShader->linkProgram();
-    }
-    catch (const std::exception &e)
-    {
-        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Failed to initialize skinned model shader: %s", e.what());
-        mSkinnedModelShader.reset();
     }
 }
 
@@ -721,19 +563,6 @@ void GameState::initializeWalkParticles() noexcept
 {
     if (mWalkParticlesInitialized)
     {
-        return;
-    }
-
-    try
-    {
-        mWalkParticlesComputeShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
-        mWalkParticlesRenderShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
-    }
-    catch (const std::exception &e)
-    {
-        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Walk particles unavailable: %s", e.what());
-        mWalkParticlesComputeShader = nullptr;
-        mWalkParticlesRenderShader = nullptr;
         return;
     }
 
@@ -1444,11 +1273,11 @@ void GameState::cleanupResources() noexcept
     mWalkParticlesInitialized = false;
     mWalkParticlesComputeShader = nullptr;
     mWalkParticlesRenderShader = nullptr;
+    mShadowShader = nullptr;
 
     mAccumTex = nullptr;
     mDisplayTex = nullptr;
     mNoiseTexture = nullptr;
-    mSoftShadowKernel = nullptr;
 
     // Shaders are now managed by ShaderManager - don't delete them here
     mDisplayShader = nullptr;
@@ -1548,16 +1377,6 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
         mLastFxPlayerPosition = playerPosNow;
     }
 
-    // Log progress periodically
-    if (mCurrentBatch % 50 == 0 || mCurrentBatch == mTotalBatches)
-    {
-        uint32_t totalSamples = mCurrentBatch * mSamplesPerBatch;
-        // stats
-        // auto progress = static_cast<float>(mCurrentBatch) / static_cast<float>(mTotalBatches) * 100.0f;
-        // log("Progress: " + std::to_string(totalSamples) + " samples (" +
-        // std::to_string(mCurrentBatch) + "/" + std::to_string(mTotalBatches) + " batches)");
-    }
-
     return true;
 }
 
@@ -1639,17 +1458,17 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
     // Handle mouse motion for camera rotation (right mouse button)
     if (event.type == SDL_EVENT_MOUSE_MOTION)
     {
-        Uint32 mouseState = SDL_GetMouseState(nullptr, nullptr);
+        std::uint32_t mouseState = SDL_GetMouseState(nullptr, nullptr);
         if (mouseState & SDL_BUTTON_RMASK)
         {
-            const float sensitivity = 0.35f;
+            static constexpr float SENSITIVITY = 0.35f;
             if (mArcadeModeEnabled && mCamera.getMode() == CameraMode::THIRD_PERSON)
             {
-                mCamera.rotate(0.0f, -event.motion.yrel * sensitivity);
+                mCamera.rotate(0.0f, -event.motion.yrel * SENSITIVITY);
             }
             else
             {
-                mCamera.rotate(event.motion.xrel * sensitivity, -event.motion.yrel * sensitivity);
+                mCamera.rotate(event.motion.xrel * SENSITIVITY, -event.motion.yrel * SENSITIVITY);
             }
         }
     }

@@ -63,13 +63,14 @@ namespace Shaders
     enum class ID : unsigned int
     {
         GLSL_BILLBOARD_SPRITE = 0,
-        GLSL_FULLSCREEN_QUAD = 1,
-        GLSL_FULLSCREEN_QUAD_MVP = 2,
-        GLSL_PATH_TRACER_COMPUTE = 3,
-        GLSL_PARTICLES_COMPUTE = 4,
-        GLSL_COMPOSITE_SCENE = 5,
-        GLSL_SHADOW_VOLUME = 6,     // Shadow rendering (vert+geom+frag)
-        GLSL_TOTAL_SHADERS = 7
+        GLSL_COMPOSITE_SCENE = 1,
+        GLSL_FULLSCREEN_QUAD = 2,
+        GLSL_FULLSCREEN_QUAD_MVP = 3,
+        GLSL_MODEL_WITH_SKINNING = 4,
+        GLSL_PATH_TRACER_COMPUTE = 5,
+        GLSL_PARTICLES_COMPUTE = 6,
+        GLSL_SHADOW_VOLUME = 7,
+        GLSL_TOTAL_SHADERS = 8
     };
 }
 

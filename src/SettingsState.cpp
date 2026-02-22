@@ -9,7 +9,7 @@
 #include <unordered_map>
 
 #include "Font.hpp"
-#include "JsonUtils.hpp"
+#include "JSONUtils.hpp"
 #include "MusicPlayer.hpp"
 #include "Options.hpp"
 #include "ResourceIdentifiers.hpp"

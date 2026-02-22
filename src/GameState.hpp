@@ -81,15 +81,14 @@ private:
     Shader *mDisplayShader{nullptr};
     Shader *mComputeShader{nullptr};
     Shader *mCompositeShader{nullptr};
-    std::unique_ptr<Shader> mSkinnedModelShader;
-    mutable Shader *mWalkParticlesComputeShader{nullptr};
-    mutable Shader *mWalkParticlesRenderShader{nullptr};
-    mutable Shader *mShadowShader{nullptr};  // Shadow volume + stencil rendering
+    Shader *mSkinnedModelShader{nullptr};
+    Shader *mWalkParticlesComputeShader{nullptr};
+    Shader *mWalkParticlesRenderShader{nullptr};
+    Shader *mShadowShader{nullptr};  // Shadow volume + stencil rendering
 
     Texture *mAccumTex{nullptr};
     Texture *mDisplayTex{nullptr};
     Texture *mNoiseTexture{nullptr};
-    Texture *mSoftShadowKernel{nullptr};    // Soft shadow gaussian kernel
 
     // GPU resources
     GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres
@@ -202,9 +201,6 @@ private:
 
     /// Render reflected player character on ground plane
     void renderPlayerReflection() const noexcept;
-
-    /// Compile shader program used for skeletal model rendering
-    void initializeSkinnedModelShader() noexcept;
 
     /// Render using compute shaders (path tracing)
     void renderWithComputeShaders() const noexcept;

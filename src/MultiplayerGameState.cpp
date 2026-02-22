@@ -15,7 +15,7 @@
 
 #include "GameState.hpp"
 #include "HttpClient.hpp"
-#include "JsonUtils.hpp"
+#include "JSONUtils.hpp"
 #include "MusicPlayer.hpp"
 #include "StateStack.hpp"
 
