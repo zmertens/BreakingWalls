@@ -9,13 +9,12 @@ class Font
 {
 public:
     // Load font from memory (compressed data)
-    bool loadFromMemoryCompressedTTF(const void* compressedData, std::size_t compressedSize, float pixelSize);
+    bool loadFromMemoryCompressedTTF(const void *compressedData, std::size_t compressedSize, float pixelSize = 28.f);
 
-    [[nodiscard]] ImFont* get() const;
+    [[nodiscard]] ImFont *get() const;
 
 private:
-    ImFont* mFont = nullptr;
+    ImFont *mFont = nullptr;
 };
 
 #endif // FONT_H
-

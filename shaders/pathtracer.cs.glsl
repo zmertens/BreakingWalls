@@ -3,10 +3,16 @@
 // Path tracing compute shader with progressive refinement
 // Based on physically-based rendering principles
 
-#define MAX_SPHERES 2000  // Increased for dynamic spawning
+#define MAX_SPHERES 200  // Increased for dynamic spawning
+#define MAX_TRIANGLES 2048
+#define MAX_TRIANGLE_SHADOW_TESTS 96
 #define MAX_LIGHTS 5
 #define MAX_BOUNCES 8
 #define EPSILON 0.001
+
+// Starfield parameters
+#define PI 3.14159265359
+#define TWO_PI 6.28318530718
 
 // Material types (must match C++ MaterialType enum)
 #define LAMBERTIAN 0
@@ -24,7 +30,8 @@ uint pcg_hash(uint seed) {
 }
 
 float random(uvec2 pixel, uint sampleIndex, uint bounce) {
-    uint seed = pixel.x + pixel.y * 1920u + sampleIndex * 12345u + bounce * 67890u;
+    uint seed = (pixel.x * 73856093u) ^ (pixel.y * 19349663u) ^
+                (sampleIndex * 83492791u) ^ (bounce * 2654435761u);
     return float(pcg_hash(seed)) / float(0xffffffffu);
 }
 
@@ -84,6 +91,17 @@ struct Sphere {
     uint padding;
 };
 
+struct Triangle {
+    vec4 v0;
+    vec4 v1;
+    vec4 v2;
+    vec4 n0;
+    vec4 n1;
+    vec4 n2;
+    vec4 albedoAndMaterial;
+    vec4 materialParams;
+};
+
 // Hit record for ray intersections
 struct HitRecord {
     vec3 point;
@@ -101,10 +119,30 @@ uniform Camera uCamera;
 uniform uint uBatch;
 uniform uint uSamplesPerBatch;
 uniform uint uSphereCount;  // Actual number of spheres to check
+uniform uint uPrimaryRaySphereCount;  // Sphere count for primary rays (exclude reflection-only proxy)
+uniform uint uTriangleCount;
+uniform vec3 uGroundPlanePoint;
+uniform vec3 uGroundPlaneNormal;
+uniform vec3 uGroundPlaneAlbedo;
+uniform uint uGroundPlaneMaterialType;
+uniform float uGroundPlaneFuzz;
+uniform float uGroundPlaneRefractiveIndex;
+uniform float uTime;
+uniform float uHistoryBlend;
+uniform sampler2D uNoiseTex;
+
+// Shadow casting uniforms
+uniform vec3 uPlayerPos;          // Player position in world space
+uniform float uPlayerRadius;      // Player shadow radius
+uniform vec3 uLightDir;           // Light direction (normalized)
 
 // Shader storage buffer for spheres
 layout (std430, binding = 1) buffer SphereBuffer {
     Sphere bSpheres[MAX_SPHERES];
+};
+
+layout (std430, binding = 2) buffer TriangleBuffer {
+    Triangle bTriangles[MAX_TRIANGLES];
 };
 
 // ============================================================================
@@ -144,12 +182,12 @@ bool sphereIntersect(in Sphere sphere, in Ray ray, float tMin, float tMax, out H
     return true;
 }
 
-bool hitWorld(in Ray ray, float tMin, float tMax, out HitRecord hit) {
+bool hitWorld(in Ray ray, float tMin, float tMax, uint sphereCount, out HitRecord hit) {
     HitRecord tempHit;
     bool hitAnything = false;
     float closest = tMax;
 
-    for (uint i = 0; i < uSphereCount; i++) {
+    for (uint i = 0; i < sphereCount; i++) {
         if (sphereIntersect(bSpheres[i], ray, tMin, closest, tempHit)) {
             hitAnything = true;
             closest = tempHit.t;
@@ -158,6 +196,248 @@ bool hitWorld(in Ray ray, float tMin, float tMax, out HitRecord hit) {
     }
 
     return hitAnything;
+}
+
+bool planeIntersect(in Ray ray, float tMin, float tMax, out HitRecord hit) {
+    vec3 planeNormal = normalize(uGroundPlaneNormal);
+    float denom = dot(planeNormal, ray.direction);
+
+    if (abs(denom) < EPSILON) {
+        return false;
+    }
+
+    float t = dot(uGroundPlanePoint - ray.origin, planeNormal) / denom;
+    if (t < tMin || t > tMax) {
+        return false;
+    }
+
+    hit.t = t;
+    hit.point = ray.origin + ray.direction * t;
+    hit.frontFace = dot(ray.direction, planeNormal) < 0.0;
+    hit.normal = hit.frontFace ? planeNormal : -planeNormal;
+    hit.materialType = uGroundPlaneMaterialType;
+    hit.albedo = uGroundPlaneAlbedo;
+    hit.fuzz = uGroundPlaneFuzz;
+    hit.refractiveIndex = uGroundPlaneRefractiveIndex;
+
+    return true;
+}
+
+bool triangleIntersect(in Triangle triangle, in Ray ray, float tMin, float tMax, out HitRecord hit) {
+    vec3 v0 = triangle.v0.xyz;
+    vec3 v1 = triangle.v1.xyz;
+    vec3 v2 = triangle.v2.xyz;
+
+    vec3 edge1 = v1 - v0;
+    vec3 edge2 = v2 - v0;
+
+    vec3 pvec = cross(ray.direction, edge2);
+    float det = dot(edge1, pvec);
+    if (abs(det) < EPSILON) {
+        return false;
+    }
+
+    float invDet = 1.0 / det;
+    vec3 tvec = ray.origin - v0;
+    float u = dot(tvec, pvec) * invDet;
+    if (u < 0.0 || u > 1.0) {
+        return false;
+    }
+
+    vec3 qvec = cross(tvec, edge1);
+    float v = dot(ray.direction, qvec) * invDet;
+    if (v < 0.0 || (u + v) > 1.0) {
+        return false;
+    }
+
+    float t = dot(edge2, qvec) * invDet;
+    if (t < tMin || t > tMax) {
+        return false;
+    }
+
+    float w = 1.0 - u - v;
+    vec3 interpNormal = triangle.n0.xyz * w + triangle.n1.xyz * u + triangle.n2.xyz * v;
+    if (length(interpNormal) < EPSILON) {
+        interpNormal = cross(edge1, edge2);
+    }
+    interpNormal = normalize(interpNormal);
+
+    hit.t = t;
+    hit.point = ray.origin + ray.direction * t;
+    hit.frontFace = dot(ray.direction, interpNormal) < 0.0;
+    hit.normal = hit.frontFace ? interpNormal : -interpNormal;
+    hit.materialType = uint(triangle.albedoAndMaterial.w + 0.5);
+    hit.albedo = triangle.albedoAndMaterial.rgb;
+    hit.fuzz = triangle.materialParams.x;
+    hit.refractiveIndex = triangle.materialParams.y;
+
+    return true;
+}
+
+bool hitTriangles(in Ray ray, float tMin, float tMax, uint triangleCount, out HitRecord hit) {
+    HitRecord tempHit;
+    bool hitAnything = false;
+    float closest = tMax;
+
+    uint count = min(triangleCount, uint(MAX_TRIANGLES));
+    for (uint i = 0u; i < count; i++) {
+        if (triangleIntersect(bTriangles[i], ray, tMin, closest, tempHit)) {
+            hitAnything = true;
+            closest = tempHit.t;
+            hit = tempHit;
+        }
+    }
+
+    return hitAnything;
+}
+
+// ============================================================================
+// Shadow Ray Casting Functions
+// ============================================================================
+
+bool testPlayerShadow(in Ray shadowRay, float maxDist) {
+    // Test if shadow ray intersects player sphere
+    vec3 oc = shadowRay.origin - uPlayerPos;
+    float a = dot(shadowRay.direction, shadowRay.direction);
+    float halfB = dot(oc, shadowRay.direction);
+    float c = dot(oc, oc) - uPlayerRadius * uPlayerRadius;
+    
+    float discriminant = halfB * halfB - a * c;
+    if (discriminant < 0.0) return false;
+    
+    float sqrtD = sqrt(discriminant);
+    float root = (-halfB - sqrtD) / a;
+    if (root > EPSILON && root < maxDist) {
+        return true;
+    }
+
+    // When the ray starts inside the sphere, the near root is negative;
+    // test the far root so nearby contact shadows remain stable.
+    root = (-halfB + sqrtD) / a;
+    return root > EPSILON && root < maxDist;
+}
+
+bool testSpheresShadow(in Ray shadowRay, float maxDist) {
+    // Test if shadow ray intersects any sphere
+    for (uint i = 0u; i < uSphereCount; i++) {
+        vec3 oc = shadowRay.origin - bSpheres[i].center.xyz;
+        float a = dot(shadowRay.direction, shadowRay.direction);
+        float halfB = dot(oc, shadowRay.direction);
+        float c = dot(oc, oc) - bSpheres[i].radius2;
+        
+        float discriminant = halfB * halfB - a * c;
+        if (discriminant < 0.0) continue;
+        
+        float sqrtD = sqrt(discriminant);
+        float root = (-halfB - sqrtD) / a;
+        if (root > EPSILON && root < maxDist) {
+            return true;
+        }
+
+        root = (-halfB + sqrtD) / a;
+        if (root > EPSILON && root < maxDist) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool testPlaneShadow(in Ray shadowRay, float maxDist) {
+    // Test if shadow ray intersects ground plane
+    vec3 planeNormal = normalize(uGroundPlaneNormal);
+    float denom = dot(planeNormal, shadowRay.direction);
+    
+    if (abs(denom) < EPSILON) return false;
+    
+    float t = dot(uGroundPlanePoint - shadowRay.origin, planeNormal) / denom;
+    return t > EPSILON && t < maxDist;
+}
+
+bool testTrianglesShadow(in Ray shadowRay, float maxDist) {
+    uint total = min(uTriangleCount, uint(MAX_TRIANGLES));
+    uint count = min(total, uint(MAX_TRIANGLE_SHADOW_TESTS));
+    if (count == 0u) {
+        return false;
+    }
+
+    // Sample across the full triangle range instead of only the first N entries
+    // so large meshes still cast coherent shadows.
+    uint stride = max(1u, total / count);
+    for (uint s = 0u; s < count; s++) {
+        uint i = min(s * stride, total - 1u);
+        HitRecord tmp;
+        if (triangleIntersect(bTriangles[i], shadowRay, EPSILON, maxDist, tmp)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+float calculateShadow(vec3 hitPoint, vec3 normal) {
+    // Create shadow ray from hit point away from light (opposite of light direction)
+    vec3 shadowRayOrigin = hitPoint + normal * 0.01;  // Slightly offset to avoid self-intersection
+    Ray shadowRay = Ray(shadowRayOrigin, -uLightDir);
+    
+    // Check if hit point is a significant distance from player (to avoid shadowing player itself)
+    float distToPlayer = length(hitPoint - uPlayerPos);
+    float minDistForPlayerShadow = uPlayerRadius * 0.5;  // Don't shadow very close points
+    
+    // Maximum distance for shadow ray
+    float maxDist = uCamera.far;
+    
+    float shadowFactor = 1.0;  // Start fully lit
+    
+    // Check occlusion by player - with soft penumbra using noise
+    if (distToPlayer > minDistForPlayerShadow) {
+        if (testPlayerShadow(shadowRay, maxDist)) {
+            // Calculate shadow softness based on distance from player
+            float shadowFalloff = smoothstep(0.0, uPlayerRadius * 2.0, distToPlayer);
+            
+            // Sample noise texture for soft shadow edges
+            vec2 shadowNoiseUV = hitPoint.xz * 0.3 + vec2(uTime * 0.5);
+            float shadowNoise = texture(uNoiseTex, shadowNoiseUV).r;
+            
+            // Blend between hard shadow and soft shadow edge using noise
+            float hardShadow = 0.15;  // Very dark core shadow
+            float softShadow = mix(0.4, 0.85, shadowNoise);  // Jittered edge
+            
+            shadowFactor = mix(hardShadow, softShadow, shadowFalloff * shadowNoise);
+        }
+    }
+    
+    // Check occlusion by other spheres
+    if (testSpheresShadow(shadowRay, maxDist)) {
+        float sphereShadow = mix(0.35, 0.7, texture(uNoiseTex, hitPoint.xy * 0.2).r);
+        shadowFactor = min(shadowFactor, sphereShadow);
+    }
+
+    if (testTrianglesShadow(shadowRay, maxDist)) {
+        float triShadow = mix(0.30, 0.65, texture(uNoiseTex, hitPoint.zy * 0.17).r);
+        shadowFactor = min(shadowFactor, triShadow);
+    }
+    
+    // Ground plane adds subtle soft shadow with noise
+    if (testPlaneShadow(shadowRay, maxDist)) {
+        // Very subtle shadow with noise jitter for ground
+        float groundNoise = texture(uNoiseTex, hitPoint.xz * 0.1).r;
+        float groundShadow = mix(0.88, 0.92, groundNoise);
+        shadowFactor = min(shadowFactor, groundShadow);
+    }
+    
+    return shadowFactor;
+}
+
+// ============================================================================
+// Grid Function for Ground Plane
+// ============================================================================
+
+float grid(vec2 uv, float perspective) {
+    vec2 size = vec2(uv.y, uv.y * uv.y * 0.2) * 0.01;
+    uv += vec2(0.0, uTime * 4.0 * (perspective + 0.05));
+    uv = abs(fract(uv) - 0.5);
+    vec2 lines = smoothstep(size, vec2(0.0), uv);
+    lines += smoothstep(size * 5.0, vec2(0.0), uv) * 0.4 * perspective;
+    return clamp(lines.x + lines.y, 0.0, 3.0);
 }
 
 // ============================================================================
@@ -228,9 +508,99 @@ bool scatter(in HitRecord hit, in Ray rayIn, out vec3 attenuation, out Ray scatt
 // Sky / Background
 // ============================================================================
 
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+float noise2D(vec2 uv) {
+    return texture(uNoiseTex, fract(uv)).r;
+}
+
+float hash12(vec2 p) {
+    vec2 h = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return fract(sin(h.x + h.y) * 43758.5453123);
+}
+
+vec2 hash22(vec2 p) {
+    return vec2(hash12(p), hash12(p + vec2(19.19, 73.41)));
+}
+
+float hash21(vec2 co) {
+    return fract(sin(dot(co.xy,vec2(1.9898,7.233)))*45758.5433);
+}
+
+// Star noise function - creates a clean starfield effect
+float starnoise(vec3 rd) {
+    float c = 0.0;
+    vec3 p = normalize(rd) * 300.0;
+    for (float i = 0.0; i < 4.0; i++) {
+        vec3 q = fract(p) - 0.5;
+        vec3 id = floor(p);
+        float c2 = smoothstep(0.5, 0.0, length(q));
+        c2 *= step(hash21(id.xz/id.y), 0.06 - i*i*0.005);
+        c += c2;
+        p = p*0.6 + 0.5*p*mat3(3.0/5.0, 0.0, 4.0/5.0, 0.0, 1.0, 0.0, -4.0/5.0, 0.0, 3.0/5.0);
+    }
+    c *= c;
+    float g = dot(sin(rd*10.512), cos(rd.yzx*10.512));
+    c *= smoothstep(-3.14, -0.9, g)*0.5 + 0.5*smoothstep(-0.3, 1.0, g);
+    return c*c;
+}
+
+// Add sun/sunset effect at the center
+void addSun(vec3 rd, vec3 sunDir, inout vec3 col) {
+    float sun = smoothstep(0.21, 0.2, distance(rd, sunDir));
+    
+    if (sun > 0.0) {
+        float yd = (rd.y - sunDir.y);
+        float a = sin(3.1 * exp(-(yd) * 14.0));
+        sun *= smoothstep(-0.8, 0.0, a);
+        col = mix(col, vec3(1.0, 0.8, 0.4) * 0.75, sun);
+    }
+}
+
+vec3 starfieldColor(vec3 direction, uvec2 pixel, uint sampleIndex) {
+    vec3 rd = normalize(direction);
+    
+    // Create sun direction - pointing down towards horizon for sunset at +X
+    vec3 sunDir = normalize(vec3(1.0, -0.125 + 0.05*sin(0.1*uTime), 0.0));
+    
+    // Horizon distance for sunset effect (rd.y = 0 is horizon)
+    float horizonDist = abs(rd.y);
+    float sunsetBlend = smoothstep(0.4, -0.2, rd.y);  // Strong effect near and below horizon
+    
+    // Sky gradient base - purple at top
+    vec3 skyTop = vec3(0.2, 0.1, 0.4);
+    
+    // Sunset colors - warm orange/red at horizon
+    vec3 sunsetBot = vec3(1.0, 0.5, 0.2);  // Golden orange
+    vec3 sunsetMid = vec3(0.8, 0.2, 0.4);  // Red-magenta
+    
+    // Blend sky color based on vertical position
+    vec3 sky = mix(skyTop, sunsetMid, sunsetBlend * 0.7);
+    sky = mix(sky, sunsetBot, sunsetBlend);
+    
+    // Add atmospheric haze/fog effect using noise texture
+    float noiseFog = texture(uNoiseTex, vec2(0.5 + 0.05*rd.x/max(0.1, rd.z), 0.0)).x;
+    float atmosphericHaze = mix(0.1, 1.0, sunsetBlend) * (0.7 + 0.3 * noiseFog);
+    
+    // Stars - reduce visibility near horizon to show sunset
+    float starVisibility = smoothstep(-0.1, 0.3, rd.y);  // Fade stars at horizon
+    float st = starnoise(rd) * starVisibility;
+    
+    // Combine with proper layering
+    vec3 col = mix(sky, vec3(st), 0.6 * starVisibility);
+    
+    // Enhance glow at sun location
+    addSun(rd, sunDir, col);
+    
+    return clamp(col, 0.0, 1.0);
+}
+
 vec3 skyColor(vec3 direction) {
-    float t = 0.5 * (normalize(direction).y + 1.0);
-    return mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t);
+    return starfieldColor(direction, uvec2(0u), 0u);
 }
 
 // ============================================================================
@@ -242,12 +612,64 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
 
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit;
+        HitRecord sphereHit;
+        HitRecord planeHit;
+        HitRecord triangleHit;
+        uint sphereCountForBounce = (bounce == 0u) ? uPrimaryRaySphereCount : uSphereCount;
+        bool hasSphereHit = hitWorld(ray, EPSILON, uCamera.far, sphereCountForBounce, sphereHit);
+        bool hasPlaneHit = planeIntersect(ray, EPSILON, uCamera.far, planeHit);
+        uint triangleCountForBounce = (bounce == 0u)
+            ? uTriangleCount
+            : ((bounce == 1u) ? min(uTriangleCount, 32u) : 0u);
+        bool hasTriangleHit = hitTriangles(ray, EPSILON, uCamera.far, triangleCountForBounce, triangleHit);
+        bool hitIsPlane = false;
 
-        if (hitWorld(ray, EPSILON, uCamera.far, hit)) {
+        bool hasAnyHit = false;
+        float closestT = uCamera.far;
+
+        if (hasSphereHit && sphereHit.t < closestT) {
+            hit = sphereHit;
+            closestT = sphereHit.t;
+            hasAnyHit = true;
+            hitIsPlane = false;
+        }
+
+        if (hasTriangleHit && triangleHit.t < closestT) {
+            hit = triangleHit;
+            closestT = triangleHit.t;
+            hasAnyHit = true;
+            hitIsPlane = false;
+        }
+
+        if (hasPlaneHit && planeHit.t < closestT) {
+            hit = planeHit;
+            closestT = planeHit.t;
+            hasAnyHit = true;
+            hitIsPlane = true;
+        }
+
+        if (hasAnyHit) {
             vec3 attenuation;
             Ray scattered;
 
             if (scatter(hit, ray, attenuation, scattered, pixel, sampleIndex, bounce)) {
+                // Calculate shadow factor
+                float shadowFactor = calculateShadow(hit.point, hit.normal);
+                
+                // Apply grid overlay to ground plane
+                if (hitIsPlane) {
+                    // Use hit point XZ coordinates for grid pattern
+                    vec2 gridUV = hit.point.xz * 0.3;  // Scale factor for grid size
+                    float gridVal = grid(gridUV, 0.8);
+                    
+                    // Blend grid with ground plane color - more prominent
+                    vec3 gridColor = vec3(0.0, 1.0, 1.0);  // Cyan grid color
+                    attenuation = mix(attenuation, gridColor, gridVal * 0.6);
+                }
+                
+                // Apply shadow to attenuation
+                attenuation *= shadowFactor;
+                
                 color *= attenuation;
                 ray = scattered;
             } else {
@@ -256,7 +678,7 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
             }
         } else {
             // Hit sky
-            color *= skyColor(ray.direction);
+            color *= starfieldColor(ray.direction, pixel, sampleIndex);
             return color;
         }
 
@@ -310,20 +732,21 @@ void main() {
         accumulatedColor += color;
     }
 
-    // Accumulate with previous batches
-    if (uBatch > 0) {
+    // Per-frame sample average
+    vec3 batchColor = accumulatedColor / float(max(1u, uSamplesPerBatch));
+
+    // Smooth temporal accumulation (EMA-style) for natural, non-stuttering motion blur
+    vec3 historyColor = batchColor;
+    if (uBatch > 0u) {
         vec3 previous = imageLoad(uAccumTexture, ivec2(pixel)).rgb;
-        accumulatedColor += previous;
+        float historyBlend = clamp(uHistoryBlend, 0.0, 0.999);
+        historyColor = mix(batchColor, previous, historyBlend);
     }
 
-    imageStore(uAccumTexture, ivec2(pixel), vec4(accumulatedColor, 1.0));
-
-    // Compute average and apply gamma correction for display
-    uint totalSamples = (uBatch + 1) * uSamplesPerBatch;
-    vec3 averageColor = accumulatedColor / float(totalSamples);
+    imageStore(uAccumTexture, ivec2(pixel), vec4(historyColor, 1.0));
 
     // Gamma correction (gamma = 2.0)
-    averageColor = sqrt(averageColor);
+    vec3 averageColor = sqrt(historyColor);
 
     imageStore(uDisplayTexture, ivec2(pixel), vec4(averageColor, 1.0));
 }

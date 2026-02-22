@@ -1,19 +1,21 @@
 #ifndef STATE_IDENTIFIERS_HPP
 #define STATE_IDENTIFIERS_HPP
 
-
 namespace States
 {
     enum class ID : unsigned int
     {
         DONE = 0,
-        GAME = 1,
-        LOADING = 2,
-        MENU = 3,
-        PAUSE = 4,
-        RESETTING = 5,
-        SETTINGS = 6,
-        SPLASH = 7,
+        ENTANGLEMENT = 1,
+        GAME = 2,
+        LIGHTSPEED = 3,
+        LOADING = 4,
+        MENU = 5,
+        MULTIPLAYER_GAME = 6,
+        PAUSE = 7,
+        SETTINGS = 8,
+        SPLASH = 9,
+        WORMHOLE = 10
     };
 }
 

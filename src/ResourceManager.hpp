@@ -3,39 +3,52 @@
 
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
+
+#include <MazeBuilder/configurator.h>
 
 #include <dearimgui/imgui.h>
 
-struct SDL_Window;
+#include "GLTFModel.hpp"
+
+namespace mazes
+{
+    class configurator;
+}
 
 template <typename Resource, typename Identifier>
 class ResourceManager
 {
 public:
+    // Level loading
+    void load(Identifier id, const std::vector<mazes::configurator> &configs, bool appendResults);
 
+    // SoundBuffer loading and Model loading
     void load(Identifier id, std::string_view filename);
 
-    void load(SDL_Window* window, Identifier id, std::string_view filename);
+    // Music loading
+    void load(Identifier id, std::string_view filename, float volume, bool loop);
 
-    void load(Identifier id, std::string_view filename, std::uint32_t channelOffset = 0);
+    // Texture loading
+    void load(Identifier id, std::string_view filename, std::uint32_t channelOffset);
 
-    /// Load texture from maze string with cell size
-    void loadFromStr(Identifier id, std::string_view mazeStr, int cellSize);
+    void load(Identifier id, unsigned int width, unsigned int height,
+              const std::function<void(std::vector<std::uint8_t>&, int, int)> &generator,
+              std::uint32_t channelOffset);
 
-    template <typename Parameter>
-    void load(SDL_Window* window, Identifier id, std::string_view filename, const Parameter& secondParam);
+    // Font loading
+    void load(Identifier id, const void *data, const std::size_t capacity);
 
-    template <typename Parameter1, typename Parameter2, typename PixelSize = float>
-    void load(Identifier id, const Parameter1& param1, const Parameter2& param2, const PixelSize& pixelSize);
-
-    Resource& get(Identifier id);
-    const Resource& get(Identifier id) const;
+    Resource &get(Identifier id);
+    const Resource &get(Identifier id) const;
 
     /// Insert a pre-constructed resource
     void insert(Identifier id, std::unique_ptr<Resource> resource)
@@ -45,7 +58,13 @@ public:
 
     void clear() noexcept
     {
-        mResourceMap.clear();
+        if constexpr (std::is_same_v<Resource, Shader>)
+        {
+            for (auto &[_, res] : mResourceMap)
+            {
+                res->cleanUp();
+            }
+        }
     }
 
     bool isEmpty() const noexcept { return mResourceMap.empty(); }
@@ -58,14 +77,14 @@ private:
 };
 
 template <typename Resource, typename Identifier>
-void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view filename)
+void ResourceManager<Resource, Identifier>::load(Identifier id, const std::vector<mazes::configurator> &configs, bool appendResults)
 {
     // Create and load resource
     auto resource = std::make_unique<Resource>();
 
-    if (!resource->compileAndAttachShader(filename))
+    if (!resource->load(configs, appendResults))
     {
-        throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
+        throw std::runtime_error("ResourceManager::load - Failed to load from config.");
     }
 
     // If loading successful, insert resource to map
@@ -73,15 +92,60 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
 }
 
 template <typename Resource, typename Identifier>
-void ResourceManager<Resource, Identifier>::load(SDL_Window* window, Identifier id, std::string_view filename)
+void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view filename)
 {
     // Create and load resource
     auto resource = std::make_unique<Resource>();
 
-    if (!resource->loadFromFile(filename))
+    if constexpr (std::is_same_v<Resource, GLTFModel>)
+    {
+        if (!resource->readFile(filename))
+        {
+            throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
+        }
+    }
+    else
+    {
+        if (!resource->loadFromFile(filename))
+        {
+            throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
+        }
+    }
+
+    // If loading successful, insert resource to map
+    insertResource(id, std::move(resource));
+}
+
+template <typename Resource, typename Identifier>
+void ResourceManager<Resource, Identifier>::load(Identifier id, unsigned int width, unsigned int height,
+    const std::function<void(std::vector<std::uint8_t>&, int, int)> &generator,
+    std::uint32_t channelOffset)
+{
+    // Create and load resource
+    auto resource = std::make_unique<Resource>();
+
+    if (!resource->loadProceduralTextures(width, height, generator, channelOffset))
+    {
+        throw std::runtime_error("ResourceManager::load - Failed to load noise texture");
+    }
+
+    // If loading successful, insert resource to map
+    insertResource(id, std::move(resource));
+}
+
+template <typename Resource, typename Identifier>
+void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view filename, float volume, bool loop)
+{
+    // Create and load resource
+    auto resource = std::make_unique<Resource>();
+
+    if (!resource->openFromFile(filename))
     {
         throw std::runtime_error("ResourceManager::load - Failed to load " + std::string(filename));
     }
+
+    resource->setVolume(volume);
+    resource->setLoop(loop);
 
     // If loading successful, insert resource to map
     insertResource(id, std::move(resource));
@@ -103,24 +167,10 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, std::string_view
 }
 
 template <typename Resource, typename Identifier>
-void ResourceManager<Resource, Identifier>::loadFromStr(Identifier id, std::string_view mazeStr, int cellSize)
+void ResourceManager<Resource, Identifier>::load(Identifier id, const void *data, const std::size_t capacity)
 {
     auto resource = std::make_unique<Resource>();
-
-    if (!resource->loadFromStr(mazeStr, cellSize))
-    {
-        throw std::runtime_error("ResourceManager::loadFromStr - Failed to load from maze string");
-    }
-
-    insertResource(id, std::move(resource));
-}
-
-template <typename Resource, typename Identifier>
-template <typename Parameter1, typename Parameter2, typename PixelSize>
-void ResourceManager<Resource, Identifier>::load(Identifier id, const Parameter1& param1, const Parameter2& param2, const PixelSize& pixelSize)
-{
-    auto resource = std::make_unique<Resource>();
-    if (!resource->loadFromMemoryCompressedTTF(param1, param2, pixelSize))
+    if (!resource->loadFromMemoryCompressedTTF(data, capacity))
     {
         throw std::runtime_error("ResourceManager::load - Failed to load font from memory");
     }
@@ -129,7 +179,7 @@ void ResourceManager<Resource, Identifier>::load(Identifier id, const Parameter1
 }
 
 template <typename Resource, typename Identifier>
-Resource& ResourceManager<Resource, Identifier>::get(Identifier id)
+Resource &ResourceManager<Resource, Identifier>::get(Identifier id)
 {
     auto found = mResourceMap.find(id);
     assert(found != mResourceMap.cend());
@@ -138,7 +188,7 @@ Resource& ResourceManager<Resource, Identifier>::get(Identifier id)
 }
 
 template <typename Resource, typename Identifier>
-const Resource& ResourceManager<Resource, Identifier>::get(Identifier id) const
+const Resource &ResourceManager<Resource, Identifier>::get(Identifier id) const
 {
     auto found = mResourceMap.find(id);
     assert(found != mResourceMap.cend());

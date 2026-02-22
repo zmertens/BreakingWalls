@@ -14,6 +14,7 @@
 #include <string_view>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <SDL3/SDL.h>
 
@@ -23,15 +24,23 @@
 
 #include "Font.hpp"
 #include "GameState.hpp"
+#include "GLSDLHelper.hpp"
+#include "HttpClient.hpp"
+#include "JSONUtils.hpp"
+#include "Level.hpp"
 #include "LoadingState.hpp"
 #include "MenuState.hpp"
-#include "Player.hpp"
+#include "MultiplayerGameState.hpp"
+#include "MusicPlayer.hpp"
+#include "Options.hpp"
 #include "PauseState.hpp"
-#include "SettingsState.hpp"
+#include "Player.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
-#include "SDLHelper.hpp"
+#include "SettingsState.hpp"
+#include "Shader.hpp"
+#include "SoundPlayer.hpp"
 #include "SplashState.hpp"
 #include "State.hpp"
 #include "StateStack.hpp"
@@ -39,72 +48,70 @@
 
 struct PhysicsGame::PhysicsGameImpl
 {
-    Player p1;
+    Player mPlayer1;
+    HttpClient mHttpClient;
 
-    std::unique_ptr<RenderWindow> window;
-    std::unique_ptr<StateStack> stateStack;
+    std::unique_ptr<RenderWindow> mRenderWindow;
+    std::unique_ptr<StateStack> mStateStack;
 
-    SDLHelper sdlHelper;
-
-    FontManager fonts;
-    ShaderManager shaders;
-    TextureManager textures;
+    GLSDLHelper mGLSDLHelper;
+    ModelsManager mModels;
+    FontManager mFonts;
+    LevelsManager mLevels;
+    MusicManager mMusic;
+    OptionsManager mOptions;
+    SoundBufferManager mSoundBuffers;
+    std::unique_ptr<SoundPlayer> mSounds;
+    ShaderManager mShaders;
+    TextureManager mTextures;
 
     // FPS smoothing variables
-    mutable double fpsUpdateTimer = 0.0;
-    mutable int smoothedFps = 0;
-    mutable float smoothedFrameTime = 0.0f;
+    mutable double mFPSUpdateTimer = 0.0;
+    mutable int mSmoothedFPS = 0;
+    mutable float mSmoothedFrameTime = 0.0f;
     static constexpr double FPS_UPDATE_INTERVAL = 250.0;
 
-    std::string windowTitle;
-    std::string resourcePath;
+    std::string mWindowTitle;
+    std::string mResourcePath;
     const int INIT_WINDOW_W, INIT_WINDOW_H;
-
     PhysicsGameImpl(std::string_view title, int w, int h, std::string_view resourcePath = "")
-        : windowTitle{title}
-          , resourcePath{resourcePath}
-          , INIT_WINDOW_W{w}, INIT_WINDOW_H{h}
-          , window{nullptr}
-          , sdlHelper{}
-          , stateStack{nullptr}
-    {        
+        : mWindowTitle{title}, mResourcePath{resourcePath}, INIT_WINDOW_W{w}, INIT_WINDOW_H{h}, mRenderWindow{nullptr}, mGLSDLHelper{}, mStateStack{nullptr}, mOptions{}, mSounds{nullptr}, mPlayer1{}, mHttpClient{}
+    {
         initSDL();
-
-        // Check if SDL initialization succeeded
-        if (!sdlHelper.window)
+        if (!mGLSDLHelper.mWindow)
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL window - cannot continue");
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL mRenderWindow - cannot continue");
             // Don't initialize further objects if SDL failed
             return;
         }
 
-        window = std::make_unique<RenderWindow>(sdlHelper.window);
+        mRenderWindow = std::make_unique<RenderWindow>(mGLSDLHelper.mWindow);
+        mSounds = std::make_unique<SoundPlayer>(mSoundBuffers);
 
-        SDL_Log("Initializing ImGui...");
         initDearImGui();
+        initOptions();
 
-        stateStack = std::make_unique<StateStack>(State::Context{
-            *window,
-            std::ref(fonts),
-            std::ref(shaders),
-            std::ref(textures),
-            std::ref(p1)
-            });
+        mStateStack = std::make_unique<StateStack>(
+            State::Context().withRenderWindow(*mRenderWindow).withFontManager(mFonts).withLevelsManager(mLevels).withModelsManager(mModels).withMusicManager(mMusic).withOptionsManager(mOptions).withSoundBufferManager(mSoundBuffers).withSoundPlayer(*mSounds).withShaderManager(mShaders).withTextureManager(mTextures).withPlayer(mPlayer1).withHttpClient(mHttpClient));
 
         registerStates();
-       
-        stateStack->pushState(States::ID::LOADING);
-        stateStack->pushState(States::ID::SPLASH);
+
+        mStateStack->pushState(States::ID::LOADING);
     }
 
     ~PhysicsGameImpl()
     {
-        if (auto& sdl = this->sdlHelper; sdl.window)
+        if (auto &&sdl = mGLSDLHelper; sdl.mWindow)
         {
-            this->stateStack->clearStates();
-            this->fonts.clear();
-            this->shaders.clear();
-            this->textures.clear();
+            mStateStack->clearStates();
+
+            mFonts.clear();
+            mLevels.clear();
+            mMusic.clear();
+            mSoundBuffers.clear();
+            mSounds.reset();
+            mShaders.clear();
+            mTextures.clear();
 
             ImGui_ImplOpenGL3_Shutdown();
             ImGui_ImplSDL3_Shutdown();
@@ -116,8 +123,8 @@ struct PhysicsGame::PhysicsGameImpl
 
     void initSDL() noexcept
     {
-        auto title = windowTitle.empty() ? "Breaking Walls" : windowTitle.c_str();
-        sdlHelper.init(title, INIT_WINDOW_W, INIT_WINDOW_H);
+        auto title = mWindowTitle.empty() ? "Breaking Walls" : mWindowTitle.c_str();
+        mGLSDLHelper.init(title, INIT_WINDOW_W, INIT_WINDOW_H);
     }
 
     void initDearImGui() const noexcept
@@ -125,15 +132,21 @@ struct PhysicsGame::PhysicsGameImpl
         // Initialize ImGui
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
+        ImGuiIO &io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
         // Setup ImGui style
         ImGui::StyleColorsDark();
 
         // Initialize ImGui SDL3 and OpenGL3 backends
-        ImGui_ImplSDL3_InitForOpenGL(this->sdlHelper.window, this->sdlHelper.glContext);
+        ImGui_ImplSDL3_InitForOpenGL(mGLSDLHelper.mWindow, mGLSDLHelper.mGLContext);
         ImGui_ImplOpenGL3_Init("#version 430");
+    }
+
+    void initOptions() noexcept
+    {
+        auto defaultOptions = std::make_unique<Options>();
+        mOptions.insert(GUIOptions::ID::DE_FACTO, std::move(defaultOptions));
     }
 
     void processInput() const noexcept
@@ -148,58 +161,64 @@ struct PhysicsGame::PhysicsGameImpl
             if (event.type == SDL_EVENT_QUIT)
             {
                 SDL_Log("SDL_EVENT_QUIT received - clearing state stack");
-                stateStack->clearStates();
+                mStateStack->clearStates();
                 // Don't process any more events after quit
                 return;
             }
 
             // Only handle events if state stack is not empty
-            if (!stateStack->isEmpty())
+            if (!mStateStack->isEmpty())
             {
-                stateStack->handleEvent(event);
+                mStateStack->handleEvent(event);
             }
         }
     }
 
     void update(const float dt, int subSteps = 4) const noexcept
     {
-        // Always call update - StateStack handles empty stack internally
-        // and MUST apply pending changes even when stack is empty
-        stateStack->update(dt, subSteps);
+#if defined(BREAKING_WALLS_DEBUG)
+        static State *lastState{nullptr};
+        if (const auto statePtr = mStateStack->peekState<State *>(); statePtr != lastState)
+        {
+            lastState = statePtr;
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "%s", statePtr->view().data());
+        }
+#endif
+
+        mStateStack->update(dt, subSteps);
     }
 
     void render(const double elapsed) const noexcept
     {
         // Only render if state stack has states
-        if (stateStack->isEmpty())
+        if (!(mRenderWindow->isOpen() || mStateStack->isEmpty()))
         {
             return;
         }
 
         // Clear, draw, and present (like SFML)
-        window->clear();
-        window->beginFrame();
-        stateStack->draw();
+        mRenderWindow->clear();
+        mRenderWindow->beginFrame();
+        mStateStack->draw();
 
-#if defined(BREAKING_WALLS_DEBUG)
         // Window might be closed during draw calls/events
-        if (window->isOpen())
+        if (mOptions.get(GUIOptions::ID::DE_FACTO).getShowDebugOverlay())
         {
-            this->handleFPS(elapsed);
+            handleFPS(elapsed);
         }
-#endif
 
-        window->display();
+        mRenderWindow->display();
     }
 
     void registerStates() noexcept
     {
-        stateStack->registerState<GameState>(States::ID::GAME);
-        stateStack->registerState<LoadingState>(States::ID::LOADING, resourcePath);
-        stateStack->registerState<MenuState>(States::ID::MENU);
-        stateStack->registerState<PauseState>(States::ID::PAUSE);
-        stateStack->registerState<SettingsState>(States::ID::SETTINGS);
-        stateStack->registerState<SplashState>(States::ID::SPLASH);
+        mStateStack->registerState<GameState>(States::ID::GAME);
+        mStateStack->registerState<LoadingState>(States::ID::LOADING, mResourcePath);
+        mStateStack->registerState<MenuState>(States::ID::MENU);
+        mStateStack->registerState<MultiplayerGameState>(States::ID::MULTIPLAYER_GAME);
+        mStateStack->registerState<PauseState>(States::ID::PAUSE);
+        mStateStack->registerState<SettingsState>(States::ID::SETTINGS);
+        mStateStack->registerState<SplashState>(States::ID::SPLASH);
     }
 
     void handleFPS(const double elapsed) const noexcept
@@ -209,22 +228,22 @@ struct PhysicsGame::PhysicsGameImpl
         const auto frameTime = static_cast<float>(elapsed);
 
         // Update smoothed values periodically for display
-        fpsUpdateTimer += elapsed;
-        if (fpsUpdateTimer >= FPS_UPDATE_INTERVAL)
+        mFPSUpdateTimer += elapsed;
+        if (mFPSUpdateTimer >= FPS_UPDATE_INTERVAL)
         {
-            smoothedFps = fps;
-            smoothedFrameTime = frameTime;
-            fpsUpdateTimer = 0.0;
+            mSmoothedFPS = fps;
+            mSmoothedFrameTime = frameTime;
+            mFPSUpdateTimer = 0.0;
         }
 
-        // Create ImGui overlay window positioned at top-right corner
+        // Create ImGui overlay mRenderWindow positioned at top-right corner
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 10.0f), ImGuiCond_Always,
                                 ImVec2(1.0f, 0.0f));
 
-        // Set window background to be semi-transparent
+        // Set mRenderWindow background to be semi-transparent
         ImGui::SetNextWindowBgAlpha(0.65f);
 
-        // Create window with no title bar, no resize, no move, auto-resize
+        // Create mRenderWindow with no title bar, no resize, no move, auto-resize
         constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDecoration |
                                                  ImGuiWindowFlags_AlwaysAutoResize |
                                                  ImGuiWindowFlags_NoSavedSettings |
@@ -234,28 +253,41 @@ struct PhysicsGame::PhysicsGameImpl
 
         if (ImGui::Begin("FPS Overlay", nullptr, windowFlags))
         {
-            ImGui::Text("FPS: %d", smoothedFps);
-            ImGui::Text("Frame Time: %.2f ms", smoothedFrameTime);
+            ImGui::Text("FPS: %d", mSmoothedFPS);
+            ImGui::Text("Frame Time: %.2f ms", mSmoothedFrameTime);
+
+            if (const auto gameState = mStateStack->peekState<GameState *>(); gameState)
+            {
+                const auto windowSize = gameState->getWindowDimensions();
+                const auto renderSize = gameState->getRenderDimensions();
+                const float renderScale = gameState->getRenderScale();
+
+                ImGui::Separator();
+                ImGui::Text("Window: %d x %d", windowSize.x, windowSize.y);
+                ImGui::Text("Render: %d x %d", renderSize.x, renderSize.y);
+                ImGui::Text("Scale: %.2fx", renderScale);
+            }
+
             ImGui::End();
         }
     }
 }; // impl
 
-// resourcePath = ""
-PhysicsGame::PhysicsGame(std::string_view title, int w, int h, std::string_view resourcePath)
-    : mImpl{std::make_unique<PhysicsGameImpl>(title, w, h, resourcePath)}
+// mResourcePath = ""
+PhysicsGame::PhysicsGame(std::string_view title, int w, int h, std::string_view mResourcePath)
+    : mImpl{std::make_unique<PhysicsGameImpl>(title, w, h, mResourcePath)}
 {
 }
 
 PhysicsGame::~PhysicsGame() = default;
 
 // Main game loop
-bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomizer& rng) const noexcept
+bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomizer &rng) const noexcept
 {
-    auto&& gamePtr = this->mImpl;
+    auto &&gamePtr = mImpl;
 
     // Check if initialization succeeded before entering game loop
-    if (!gamePtr->window || !gamePtr->stateStack)
+    if (!gamePtr->mRenderWindow || !gamePtr->mStateStack)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Game initialization failed - cannot run");
         return false;
@@ -268,7 +300,7 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
 
     // States already pushed in constructor - no need to push again
 
-    while (gamePtr->window && gamePtr->window->isOpen())
+    while (gamePtr->mRenderWindow && gamePtr->mRenderWindow->isOpen())
     {
         // Expected milliseconds per frame (16.67ms)
         static constexpr auto FIXED_TIME_STEP = 1000.0 / 60.0;
@@ -287,26 +319,21 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomiz
             currentTimeStep += FIXED_TIME_STEP;
 
             gamePtr->update(static_cast<float>(FIXED_TIME_STEP) / 1000.f);
-            
+
             // Check if state stack became empty during update
-            if (gamePtr->stateStack->isEmpty())
+            if (gamePtr->mStateStack->isEmpty())
             {
                 SDL_Log("State stack is empty after update - closing application");
-                gamePtr->window->close();
+                gamePtr->mRenderWindow->close();
                 break;
             }
         }
-
-        // Exit outer loop if window was closed in update loop
-        if (!gamePtr->window->isOpen())
+        if (gamePtr->mRenderWindow->isOpen())
         {
-            break;
+            gamePtr->render(elapsed);
         }
-
-        gamePtr->render(elapsed);
     }
 
     SDL_Log("Exiting game loop...");
     return true;
 }
-

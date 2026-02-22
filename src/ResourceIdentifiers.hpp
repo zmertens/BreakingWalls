@@ -3,27 +3,7 @@
 
 #include <string_view>
 
-// Resource Keys
-namespace JSONKeys
-{
-    constexpr std::string_view CHARACTER_IMAGE = "character_default_image";
-    constexpr std::string_view CHARACTERS_SPRITE_SHEET = "characters_spritesheet";
-    constexpr std::string_view BALL_NORMAL = "ball_normal";
-    constexpr std::string_view ENEMY_HITPOINTS_DEFAULT = "enemy_hitpoints_default";
-    constexpr std::string_view ENEMY_SPEED_DEFAULT = "enemy_speed_default";
-    constexpr std::string_view EXPLOSIONS_SPRITE_SHEET = "explosion_spritesheet";
-    constexpr std::string_view LEVEL_DEFAULTS = "level_defaults";
-    constexpr std::string_view NETWORK_URL = "network_url";
-    constexpr std::string_view OGG_FILES = "ogg_files";
-    constexpr std::string_view PLAYER_HITPOINTS_DEFAULT = "player_hitpoints_default";
-    constexpr std::string_view PLAYER_SPEED_DEFAULT = "player_speed_default";
-    constexpr std::string_view SDL_LOGO = "SDL_logo";
-    constexpr std::string_view SFML_LOGO = "SFML_logo";
-    constexpr std::string_view SPLASH_IMAGE = "splash_image";
-    constexpr std::string_view WALL_HORIZONTAL = "wall_horizontal";
-    constexpr std::string_view WAV_FILES = "wav_files";
-    constexpr std::string_view WINDOW_ICON = "window_icon";
-}
+#include <SFML/Audio/SoundBuffer.hpp>
 
 namespace Fonts
 {
@@ -35,13 +15,73 @@ namespace Fonts
     };
 }
 
+namespace GUIOptions
+{
+    enum class ID : unsigned int
+    {
+        DE_FACTO = 0,
+        ZEN_MODE = 1,
+        TIME_TRIAL_MODE = 2,
+        TOTAL_OPTIONS = 3
+    };
+}
+
+namespace Levels
+{
+    enum class ID : unsigned int
+    {
+        LEVEL_ONE = 0,
+        LEVEL_TWO = 1,
+        LEVEL_THREE = 2,
+        LEVEL_FOUR = 3,
+        LEVEL_FIVE = 4,
+        LEVEL_SIX = 5
+    };
+}
+
+namespace Models
+{
+    enum class ID : unsigned int
+    {
+        STYLIZED_CHARACTER = 0,
+        TOTAL_MODELS = 1
+    };
+}
+
+namespace Music
+{
+    enum class ID : unsigned int
+    {
+        GAME_MUSIC = 0,
+        MENU_MUSIC = 1,
+        SPLASH_MUSIC = 2,
+    };
+}
+
 namespace Shaders
 {
     enum class ID : unsigned int
     {
-        DISPLAY_QUAD_VERTEX = 0,
-        DISPLAY_QUAD_FRAGMENT = 1,
-        COMPUTE_PATH_TRACER_COMPUTE = 2,
+        GLSL_BILLBOARD_SPRITE = 0,
+        GLSL_COMPOSITE_SCENE = 1,
+        GLSL_FULLSCREEN_QUAD = 2,
+        GLSL_FULLSCREEN_QUAD_MVP = 3,
+        GLSL_MODEL_WITH_SKINNING = 4,
+        GLSL_PATH_TRACER_COMPUTE = 5,
+        GLSL_PARTICLES_COMPUTE = 6,
+        GLSL_SHADOW_VOLUME = 7,
+        GLSL_TOTAL_SHADERS = 8
+    };
+}
+
+namespace SoundEffect
+{
+    enum ID : unsigned int
+    {
+        GENERATE = 0,
+        WHITE_NOISE = 1,
+        SELECT = 2,
+        THROW = 3
     };
 }
 
@@ -58,25 +98,38 @@ namespace Textures
         LEVEL_FOUR = 6,
         LEVEL_FIVE = 7,
         LEVEL_SIX = 8,
-        SDL_LOGO = 9,
-        SFML_LOGO = 10,
-        SPLASH_TITLE_IMAGE = 11,
-        WALL_HORIZONTAL = 12,
-        WINDOW_ICON = 13,
-        TOTAL_IDS = 14
+        NOISE2D = 9,
+        PATH_TRACER_ACCUM = 10,
+        PATH_TRACER_DISPLAY = 11,
+        SDL_LOGO = 12,
+        SFML_LOGO = 13,
+        SPLASH_TITLE_IMAGE = 14,
+        WALL_HORIZONTAL = 15,
+        WINDOW_ICON = 16,
+        TOTAL_IDS = 17
     };
 }
 
 class Font;
+class GLTFModel;
+class Level;
+class MusicPlayer;
 class Shader;
 class Texture;
+
+struct Options;
 
 // Forward declaration and a few type definitions
 template <typename Resource, typename Identifier>
 class ResourceManager;
 
-typedef ResourceManager<Texture, Textures::ID> TextureManager;
 typedef ResourceManager<Font, Fonts::ID> FontManager;
+typedef ResourceManager<Options, GUIOptions::ID> OptionsManager;
+typedef ResourceManager<Level, Levels::ID> LevelsManager;
+typedef ResourceManager<GLTFModel, Models::ID> ModelsManager;
+typedef ResourceManager<MusicPlayer, Music::ID> MusicManager;
 typedef ResourceManager<Shader, Shaders::ID> ShaderManager;
+typedef ResourceManager<sf::SoundBuffer, SoundEffect::ID> SoundBufferManager;
+typedef ResourceManager<Texture, Textures::ID> TextureManager;
 
 #endif // RESOURCE_IDENTIFIERS_HPP

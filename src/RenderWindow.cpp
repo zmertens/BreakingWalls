@@ -1,7 +1,5 @@
 #include "RenderWindow.hpp"
 
-#include "View.hpp"
-
 #include <dearimgui/imgui.h>
 #include <dearimgui/backends/imgui_impl_sdl3.h>
 #include <dearimgui/backends/imgui_impl_opengl3.h>
@@ -9,27 +7,10 @@
 #include <glad/glad.h>
 #include <SDL3/SDL.h>
 
-RenderWindow::RenderWindow(SDL_Window* window)
-    : mWindow(window), mCurrentView()
+RenderWindow::RenderWindow(SDL_Window *window)
+    : mWindow(window)
 {
-    // Initialize view with window dimensions
-    if (mWindow)
-    {
-        int width = 0, height = 0;
-        SDL_GetWindowSize(mWindow, &width, &height);
-        mCurrentView.setSize(static_cast<float>(width), static_cast<float>(height));
-        mCurrentView.setCenter(static_cast<float>(width) / 2.0f, static_cast<float>(height) / 2.0f);
-    }
-}
 
-void RenderWindow::setView(const View& view)
-{
-    mCurrentView = view;
-}
-
-View RenderWindow::getView() const noexcept
-{
-    return mCurrentView;
 }
 
 void RenderWindow::beginFrame() const noexcept
@@ -75,11 +56,6 @@ bool RenderWindow::isOpen() const noexcept
 
 void RenderWindow::close() noexcept
 {
-    // Just null out the pointers to signal the window is closed
-    // Don't destroy the actual SDL resources - that's SDLHelper's job
-    // during proper cleanup in its destructor
-    SDL_Log("RenderWindow::close() - Marking window as closed\n");
-
     mWindow = nullptr;
 }
 
@@ -99,4 +75,19 @@ bool RenderWindow::isFullscreen() const noexcept
 {
     const auto flags = SDL_GetWindowFlags(mWindow);
     return (flags & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
+void RenderWindow::setVsync(bool enabled) const noexcept
+{
+    if (!mWindow)
+    {
+        return;
+    }
+    // SDL3: 1 = vsync enabled, 0 = vsync disabled
+    SDL_GL_SetSwapInterval(enabled ? 1 : 0);
+}
+
+SDL_Window *RenderWindow::getSDLWindow() const noexcept
+{
+    return mWindow;
 }

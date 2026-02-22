@@ -1,26 +1,29 @@
 #ifndef SETTINGS_STATE_HPP
 #define SETTINGS_STATE_HPP
 
-#include "Sprite.hpp"
 #include "State.hpp"
+
+class Font;
+struct Options;
 
 class SettingsState : public State
 {
 public:
-    explicit SettingsState(StateStack& stack, Context context);
+    explicit SettingsState(StateStack &stack, Context context);
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
-    bool handleEvent(const SDL_Event& event) noexcept override;
+    bool handleEvent(const SDL_Event &event) noexcept override;
 
 private:
-    Sprite mBackgroundSprite;
+    // Apply all settings to the game systems
+    void applySettings(const Options &options) const noexcept;
 
     bool mShowText;
+    Font *mFont;
 
     // Settings UI state variables
     mutable bool mShowSettingsWindow;
 };
 
 #endif // SETTINGS_STATE_HPP
-

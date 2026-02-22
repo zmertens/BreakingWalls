@@ -1,24 +1,24 @@
-#ifndef BUILDINFO_H
-#define BUILDINFO_H
+#ifndef BW_BUILDINFO_H
+#define BW_BUILDINFO_H
 
-#include <string>
+#include <string_view>
 
 /// @file buildinfo.h
-/// @brief Build information for the maze generation library
-/// @namespace physics
-namespace physics
+/// @brief Build information for the application
+/// @namespace bw
+namespace bw
 {
     /// @brief Build information for the application
     struct buildinfo
     {
-        static inline const std::string CommitSHA = "@COMMIT_SHA@";
+        static constexpr std::string_view CommitSHA = "@COMMIT_SHA@";
 
-        static inline const std::string Timestamp = "@TIMESTAMP@";
+        static constexpr std::string_view Timestamp = "@TIMESTAMP@";
         
-        static inline const std::string Version = "@PROJECT_VERSION@";
+        static constexpr std::string_view Version = "@PROJECT_VERSION@";
     };
 
 }
 
-#endif // buildinfo.h
+#endif // BW_BUILDINFO_H
 

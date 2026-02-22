@@ -3,159 +3,212 @@
 
 #include <box2d/box2d.h>
 
-#include <array>
+#include <SDL3/SDL_rect.h>
+
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
+#include <future>
+#include <atomic>
+#include <queue>
+#include <mutex>
 #include <glm/glm.hpp>
 
-#include "CommandQueue.hpp"
-#include "PostProcessingManager.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
-#include "SceneNode.hpp"
-#include "View.hpp"
-#include "Material.hpp"  // For MaterialType enum
+#include "Material.hpp"
+#include "Animation.hpp"
+#include "Plane.hpp"
 
-class Ball;
-class Pathfinder;
+class Camera;
 class Player;
 class RenderWindow;
+class Shader;
 class Sphere;
+
+union SDL_Event;
 
 class World final
 {
+    // Allow Player to access World internals for animation rendering
+    friend class Player;
+
 public:
-    explicit World(RenderWindow& window, FontManager& fonts, TextureManager& textures);
+    struct RunnerCollisionEvent
+    {
+        Material::MaterialType materialType{Material::MaterialType::LAMBERTIAN};
+        float impactSpeed{0.0f};
+        glm::vec3 worldPosition{0.0f};
+    };
+
+    explicit World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders);
+    ~World(); // Defined in .cpp to avoid incomplete type issues
 
     void init() noexcept;
-
-    // Update the world (update physics and entities)
     void update(float dt);
-
-    // Draw the world (render entities) - pass renderer for drawing
     void draw() const noexcept;
-
-    CommandQueue& getCommandQueue() noexcept;
-
-    // Destroy the world
     void destroyWorld();
+    void handleEvent(const SDL_Event &event);
 
-    void handleEvent(const SDL_Event& event);
+    const std::vector<Sphere> &getSpheres() const noexcept { return mSpheres; }
+    std::vector<Sphere> &getSpheres() noexcept { return mSpheres; }
+    const Plane &getGroundPlane() const noexcept { return mGroundPlane; }
+    void setRunnerPlayerPosition(const glm::vec3 &playerPosition) noexcept;
+    void setRunnerTuning(float strafeLimit, float spawnAheadDistance, float sphereSpeed) noexcept;
+    std::vector<RunnerCollisionEvent> consumeRunnerCollisionEvents() noexcept;
 
-    void setPlayer(Player* player);
-    
-    // Access to 3D spheres for rendering
-    const std::vector<Sphere>& getSpheres() const noexcept { return mSpheres; }
-    std::vector<Sphere>& getSpheres() noexcept { return mSpheres; }
-    
-    // Update sphere chunks based on camera position
-    void updateSphereChunks(const glm::vec3& cameraPosition) noexcept;
-    
-    // Get spawn position from maze (position "0")
+    void updateSphereChunks(const glm::vec3 &cameraPosition) noexcept;
     glm::vec3 getMazeSpawnPosition() const noexcept { return mPlayerSpawnPosition; }
 
+    // ========================================================================
+    // Character rendering for third-person mode
+    // ========================================================================
+
+    /// Render player character as a billboard sprite using geometry shader
+    /// @param player Player with animation state
+    /// @param camera Camera for view/projection matrices
+    void renderPlayerCharacter(const Player &player, const Camera &camera) const noexcept;
+
+    /// Render a character from raw state data (for remote players)
+    /// @param position World position of character
+    /// @param facing Facing direction in degrees
+    /// @param frame Animation frame to render
+    /// @param camera Camera for view/projection matrices
+    void renderCharacterFromState(const glm::vec3 &position, float facing,
+                                  const AnimationRect &frame, const Camera &camera) const noexcept;
+
+    /// Get the character sprite sheet texture (for external rendering)
+    [[nodiscard]] const Texture *getCharacterSpriteSheet() const noexcept;
+
 private:
-    
-    // Initialize 3D path tracer scene with spheres
     void initPathTracerScene() noexcept;
-    
-    // Sync physics bodies to sphere positions
     void syncPhysicsToSpheres() noexcept;
-    
-    // Chunk-based sphere management with maze integration
-    struct ChunkCoord {
+    void createRunnerBounds() noexcept;
+    void updateRunnerSpheres(float dt) noexcept;
+    void spawnRunnerSphere() noexcept;
+    void processRunnerContactEvents() noexcept;
+    void pruneRunnerSpheres() noexcept;
+
+    struct ChunkCoord
+    {
         int x, z;
-        
-        bool operator==(const ChunkCoord& other) const {
+
+        bool operator==(const ChunkCoord &other) const
+        {
             return x == other.x && z == other.z;
         }
     };
-    
-    struct ChunkCoordHash {
-        std::size_t operator()(const ChunkCoord& coord) const {
+
+    struct ChunkCoordHash
+    {
+        std::size_t operator()(const ChunkCoord &coord) const
+        {
             return std::hash<int>()(coord.x) ^ (std::hash<int>()(coord.z) << 1);
         }
     };
-    
-    // Maze cell data for sphere spawning
-    struct MazeCell {
-        int row, col;
-        int distance;        // Base-10 distance from start
-        float worldX, worldZ; // 3D world position
-    };
-    
-    ChunkCoord getChunkCoord(const glm::vec3& position) const noexcept;
-    void loadChunk(const ChunkCoord& coord) noexcept;
-    void unloadChunk(const ChunkCoord& coord) noexcept;
-    
-    // Maze-based sphere generation
-    void generateSpheresInChunkFromMaze(const ChunkCoord& coord) noexcept;
-    std::string generateMazeForChunk(const ChunkCoord& coord) const noexcept;
-    std::vector<MazeCell> parseMazeCells(const std::string& mazeStr, const ChunkCoord& coord) const noexcept;
-    int parseBase36(const std::string& str) const noexcept;
-    MaterialType getMaterialForDistance(int distance) const noexcept;
-    
-    // Helper to generate random float
-    static float getRandomFloat(float low, float high) noexcept;
 
-    enum class Layer
+    struct MazeCell
     {
-        PARALLAX_BACK = 0,
-        PARALLAX_MID = 1,
-        PARALLAX_FORE = 2,
-        BACKGROUND = 3,
-        FOREGROUND = 4,
-        LAYER_COUNT = 5
+        int row, col;
+        int distance;
+        float worldX, worldZ;
     };
 
-    static constexpr auto FORCE_DUE_TO_GRAVITY = 9.8f;  // Positive Y is down in Box2D
+    struct ChunkWorkItem
+    {
+        ChunkCoord coord;
+        std::vector<MazeCell> cells;
+        std::vector<Sphere> spheres;
+        glm::vec3 spawnPosition;
+        bool hasSpawnPosition{false};
+    };
 
-    RenderWindow& mWindow;
-    View mWorldView;
-    FontManager& mFonts;
-    TextureManager& mTextures;
+    // Worker management
+    void initWorkerPool() noexcept;
+    void shutdownWorkerPool() noexcept;
+    void submitChunkForGeneration(const ChunkCoord &coord) noexcept;
+    void processCompletedChunks() noexcept;
+    ChunkWorkItem generateChunkAsync(const ChunkCoord &coord) const noexcept;
 
-    SceneNode mSceneGraph;
-    std::array<SceneNode*, static_cast<std::size_t>(Layer::LAYER_COUNT)> mSceneLayers;
+    ChunkCoord getChunkCoord(const glm::vec3 &position) const noexcept;
+    void loadChunk(const ChunkCoord &coord) noexcept;
+    void unloadChunk(const ChunkCoord &coord) noexcept;
+
+    // Thread-safe maze generation helpers
+    std::string generateMazeForChunk(const ChunkCoord &coord) const noexcept;
+    std::vector<MazeCell> parseMazeCells(const std::string &mazeStr, const ChunkCoord &coord,
+                                         glm::vec3 &outSpawnPosition, bool &outHasSpawn) const noexcept;
+    Material::MaterialType getMaterialForDistance(int distance) const noexcept;
+
+    static constexpr auto FORCE_DUE_TO_GRAVITY = 9.8f;
+
+    RenderWindow &mWindow;
+    FontManager &mFonts;
+    TextureManager &mTextures;
+    ShaderManager &mShaders; // Added for billboard shader access
 
     b2WorldId mWorldId;
     b2BodyId mMazeWallsBodyId;
-
-    CommandQueue mCommandQueue;
-
-    Pathfinder* mPlayerPathfinder;
-
-    // Ball pointers for testing launch mechanics
-    Ball* mBallNormal;
-    Ball* mBallHeavy;
-    Ball* mBallLight;
-    Ball* mBallExplosive;
+    b2BodyId mRunnerBoundsBodyId;
+    b2BodyId mRunnerPlayerBodyId;
+    b2ShapeId mRunnerBoundNegZShapeId;
+    b2ShapeId mRunnerBoundPosZShapeId;
 
     bool mIsPanning;
     SDL_FPoint mLastMousePosition;
 
-    std::unique_ptr<PostProcessingManager> mPostProcessingManager;
-    
-    // 3D Path tracer scene data
     std::vector<Sphere> mSpheres;
-    std::vector<b2BodyId> mSphereBodyIds;  // Physics bodies for each sphere
-    
-    // Chunk management with maze integration
+    std::vector<b2BodyId> mSphereBodyIds;
+    std::vector<RunnerCollisionEvent> mRunnerCollisionEvents;
+    Plane mGroundPlane;
+
+    // Modern C++ worker pool
+    static constexpr size_t NUM_WORKER_THREADS = 4;
+    static constexpr float SPHERE_SPAWN_RATE = 0.01f;
+    std::atomic<bool> mWorkersShouldStop{false};
+    std::vector<std::future<void>> mWorkerThreads;
+
+    mutable std::mutex mWorkQueueMutex;
+    std::queue<std::packaged_task<ChunkWorkItem()>> mWorkQueue;
+    std::condition_variable mWorkAvailable;
+
+    mutable std::mutex mCompletedChunksMutex;
+    std::vector<std::pair<ChunkCoord, std::future<ChunkWorkItem>>> mPendingChunks;
+
+    // Chunk management
     static constexpr float CHUNK_SIZE = 100.0f;
-    static constexpr int CHUNK_LOAD_RADIUS = 3;
-    static constexpr int MAZE_ROWS = 20;    // Rows per chunk maze
-    static constexpr int MAZE_COLS = 20;    // Columns per chunk maze
-    static constexpr float CELL_SIZE = CHUNK_SIZE / static_cast<float>(MAZE_COLS); // 5 units per cell
-    
+    static constexpr int CHUNK_LOAD_RADIUS = 2;
+    static constexpr int MAZE_ROWS = 20;
+    static constexpr int MAZE_COLS = 20;
+    static constexpr float CELL_SIZE = CHUNK_SIZE / static_cast<float>(MAZE_COLS);
+
     std::unordered_set<ChunkCoord, ChunkCoordHash> mLoadedChunks;
     std::unordered_map<ChunkCoord, std::vector<size_t>, ChunkCoordHash> mChunkSphereIndices;
-    std::unordered_map<ChunkCoord, std::string, ChunkCoordHash> mChunkMazes; // Cache generated mazes
+
+    // Thread-safe maze cache with mutex
+    mutable std::mutex mMazeCacheMutex;
+    mutable std::unordered_map<ChunkCoord, std::string, ChunkCoordHash> mChunkMazes;
+
     glm::vec3 mLastChunkUpdatePosition;
-    glm::vec3 mPlayerSpawnPosition;  // Spawn at maze position "0"
-    
-    static constexpr int TOTAL_SPHERES = 200;  // Initial reserved capacity
+    glm::vec3 mPlayerSpawnPosition;
+    glm::vec3 mRunnerPlayerPosition;
+    float mRunnerSpawnTimer{0.0f};
+    float mRunnerStrafeLimit{35.0f};
+    float mRunnerSpawnAheadDistance{140.0f};
+    float mRunnerSphereSpeed{40.0f};
+
+    static constexpr int TOTAL_SPHERES = 200;
+    static constexpr size_t RUNNER_PERSISTENT_SPHERES = 0;
+    static constexpr float RUNNER_SPAWN_INTERVAL_SECONDS = 0.22f;
+    static constexpr float RUNNER_DESPAWN_BEHIND_DISTANCE = 45.0f;
+    static constexpr float RUNNER_SPAWN_Z_MARGIN = 2.0f;
+    static constexpr float RUNNER_BOUNDS_HALF_WIDTH = 9000.0f;
+    static constexpr float RUNNER_PLAYER_RADIUS = 1.0f;
+
+    // Character sprite sheet dimensions (for animation rendering)
+    static constexpr int CHARACTER_TILE_SIZE = 128;
+    static constexpr int CHARACTER_FRAMES_PER_ROW = 9;
 };
 
 #endif // WORLD_HPP
