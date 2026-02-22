@@ -209,7 +209,7 @@ bool Texture::loadProceduralTextures(int width, int height,
 
     mWidth = width;
     mHeight = height;
-    mBytes = data.data();
+    mBytes = nullptr; // Do not store pointer to local vector data
 
     return true;
 }
