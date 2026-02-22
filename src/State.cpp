@@ -49,5 +49,8 @@ void State::log(std::string_view message, const char delimiter) noexcept
 
 std::string_view State::view() const noexcept
 {
-    return std::accumulate(mLogs.cbegin(), mLogs.cend(), std::string{});
+    static std::string accumulated;
+    accumulated.clear();
+    accumulated = std::accumulate(mLogs.cbegin(), mLogs.cend(), std::string{});
+    return std::string_view{accumulated};
 }
