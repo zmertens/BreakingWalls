@@ -79,8 +79,9 @@ namespace SoundEffect
     enum ID : unsigned int
     {
         GENERATE = 0,
-        SELECT = 1,
-        THROW = 2
+        WHITE_NOISE = 1,
+        SELECT = 2,
+        THROW = 3
     };
 }
 

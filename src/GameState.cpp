@@ -96,10 +96,10 @@ namespace
 }
 
 GameState::GameState(StateStack &stack, Context context)
-    : State{stack, context}, mWorld{*context.getRenderWindow(), *context.getFontManager(), *context.getTextureManager(), *context.getShaderManager()}, mPlayer{*context.getPlayer()}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mCompositeShader{nullptr}, mSkinnedModelShader{nullptr}
+    : State{stack, context}, mWorld{*context.getRenderWindow(), *context.getFontManager(), *context.getTextureManager(), *context.getShaderManager()}, mPlayer{*context.getPlayer()}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mCompositeShader{nullptr}, mSkinnedModelShader{nullptr}, mGameIsPaused{false}
       // Initialize camera at maze spawn position (will be updated after first chunk loads)
       ,
-      mCamera{glm::vec3(0.0f, 50.0f, 200.0f), -90.0f, -10.0f, 65.0f, 0.1f, 500.0f}
+      mCamera{}
 {
     mPlayer.setActive(true);
     mWorld.init(); // This now initializes both 2D physics and 3D path tracer scene
@@ -125,6 +125,17 @@ GameState::GameState(StateStack &stack, Context context)
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
         mShadersInitialized = false;
     }
+
+    // Get sound player from context
+    try
+    {
+        mSoundPlayer = getContext().getSoundPlayer();
+    }
+    catch(const std::exception& e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get SoundPlayer from context: %s", e.what());
+    }
+    
 
     auto &textures = *context.getTextureManager();
     try
@@ -1270,25 +1281,22 @@ void GameState::cleanupResources() noexcept
 
 void GameState::updateSounds() noexcept
 {
-    // Get sound player from context
-    auto *sounds = getContext().getSoundPlayer();
-    if (!sounds)
-    {
-        return;
-    }
-
     // Set listener position based on camera position
     // Convert 3D camera position to 2D for the sound system
     // Using camera X and Z as the 2D position (Y is up in 3D, but we use X/Z plane)
     glm::vec3 camPos = mCamera.getPosition();
-    sounds->setListenerPosition(sf::Vector2f{camPos.x, camPos.z});
+    mSoundPlayer->setListenerPosition(sf::Vector2f{camPos.x, camPos.z});
 
-    // Remove sounds that have finished playing
-    sounds->removeStoppedSounds();
+    // Remove mSoundPlayer that have finished playing
+    mSoundPlayer->removeStoppedSounds();
 }
 
 bool GameState::update(float dt, unsigned int subSteps) noexcept
 {
+    // If GameState is updating, it is currently active (PauseState would block update propagation).
+    // Ensure local paused flag is cleared when returning from pause/menu flows.
+    mGameIsPaused = false;
+
     // Window resize is now handled in handleEvent() with DPI-aware pixel detection
 
     const glm::vec3 playerPosBeforeUpdate = mPlayer.getPosition();
@@ -1331,8 +1339,11 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     chunkAnchor.x += mRunnerPickupSpawnAhead;
     mWorld.updateSphereChunks(chunkAnchor);
 
-    // Update sounds: set listener position based on camera and remove stopped sounds
-    updateSounds();
+    // Update mSoundPlayer: set listener position based on camera and remove stopped mSoundPlayer
+    if (!mGameIsPaused)
+    {
+        updateSounds();
+    }
 
     // Update player animation
     mPlayer.updateAnimation(dt);
@@ -1411,15 +1422,16 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
 
         if (event.key.scancode == SDL_SCANCODE_ESCAPE)
         {
+            mGameIsPaused = true;
             requestStackPush(States::ID::PAUSE);
         }
 
         // Jump with SPACE
         if (event.key.scancode == SDL_SCANCODE_SPACE)
         {
-            if (auto *sounds = getContext().getSoundPlayer())
+            if (mSoundPlayer && !mGameIsPaused)
             {
-                sounds->play(SoundEffect::ID::SELECT, sf::Vector2f{mPlayer.getPosition().x, mPlayer.getPosition().z});
+                mSoundPlayer->play(SoundEffect::ID::SELECT, sf::Vector2f{mPlayer.getPosition().x, mPlayer.getPosition().z});
             }
         }
 
@@ -1427,9 +1439,9 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
         if (event.key.scancode == SDL_SCANCODE_R)
         {
             glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
-            if (auto *sounds = getContext().getSoundPlayer())
+            if (mSoundPlayer && !mGameIsPaused)
             {
-                sounds->play(SoundEffect::ID::GENERATE, sf::Vector2f{resetPos.x, resetPos.z});
+                mSoundPlayer->play(SoundEffect::ID::GENERATE, sf::Vector2f{resetPos.x, resetPos.z});
             }
             log("Camera reset to initial position");
         }
@@ -1734,9 +1746,9 @@ void GameState::processRunnerCollisions(float dt) noexcept
                 mPlayer.triggerCollisionAnimation(true);
             }
 
-            if (auto *sounds = getContext().getSoundPlayer())
+            if (mSoundPlayer && !mGameIsPaused)
             {
-                sounds->play(SoundEffect::ID::THROW, sf::Vector2f{playerPos.x, playerPos.z});
+                mSoundPlayer->play(SoundEffect::ID::THROW, sf::Vector2f{playerPos.x, playerPos.z});
             }
         }
     }

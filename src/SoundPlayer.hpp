@@ -26,6 +26,7 @@ public:
     void play(SoundEffect::ID effect);
     void play(SoundEffect::ID effect,
               sf::Vector2f position);
+    void stop(SoundEffect::ID effect);
     void removeStoppedSounds();
     void setListenerPosition(sf::Vector2f position);
     sf::Vector2f getListenerPosition() const;

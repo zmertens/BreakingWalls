@@ -27,7 +27,6 @@
 #include "Options.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
-#include "SDLAudioStream.hpp"
 #include "Shader.hpp"
 #include "StateStack.hpp"
 #include "Texture.hpp"

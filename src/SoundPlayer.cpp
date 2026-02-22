@@ -11,6 +11,7 @@
 #include <SFML/Audio/SoundBuffer.hpp>
 
 #include "ResourceManager.hpp"
+#include "SDLAudioStream.hpp"
 
 namespace
 {
@@ -29,7 +30,7 @@ class SoundPlayer::Impl
 {
 public:
     explicit Impl(SoundBufferManager &soundBuffers)
-        : mSoundBuffers{soundBuffers}, mSounds{}, mVolume{100.0f}, mEnabled{true}
+        : mSoundBuffers{soundBuffers}, mSounds{}, mVolume{100.0f}, mEnabled{true}, mStream{}, mStreamInitialized{false}
     {
     }
 
@@ -49,6 +50,12 @@ public:
             return;
         }
 
+        if (effect == SoundEffect::ID::WHITE_NOISE)
+        {
+            playStreamEffect();
+            return;
+        }
+
         mSounds.emplace_back(sf::Sound{mSoundBuffers.get(effect)});
         sf::Sound &sound = mSounds.back();
 
@@ -65,6 +72,18 @@ public:
     {
         std::erase_if(mSounds, [](const sf::Sound &sound)
                       { return sound.getStatus() == sf::Sound::Status::Stopped; });
+    }
+
+    void stop(SoundEffect::ID effect)
+    {
+        if (effect == SoundEffect::ID::WHITE_NOISE)
+        {
+            if (mStreamInitialized)
+            {
+                mStream.pause();
+            }
+            return;
+        }
     }
 
     // Set listener position in 2D game coordinates
@@ -108,6 +127,11 @@ public:
             {
                 sound.stop();
             }
+
+            if (mStreamInitialized)
+            {
+                mStream.pause();
+            }
         }
     }
 
@@ -117,10 +141,35 @@ public:
     }
 
 private:
+    void playStreamEffect()
+    {
+        constexpr int STREAM_SAMPLE_RATE = 48000;
+        constexpr int STREAM_CHANNELS = 1;
+        constexpr float LOOP_DURATION_SECONDS = 0.0f;
+        constexpr float NOISE_SCALE = 20.0f;
+
+        if (!mStreamInitialized)
+        {
+            mStream.generateWhiteNoise(LOOP_DURATION_SECONDS, mVolume / 100.0f, NOISE_SCALE);
+            mStreamInitialized = mStream.initialize(STREAM_SAMPLE_RATE, STREAM_CHANNELS, {});
+            if (!mStreamInitialized)
+            {
+                return;
+            }
+        }
+
+        if (!mStream.isPlaying())
+        {
+            mStream.play();
+        }
+    }
+
     SoundBufferManager &mSoundBuffers;
     std::list<sf::Sound> mSounds;
     float mVolume;
     bool mEnabled;
+    SDLAudioStream mStream;
+    bool mStreamInitialized;
 };
 
 // SoundPlayer public API
@@ -143,6 +192,11 @@ void SoundPlayer::play(SoundEffect::ID effect)
 void SoundPlayer::play(SoundEffect::ID effect, sf::Vector2f position)
 {
     mImpl->play(effect, position);
+}
+
+void SoundPlayer::stop(SoundEffect::ID effect)
+{
+    mImpl->stop(effect);
 }
 
 void SoundPlayer::removeStoppedSounds()

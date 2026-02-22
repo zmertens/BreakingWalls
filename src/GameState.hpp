@@ -16,6 +16,7 @@
 class MusicPlayer;
 class Shader;
 class StateStack;
+class SoundPlayer;
 class Texture;
 
 union SDL_Event;
@@ -51,6 +52,87 @@ public:
     float getRenderScale() const noexcept;
 
 private:
+ /// Initialize GPU graphics resources for compute shader rendering
+    void initializeGraphicsResources() noexcept;
+
+    /// Recompute internal render resolution from current window size
+    void updateRenderResolution() noexcept;
+
+    /// Check and handle window resize events
+    void handleWindowResize() noexcept;
+
+    /// Create textures for path tracing (accumulation + display)
+    void createPathTracerTextures() noexcept;
+
+    /// Create or resize composite render targets for billboard blending
+    void createCompositeTargets() noexcept;
+
+    /// Initialize shadow rendering resources (FBO, textures, shaders)
+    void initializeShadowResources() noexcept;
+
+    /// Render character shadow to shadow map with soft-shadow blur
+    void renderCharacterShadow() const noexcept;
+
+    /// Initialize player reflection rendering resources
+    void initializeReflectionResources() noexcept;
+
+    /// Render reflected player character on ground plane
+    void renderPlayerReflection() const noexcept;
+
+    /// Render using compute shaders (path tracing)
+    void renderWithComputeShaders() const noexcept;
+
+    /// Composite billboard and path traced scene
+    void renderCompositeScene() const noexcept;
+
+    /// Render player character (third-person mode only)
+    void renderPlayerCharacter() const noexcept;
+
+    /// Render decorative billboard sprites along runner lane borders
+    void renderTracksideBillboards() const noexcept;
+
+    /// Ensure movement particle resources are initialized
+    void initializeWalkParticles() noexcept;
+
+    /// Render compute-driven particles around the player while walking
+    void renderWalkParticles() const noexcept;
+
+    /// Check if camera moved and reset accumulation if needed
+    bool checkCameraMovement() const noexcept;
+
+    /// Compute score-based boost using configurable runner brackets
+    float getScoreBracketBoost() const noexcept;
+
+    /// Update listener position and remove stopped sounds
+    void updateSounds() noexcept;
+
+    /// Pull latest runner settings from OptionsManager
+    void syncRunnerSettingsFromOptions() noexcept;
+
+    /// Advance endless-runner gameplay and points
+    void updateRunnerGameplay(float dt) noexcept;
+
+    /// Spawn point events in front of the player
+    void spawnPointEvents() noexcept;
+
+    /// Resolve point pickups and obstacle penalties
+    void processRunnerCollisions(float dt) noexcept;
+
+    /// Advance and cull floating score popup labels
+    void updateRunnerScorePopups(float dt) noexcept;
+
+    /// Reset the active run after point loss
+    void resetRunnerRun() noexcept;
+
+    /// Draw lightweight arcade HUD
+    void drawRunnerHud() const noexcept;
+
+    /// Draw floating score labels above collision points
+    void drawRunnerScorePopups() const noexcept;
+
+    /// Clean up OpenGL resources
+    void cleanupResources() noexcept;
+
     struct RunnerPointEvent
     {
         glm::vec3 position{};
@@ -72,6 +154,7 @@ private:
 
     // Music player reference for game music
     MusicPlayer *mGameMusic{nullptr};
+    SoundPlayer *mSoundPlayer{nullptr};
 
     // Path tracer camera (for 3D scene navigation)
     // Supports both first-person and third-person modes
@@ -175,86 +258,7 @@ private:
     std::vector<RunnerScorePopup> mRunnerScorePopups;
     std::mt19937 mRunnerRng{1337u};
 
-    /// Initialize GPU graphics resources for compute shader rendering
-    void initializeGraphicsResources() noexcept;
-
-    /// Recompute internal render resolution from current window size
-    void updateRenderResolution() noexcept;
-
-    /// Check and handle window resize events
-    void handleWindowResize() noexcept;
-
-    /// Create textures for path tracing (accumulation + display)
-    void createPathTracerTextures() noexcept;
-
-    /// Create or resize composite render targets for billboard blending
-    void createCompositeTargets() noexcept;
-
-    /// Initialize shadow rendering resources (FBO, textures, shaders)
-    void initializeShadowResources() noexcept;
-
-    /// Render character shadow to shadow map with soft-shadow blur
-    void renderCharacterShadow() const noexcept;
-
-    /// Initialize player reflection rendering resources
-    void initializeReflectionResources() noexcept;
-
-    /// Render reflected player character on ground plane
-    void renderPlayerReflection() const noexcept;
-
-    /// Render using compute shaders (path tracing)
-    void renderWithComputeShaders() const noexcept;
-
-    /// Composite billboard and path traced scene
-    void renderCompositeScene() const noexcept;
-
-    /// Render player character (third-person mode only)
-    void renderPlayerCharacter() const noexcept;
-
-    /// Render decorative billboard sprites along runner lane borders
-    void renderTracksideBillboards() const noexcept;
-
-    /// Ensure movement particle resources are initialized
-    void initializeWalkParticles() noexcept;
-
-    /// Render compute-driven particles around the player while walking
-    void renderWalkParticles() const noexcept;
-
-    /// Check if camera moved and reset accumulation if needed
-    bool checkCameraMovement() const noexcept;
-
-    /// Compute score-based boost using configurable runner brackets
-    float getScoreBracketBoost() const noexcept;
-
-    /// Update listener position and remove stopped sounds
-    void updateSounds() noexcept;
-
-    /// Pull latest runner settings from OptionsManager
-    void syncRunnerSettingsFromOptions() noexcept;
-
-    /// Advance endless-runner gameplay and points
-    void updateRunnerGameplay(float dt) noexcept;
-
-    /// Spawn point events in front of the player
-    void spawnPointEvents() noexcept;
-
-    /// Resolve point pickups and obstacle penalties
-    void processRunnerCollisions(float dt) noexcept;
-
-    /// Advance and cull floating score popup labels
-    void updateRunnerScorePopups(float dt) noexcept;
-
-    /// Reset the active run after point loss
-    void resetRunnerRun() noexcept;
-
-    /// Draw lightweight arcade HUD
-    void drawRunnerHud() const noexcept;
-
-    /// Draw floating score labels above collision points
-    void drawRunnerScorePopups() const noexcept;
-
-    /// Clean up OpenGL resources
-    void cleanupResources() noexcept;
+    bool mGameIsPaused{true};
 };
 
 #endif // GAME_STATE_HPP

@@ -210,7 +210,8 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
     // If menu is visible, just keep it showing (no transitions yet)
     if (mShowMainMenu)
     {
-        return true;
+        // Block updates to underlying states while menu is active
+        return false;
     }
 
     // Menu was closed by user - process the selected action
@@ -262,7 +263,8 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
     }
 
     mShowMainMenu = true;
-    return true;
+    // Keep underlying states paused during menu transition processing
+    return false;
 }
 
 bool MenuState::handleEvent(const SDL_Event &event) noexcept
@@ -288,7 +290,8 @@ bool MenuState::handleEvent(const SDL_Event &event) noexcept
         }
     }
 
-    return true;
+    // Consume events so gameplay does not react while menu is open
+    return false;
 }
 
 void MenuState::initializeParticleScene() const noexcept

@@ -11,7 +11,7 @@
 /// @brief SDL3 audio streaming wrapper for procedural audio and real-time effects
 /// @details This class provides a modern C++ wrapper around SDL3's audio streaming API.
 /// It can be used alongside SFML audio for scenarios requiring real-time audio processing.
-class SDLAudioStream
+class SDLAudioStream final
 {
 public:
     /// @brief Audio callback function type (matches SDL3's callback signature)
@@ -93,6 +93,7 @@ private:
     float mNoiseVolume{0.5f};
     float mNoiseDuration{0.0f};
     float mNoiseScale{1.0f};
+    std::uint32_t mNoiseSeed{0xA341316Cu};
 };
 
 #endif // SDL_AUDIO_STREAM_HPP

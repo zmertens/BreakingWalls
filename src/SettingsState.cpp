@@ -378,7 +378,8 @@ bool SettingsState::update(float dt, unsigned int subSteps) noexcept
 {
     if (mShowSettingsWindow)
     {
-        return true;
+        // Block updates to underlying states while settings is open
+        return false;
     }
 
     // User has closed the window, pop back to menu
@@ -401,5 +402,6 @@ bool SettingsState::handleEvent(const SDL_Event &event) noexcept
         }
     }
 
-    return true;
+    // Consume events so gameplay does not react while settings is open
+    return false;
 }

@@ -11,18 +11,49 @@
 
 #include "Font.hpp"
 #include "LoadingState.hpp"
+#include "Options.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
 #include "StateStack.hpp"
 #include "Texture.hpp"
 
 SplashState::SplashState(StateStack &stack, Context context)
-    : State(stack, context), mSplashTexture{&getContext().getTextureManager()->get(Textures::ID::SPLASH_TITLE_IMAGE)}
+    : State(stack, context), mSplashTexture{}
 {
+    try
+    {
+        mWhiteNoise = getContext().getSoundPlayer();
+    }
+    catch(const std::exception& e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SplashState: Failed to get SoundPlayer from context: %s", e.what());
+        mWhiteNoise = nullptr;
+    }
+    
+    try
+    {
+        mSplashTexture = &getContext().getTextureManager()->get(Textures::ID::SPLASH_TITLE_IMAGE);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SplashState: Failed to load splash texture: %s", e.what());
+        mSplashTexture = nullptr;
+    }
+
+    if (mWhiteNoise && mWhiteNoise->isEnabled())
+    {
+        mWhiteNoise->setVolume(getContext().getOptionsManager()->get(GUIOptions::ID::DE_FACTO).getSfxVolume());
+        mWhiteNoise->play(SoundEffect::ID::WHITE_NOISE);
+    }
 }
 
 SplashState::~SplashState()
 {
+    if (mWhiteNoise && mWhiteNoise->isEnabled())
+    {
+        mWhiteNoise->stop(SoundEffect::ID::WHITE_NOISE);
+        mWhiteNoise->removeStoppedSounds();
+    }
 }
 
 void SplashState::draw() const noexcept
@@ -109,6 +140,10 @@ bool SplashState::handleEvent(const SDL_Event &event) noexcept
         }
 
         log("SplashState: Input received, transitioning to MenuState...");
+        if (mWhiteNoise && mWhiteNoise->isEnabled())
+        {
+            mWhiteNoise->stop(SoundEffect::ID::WHITE_NOISE);
+        }
         // Pop SplashState only, keeping LoadingState and its loaded resources below
         requestStackPop();
         // Push MenuState on top of LoadingState

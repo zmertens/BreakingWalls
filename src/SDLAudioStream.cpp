@@ -19,7 +19,7 @@ SDLAudioStream::~SDLAudioStream()
 }
 
 SDLAudioStream::SDLAudioStream(SDLAudioStream &&other) noexcept
-    : mStream(other.mStream), mSpec(other.mSpec), mCallback(std::move(other.mCallback)), mIsPlaying(other.mIsPlaying), mCurrentSineSample(other.mCurrentSineSample), mSineFrequency(other.mSineFrequency), mSineVolume(other.mSineVolume), mSineDuration(other.mSineDuration), mSineElapsed(other.mSineElapsed), mCurrentNoiseSample(other.mCurrentNoiseSample), mNoiseVolume(other.mNoiseVolume), mNoiseDuration(other.mNoiseDuration), mNoiseScale(other.mNoiseScale)
+    : mStream(other.mStream), mSpec(other.mSpec), mCallback(std::move(other.mCallback)), mIsPlaying(other.mIsPlaying), mCurrentSineSample(other.mCurrentSineSample), mSineFrequency(other.mSineFrequency), mSineVolume(other.mSineVolume), mSineDuration(other.mSineDuration), mSineElapsed(other.mSineElapsed), mCurrentNoiseSample(other.mCurrentNoiseSample), mNoiseVolume(other.mNoiseVolume), mNoiseDuration(other.mNoiseDuration), mNoiseScale(other.mNoiseScale), mNoiseSeed(other.mNoiseSeed)
 {
     other.mStream = nullptr;
     other.mIsPlaying = false;
@@ -44,6 +44,7 @@ SDLAudioStream &SDLAudioStream::operator=(SDLAudioStream &&other) noexcept
         mNoiseVolume = other.mNoiseVolume;
         mNoiseDuration = other.mNoiseDuration;
         mNoiseScale = other.mNoiseScale;
+        mNoiseSeed = other.mNoiseSeed;
 
         other.mStream = nullptr;
         other.mIsPlaying = false;
@@ -70,9 +71,6 @@ bool SDLAudioStream::initialize(int freq, int channels, AudioCallback callback)
     {
         mCallback = callback;
     }
-
-    SDL_Log("SDLAudioStream: Initializing with %d Hz, %d channels", freq, channels);
-
     // Open the audio device stream (combines device opening + stream creation + binding)
     // This is the modern SDL3 API as shown in the official example
     mStream = SDL_OpenAudioDeviceStream(
@@ -109,7 +107,6 @@ void SDLAudioStream::play()
     if (SDL_ResumeAudioStreamDevice(mStream))
     {
         mIsPlaying = true;
-        SDL_Log("SDLAudioStream: Playback started");
     }
     else
     {
@@ -225,11 +222,12 @@ void SDLAudioStream::generateWhiteNoise(float duration, float volume, float scal
 {
     mNoiseVolume = std::clamp(volume, 0.0f, 1.0f);
     mNoiseDuration = duration;
-    mNoiseScale = std::max(0.1f, scale); // Ensure scale is positive
+    mNoiseScale = std::max(0.1f, scale); // Reserved for future shaping filters
     mCurrentNoiseSample = 0;
-
-    SDL_Log("SDLAudioStream: Configuring white noise - %.2f seconds, %.2f%% volume, scale: %.2f",
-            duration, volume * 100.0f, scale);
+    if (mNoiseSeed == 0u)
+    {
+        mNoiseSeed = 0xA341316Cu;
+    }
 
     // Set up callback to generate white noise using Simplex noise
     mCallback = [this](SDL_AudioStream *stream, int additional_amount, int total_amount)
@@ -251,26 +249,26 @@ void SDLAudioStream::generateWhiteNoise(float duration, float volume, float scal
             // Generate white noise samples using Simplex noise
             for (int i = 0; i < total; i++)
             {
-                // Check if we've exceeded the duration
-                const float sample_time = current_time + (static_cast<float>(i) / static_cast<float>(sample_rate));
-                if (sample_time >= mNoiseDuration)
+                // duration <= 0 means continuous noise (no cutoff)
+                if (mNoiseDuration > 0.0f)
                 {
-                    // Fill rest with silence
-                    for (int j = i; j < total; j++)
+                    // Check if we've exceeded the duration
+                    const float sample_time = current_time + (static_cast<float>(i) / static_cast<float>(sample_rate));
+                    if (sample_time >= mNoiseDuration)
                     {
-                        samples[j] = 0.0f;
+                        // Fill rest with silence
+                        for (int j = i; j < total; j++)
+                        {
+                            samples[j] = 0.0f;
+                        }
+                        break;
                     }
-                    break;
                 }
 
-                // Use 2D simplex noise for white noise generation
-                // x varies with sample count, y is a constant for variety
-                const float x = (static_cast<float>(mCurrentNoiseSample + i) / static_cast<float>(sample_rate)) * mNoiseScale;
-                const float y = mNoiseScale * 0.5f;
-
-                // Generate noise value (simplex2 returns value in range [0, 1])
-                // We map it to [-1, 1] by multiplying by 2 and subtracting 1
-                const float noise_value = simplex2(x, y, 1, 1.0f, 2.0f) * 2.0f - 1.0f;
+                // Fast LCG PRNG, mapped to [-1, 1] for true white noise
+                mNoiseSeed = (1664525u * mNoiseSeed) + 1013904223u;
+                const float unit = static_cast<float>((mNoiseSeed >> 8) & 0x00FFFFFFu) / 16777215.0f;
+                const float noise_value = (unit * 2.0f) - 1.0f;
                 samples[i] = noise_value * mNoiseVolume;
             }
 

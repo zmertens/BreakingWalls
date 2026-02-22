@@ -22,8 +22,8 @@ public:
 
 public:
     /// Constructor with position and spherical coordinates
-    explicit Camera(const glm::vec3 &position = glm::vec3(0),
-                    const float yaw = -90.0f, const float pitch = 0.0f,
+    explicit Camera(const glm::vec3 &position = glm::vec3(0.f, 50.f, 200.f),
+                    const float yaw = -10.0f, const float pitch = 0.0f,
                     float fovy = 65.0f, float near = 0.1f, float far = 100.0f);
 
     /// Move camera by velocity vector

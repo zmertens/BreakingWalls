@@ -30,7 +30,7 @@ public:
 
 private:
     bool isLoadingComplete() const noexcept;
-
+    SoundPlayer *mWhiteNoise;
     Texture* mSplashTexture;
 };
 
