@@ -43,8 +43,8 @@ MenuState::MenuState(StateStack &stack, Context context)
     // Load menu music with error handling
     try
     {
-        // @TODO : add menu music
-        // mMusic = &context.getMusicManager()->get(Music::ID::MENU_MUSIC);
+        mMusic = &context.getMusicManager()->get(Music::ID::MENU_MUSIC);
+        mMusic->play();
     }
     catch (const std::exception &e)
     {
@@ -59,6 +59,10 @@ MenuState::MenuState(StateStack &stack, Context context)
 
 MenuState::~MenuState()
 {
+    if (mMusic)
+    {
+        mMusic->stop();
+    }
     cleanupParticleScene();
 }
 
@@ -184,6 +188,25 @@ void MenuState::draw() const noexcept
 
 bool MenuState::update(float dt, unsigned int subSteps) noexcept
 {
+    // Periodic music health check
+    static float musicCheckTimer = 0.0f;
+    musicCheckTimer += dt;
+
+    if (musicCheckTimer >= 5.0f) // Check every 5 seconds
+    {
+        musicCheckTimer = 0.0f;
+
+        if (mMusic)
+        {
+            if (!mMusic->isPlaying())
+            {
+                SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
+                            "MenuState: Music stopped unexpectedly! Attempting restart...");
+                mMusic->play();
+            }
+        }
+    }
+
     // If menu is visible, just keep it showing (no transitions yet)
     if (mShowMainMenu)
     {

@@ -51,6 +51,7 @@ namespace JSONKeys
     constexpr std::string_view ENEMY_HITPOINTS_DEFAULT = "enemy_hitpoints_default";
     constexpr std::string_view ENEMY_SPEED_DEFAULT = "enemy_speed_default";
     constexpr std::string_view EXPLOSIONS_SPRITE_SHEET = "explosion_spritesheet";
+    constexpr std::string_view GAME_MENU_REMIXED_MUSIC = "game_menu_remixed_music";
     constexpr std::string_view LOADING_MUSIC = "loading_music";
     constexpr std::string_view LEVEL_DEFAULTS = "level_defaults";
     constexpr std::string_view NETWORK_URL = "network_url";
@@ -654,29 +655,34 @@ void LoadingState::loadAudio() noexcept
     try
     {
         const auto resources = resourceLoader().getResources();
-        const std::string musicPath = JSONUtils::getResourcePath(
+        const std::string loadingMusicPath = JSONUtils::getResourcePath(
             std::string(JSONKeys::LOADING_MUSIC), resources, resourcePathPrefix);
+        const std::string gameMenuRemixedMusicPath = JSONUtils::getResourcePath(
+            std::string(JSONKeys::GAME_MENU_REMIXED_MUSIC), resources, resourcePathPrefix);
 
-        if (musicPath.empty())
+        if (loadingMusicPath.empty() || gameMenuRemixedMusicPath.empty())
         {
-            log("LoadingState: LOADING_MUSIC resource key not found in configuration");
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: music resource key not found in configuration\n");
         }
         else
         {
-            log("LoadingState: Found music path: " + musicPath);
-            log("LoadingState: Loading music into manager...");
-
             const auto &options = *getContext().getOptionsManager();
             music.load(Music::ID::GAME_MUSIC,
-                       std::string_view{musicPath},
+                       std::string_view{loadingMusicPath},
                        options.get(GUIOptions::ID::DE_FACTO).getMusicVolume(), true);
 
+                
+            music.load(Music::ID::MENU_MUSIC,
+                       std::string_view{gameMenuRemixedMusicPath},
+                       options.get(GUIOptions::ID::DE_FACTO).getMusicVolume(), true);
+
+            log("LoadingState: Music loaded successfully");
             music.get(Music::ID::GAME_MUSIC).print();
         }
     }
     catch (const std::exception &e)
     {
-        log("LoadingState: Failed to load music: " + std::string(e.what()));
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load music: %s", e.what());
     }
 
     // Continue with existing sound effects loading...
@@ -684,7 +690,7 @@ void LoadingState::loadAudio() noexcept
 
     try
     {
-        log("LoadingState: Loading sound effects...");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loading sound effects...");
         const auto resources = resourceLoader().getResources();
         const std::string generatePath = JSONUtils::getResourcePath(
             std::string(JSONKeys::SOUND_GENERATE), resources, resourcePathPrefix);
@@ -755,13 +761,13 @@ void LoadingState::loadModels() noexcept
                 const size_t totalMeshBones = model.getTotalMeshBones();
                 const size_t animationCount = model.getAnimationNames().size();
 
-                log("GLTFModel: loaded " + modelPath);
-                log("  Meshes: " + std::to_string(meshCount));
-                log("  Bones (mapped): " + std::to_string(boneCount));
-                log("  Mesh-bones (raw): " + std::to_string(totalMeshBones));
-                log("  Animations: " + std::to_string(animationCount));
-                
-                log("LoadingState: Model verified in manager");
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GLTFModel: loaded %s", modelPath.c_str());
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Meshes: %zu", meshCount);
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Bones (mapped): %zu", boneCount);
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Mesh-bones (raw): %zu", totalMeshBones);
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Animations: %zu", animationCount);
+
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Model verified in manager");
             }
             catch (const std::exception &e)
             {
@@ -898,8 +904,6 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
     {
         for (const auto &request : textureRequests)
         {
-            // TextureLoadRequest already has the full path constructed by processTextureRequest
-            // Just use it directly without additional path resolution
             textures.load(request.id, std::string_view(request.path), 0u);
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loaded texture: %s for ID: %d", request.path.c_str(), static_cast<int>(request.id));
         }

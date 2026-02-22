@@ -191,7 +191,7 @@ struct PhysicsGame::PhysicsGameImpl
     void render(const double elapsed) const noexcept
     {
         // Only render if state stack has states
-        if (mStateStack->isEmpty())
+        if (!(mRenderWindow->isOpen() || mStateStack->isEmpty()))
         {
             return;
         }
@@ -203,7 +203,7 @@ struct PhysicsGame::PhysicsGameImpl
 
 #if defined(BREAKING_WALLS_DEBUG)
         // Window might be closed during draw calls/events
-        if (mRenderWindow->isOpen())
+        if (mOptions.get(GUIOptions::ID::DE_FACTO).getShowDebugOverlay())
         {
             handleFPS(elapsed);
         }

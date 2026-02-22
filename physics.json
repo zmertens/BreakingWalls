@@ -2,6 +2,7 @@
 	"window_icon": "textures/icon2.bmp",
     "splash_image": "textures/title.png",
     "generate_ogg": "audio/generate.ogg",
+	"game_menu_remixed_music": "audio/game-menu_remixed.mp3",
 	"select_ogg": "audio/sfx_select.ogg",
 	"throw_ogg": "audio/sfx_throw.ogg",
     "loading_music": "audio/loading.ogg",

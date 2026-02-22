@@ -6,11 +6,27 @@
 
 #include "Font.hpp"
 #include "MenuState.hpp"
+#include "MusicPlayer.hpp"
+#include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
 
 PauseState::PauseState(StateStack &stack, Context context)
-    : State(stack, context), mBackgroundShape{}, mSelectedMenuItem(static_cast<unsigned int>(States::ID::PAUSE))
+    : State(stack, context), mMusic{}, mSelectedMenuItem(static_cast<unsigned int>(States::ID::PAUSE))
 {
+    try
+    {
+        mMusic = &getContext().getMusicManager()->get(Music::ID::GAME_MUSIC);
+        if (mMusic && !mMusic->isPlaying())
+        {
+            mMusic->play();
+        }
+    }
+    catch(const std::exception& e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Failed to access music player: %s", e.what());
+        mMusic = nullptr;
+    }
+    
 }
 
 void PauseState::draw() const noexcept
@@ -79,6 +95,10 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
         break;
     case static_cast<unsigned int>(States::ID::MENU):
         log("PauseState: Menu selected, entering MenuState");
+        if (mMusic && mMusic->isPlaying())
+        {
+            mMusic->stop();
+        }
         requestStackPop();
         requestStackPush(States::ID::MENU);
         break;
