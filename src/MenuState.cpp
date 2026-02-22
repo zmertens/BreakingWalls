@@ -26,9 +26,32 @@
 
 MenuState::MenuState(StateStack &stack, Context context)
     : State(stack, context), mSelectedMenuItem(MenuItem::NEW_GAME), mShowMainMenu(true), mItemSelectedFlags{}, 
-    mFont{&context.getFontManager()->get(Fonts::ID::NUNITO_SANS)},
-    mMusic{&context.getMusicManager()->get(Music::ID::MENU_MUSIC)}
+    mFont{nullptr},
+    mMusic{nullptr}
 {
+    // Load font with error handling
+    try
+    {
+        mFont = &context.getFontManager()->get(Fonts::ID::NUNITO_SANS);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "MenuState: Failed to load font: %s", e.what());
+        mFont = nullptr;
+    }
+    
+    // Load menu music with error handling
+    try
+    {
+        // @TODO : add menu music
+        // mMusic = &context.getMusicManager()->get(Music::ID::MENU_MUSIC);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "MenuState: Failed to load menu music: %s", e.what());
+        mMusic = nullptr;
+    }
+    
     // initialize selection flags so UI shows correct selected item
     mItemSelectedFlags.fill(false);
     mItemSelectedFlags[static_cast<size_t>(mSelectedMenuItem)] = true;
@@ -44,9 +67,9 @@ void MenuState::draw() const noexcept
     initializeParticleScene();
     renderParticleScene();
 
+    // Early exit BEFORE any ImGui operations to avoid push/pop imbalance
     if (!mShowMainMenu)
     {
-
         return;
     }
 
@@ -54,7 +77,11 @@ void MenuState::draw() const noexcept
     using std::size_t;
     using std::string;
 
-    ImGui::PushFont(mFont->get());
+    // Use font if available, otherwise use default ImGui font
+    if (mFont)
+    {
+        ImGui::PushFont(mFont->get());
+    }
 
     if constexpr (false)
     {
@@ -149,7 +176,10 @@ void MenuState::draw() const noexcept
 
     ImGui::PopStyleColor(10);
 
-    ImGui::PopFont();
+    if (mFont)
+    {
+        ImGui::PopFont();
+    }
 }
 
 bool MenuState::update(float dt, unsigned int subSteps) noexcept
@@ -510,6 +540,10 @@ void MenuState::cleanupParticleScene() noexcept
     mParticlesRenderShader = nullptr;
     mParticlesComputeShader = nullptr;
     mParticlesInitialized = false;
+
+    // Ensure all OpenGL commands are processed before state destruction completes
+    // This prevents race conditions when transitioning to GameState
+    glFlush();
 }
 
 void MenuState::updateParticleProjection() const noexcept

@@ -109,7 +109,9 @@ bool SplashState::handleEvent(const SDL_Event &event) noexcept
         }
 
         log("SplashState: Input received, transitioning to MenuState...");
-        requestStateClear();
+        // Pop SplashState only, keeping LoadingState and its loaded resources below
+        requestStackPop();
+        // Push MenuState on top of LoadingState
         requestStackPush(States::ID::MENU);
     }
 

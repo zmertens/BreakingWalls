@@ -560,8 +560,7 @@ void LoadingState::draw() const noexcept
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::Text("%s", buf);
-    ImGui::End();
-}
+    ImGui::End();}
 
 bool LoadingState::update(float dt, unsigned int subSteps) noexcept
 {
@@ -569,7 +568,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     {
         if (const auto resources = resourceLoader().getResources(); !resources.empty())
         {
-            log("Loading complete! Loaded %zu resources. Loading getTextureManager()... " + std::to_string(resources.size()));
+            log("Loading complete! Loaded " + std::to_string(resources.size()) + " resources.");
 
             // Now actually load the getTextureManager() from the worker-collected texture requests
             loadTexturesFromWorkerRequests();
@@ -587,6 +586,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     if (!mHasFinished)
     {
         setCompletion(resourceLoader().getCompletion());
+        log("LoadingState::update - completion: " + std::to_string(resourceLoader().getCompletion() * 100.f) + "%");
     }
 
     return true;
@@ -744,16 +744,23 @@ void LoadingState::loadModels() noexcept
 
             log("LoadingState: Found model path: " + modelPath);
             log("LoadingState: Loading model into manager...");
-            log("GLTFModel: loaded " + modelPath + " with " + std::to_string(static_cast<unsigned int>(models.get(Models::ID::STYLIZED_CHARACTER).getMeshes().size())) + " meshes, " +
-                std::to_string(static_cast<unsigned int>(models.get(Models::ID::STYLIZED_CHARACTER).getBoneCount())) + " bones(mapped), " +
-                std::to_string(static_cast<unsigned int>(models.get(Models::ID::STYLIZED_CHARACTER).getTotalMeshBones())) + " mesh-bones(raw), " +
-                std::to_string(static_cast<unsigned int>(models.get(Models::ID::STYLIZED_CHARACTER).getAnimationNames().size())) + " animations");
 
-
-            // Verify the model was loaded
             try
             {
-                auto &loadedModel = models.get(Models::ID::STYLIZED_CHARACTER);
+                auto &model = models.get(Models::ID::STYLIZED_CHARACTER);
+                
+                // Break down the logging into smaller chunks for better debugging
+                const size_t meshCount = model.getMeshes().size();
+                const size_t boneCount = model.getBoneCount();
+                const size_t totalMeshBones = model.getTotalMeshBones();
+                const size_t animationCount = model.getAnimationNames().size();
+
+                log("GLTFModel: loaded " + modelPath);
+                log("  Meshes: " + std::to_string(meshCount));
+                log("  Bones (mapped): " + std::to_string(boneCount));
+                log("  Mesh-bones (raw): " + std::to_string(totalMeshBones));
+                log("  Animations: " + std::to_string(animationCount));
+                
                 log("LoadingState: Model verified in manager");
             }
             catch (const std::exception &e)

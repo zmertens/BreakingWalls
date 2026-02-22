@@ -181,7 +181,7 @@ struct PhysicsGame::PhysicsGameImpl
         if (const auto statePtr = mStateStack->peekState<State *>(); statePtr != lastState)
         {
             lastState = statePtr;
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, statePtr->view().data());
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "%s", statePtr->view().data());
         }
 #endif
 

@@ -1005,26 +1005,6 @@ void GameState::renderWithComputeShaders() const noexcept
                     modelMatrix,
                     mModelAnimTimeSeconds,
                     kMaxPathTracerTriangles);
-
-                static bool loggedFirstTriangle = false;
-                if (!loggedFirstTriangle && !traceTriangles.empty())
-                {
-                    loggedFirstTriangle = true;
-                    const glm::vec3 playerPos = mPlayer.getPosition();
-                    const glm::vec3 cameraPos = mCamera.getActualPosition();
-                    const glm::vec3 v0 = glm::vec3(traceTriangles.front().v0);
-                    SDL_Log("PathTracer: Model extraction test - player=(%.2f,%.2f,%.2f) camera=(%.2f,%.2f,%.2f) tri_v0=(%.2f,%.2f,%.2f)",
-                            playerPos.x, playerPos.y, playerPos.z,
-                            cameraPos.x, cameraPos.y, cameraPos.z,
-                            v0.x, v0.y, v0.z);
-                }
-            }
-
-            static bool loggedOnce = false;
-            if (!loggedOnce)
-            {
-                loggedOnce = true;
-                SDL_Log("PathTracer model: loaded=%d triangles=%zu", characterModel.isLoaded() ? 1 : 0, traceTriangles.size());
             }
         }
         catch (const std::exception &)

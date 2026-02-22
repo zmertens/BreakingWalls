@@ -2,13 +2,12 @@
 
 #include <SDL3/SDL_log.h>
 
+#include <glad/glad.h>
+
 #include <stdexcept>
 
 StateStack::StateStack(State::Context context)
-    : mStack()
-    , mPendingList()
-    , mContext(context)
-    , mFactories()
+    : mStack(), mPendingList(), mContext(context), mFactories()
 {
 }
 
@@ -33,7 +32,7 @@ void StateStack::draw() const noexcept
 {
     if (mStack.empty())
     {
-        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "StateStack::draw called on empty stack");    
+        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "StateStack::draw called on empty stack");
         return;
     }
 
@@ -44,7 +43,7 @@ void StateStack::draw() const noexcept
     }
 }
 
-void StateStack::handleEvent(const SDL_Event& event) noexcept
+void StateStack::handleEvent(const SDL_Event &event) noexcept
 {
     // Process events for existing states (skip if empty)
     if (!mStack.empty())
@@ -95,21 +94,31 @@ State::Ptr StateStack::createState(States::ID stateID)
 
 void StateStack::applyPendingChanges()
 {
-    for (const PendingChange& change : mPendingList)
+    for (const PendingChange &change : mPendingList)
     {
         switch (change.action)
         {
         case Action::PUSH:
-            mStack.push_back(createState(change.stateID));
+            try
+            {
+                mStack.push_back(createState(change.stateID));
+            }
+            catch (const std::exception &e)
+            {
+                SDL_LogError(SDL_LOG_CATEGORY_ERROR,
+                             "StateStack::applyPendingChanges - Failed to create state: %s",
+                             e.what());
+            }
             break;
         case Action::POP:
             if (!mStack.empty())
             {
                 mStack.pop_back();
-            } else
+            }
+            else
             {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "StateStack::applyPendingChanges - Attempted to pop from empty stack");
+                            "StateStack::applyPendingChanges - Attempted to pop from empty stack");
             }
             break;
         case Action::CLEAR:
@@ -122,7 +131,6 @@ void StateStack::applyPendingChanges()
 }
 
 StateStack::PendingChange::PendingChange(Action action, States::ID stateID)
-    : action(action)
-    , stateID(stateID)
+    : action(action), stateID(stateID)
 {
 }

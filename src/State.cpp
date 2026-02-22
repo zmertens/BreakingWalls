@@ -44,7 +44,7 @@ StateStack &State::getStack() const noexcept
 void State::log(std::string_view message, const char delimiter) noexcept
 {
     auto nextLine = std::string{message} + delimiter;
-    mLogs.emplace_back(std::move(nextLine));
+    mLogs.emplace_back(nextLine);
 }
 
 std::string_view State::view() const noexcept

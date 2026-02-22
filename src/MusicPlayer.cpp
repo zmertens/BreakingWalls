@@ -93,6 +93,9 @@ public:
     }
 
     void print() const noexcept {
+        auto status = mMusic.getStatus();
+        SDL_Log("MusicPlayer: Status: %s", status == sf::Music::Status::Playing ? "Playing" :
+                                    status == sf::Music::Status::Paused ? "Paused" : "Stopped");
         SDL_Log("MusicPlayer: Looping? %s", mLoop ? "Yes" : "No");
         SDL_Log("MusicPlayer: Volume: %.2f", mVolume);
         SDL_Log("MusicPlayer: Duration: %.2f seconds", mMusic.getDuration().asSeconds());
