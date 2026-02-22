@@ -669,7 +669,7 @@ void LoadingState::loadAudio() noexcept
             const auto &options = *getContext().getOptionsManager();
             music.load(Music::ID::GAME_MUSIC,
                        std::string_view{musicPath},
-                       options.get(GUIOptions::ID::DE_FACTO).mMusicVolume, true);
+                       options.get(GUIOptions::ID::DE_FACTO).getMusicVolume(), true);
 
             music.get(Music::ID::GAME_MUSIC).print();
         }

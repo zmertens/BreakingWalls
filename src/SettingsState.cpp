@@ -83,32 +83,32 @@ void SettingsState::draw() const noexcept
         try
         {
             const auto &opts = optionsManager.get(GUIOptions::ID::DE_FACTO);
-            masterVolume = opts.mMasterVolume;
-            musicVolume = opts.mMusicVolume;
-            sfxVolume = opts.mSfxVolume;
-            vsync = opts.mVsync;
-            fullscreen = opts.mFullscreen;
-            antialiasing = opts.mAntiAliasing;
-            enableMusic = opts.mEnableMusic;
-            enableSound = opts.mEnableSound;
-            showDebugOverlay = opts.mShowDebugOverlay;
-            arcadeModeEnabled = opts.mArcadeModeEnabled;
-            runnerSpeed = opts.mRunnerSpeed;
-            runnerStrafeLimit = opts.mRunnerStrafeLimit;
-            runnerStartingPoints = opts.mRunnerStartingPoints;
-            runnerPickupMinValue = opts.mRunnerPickupMinValue;
-            runnerPickupMaxValue = opts.mRunnerPickupMaxValue;
-            runnerPickupSpacing = opts.mRunnerPickupSpacing;
-            runnerObstaclePenalty = opts.mRunnerObstaclePenalty;
-            runnerCollisionCooldown = opts.mRunnerCollisionCooldown;
-            motionBlurBracket1Points = opts.mMotionBlurBracket1Points;
-            motionBlurBracket2Points = opts.mMotionBlurBracket2Points;
-            motionBlurBracket3Points = opts.mMotionBlurBracket3Points;
-            motionBlurBracket4Points = opts.mMotionBlurBracket4Points;
-            motionBlurBracket1Boost = opts.mMotionBlurBracket1Boost;
-            motionBlurBracket2Boost = opts.mMotionBlurBracket2Boost;
-            motionBlurBracket3Boost = opts.mMotionBlurBracket3Boost;
-            motionBlurBracket4Boost = opts.mMotionBlurBracket4Boost;
+            masterVolume = opts.getMasterVolume();
+            musicVolume = opts.getMusicVolume();
+            sfxVolume = opts.getSfxVolume();
+            vsync = opts.getVsync();
+            fullscreen = opts.getFullscreen();
+            antialiasing = opts.getAntiAliasing();
+            enableMusic = opts.getEnableMusic();
+            enableSound = opts.getEnableSound();
+            showDebugOverlay = opts.getShowDebugOverlay();
+            arcadeModeEnabled = opts.getArcadeModeEnabled();
+            runnerSpeed = opts.getRunnerSpeed();
+            runnerStrafeLimit = opts.getRunnerStrafeLimit();
+            runnerStartingPoints = opts.getRunnerStartingPoints();
+            runnerPickupMinValue = opts.getRunnerPickupMinValue();
+            runnerPickupMaxValue = opts.getRunnerPickupMaxValue();
+            runnerPickupSpacing = opts.getRunnerPickupSpacing();
+            runnerObstaclePenalty = opts.getRunnerObstaclePenalty();
+            runnerCollisionCooldown = opts.getRunnerCollisionCooldown();
+            motionBlurBracket1Points = opts.getMotionBlurBracket1Points();
+            motionBlurBracket2Points = opts.getMotionBlurBracket2Points();
+            motionBlurBracket3Points = opts.getMotionBlurBracket3Points();
+            motionBlurBracket4Points = opts.getMotionBlurBracket4Points();
+            motionBlurBracket1Boost = opts.getMotionBlurBracket1Boost();
+            motionBlurBracket2Boost = opts.getMotionBlurBracket2Boost();
+            motionBlurBracket3Boost = opts.getMotionBlurBracket3Boost();
+            motionBlurBracket4Boost = opts.getMotionBlurBracket4Boost();
         }
         catch (const std::exception &)
         {
@@ -223,33 +223,7 @@ void SettingsState::draw() const noexcept
         // Action buttons
         if (ImGui::Button("Apply Settings", ImVec2(150, 40)))
         {
-            applySettings(Options{
-                .mAntiAliasing = antialiasing,
-                .mEnableMusic = enableMusic,
-                .mEnableSound = enableSound,
-                .mFullscreen = fullscreen,
-                .mShowDebugOverlay = showDebugOverlay,
-                .mVsync = vsync,
-                .mMasterVolume = masterVolume,
-                .mMusicVolume = musicVolume,
-                .mSfxVolume = sfxVolume,
-                .mArcadeModeEnabled = arcadeModeEnabled,
-                .mRunnerSpeed = runnerSpeed,
-                .mRunnerStrafeLimit = runnerStrafeLimit,
-                .mRunnerStartingPoints = runnerStartingPoints,
-                .mRunnerPickupMinValue = runnerPickupMinValue,
-                .mRunnerPickupMaxValue = runnerPickupMaxValue,
-                .mRunnerPickupSpacing = runnerPickupSpacing,
-                .mRunnerObstaclePenalty = runnerObstaclePenalty,
-                .mRunnerCollisionCooldown = runnerCollisionCooldown,
-                .mMotionBlurBracket1Points = motionBlurBracket1Points,
-                .mMotionBlurBracket2Points = motionBlurBracket2Points,
-                .mMotionBlurBracket3Points = motionBlurBracket3Points,
-                .mMotionBlurBracket4Points = motionBlurBracket4Points,
-                .mMotionBlurBracket1Boost = motionBlurBracket1Boost,
-                .mMotionBlurBracket2Boost = motionBlurBracket2Boost,
-                .mMotionBlurBracket3Boost = motionBlurBracket3Boost,
-                .mMotionBlurBracket4Boost = motionBlurBracket4Boost});
+            applySettings(Options().withAntiAliasing(antialiasing).withEnableMusic(enableMusic).withEnableSound(enableSound).withFullscreen(fullscreen).withShowDebugOverlay(showDebugOverlay).withVsync(vsync).withMasterVolume(masterVolume).withMusicVolume(musicVolume).withSfxVolume(sfxVolume).withArcadeModeEnabled(arcadeModeEnabled).withRunnerSpeed(runnerSpeed).withRunnerStrafeLimit(runnerStrafeLimit).withRunnerStartingPoints(runnerStartingPoints).withRunnerPickupMinValue(runnerPickupMinValue).withRunnerPickupMaxValue(runnerPickupMaxValue).withRunnerPickupSpacing(runnerPickupSpacing).withRunnerObstaclePenalty(runnerObstaclePenalty).withRunnerCollisionCooldown(runnerCollisionCooldown).withMotionBlurBracket1Points(motionBlurBracket1Points).withMotionBlurBracket2Points(motionBlurBracket2Points).withMotionBlurBracket3Points(motionBlurBracket3Points).withMotionBlurBracket4Points(motionBlurBracket4Points).withMotionBlurBracket1Boost(motionBlurBracket1Boost).withMotionBlurBracket2Boost(motionBlurBracket2Boost).withMotionBlurBracket3Boost(motionBlurBracket3Boost).withMotionBlurBracket4Boost(motionBlurBracket4Boost));
         }
 
         ImGui::SameLine();
@@ -309,8 +283,8 @@ void SettingsState::applySettings(const Options &options) const noexcept
     // Apply fullscreen
     if (auto *window = getContext().getRenderWindow(); window != nullptr)
     {
-        window->setFullscreen(options.mFullscreen);
-        window->setVsync(options.mVsync);
+        window->setFullscreen(options.getFullscreen());
+        window->setVsync(options.getVsync());
 
         if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
         {
@@ -333,9 +307,9 @@ void SettingsState::applySettings(const Options &options) const noexcept
     // Apply sound settings
     if (auto *sounds = getContext().getSoundPlayer(); sounds != nullptr)
     {
-        sounds->setEnabled(options.mEnableSound);
+        sounds->setEnabled(options.getEnableSound());
         // Apply master volume * sfx volume
-        sounds->setVolume(options.mMasterVolume * options.mSfxVolume / 100.0f);
+        sounds->setVolume(options.getMasterVolume() * options.getSfxVolume() / 100.0f);
     }
 
     // Apply music settings to all music players
@@ -345,9 +319,9 @@ void SettingsState::applySettings(const Options &options) const noexcept
         {
             // Apply to game music
             auto &gameMusic = musicManager->get(Music::ID::GAME_MUSIC);
-            if (options.mEnableMusic)
+            if (options.getEnableMusic())
             {
-                gameMusic.setVolume(options.mMasterVolume * options.mMusicVolume / 100.0f);
+                gameMusic.setVolume(options.getMasterVolume() * options.getMusicVolume() / 100.0f);
             }
             else
             {
@@ -366,32 +340,32 @@ void SettingsState::applySettings(const Options &options) const noexcept
         try
         {
             auto &opts = optionsManager->get(GUIOptions::ID::DE_FACTO);
-            opts.mMasterVolume = options.mMasterVolume;
-            opts.mMusicVolume = options.mMusicVolume;
-            opts.mSfxVolume = options.mSfxVolume;
-            opts.mVsync = options.mVsync;
-            opts.mFullscreen = options.mFullscreen;
-            opts.mAntiAliasing = options.mAntiAliasing;
-            opts.mEnableMusic = options.mEnableMusic;
-            opts.mEnableSound = options.mEnableSound;
-            opts.mShowDebugOverlay = options.mShowDebugOverlay;
-            opts.mArcadeModeEnabled = options.mArcadeModeEnabled;
-            opts.mRunnerSpeed = options.mRunnerSpeed;
-            opts.mRunnerStrafeLimit = options.mRunnerStrafeLimit;
-            opts.mRunnerStartingPoints = options.mRunnerStartingPoints;
-            opts.mRunnerPickupMinValue = options.mRunnerPickupMinValue;
-            opts.mRunnerPickupMaxValue = options.mRunnerPickupMaxValue;
-            opts.mRunnerPickupSpacing = options.mRunnerPickupSpacing;
-            opts.mRunnerObstaclePenalty = options.mRunnerObstaclePenalty;
-            opts.mRunnerCollisionCooldown = options.mRunnerCollisionCooldown;
-            opts.mMotionBlurBracket1Points = options.mMotionBlurBracket1Points;
-            opts.mMotionBlurBracket2Points = options.mMotionBlurBracket2Points;
-            opts.mMotionBlurBracket3Points = options.mMotionBlurBracket3Points;
-            opts.mMotionBlurBracket4Points = options.mMotionBlurBracket4Points;
-            opts.mMotionBlurBracket1Boost = options.mMotionBlurBracket1Boost;
-            opts.mMotionBlurBracket2Boost = options.mMotionBlurBracket2Boost;
-            opts.mMotionBlurBracket3Boost = options.mMotionBlurBracket3Boost;
-            opts.mMotionBlurBracket4Boost = options.mMotionBlurBracket4Boost;
+            opts.withMasterVolume(options.getMasterVolume())
+                .withMusicVolume(options.getMusicVolume())
+                .withSfxVolume(options.getSfxVolume())
+                .withVsync(options.getVsync())
+                .withFullscreen(options.getFullscreen())
+                .withAntiAliasing(options.getAntiAliasing())
+                .withEnableMusic(options.getEnableMusic())
+                .withEnableSound(options.getEnableSound())
+                .withShowDebugOverlay(options.getShowDebugOverlay())
+                .withArcadeModeEnabled(options.getArcadeModeEnabled())
+                .withRunnerSpeed(options.getRunnerSpeed())
+                .withRunnerStrafeLimit(options.getRunnerStrafeLimit())
+                .withRunnerStartingPoints(options.getRunnerStartingPoints())
+                .withRunnerPickupMinValue(options.getRunnerPickupMinValue())
+                .withRunnerPickupMaxValue(options.getRunnerPickupMaxValue())
+                .withRunnerPickupSpacing(options.getRunnerPickupSpacing())
+                .withRunnerObstaclePenalty(options.getRunnerObstaclePenalty())
+                .withRunnerCollisionCooldown(options.getRunnerCollisionCooldown())
+                .withMotionBlurBracket1Points(options.getMotionBlurBracket1Points())
+                .withMotionBlurBracket2Points(options.getMotionBlurBracket2Points())
+                .withMotionBlurBracket3Points(options.getMotionBlurBracket3Points())
+                .withMotionBlurBracket4Points(options.getMotionBlurBracket4Points())
+                .withMotionBlurBracket1Boost(options.getMotionBlurBracket1Boost())
+                .withMotionBlurBracket2Boost(options.getMotionBlurBracket2Boost())
+                .withMotionBlurBracket3Boost(options.getMotionBlurBracket3Boost())
+                .withMotionBlurBracket4Boost(options.getMotionBlurBracket4Boost());
         }
         catch (const std::exception &)
         {

@@ -1631,25 +1631,25 @@ void GameState::syncRunnerSettingsFromOptions() noexcept
     try
     {
         const auto &opts = optionsManager->get(GUIOptions::ID::DE_FACTO);
-        mArcadeModeEnabled = opts.mArcadeModeEnabled;
-        mRunnerSpeed = std::max(5.0f, opts.mRunnerSpeed);
-        mRunnerStrafeLimit = std::max(5.0f, opts.mRunnerStrafeLimit);
-        mRunnerStartingPoints = std::max(1, opts.mRunnerStartingPoints);
-        mRunnerPickupMinValue = std::min(opts.mRunnerPickupMinValue, opts.mRunnerPickupMaxValue);
-        mRunnerPickupMaxValue = std::max(opts.mRunnerPickupMinValue, opts.mRunnerPickupMaxValue);
-        mRunnerPickupSpacing = std::max(4.0f, opts.mRunnerPickupSpacing);
-        mRunnerObstaclePenalty = std::max(1, opts.mRunnerObstaclePenalty);
-        mRunnerCollisionCooldown = std::max(0.05f, opts.mRunnerCollisionCooldown);
+        mArcadeModeEnabled = opts.getArcadeModeEnabled();
+        mRunnerSpeed = std::max(5.0f, opts.getRunnerSpeed());
+        mRunnerStrafeLimit = std::max(5.0f, opts.getRunnerStrafeLimit());
+        mRunnerStartingPoints = std::max(1, opts.getRunnerStartingPoints());
+        mRunnerPickupMinValue = std::min(opts.getRunnerPickupMinValue(), opts.getRunnerPickupMaxValue());
+        mRunnerPickupMaxValue = std::max(opts.getRunnerPickupMinValue(), opts.getRunnerPickupMaxValue());
+        mRunnerPickupSpacing = std::max(4.0f, opts.getRunnerPickupSpacing());
+        mRunnerObstaclePenalty = std::max(1, opts.getRunnerObstaclePenalty());
+        mRunnerCollisionCooldown = std::max(0.05f, opts.getRunnerCollisionCooldown());
 
-        mMotionBlurBracket1Points = std::max(0, opts.mMotionBlurBracket1Points);
-        mMotionBlurBracket2Points = std::max(mMotionBlurBracket1Points, opts.mMotionBlurBracket2Points);
-        mMotionBlurBracket3Points = std::max(mMotionBlurBracket2Points, opts.mMotionBlurBracket3Points);
-        mMotionBlurBracket4Points = std::max(mMotionBlurBracket3Points, opts.mMotionBlurBracket4Points);
+        mMotionBlurBracket1Points = std::max(0, opts.getMotionBlurBracket1Points());
+        mMotionBlurBracket2Points = std::max(mMotionBlurBracket1Points, opts.getMotionBlurBracket2Points());
+        mMotionBlurBracket3Points = std::max(mMotionBlurBracket2Points, opts.getMotionBlurBracket3Points());
+        mMotionBlurBracket4Points = std::max(mMotionBlurBracket3Points, opts.getMotionBlurBracket4Points());
 
-        mMotionBlurBracket1Boost = std::clamp(opts.mMotionBlurBracket1Boost, 0.0f, 1.0f);
-        mMotionBlurBracket2Boost = std::clamp(opts.mMotionBlurBracket2Boost, mMotionBlurBracket1Boost, 1.0f);
-        mMotionBlurBracket3Boost = std::clamp(opts.mMotionBlurBracket3Boost, mMotionBlurBracket2Boost, 1.0f);
-        mMotionBlurBracket4Boost = std::clamp(opts.mMotionBlurBracket4Boost, mMotionBlurBracket3Boost, 1.0f);
+        mMotionBlurBracket1Boost = std::clamp(opts.getMotionBlurBracket1Boost(), 0.0f, 1.0f);
+        mMotionBlurBracket2Boost = std::clamp(opts.getMotionBlurBracket2Boost(), mMotionBlurBracket1Boost, 1.0f);
+        mMotionBlurBracket3Boost = std::clamp(opts.getMotionBlurBracket3Boost(), mMotionBlurBracket2Boost, 1.0f);
+        mMotionBlurBracket4Boost = std::clamp(opts.getMotionBlurBracket4Boost(), mMotionBlurBracket3Boost, 1.0f);
 
         mWorld.setRunnerTuning(mRunnerStrafeLimit, mRunnerPickupSpawnAhead, mRunnerSpeed + 8.0f);
     }
