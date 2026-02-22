@@ -92,7 +92,7 @@ void Material::setAlbedo(const glm::vec3 &albedo)
     mAlbedo = albedo;
 }
 
-Material::MaterialType Material::getType() const
+MaterialType Material::getType() const
 {
     return mType;
 }
