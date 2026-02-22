@@ -201,13 +201,11 @@ struct PhysicsGame::PhysicsGameImpl
         mRenderWindow->beginFrame();
         mStateStack->draw();
 
-#if defined(BREAKING_WALLS_DEBUG)
         // Window might be closed during draw calls/events
         if (mOptions.get(GUIOptions::ID::DE_FACTO).getShowDebugOverlay())
         {
             handleFPS(elapsed);
         }
-#endif
 
         mRenderWindow->display();
     }

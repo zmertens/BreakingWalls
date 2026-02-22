@@ -10,7 +10,7 @@ struct Options final
     [[nodiscard]] bool getEnableMusic() const noexcept { return mEnableMusic.value_or(true); }
     [[nodiscard]] bool getEnableSound() const noexcept { return mEnableSound.value_or(true); }
     [[nodiscard]] bool getFullscreen() const noexcept { return mFullscreen.value_or(false); }
-    [[nodiscard]] bool getShowDebugOverlay() const noexcept { return mShowDebugOverlay.value_or(false); }
+    [[nodiscard]] bool getShowDebugOverlay() const noexcept { return mShowDebugOverlay.value_or(true); }
     [[nodiscard]] bool getVsync() const noexcept { return mVsync.value_or(true); }
 
     [[nodiscard]] float getMasterVolume() const noexcept { return mMasterVolume.value_or(25.0f); }

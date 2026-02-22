@@ -23,8 +23,8 @@ public:
 public:
     /// Constructor with position and spherical coordinates
     explicit Camera(const glm::vec3 &position = glm::vec3(0.f, 50.f, 200.f),
-                    const float yaw = -10.0f, const float pitch = 0.0f,
-                    float fovy = 65.0f, float near = 0.1f, float far = 100.0f);
+                    const float yaw = 60.0f, const float pitch = 10.0f,
+                    float fovy = 80.0f, float near = 0.1f, float far = 100.0f);
 
     /// Move camera by velocity vector
     void move(const glm::vec3 &velocity, float dt);
@@ -127,8 +127,8 @@ private:
     // Third-person camera support
     CameraMode mMode{CameraMode::THIRD_PERSON};
     glm::vec3 mFollowTarget{0.0f};     ///< Position to follow in third person
-    float mThirdPersonDistance{10.0f}; ///< Distance behind target
-    float mThirdPersonHeight{5.0f};    ///< Height above target
+    float mThirdPersonDistance{20.0f}; ///< Distance behind target
+    float mThirdPersonHeight{15.0f};    ///< Height above target
 
 private:
     /// Update target, right, and up vectors based on yaw/pitch Euler angles

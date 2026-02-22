@@ -10,20 +10,15 @@
 
 namespace
 {
-    constexpr float kGroundPlaneY = 0.0f;
+    constexpr float kGroundPlaneY = 1.0f;
     constexpr float kPlayerGravity = 40.0f;
     constexpr float kPlayerJumpVelocity = 14.0f;
 }
 
 Player::Player() : mIsActive(true), mIsOnGround(false)
 {
-    // Camera movement controls (WASD + QE for vertical)
-    mKeyBinding[SDL_SCANCODE_W] = Action::MOVE_FORWARD;
-    mKeyBinding[SDL_SCANCODE_S] = Action::MOVE_BACKWARD;
     mKeyBinding[SDL_SCANCODE_A] = Action::MOVE_LEFT;
     mKeyBinding[SDL_SCANCODE_D] = Action::MOVE_RIGHT;
-    mKeyBinding[SDL_SCANCODE_Q] = Action::MOVE_UP;
-    mKeyBinding[SDL_SCANCODE_E] = Action::MOVE_DOWN;
     mKeyBinding[SDL_SCANCODE_SPACE] = Action::JUMP;
 
     // Camera rotation controls (Arrow keys)
@@ -51,8 +46,7 @@ void Player::handleEvent(const SDL_Event &event, Camera &camera)
         if (found != mKeyBinding.cend() && !isRealtimeAction(found->second))
         {
             // Execute discrete action immediately
-            auto actionIt = mCameraActions.find(found->second);
-            if (actionIt != mCameraActions.end())
+            if (auto actionIt =  mCameraActions.find(found->second); actionIt != mCameraActions.cend())
             {
                 actionIt->second(camera, 0.0f);
             }
@@ -86,7 +80,7 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
             if (pair.first < static_cast<std::uint32_t>(numKeys) && keyState[pair.first])
             {
                 auto actionIt = mCameraActions.find(pair.second);
-                if (actionIt != mCameraActions.end())
+                if (actionIt != mCameraActions.cend())
                 {
                     actionIt->second(camera, dt);
                 }
@@ -110,10 +104,6 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
                     mMovingRight = true;
                     mIsMoving = true;
                     break;
-                case Action::JUMP:
-                    mIsJumping = true;
-                    mIsMoving = true;
-                    break;
                 default:
                     break;
                 }
@@ -135,6 +125,9 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
     {
         mIsOnGround = false;
     }
+
+    // Update animator with new position after physics
+    mAnimator.setPosition(mPosition);
 
     // Update player position to match camera (for third person, player IS the focus)
     if (camera.getMode() == CameraMode::FIRST_PERSON)
@@ -167,13 +160,8 @@ bool Player::isRealtimeAction(Action action)
 {
     switch (action)
     {
-    case Action::MOVE_FORWARD:
-    case Action::MOVE_BACKWARD:
     case Action::MOVE_LEFT:
     case Action::MOVE_RIGHT:
-    case Action::MOVE_UP:
-    case Action::MOVE_DOWN:
-    case Action::JUMP:
     case Action::ROTATE_LEFT:
     case Action::ROTATE_RIGHT:
     case Action::ROTATE_UP:
