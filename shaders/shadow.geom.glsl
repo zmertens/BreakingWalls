@@ -16,12 +16,14 @@ uniform vec2 uInvResolution;       // 1.0 / screen resolution
 
 out vec2 vShadowCoord;
 
+const float EPSILON = 1e-3;
+
 vec3 projectToGround(vec3 worldPos, vec3 lightDir, float groundY)
 {
     float dirY = lightDir.y;
-    if (abs(dirY) < 1e-3)
+    if (abs(dirY) < EPSILON)
     {
-        dirY = (dirY >= 0.0) ? 1e-3 : -1e-3;
+        dirY = (dirY >= 0.0) ? EPSILON : -EPSILON;
     }
 
     float t = (groundY - worldPos.y) / dirY;
