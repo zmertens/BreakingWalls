@@ -130,6 +130,18 @@ private:
     /// Draw floating score labels above collision points
     void drawRunnerScorePopups() const noexcept;
 
+    /// Create tiny texture/resources used by runner break plane billboard rendering
+    void initializeRunnerBreakPlaneResources() noexcept;
+
+    /// Update break-plane lifecycle and check pass-through shatter events
+    void updateRunnerBreakPlane(float dt) noexcept;
+
+    /// Trigger break-plane shatter effects and scoring
+    void shatterRunnerBreakPlane() noexcept;
+
+    /// Render active break-plane and flying shards in runner lane
+    void renderRunnerBreakPlane() const noexcept;
+
     /// Clean up OpenGL resources
     void cleanupResources() noexcept;
 
@@ -147,6 +159,15 @@ private:
         float age{0.0f};
         float lifetime{1.05f};
         float riseSpeed{3.2f};
+    };
+
+    struct RunnerBreakPlaneShard
+    {
+        glm::vec3 position{};
+        glm::vec3 velocity{};
+        glm::vec2 halfSize{0.35f, 0.35f};
+        float age{0.0f};
+        float lifetime{0.55f};
     };
 
     World mWorld;    // Manages both 2D physics and 3D sphere scene
@@ -254,6 +275,16 @@ private:
     mutable glm::vec3 mLastFxPlayerPosition{0.0f};
     mutable float mPlayerPlanarSpeedForFx{0.0f};
     mutable GLuint mWalkParticleCount{1600};
+    GLuint mRunnerBreakPlaneTexture{0};
+    bool mRunnerBreakPlaneActive{true};
+    float mRunnerBreakPlaneX{0.0f};
+    float mRunnerBreakPlaneRespawnTimer{0.0f};
+    float mRunnerBreakPlaneRespawnDelay{0.60f};
+    float mRunnerBreakPlaneSpacing{170.0f};
+    float mRunnerBreakPlaneHeight{8.5f};
+    int mRunnerBreakPlanePoints{100};
+    float mRunnerBreakPlaneLastPlayerX{0.0f};
+    std::vector<RunnerBreakPlaneShard> mRunnerBreakPlaneShards;
     std::vector<RunnerPointEvent> mRunnerPointEvents;
     std::vector<RunnerScorePopup> mRunnerScorePopups;
     std::mt19937 mRunnerRng{1337u};

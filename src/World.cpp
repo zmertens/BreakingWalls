@@ -376,42 +376,12 @@ void World::update(float dt)
 
 void World::draw() const noexcept
 {
-    // REMOVED: Scene graph drawing - not used
-    // Rendering is now fully handled in GameState via compute shaders
-    // World only manages physics and sphere data
+
 }
 
 void World::handleEvent(const SDL_Event &event)
 {
-    switch (event.type)
-    {
-    case SDL_EVENT_KEY_DOWN:
-        // Testing: Launch balls with number keys 1-4
-        switch (event.key.key)
-        {
-        }
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (event.button.button == SDL_BUTTON_MIDDLE)
-        {
-            mIsPanning = true;
-            mLastMousePosition = {static_cast<float>(event.button.x), static_cast<float>(event.button.y)};
-        }
-        break;
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-        if (event.button.button == SDL_BUTTON_MIDDLE)
-        {
-            mIsPanning = false;
-        }
-        break;
-    case SDL_EVENT_MOUSE_MOTION:
-        if (mIsPanning)
-        {
-            SDL_FPoint currentMousePosition = {static_cast<float>(event.motion.x), static_cast<float>(event.motion.y)};
-            SDL_FPoint delta = {currentMousePosition.x - mLastMousePosition.x, currentMousePosition.y - mLastMousePosition.y};
-            mLastMousePosition = currentMousePosition;
-        }
-        break;
-    }
+    
 }
 
 void World::destroyWorld()

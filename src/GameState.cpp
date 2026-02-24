@@ -30,6 +30,7 @@
 namespace
 {
     constexpr float kRunnerLockedSunYawDeg = 0.0f; // +X heading (toward sunset)
+    constexpr float kTracksideBillboardBorderMargin = 7.5f;
     constexpr std::size_t kMaxPathTracerSpheres = 200;
     constexpr std::size_t kMaxPathTracerTriangles = 192;
     constexpr bool kEnableTrianglePathTraceProxy = true;
@@ -215,6 +216,7 @@ GameState::GameState(StateStack &stack, Context context)
     {
         initializeGraphicsResources();
         initializeWalkParticles();
+        initializeRunnerBreakPlaneResources();
 
         // Initialize billboard rendering for character sprites
         GLSDLHelper::initializeBillboardRendering();
@@ -320,6 +322,25 @@ void GameState::initializeGraphicsResources() noexcept
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, mTriangleSSBO);
     GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(triangleBufferSize), nullptr);
     mTriangleSSBOCapacityBytes = triangleBufferSize;
+}
+
+void GameState::initializeRunnerBreakPlaneResources() noexcept
+{
+    if (mRunnerBreakPlaneTexture != 0)
+    {
+        return;
+    }
+
+    glGenTextures(1, &mRunnerBreakPlaneTexture);
+    glBindTexture(GL_TEXTURE_2D, mRunnerBreakPlaneTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    constexpr std::uint8_t whitePixel[4] = {255u, 255u, 255u, 255u};
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, whitePixel);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void GameState::updateRenderResolution() noexcept
@@ -1261,6 +1282,11 @@ void GameState::cleanupResources() noexcept
         glDeleteBuffers(1, &mWalkParticlesVelSSBO);
         mWalkParticlesVelSSBO = 0;
     }
+    if (mRunnerBreakPlaneTexture != 0)
+    {
+        glDeleteTextures(1, &mRunnerBreakPlaneTexture);
+        mRunnerBreakPlaneTexture = 0;
+    }
     mWalkParticlesInitialized = false;
     mWalkParticlesComputeShader = nullptr;
     mWalkParticlesRenderShader = nullptr;
@@ -1563,6 +1589,7 @@ void GameState::renderPlayerCharacter() const noexcept
         mWorld.renderPlayerCharacter(mPlayer, mCamera);
     }
 
+    renderRunnerBreakPlane();
     renderTracksideBillboards();
     drawRunnerScorePopups();
     renderWalkParticles();
@@ -1589,9 +1616,7 @@ void GameState::renderTracksideBillboards() const noexcept
     constexpr int kBillboardsBehind = 4;
     constexpr float kBillboardSpacing = 28.0f;
     constexpr float kBillboardHeight = 2.9f;
-    constexpr float kBorderMargin = 7.5f;
-
-    const float borderZ = mRunnerStrafeLimit + kBorderMargin;
+    const float borderZ = mRunnerStrafeLimit + kTracksideBillboardBorderMargin;
 
     for (int i = -kBillboardsBehind; i <= kBillboardsAhead; ++i)
     {
@@ -1609,6 +1634,81 @@ void GameState::renderTracksideBillboards() const noexcept
             0.0f,
             frame,
             mCamera);
+    }
+}
+
+void GameState::renderRunnerBreakPlane() const noexcept
+{
+    if (!mArcadeModeEnabled || mCamera.getMode() != CameraMode::THIRD_PERSON || mRunnerBreakPlaneTexture == 0)
+    {
+        return;
+    }
+
+    Shader *billboardShader = nullptr;
+    try
+    {
+        billboardShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
+    }
+    catch (const std::exception &)
+    {
+        billboardShader = nullptr;
+    }
+
+    if (!billboardShader)
+    {
+        return;
+    }
+
+    const int safeHeight = std::max(1, mWindowHeight);
+    const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
+    const glm::mat4 view = mCamera.getLookAt();
+    const glm::mat4 projection = mCamera.getPerspective(aspectRatio);
+    const glm::vec4 uvRect(0.0f, 0.0f, 1.0f, 1.0f);
+
+    if (mRunnerBreakPlaneActive)
+    {
+        const float borderZ = mRunnerStrafeLimit + kTracksideBillboardBorderMargin;
+        const glm::vec3 planeCenter(mRunnerBreakPlaneX, 4.4f, 0.0f);
+        const glm::vec4 tint(0.68f, 0.90f, 1.0f, 0.34f);
+        const glm::vec2 halfSizeXY(borderZ, 0.5f * mRunnerBreakPlaneHeight);
+
+        GLSDLHelper::renderBillboardSpriteUV(
+            *billboardShader,
+            mRunnerBreakPlaneTexture,
+            uvRect,
+            planeCenter,
+            1.0f,
+            view,
+            projection,
+            tint,
+            false,
+            false,
+            false,
+            halfSizeXY);
+    }
+
+    for (const auto &shard : mRunnerBreakPlaneShards)
+    {
+        const float t = std::clamp(shard.age / std::max(0.001f, shard.lifetime), 0.0f, 1.0f);
+        const float alpha = (1.0f - t) * 0.75f;
+        if (alpha <= 0.01f)
+        {
+            continue;
+        }
+
+        GLSDLHelper::renderBillboardSpriteUV(
+            *billboardShader,
+            mRunnerBreakPlaneTexture,
+            uvRect,
+            shard.position,
+            1.0f,
+            view,
+            projection,
+            glm::vec4(0.76f, 0.95f, 1.0f, alpha),
+            false,
+            false,
+            false,
+            shard.halfSize);
     }
 }
 
@@ -1673,8 +1773,91 @@ void GameState::updateRunnerGameplay(float dt) noexcept
     mCamera.setFollowTarget(playerPos);
     mCamera.updateThirdPersonPosition();
 
+    updateRunnerBreakPlane(dt);
     processRunnerCollisions(dt);
     updateRunnerScorePopups(dt);
+}
+
+void GameState::updateRunnerBreakPlane(float dt) noexcept
+{
+    if (!mArcadeModeEnabled)
+    {
+        mRunnerBreakPlaneShards.clear();
+        return;
+    }
+
+    const glm::vec3 playerPos = mPlayer.getPosition();
+
+    if (!mRunnerBreakPlaneActive)
+    {
+        mRunnerBreakPlaneRespawnTimer = std::max(0.0f, mRunnerBreakPlaneRespawnTimer - dt);
+        if (mRunnerBreakPlaneRespawnTimer <= 0.0f)
+        {
+            const float minAhead = playerPos.x + 55.0f;
+            const float bySpacing = mRunnerBreakPlaneX + mRunnerBreakPlaneSpacing;
+            mRunnerBreakPlaneX = std::max(minAhead, bySpacing);
+            mRunnerBreakPlaneActive = true;
+        }
+    }
+
+    if (mRunnerBreakPlaneActive && mRunnerBreakPlaneLastPlayerX < mRunnerBreakPlaneX && playerPos.x >= mRunnerBreakPlaneX)
+    {
+        shatterRunnerBreakPlane();
+    }
+
+    for (auto &shard : mRunnerBreakPlaneShards)
+    {
+        shard.age += dt;
+        shard.velocity.y -= 17.5f * dt;
+        shard.position += shard.velocity * dt;
+    }
+
+    std::erase_if(mRunnerBreakPlaneShards, [](const RunnerBreakPlaneShard &shard)
+                  { return shard.age >= shard.lifetime; });
+
+    mRunnerBreakPlaneLastPlayerX = playerPos.x;
+}
+
+void GameState::shatterRunnerBreakPlane() noexcept
+{
+    mRunnerBreakPlaneActive = false;
+    mRunnerBreakPlaneRespawnTimer = mRunnerBreakPlaneRespawnDelay;
+    mPlayerPoints += mRunnerBreakPlanePoints;
+    mCurrentBatch = 0;
+
+    RunnerScorePopup popup;
+    popup.worldPosition = glm::vec3(mRunnerBreakPlaneX, 5.4f, 0.0f);
+    popup.value = mRunnerBreakPlanePoints;
+    mRunnerScorePopups.push_back(popup);
+
+    mPlayer.triggerCollisionAnimation(true);
+
+    if (mSoundPlayer && !mGameIsPaused)
+    {
+        const glm::vec3 playerPos = mPlayer.getPosition();
+        mSoundPlayer->play(SoundEffect::ID::GENERATE, sf::Vector2f{playerPos.x, playerPos.z});
+    }
+
+    std::uniform_real_distribution<float> randomZ(-mRunnerStrafeLimit * 0.85f, mRunnerStrafeLimit * 0.85f);
+    std::uniform_real_distribution<float> randomY(2.6f, 7.4f);
+    std::uniform_real_distribution<float> randomVX(-4.0f, 4.0f);
+    std::uniform_real_distribution<float> randomVY(3.5f, 12.5f);
+    std::uniform_real_distribution<float> randomVZ(-10.0f, 10.0f);
+    std::uniform_real_distribution<float> randomSize(0.14f, 0.55f);
+    std::uniform_real_distribution<float> randomLifetime(0.35f, 0.75f);
+
+    constexpr int kShardCount = 18;
+    mRunnerBreakPlaneShards.reserve(mRunnerBreakPlaneShards.size() + kShardCount);
+    for (int i = 0; i < kShardCount; ++i)
+    {
+        RunnerBreakPlaneShard shard;
+        shard.position = glm::vec3(mRunnerBreakPlaneX, randomY(mRunnerRng), randomZ(mRunnerRng));
+        shard.velocity = glm::vec3(randomVX(mRunnerRng), randomVY(mRunnerRng), randomVZ(mRunnerRng));
+        const float size = randomSize(mRunnerRng);
+        shard.halfSize = glm::vec2(size, size);
+        shard.lifetime = randomLifetime(mRunnerRng);
+        mRunnerBreakPlaneShards.push_back(shard);
+    }
 }
 
 void GameState::spawnPointEvents() noexcept
@@ -1788,6 +1971,7 @@ void GameState::resetRunnerRun() noexcept
     mRunnerCollisionTimer = 0.0f;
     mRunnerPointEvents.clear();
     mRunnerScorePopups.clear();
+    mRunnerBreakPlaneShards.clear();
     mRunLost = false;
 
     glm::vec3 current = mPlayer.getPosition();
@@ -1799,6 +1983,12 @@ void GameState::resetRunnerRun() noexcept
     mPlayer.setPosition(current);
     mWorld.setRunnerPlayerPosition(current);
     mWorld.consumeRunnerCollisionEvents();
+
+    mRunnerBreakPlaneActive = true;
+    mRunnerBreakPlaneX = current.x + 80.0f;
+    mRunnerBreakPlaneRespawnTimer = 0.0f;
+    mRunnerBreakPlaneLastPlayerX = current.x;
+
     mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
     mCamera.setFollowTarget(current);
     mCamera.updateThirdPersonPosition();
