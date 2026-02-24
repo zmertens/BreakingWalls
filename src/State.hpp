@@ -147,6 +147,7 @@ public:
 
     virtual void log(std::string_view message, const char delimiter = '\n') noexcept override;
     virtual std::string_view view() const noexcept override;
+    virtual std::string_view consumeView() noexcept override;
 
 protected:
     void requestStackPush(States::ID stateID);
@@ -162,5 +163,6 @@ protected:
 private:
     StateStack *mStack;
     Context mContext;
+    mutable std::string mLogViewBuffer;
 };
 #endif // STATE_HPP

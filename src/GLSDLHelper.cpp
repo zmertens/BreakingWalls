@@ -359,7 +359,6 @@ void GLSDLHelper::initializeBillboardRendering() noexcept
     glBindVertexArray(0);
 
     sBillboardInitialized = true;
-    SDL_Log("Billboard rendering initialized successfully");
 }
 
 void GLSDLHelper::cleanupBillboardRendering() noexcept
@@ -382,7 +381,6 @@ void GLSDLHelper::cleanupBillboardRendering() noexcept
     }
 
     sBillboardInitialized = false;
-    SDL_Log("Billboard rendering cleaned up");
 }
 
 void GLSDLHelper::renderBillboardSprite(

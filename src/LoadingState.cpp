@@ -203,9 +203,6 @@ public:
 
         mResourcePathPrefix = mazes::io_utils::getDirectoryPath(absolutePath) + "/";
 
-        SDL_Log("ResourceLoader: Resource path: %s,\nabsolute: %s,\nprefix: %s\n",
-                resourcePath.data(), absolutePath.c_str(), mResourcePathPrefix.c_str());
-
         std::unordered_map<std::string, std::string> resources{};
 
         try
