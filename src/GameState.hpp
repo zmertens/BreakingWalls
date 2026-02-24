@@ -133,6 +133,9 @@ private:
     /// Create tiny texture/resources used by runner break plane billboard rendering
     void initializeRunnerBreakPlaneResources() noexcept;
 
+    /// Update offscreen plane texture using particle compute + point render pass
+    void renderRunnerBreakPlaneTexture() const noexcept;
+
     /// Update break-plane lifecycle and check pass-through shatter events
     void updateRunnerBreakPlane(float dt) noexcept;
 
@@ -275,7 +278,15 @@ private:
     mutable glm::vec3 mLastFxPlayerPosition{0.0f};
     mutable float mPlayerPlanarSpeedForFx{0.0f};
     mutable GLuint mWalkParticleCount{1600};
-    GLuint mRunnerBreakPlaneTexture{0};
+    mutable GLuint mRunnerBreakPlaneTexture{0};
+    mutable GLuint mRunnerBreakPlaneFBO{0};
+    mutable GLuint mRunnerBreakPlaneVAO{0};
+    mutable GLuint mRunnerBreakPlanePosSSBO{0};
+    mutable GLuint mRunnerBreakPlaneVelSSBO{0};
+    mutable GLuint mRunnerBreakPlaneParticleCount{4096};
+    mutable float mRunnerBreakPlaneFxTime{0.0f};
+    int mRunnerBreakPlaneTextureWidth{512};
+    int mRunnerBreakPlaneTextureHeight{512};
     bool mRunnerBreakPlaneActive{true};
     float mRunnerBreakPlaneX{0.0f};
     float mRunnerBreakPlaneRespawnTimer{0.0f};

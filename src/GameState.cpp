@@ -38,7 +38,7 @@ namespace
     constexpr float kPlayerShadowCenterYOffset = 1.35f;
     constexpr float kCharacterRasterScale = 1.42f;
     constexpr float kCharacterPathTraceProxyScale = 1.42f;
-    constexpr float kCharacterModelYOffset = 1.0f;
+    constexpr float kCharacterModelYOffset = 0.25f;
 
     glm::vec3 computeSunDirection(float /*timeSeconds*/) noexcept
     {
@@ -241,6 +241,9 @@ void GameState::draw() const noexcept
         // Use compute shader rendering pipeline (path tracing)
         renderWithComputeShaders();
 
+        // Animate break-plane texture in an offscreen pass.
+        renderRunnerBreakPlaneTexture();
+
         // Keep rasterized character overlay for readability even when triangle proxy is enabled.
         renderPlayerCharacter();
 
@@ -326,21 +329,185 @@ void GameState::initializeGraphicsResources() noexcept
 
 void GameState::initializeRunnerBreakPlaneResources() noexcept
 {
-    if (mRunnerBreakPlaneTexture != 0)
+    if (mRunnerBreakPlaneTexture != 0 && mRunnerBreakPlaneFBO != 0)
     {
         return;
     }
 
-    glGenTextures(1, &mRunnerBreakPlaneTexture);
+    if (mRunnerBreakPlaneTexture == 0)
+    {
+        glGenTextures(1, &mRunnerBreakPlaneTexture);
+    }
+
     glBindTexture(GL_TEXTURE_2D, mRunnerBreakPlaneTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 GL_RGBA16F,
+                 mRunnerBreakPlaneTextureWidth,
+                 mRunnerBreakPlaneTextureHeight,
+                 0,
+                 GL_RGBA,
+                 GL_FLOAT,
+                 nullptr);
 
-    constexpr std::uint8_t whitePixel[4] = {255u, 255u, 255u, 255u};
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, whitePixel);
+    if (mRunnerBreakPlaneFBO == 0)
+    {
+        glGenFramebuffers(1, &mRunnerBreakPlaneFBO);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, mRunnerBreakPlaneFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mRunnerBreakPlaneTexture, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "GameState: Break-plane texture framebuffer incomplete");
+    }
+
+    if (mRunnerBreakPlanePosSSBO == 0 || mRunnerBreakPlaneVelSSBO == 0 || mRunnerBreakPlaneVAO == 0)
+    {
+        constexpr int gridX = 32;
+        constexpr int gridY = 16;
+        constexpr int gridZ = 8;
+        mRunnerBreakPlaneParticleCount = static_cast<GLuint>(gridX * gridY * gridZ);
+
+        std::vector<GLfloat> initPos;
+        initPos.reserve(static_cast<std::size_t>(mRunnerBreakPlaneParticleCount) * 4u);
+        std::vector<GLfloat> initVel(static_cast<std::size_t>(mRunnerBreakPlaneParticleCount) * 4u, 0.0f);
+
+        const GLfloat dx = 4.0f / static_cast<GLfloat>(gridX - 1);
+        const GLfloat dy = 4.0f / static_cast<GLfloat>(gridY - 1);
+        const GLfloat dz = 3.0f / static_cast<GLfloat>(gridZ - 1);
+
+        for (int i = 0; i < gridX; ++i)
+        {
+            for (int j = 0; j < gridY; ++j)
+            {
+                for (int k = 0; k < gridZ; ++k)
+                {
+                    initPos.push_back(-2.0f + dx * static_cast<GLfloat>(i));
+                    initPos.push_back(-2.0f + dy * static_cast<GLfloat>(j));
+                    initPos.push_back(-1.5f + dz * static_cast<GLfloat>(k));
+                    initPos.push_back(1.0f);
+                }
+            }
+        }
+
+        const GLsizeiptr bufferSize = static_cast<GLsizeiptr>(static_cast<std::size_t>(mRunnerBreakPlaneParticleCount) * 4u * sizeof(GLfloat));
+
+        if (mRunnerBreakPlanePosSSBO == 0)
+        {
+            glGenBuffers(1, &mRunnerBreakPlanePosSSBO);
+        }
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRunnerBreakPlanePosSSBO);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, initPos.data(), GL_DYNAMIC_DRAW);
+
+        if (mRunnerBreakPlaneVelSSBO == 0)
+        {
+            glGenBuffers(1, &mRunnerBreakPlaneVelSSBO);
+        }
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRunnerBreakPlaneVelSSBO);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, initVel.data(), GL_DYNAMIC_DRAW);
+
+        if (mRunnerBreakPlaneVAO == 0)
+        {
+            glGenVertexArrays(1, &mRunnerBreakPlaneVAO);
+        }
+        glBindVertexArray(mRunnerBreakPlaneVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, mRunnerBreakPlanePosSSBO);
+        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
+        glEnableVertexAttribArray(0);
+        glBindVertexArray(0);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK);
+    glReadBuffer(GL_BACK);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void GameState::renderRunnerBreakPlaneTexture() const noexcept
+{
+    if (mRunnerBreakPlaneTexture == 0 || mRunnerBreakPlaneFBO == 0 || mRunnerBreakPlaneVAO == 0)
+    {
+        return;
+    }
+
+    if (!mWalkParticlesComputeShader || !mWalkParticlesRenderShader || mRunnerBreakPlaneParticleCount == 0)
+    {
+        return;
+    }
+
+    const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
+    const float dt = (mRunnerBreakPlaneFxTime <= 0.0f) ? 0.0f : std::min(0.03f, now - mRunnerBreakPlaneFxTime);
+    mRunnerBreakPlaneFxTime = now;
+
+    const float phase = now * 0.85f;
+    const glm::vec3 attractor1(1.7f * std::cos(phase), 1.2f * std::sin(phase * 1.9f), 0.0f);
+    const glm::vec3 attractor2(-1.7f * std::cos(phase * 1.12f), -1.1f * std::sin(phase * 1.4f), 0.0f);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mRunnerBreakPlanePosSSBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mRunnerBreakPlaneVelSSBO);
+
+    mWalkParticlesComputeShader->bind();
+    mWalkParticlesComputeShader->setUniform("BlackHolePos1", attractor1);
+    mWalkParticlesComputeShader->setUniform("BlackHolePos2", attractor2);
+    mWalkParticlesComputeShader->setUniform("Gravity1", 185.0f);
+    mWalkParticlesComputeShader->setUniform("Gravity2", 195.0f);
+    mWalkParticlesComputeShader->setUniform("ParticleInvMass", 1.0f / 0.12f);
+    mWalkParticlesComputeShader->setUniform("DeltaT", std::max(0.0001f, dt * 0.45f));
+    mWalkParticlesComputeShader->setUniform("MaxDist", 5.1f);
+    mWalkParticlesComputeShader->setUniform("ParticleCount", mRunnerBreakPlaneParticleCount);
+
+    const GLuint groupsX = (mRunnerBreakPlaneParticleCount + 999u) / 1000u;
+    glDispatchCompute(groupsX, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, mRunnerBreakPlaneFBO);
+    glViewport(0, 0, mRunnerBreakPlaneTextureWidth, mRunnerBreakPlaneTextureHeight);
+    glClearColor(0.18f, 0.28f, 0.40f, 0.58f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glDisable(GL_DEPTH_TEST);
+
+    GLboolean blendEnabled = GL_FALSE;
+    glGetBooleanv(GL_BLEND, &blendEnabled);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    const float safeHeight = static_cast<float>(std::max(1, mRunnerBreakPlaneTextureHeight));
+    const float aspect = static_cast<float>(mRunnerBreakPlaneTextureWidth) / safeHeight;
+    const glm::mat4 projection = glm::perspective(glm::radians(48.0f), aspect, 0.1f, 60.0f);
+    const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 11.0f),
+                                       glm::vec3(0.0f, 0.0f, 0.0f),
+                                       glm::vec3(0.0f, 1.0f, 0.0f));
+    const glm::mat4 mvp = projection * view;
+
+    mWalkParticlesRenderShader->bind();
+    mWalkParticlesRenderShader->setUniform("MVP", mvp);
+    mWalkParticlesRenderShader->setUniform("Color", glm::vec4(0.86f, 0.94f, 1.0f, 0.55f));
+
+    glPointSize(2.6f);
+    glBindVertexArray(mRunnerBreakPlaneVAO);
+    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(mRunnerBreakPlaneParticleCount));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK);
+    glReadBuffer(GL_BACK);
+    glViewport(0, 0, mWindowWidth, mWindowHeight);
+
+    if (!blendEnabled)
+    {
+        glDisable(GL_BLEND);
+    }
 }
 
 void GameState::updateRenderResolution() noexcept
@@ -1282,6 +1449,26 @@ void GameState::cleanupResources() noexcept
         glDeleteBuffers(1, &mWalkParticlesVelSSBO);
         mWalkParticlesVelSSBO = 0;
     }
+    if (mRunnerBreakPlaneVAO != 0)
+    {
+        glDeleteVertexArrays(1, &mRunnerBreakPlaneVAO);
+        mRunnerBreakPlaneVAO = 0;
+    }
+    if (mRunnerBreakPlanePosSSBO != 0)
+    {
+        glDeleteBuffers(1, &mRunnerBreakPlanePosSSBO);
+        mRunnerBreakPlanePosSSBO = 0;
+    }
+    if (mRunnerBreakPlaneVelSSBO != 0)
+    {
+        glDeleteBuffers(1, &mRunnerBreakPlaneVelSSBO);
+        mRunnerBreakPlaneVelSSBO = 0;
+    }
+    if (mRunnerBreakPlaneFBO != 0)
+    {
+        glDeleteFramebuffers(1, &mRunnerBreakPlaneFBO);
+        mRunnerBreakPlaneFBO = 0;
+    }
     if (mRunnerBreakPlaneTexture != 0)
     {
         glDeleteTextures(1, &mRunnerBreakPlaneTexture);
@@ -1669,7 +1856,7 @@ void GameState::renderRunnerBreakPlane() const noexcept
     {
         const float borderZ = mRunnerStrafeLimit + kTracksideBillboardBorderMargin;
         const glm::vec3 planeCenter(mRunnerBreakPlaneX, 4.4f, 0.0f);
-        const glm::vec4 tint(0.68f, 0.90f, 1.0f, 0.34f);
+        const glm::vec4 tint(0.78f, 0.95f, 1.0f, 0.85f);
         const glm::vec2 halfSizeXY(borderZ, 0.5f * mRunnerBreakPlaneHeight);
 
         GLSDLHelper::renderBillboardSpriteUV(
@@ -1824,6 +2011,39 @@ void GameState::shatterRunnerBreakPlane() noexcept
     mRunnerBreakPlaneRespawnTimer = mRunnerBreakPlaneRespawnDelay;
     mPlayerPoints += mRunnerBreakPlanePoints;
     mCurrentBatch = 0;
+
+    if (auto *models = getContext().getModelsManager(); models)
+    {
+        try
+        {
+            GLTFModel &characterModel = models->get(Models::ID::STYLIZED_CHARACTER);
+            const std::size_t animationCount = characterModel.getAnimationCount();
+            if (animationCount >= 2)
+            {
+                const std::vector<std::string> names = characterModel.getAnimationNames();
+                const std::string activeName = characterModel.getActiveAnimationName();
+
+                int currentIndex = 0;
+                if (!activeName.empty() && !names.empty())
+                {
+                    auto found = std::find(names.begin(), names.end(), activeName);
+                    if (found != names.end())
+                    {
+                        currentIndex = static_cast<int>(std::distance(names.begin(), found));
+                    }
+                }
+
+                const int toggledIndex = (currentIndex == 0) ? 1 : 0;
+                if (characterModel.setPreferredAnimationIndex(toggledIndex))
+                {
+                    mModelAnimTimeSeconds = 0.0f;
+                }
+            }
+        }
+        catch (const std::exception &)
+        {
+        }
+    }
 
     RunnerScorePopup popup;
     popup.worldPosition = glm::vec3(mRunnerBreakPlaneX, 5.4f, 0.0f);

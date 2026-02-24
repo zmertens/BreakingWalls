@@ -808,6 +808,32 @@ std::string GLTFModel::getActiveAnimationName() const
     return {};
 }
 
+std::size_t GLTFModel::getAnimationCount() const noexcept
+{
+    if (!mScene)
+    {
+        return 0;
+    }
+
+    return static_cast<std::size_t>(mScene->mNumAnimations);
+}
+
+bool GLTFModel::setPreferredAnimationIndex(int animationIndex) noexcept
+{
+    if (!mScene || mScene->mNumAnimations == 0)
+    {
+        return false;
+    }
+
+    if (animationIndex < 0 || animationIndex >= static_cast<int>(mScene->mNumAnimations))
+    {
+        return false;
+    }
+
+    mPreferredAnimationIndex = animationIndex;
+    return true;
+}
+
 std::vector<std::string> GLTFModel::getMeshes() const
 {
     std::vector<std::string> meshNames;
