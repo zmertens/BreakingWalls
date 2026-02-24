@@ -83,6 +83,7 @@ MultiplayerGameState::MultiplayerGameState(StateStack &stack, Context context)
 {
     log("MultiplayerGameState: Constructed");
     initializeNetwork();
+    initializeOfflineBots();
     log("MultiplayerGameState: Initialized");
 }
 
@@ -92,8 +93,7 @@ void MultiplayerGameState::draw() const noexcept
     {
         mLocalGame->draw();
 
-        // Render remote players if lobby is ready
-        if (mLobbyReady && !mRemotePlayers.empty())
+        if ((mLobbyReady && !mRemotePlayers.empty()) || (mOfflineAIMode && !mOfflineBots.empty()))
         {
             // Prepare for 3D rendering (clear depth after path tracer)
             glClear(GL_DEPTH_BUFFER_BIT);
@@ -101,20 +101,32 @@ void MultiplayerGameState::draw() const noexcept
             glDepthMask(GL_TRUE);
             glEnable(GL_DEPTH_TEST);
 
-            // Get World and Camera from local game
-            auto &world = mLocalGame->getWorld();
-            const auto &camera = mLocalGame->getCamera();
-
-            // Render each remote player
-            for (const auto &[playerName, remoteState] : mRemotePlayers)
+            if (mLobbyReady)
             {
-                if (remoteState.initialized)
+                renderPlayers(mRemotePlayers);
+            }
+
+            if (mOfflineAIMode)
+            {
+                for (const auto &[name, sim] : mOfflineBots)
                 {
-                    AnimationRect frame = remoteState.animator.getCurrentFrame();
+                    if (!sim.active)
+                    {
+                        continue;
+                    }
+
+                    const auto &state = sim.renderState;
+                    if (!state.initialized)
+                    {
+                        continue;
+                    }
+
+                    auto &world = mLocalGame->getWorld();
+                    const auto &camera = mLocalGame->getCamera();
                     world.renderCharacterFromState(
-                        remoteState.position,
-                        remoteState.facing,
-                        frame,
+                        state.position,
+                        state.facing,
+                        state.animator.getCurrentFrame(),
                         camera);
                 }
             }
@@ -122,7 +134,7 @@ void MultiplayerGameState::draw() const noexcept
     }
 
     // Draw lobby status overlay if not ready
-    if (!mLobbyReady)
+    if (!mLobbyReady && !mOfflineAIMode)
     {
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(350, 100), ImGuiCond_Always);
@@ -149,6 +161,8 @@ void MultiplayerGameState::draw() const noexcept
 
 bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
 {
+    mOfflineElapsedSeconds += std::max(0.0f, dt);
+
     mDebugAccumulator += dt;
     if (mDebugAccumulator >= 5.0f)
     {
@@ -173,11 +187,8 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
 
     if (mLocalGame)
     {
-        // Only update the game if lobby is ready (enough players connected)
-        if (mLobbyReady)
-        {
-            mLocalGame->update(dt, subSteps);
-        }
+        // Keep local gameplay active for offline AI mode and online mode.
+        mLocalGame->update(dt, subSteps);
     }
 
     if (mNetworkReady)
@@ -218,6 +229,8 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
         }
     }
 
+    updateOfflineBots(dt);
+
     pollNetwork();
 
     // Update remote player animations
@@ -236,6 +249,106 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
     }
 
     return true;
+}
+
+void MultiplayerGameState::initializeOfflineBots()
+{
+    mOfflineBots.clear();
+
+    const Player *player = getContext().getPlayer();
+    const glm::vec3 anchor = player ? player->getPosition() : glm::vec3(0.0f, 1.0f, 0.0f);
+
+    for (int i = 0; i < mOfflineBotCount; ++i)
+    {
+        const std::string name = "bot_" + std::to_string(i + 1);
+
+        SimulatedPlayerState bot;
+        bot.controller = std::make_unique<LaneAIController>(1337u + static_cast<std::uint32_t>(17 * i));
+        bot.renderState.position = anchor + glm::vec3(16.0f + static_cast<float>(i) * 13.0f,
+                                                      1.0f,
+                                                      ((i % 2 == 0) ? -1.0f : 1.0f) * 5.0f);
+        bot.renderState.facing = 0.0f;
+        bot.renderState.moving = true;
+        bot.renderState.animState = static_cast<std::uint8_t>(CharacterAnimState::WALK_FORWARD);
+        bot.renderState.animator.initialize(0);
+        bot.renderState.animator.setPosition(bot.renderState.position);
+        bot.renderState.animator.setRotation(bot.renderState.facing);
+        bot.renderState.animator.setState(CharacterAnimState::WALK_FORWARD, true);
+        bot.renderState.initialized = true;
+
+        mOfflineBots.emplace(name, std::move(bot));
+    }
+}
+
+void MultiplayerGameState::updateOfflineBots(float dt) noexcept
+{
+    if (!mOfflineAIMode || mLobbyReady || dt <= 0.0f)
+    {
+        return;
+    }
+
+    const Player *player = getContext().getPlayer();
+    const glm::vec3 localPos = player ? player->getPosition() : glm::vec3(0.0f, 1.0f, 0.0f);
+
+    MatchWorldSnapshot worldSnapshot;
+    worldSnapshot.localPlayerPosition = localPos;
+    worldSnapshot.runnerSpeed = mOfflineRunnerSpeed;
+    worldSnapshot.strafeLimit = mOfflineStrafeLimit;
+    worldSnapshot.elapsedSeconds = mOfflineElapsedSeconds;
+
+    for (auto &[name, sim] : mOfflineBots)
+    {
+        if (!sim.active || !sim.controller)
+        {
+            continue;
+        }
+
+        auto &state = sim.renderState;
+        PlayerCommand command = sim.controller->sample(worldSnapshot, state.position, dt);
+
+        state.position.x += worldSnapshot.runnerSpeed * std::clamp(command.forwardScale, 0.65f, 1.25f) * dt;
+
+        const float clampedTargetZ = std::clamp(command.targetZ, -worldSnapshot.strafeLimit, worldSnapshot.strafeLimit);
+        const float maxStrafeStep = worldSnapshot.runnerSpeed * 0.85f * dt;
+        const float dz = std::clamp(clampedTargetZ - state.position.z, -maxStrafeStep, maxStrafeStep);
+        state.position.z = std::clamp(state.position.z + dz, -worldSnapshot.strafeLimit, worldSnapshot.strafeLimit);
+
+        state.position.y = 1.0f;
+        state.facing = 0.0f;
+        state.moving = true;
+        state.animState = static_cast<std::uint8_t>(CharacterAnimState::WALK_FORWARD);
+
+        state.animator.setState(CharacterAnimState::WALK_FORWARD);
+        state.animator.setPosition(state.position);
+        state.animator.setRotation(state.facing);
+        state.animator.update();
+    }
+}
+
+void MultiplayerGameState::renderPlayers(const std::unordered_map<std::string, RemotePlayerState> &players) const noexcept
+{
+    if (!mLocalGame)
+    {
+        return;
+    }
+
+    auto &world = mLocalGame->getWorld();
+    const auto &camera = mLocalGame->getCamera();
+
+    for (const auto &[playerName, remoteState] : players)
+    {
+        if (!remoteState.initialized)
+        {
+            continue;
+        }
+
+        AnimationRect frame = remoteState.animator.getCurrentFrame();
+        world.renderCharacterFromState(
+            remoteState.position,
+            remoteState.facing,
+            frame,
+            camera);
+    }
 }
 
 bool MultiplayerGameState::handleEvent(const SDL_Event &event) noexcept
@@ -724,6 +837,7 @@ void MultiplayerGameState::checkLobbyReady()
 
     bool wasReady = mLobbyReady;
     mLobbyReady = (mConnectedPlayerCount >= mMinimumPlayers);
+    mOfflineAIMode = !mLobbyReady;
 
     if (!wasReady && mLobbyReady)
     {

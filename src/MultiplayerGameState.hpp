@@ -3,6 +3,7 @@
 
 #include "State.hpp"
 #include "Animation.hpp"
+#include "MatchController.hpp"
 
 #include <SFML/Network.hpp>
 
@@ -46,7 +47,17 @@ private:
         bool initialized{false};
     };
 
+    struct SimulatedPlayerState
+    {
+        RemotePlayerState renderState;
+        std::unique_ptr<IPlayerController> controller;
+        bool active{true};
+    };
+
     void initializeNetwork();
+    void initializeOfflineBots();
+    void updateOfflineBots(float dt) noexcept;
+    void renderPlayers(const std::unordered_map<std::string, RemotePlayerState> &players) const noexcept;
     bool startListener();
     void startRegistration();
     void pollRegistration();
@@ -86,6 +97,7 @@ private:
     sf::SocketSelector mSelector;
     std::vector<std::unique_ptr<sf::TcpSocket>> mPeerSockets;
     std::unordered_map<std::string, RemotePlayerState> mRemotePlayers;
+    std::unordered_map<std::string, SimulatedPlayerState> mOfflineBots;
     std::unordered_set<std::string> mKnownPeers;
 
     // Lobby state
@@ -94,6 +106,13 @@ private:
     int mMinimumPlayers{2}; // 2 for debugging, can be changed to 4
     int mMaximumPlayers{4};
     float mLobbyStatusAccumulator{0.0f};
+
+    // Local AI fallback mode (single-player + bots) before online lobby fills.
+    bool mOfflineAIMode{true};
+    float mOfflineRunnerSpeed{30.0f};
+    float mOfflineStrafeLimit{30.0f};
+    float mOfflineElapsedSeconds{0.0f};
+    int mOfflineBotCount{2};
 };
 
 #endif // MULTIPLAYER_GAME_STATE_HPP
