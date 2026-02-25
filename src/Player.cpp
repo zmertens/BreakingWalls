@@ -111,6 +111,42 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
         }
     }
 
+    // Mouse drag strafing (left button held)
+    float mouseX = 0.f;
+    float mouseY = 0.f;
+    SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&mouseX, &mouseY);
+    if (!mHasMouseState)
+    {
+        mLastMouseX = mouseX;
+        mHasMouseState = true;
+    }
+
+    const float mouseDeltaX = mouseX - mLastMouseX;
+    mLastMouseX = mouseX;
+
+    if (mouseButtons & SDL_BUTTON_LMASK)
+    {
+        static constexpr float kMouseStrafeThreshold = 2.0f;
+        if (mouseDeltaX <= -kMouseStrafeThreshold)
+        {
+            if (auto actionIt = mCameraActions.find(Action::MOVE_LEFT); actionIt != mCameraActions.cend())
+            {
+                actionIt->second(camera, dt);
+            }
+            mMovingLeft = true;
+            mIsMoving = true;
+        }
+        else if (mouseDeltaX >= kMouseStrafeThreshold)
+        {
+            if (auto actionIt = mCameraActions.find(Action::MOVE_RIGHT); actionIt != mCameraActions.cend())
+            {
+                actionIt->second(camera, dt);
+            }
+            mMovingRight = true;
+            mIsMoving = true;
+        }
+    }
+
     // Apply gravity and vertical motion
     mVerticalVelocity -= kPlayerGravity * dt;
     mPosition.y += mVerticalVelocity * dt;

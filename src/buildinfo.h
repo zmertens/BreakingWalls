@@ -11,9 +11,9 @@ namespace bw
     /// @brief Build information for the application
     struct buildinfo
     {
-        static constexpr std::string_view CommitSHA = "'b6110cc'";
+        static constexpr std::string_view CommitSHA = "'46bab02'";
 
-        static constexpr std::string_view Timestamp = "2026-02-22T05:58:30";
+        static constexpr std::string_view Timestamp = "2026-02-25T06:42:37";
         
         static constexpr std::string_view Version = "0.5.3";
     };
