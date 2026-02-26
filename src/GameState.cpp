@@ -2216,8 +2216,8 @@ void GameState::shatterRunnerBreakPlane() noexcept
 
     if (mSoundPlayer && !mGameIsPaused)
     {
-        const glm::vec3 playerPos = mPlayer.getPosition();
-        mSoundPlayer->play(SoundEffect::ID::GENERATE, sf::Vector2f{playerPos.x, playerPos.z});
+        //const glm::vec3 playerPos = mPlayer.getPosition();
+        //mSoundPlayer->play(SoundEffect::ID::GENERATE, sf::Vector2f{playerPos.x, playerPos.z});
     }
 
     std::uniform_real_distribution<float> randomZ(-mRunnerStrafeLimit * 0.85f, mRunnerStrafeLimit * 0.85f);
