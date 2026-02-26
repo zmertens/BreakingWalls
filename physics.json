@@ -15,6 +15,7 @@
 	"shader_billboard_geom_glsl": "shaders/billboard.geom.glsl",
 	"shader_composite_vert_glsl": "shaders/composite.vert.glsl",
 	"shader_composite_frag_glsl": "shaders/composite.frag.glsl",
+	"shader_oit_resolve_frag_glsl": "shaders/oit_resolve.frag.glsl",
 	"shader_model_vert_glsl": "shaders/model.vert.glsl",
 	"shader_model_frag_glsl": "shaders/model.frag.glsl",
 	"shader_pathtracer_cs_glsl": "shaders/pathtracer.cs.glsl",

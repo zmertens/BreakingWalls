@@ -85,6 +85,9 @@ private:
     /// Composite billboard and path traced scene
     void renderCompositeScene() const noexcept;
 
+    /// Resolve weighted-blended OIT buffers and blend into billboard texture
+    void resolveOITToBillboardTarget() const noexcept;
+
     /// Render player character (third-person mode only)
     void renderPlayerCharacter() const noexcept;
 
@@ -188,6 +191,7 @@ private:
     Shader *mDisplayShader{nullptr};
     Shader *mComputeShader{nullptr};
     Shader *mCompositeShader{nullptr};
+    Shader *mOITResolveShader{nullptr};
     Shader *mSkinnedModelShader{nullptr};
     Shader *mWalkParticlesComputeShader{nullptr};
     Shader *mWalkParticlesRenderShader{nullptr};
@@ -204,6 +208,10 @@ private:
     GLuint mBillboardFBO{0};
     GLuint mBillboardColorTex{0};
     GLuint mBillboardDepthRbo{0};
+    GLuint mOITFBO{0};
+    GLuint mOITAccumTex{0};
+    GLuint mOITRevealTex{0};
+    GLuint mOITDepthRbo{0};
     GLuint mWalkParticlesVAO{0};
     GLuint mWalkParticlesPosSSBO{0};
     GLuint mWalkParticlesVelSSBO{0};
@@ -220,6 +228,7 @@ private:
     GLuint mReflectionColorTex{0};     // Reflection color texture
     GLuint mReflectionDepthRbo{0};     // Reflection depth buffer
     bool mReflectionsInitialized{false};
+    bool mOITInitialized{false};
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};

@@ -97,7 +97,7 @@ namespace
 }
 
 GameState::GameState(StateStack &stack, Context context)
-    : State{stack, context}, mWorld{*context.getRenderWindow(), *context.getFontManager(), *context.getTextureManager(), *context.getShaderManager()}, mPlayer{*context.getPlayer()}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mCompositeShader{nullptr}, mSkinnedModelShader{nullptr}, mGameIsPaused{false}
+    : State{stack, context}, mWorld{*context.getRenderWindow(), *context.getFontManager(), *context.getTextureManager(), *context.getShaderManager()}, mPlayer{*context.getPlayer()}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mCompositeShader{nullptr}, mOITResolveShader{nullptr}, mSkinnedModelShader{nullptr}, mGameIsPaused{false}
       // Initialize camera at maze spawn position (will be updated after first chunk loads)
       ,
       mCamera{}
@@ -115,6 +115,7 @@ GameState::GameState(StateStack &stack, Context context)
         mDisplayShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD);
         mComputeShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_COMPUTE);
         mCompositeShader = &shaders.get(Shaders::ID::GLSL_COMPOSITE_SCENE);
+        mOITResolveShader = &shaders.get(Shaders::ID::GLSL_OIT_RESOLVE);
         mSkinnedModelShader = &shaders.get(Shaders::ID::GLSL_MODEL_WITH_SKINNING);
         mShadowShader = &shaders.get(Shaders::ID::GLSL_SHADOW_VOLUME);
         mWalkParticlesComputeShader = &shaders.get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
@@ -597,6 +598,56 @@ void GameState::createCompositeTargets() noexcept
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Billboard framebuffer incomplete");
+    }
+
+    if (mOITAccumTex == 0)
+    {
+        glGenTextures(1, &mOITAccumTex);
+    }
+    glBindTexture(GL_TEXTURE_2D, mOITAccumTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
+
+    if (mOITRevealTex == 0)
+    {
+        glGenTextures(1, &mOITRevealTex);
+    }
+    glBindTexture(GL_TEXTURE_2D, mOITRevealTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, mWindowWidth, mWindowHeight, 0, GL_RED, GL_FLOAT, nullptr);
+
+    if (mOITDepthRbo == 0)
+    {
+        glGenRenderbuffers(1, &mOITDepthRbo);
+    }
+    glBindRenderbuffer(GL_RENDERBUFFER, mOITDepthRbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, mWindowWidth, mWindowHeight);
+
+    if (mOITFBO == 0)
+    {
+        glGenFramebuffers(1, &mOITFBO);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, mOITFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mOITAccumTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, mOITRevealTex, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mOITDepthRbo);
+    constexpr GLenum oitDrawBuffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    glDrawBuffers(2, oitDrawBuffers);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: OIT framebuffer incomplete");
+        mOITInitialized = false;
+    }
+    else
+    {
+        mOITInitialized = true;
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1377,6 +1428,55 @@ void GameState::renderCompositeScene() const noexcept
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
+void GameState::resolveOITToBillboardTarget() const noexcept
+{
+    if (!mOITResolveShader || mBillboardFBO == 0 || mOITAccumTex == 0 || mOITRevealTex == 0)
+    {
+        return;
+    }
+
+    GLboolean depthTestEnabled = GL_FALSE;
+    GLboolean blendEnabled = GL_FALSE;
+    glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
+    glGetBooleanv(GL_BLEND, &blendEnabled);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glViewport(0, 0, mWindowWidth, mWindowHeight);
+
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    mOITResolveShader->bind();
+    mOITResolveShader->setUniform("uOITAccumTex", 0);
+    mOITResolveShader->setUniform("uOITRevealTex", 1);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, mOITAccumTex);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, mOITRevealTex);
+
+    glBindVertexArray(mVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    if (!blendEnabled)
+    {
+        glDisable(GL_BLEND);
+    }
+
+    if (depthTestEnabled)
+    {
+        glEnable(GL_DEPTH_TEST);
+    }
+    else
+    {
+        glDisable(GL_DEPTH_TEST);
+    }
+    glDepthMask(GL_TRUE);
+}
+
 void GameState::cleanupResources() noexcept
 {
     GLSDLHelper::deleteVAO(mVAO);
@@ -1400,6 +1500,28 @@ void GameState::cleanupResources() noexcept
         glDeleteRenderbuffers(1, &mBillboardDepthRbo);
         mBillboardDepthRbo = 0;
     }
+
+    if (mOITFBO != 0)
+    {
+        glDeleteFramebuffers(1, &mOITFBO);
+        mOITFBO = 0;
+    }
+    if (mOITAccumTex != 0)
+    {
+        glDeleteTextures(1, &mOITAccumTex);
+        mOITAccumTex = 0;
+    }
+    if (mOITRevealTex != 0)
+    {
+        glDeleteTextures(1, &mOITRevealTex);
+        mOITRevealTex = 0;
+    }
+    if (mOITDepthRbo != 0)
+    {
+        glDeleteRenderbuffers(1, &mOITDepthRbo);
+        mOITDepthRbo = 0;
+    }
+    mOITInitialized = false;
 
     // Clean up shadow resources
     if (mShadowFBO != 0)
@@ -1487,6 +1609,7 @@ void GameState::cleanupResources() noexcept
     mDisplayShader = nullptr;
     mComputeShader = nullptr;
     mCompositeShader = nullptr;
+    mOITResolveShader = nullptr;
     mShadowShader = nullptr;
 
     log("GameState: OpenGL resources cleaned up");
@@ -1714,6 +1837,7 @@ void GameState::renderPlayerCharacter() const noexcept
 
     // Also ensure we have proper 3D projection set up
     glEnable(GL_DEPTH_TEST);
+    GLSDLHelper::setBillboardOITPass(false);
 
     bool renderedModel = false;
     if (mSkinnedModelShader)
@@ -1776,10 +1900,48 @@ void GameState::renderPlayerCharacter() const noexcept
         mWorld.renderPlayerCharacter(mPlayer, mCamera);
     }
 
-    renderRunnerBreakPlane();
-    renderTracksideBillboards();
-    drawRunnerScorePopups();
     renderWalkParticles();
+
+    if (mOITInitialized && mOITFBO != 0 && mOITResolveShader)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, mOITFBO);
+        constexpr GLenum oitDrawBuffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+        glDrawBuffers(2, oitDrawBuffers);
+        glViewport(0, 0, mWindowWidth, mWindowHeight);
+
+        const float zeroColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        const float oneReveal[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+        glClearBufferfv(GL_COLOR, 0, zeroColor);
+        glClearBufferfv(GL_COLOR, 1, oneReveal);
+        glClear(GL_DEPTH_BUFFER_BIT);
+
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_FALSE);
+
+        glEnable(GL_BLEND);
+        glBlendEquation(GL_FUNC_ADD);
+        glBlendFunci(0, GL_ONE, GL_ONE);
+        glBlendFunci(1, GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
+
+        GLSDLHelper::setBillboardOITPass(true);
+        renderRunnerBreakPlane();
+        renderTracksideBillboards();
+        drawRunnerScorePopups();
+        GLSDLHelper::setBillboardOITPass(false);
+
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        resolveOITToBillboardTarget();
+        glDisable(GL_BLEND);
+    }
+    else
+    {
+        GLSDLHelper::setBillboardOITPass(false);
+        renderRunnerBreakPlane();
+        renderTracksideBillboards();
+        drawRunnerScorePopups();
+    }
 
     if (mCompositeShader && mBillboardFBO != 0)
     {
