@@ -254,6 +254,8 @@ void GameState::draw() const noexcept
         // Render player reflection on ground plane
         renderPlayerReflection();
 
+        // Note: Voronoi planet is rendered into the billboard FBO in renderPlayerCharacter()
+
         // Reset viewport to main window before compositing
         glViewport(0, 0, mWindowWidth, mWindowHeight);
 
@@ -326,6 +328,24 @@ void GameState::initializeGraphicsResources() noexcept
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, mTriangleSSBO);
     GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(triangleBufferSize), nullptr);
     mTriangleSSBOCapacityBytes = triangleBufferSize;
+
+    // Create Voronoi planet shader and planet mesh
+    try
+    {
+        mVoronoiShaderOwned = std::make_unique<Shader>();
+        mVoronoiShaderOwned->compileAndAttachShader(Shader::ShaderType::VERTEX, "shaders/voronoi.vert.glsl");
+        mVoronoiShaderOwned->compileAndAttachShader(Shader::ShaderType::FRAGMENT, "shaders/voronoi.frag.glsl");
+        mVoronoiShaderOwned->linkProgram();
+        mVoronoiShader = mVoronoiShaderOwned.get();
+
+        // Initialize planet with moderate seed count
+        mVoronoiPlanet.initialize(512, 128, 64);
+        mVoronoiPlanet.uploadToGPU();
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "GameState: Voronoi planet shader/mesh init failed: %s", e.what());
+    }
 }
 
 void GameState::initializeRunnerBreakPlaneResources() noexcept
@@ -598,6 +618,10 @@ void GameState::createCompositeTargets() noexcept
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Billboard framebuffer incomplete");
+    }
+    else
+    {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Billboard FBO=%u, ColorTex=%u", mBillboardFBO, mBillboardColorTex);
     }
 
     if (mOITAccumTex == 0)
@@ -1384,8 +1408,16 @@ void GameState::renderWithComputeShaders() const noexcept
     mDisplayShader->bind();
     mDisplayShader->setUniform("uTexture2D", 0);
 
+    // DEBUG: show billboard target directly on-screen to verify Voronoi draw
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
+    if (mBillboardColorTex != 0)
+    {
+        glBindTexture(GL_TEXTURE_2D, mBillboardColorTex);
+    }
+    else
+    {
+        glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
+    }
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
@@ -1675,6 +1707,13 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     chunkAnchor.x += mRunnerPickupSpawnAhead;
     mWorld.updateSphereChunks(chunkAnchor);
 
+    // Paint planet cell under player
+    if (dt > 0.0f && mVoronoiShader)
+    {
+        glm::vec3 p = glm::normalize(mPlayer.getPosition());
+        mVoronoiPlanet.paintAtPosition(p, glm::vec3(1.0f));
+    }
+
     // Update mSoundPlayer: set listener position based on camera and remove stopped mSoundPlayer
     if (!mGameIsPaused)
     {
@@ -1838,6 +1877,32 @@ void GameState::renderPlayerCharacter() const noexcept
     // Also ensure we have proper 3D projection set up
     glEnable(GL_DEPTH_TEST);
     GLSDLHelper::setBillboardOITPass(false);
+
+    // Render Voronoi planet into the billboard target so it gets composited
+    if (mVoronoiShader)
+    {
+        const int safeHeight = std::max(1, mWindowHeight);
+        const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
+
+        // Place a debug-scaled planet in front of the camera so we can verify painting visually.
+        glm::vec3 camPos = mCamera.getActualPosition();
+        glm::vec3 forward = glm::normalize(mCamera.getTarget());
+        const float previewDistance = 12.0f;
+        const float previewScale = 6.0f; // scale unit-sphere to visible size
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), camPos + forward * previewDistance);
+        model = glm::scale(model, glm::vec3(previewScale));
+
+        mVoronoiShader->bind();
+        mVoronoiShader->setUniform("uModel", model);
+        mVoronoiShader->setUniform("uView", mCamera.getLookAt());
+        mVoronoiShader->setUniform("uProjection", mCamera.getPerspective(aspectRatio));
+        // Draw wireframe briefly to verify geometry is rendered into billboard target
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glLineWidth(1.0f);
+        mVoronoiPlanet.draw();
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        mVoronoiShader->release();
+    }
 
     bool renderedModel = false;
     if (mSkinnedModelShader)

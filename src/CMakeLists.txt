@@ -85,6 +85,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/Shader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SoundPlayer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Sphere.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/VoronoiPlanet.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SplashState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/StateStack.cpp

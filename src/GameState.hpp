@@ -4,6 +4,7 @@
 #include "Camera.hpp"
 #include "State.hpp"
 #include "World.hpp"
+#include "VoronoiPlanet.hpp"
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -196,6 +197,9 @@ private:
     Shader *mWalkParticlesComputeShader{nullptr};
     Shader *mWalkParticlesRenderShader{nullptr};
     Shader *mShadowShader{nullptr};  // Shadow volume + stencil rendering
+    Shader *mVoronoiShader{nullptr}; // Voronoi planet shader
+    std::unique_ptr<Shader> mVoronoiShaderOwned;
+    VoronoiPlanet mVoronoiPlanet;
 
     Texture *mAccumTex{nullptr};
     Texture *mDisplayTex{nullptr};
