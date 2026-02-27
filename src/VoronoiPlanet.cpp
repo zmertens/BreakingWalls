@@ -4,6 +4,41 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <random>
 #include <SDL3/SDL.h>
+#include <cstring>
+
+// Upload cell seed data to a provided SSBO (for compute shader use)
+void VoronoiPlanet::uploadCellSeedsToSSBO(unsigned int ssbo) const {
+    if (m_seedPositions.empty() || ssbo == 0) return;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, m_seedPositions.size() * sizeof(glm::vec3), m_seedPositions.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssbo); // Binding 4 for compute shader
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+// Upload painted state data to a provided SSBO (for compute shader use)
+void VoronoiPlanet::uploadPaintedStatesToSSBO(unsigned int ssbo) const {
+    if (m_paintedStates.empty() || ssbo == 0) return;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, m_paintedStates.size() * sizeof(uint32_t), m_paintedStates.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssbo); // Binding 5 for compute shader
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+#include "VoronoiPlanet.hpp"
+#include <glad/glad.h>
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <random>
+#include <SDL3/SDL.h>
+
+#include <cstring>
+// Upload cell color data to a provided SSBO (for compute shader use)
+void VoronoiPlanet::uploadCellColorsToSSBO(unsigned int ssbo) const {
+    if (m_cellColors.empty() || ssbo == 0) return;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, m_cellColors.size() * sizeof(glm::vec3), m_cellColors.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo); // Binding 3 for compute shader (convention)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
 
 VoronoiPlanet::VoronoiPlanet() {}
 VoronoiPlanet::~VoronoiPlanet() {
@@ -21,11 +56,13 @@ void VoronoiPlanet::initialize(int seedCount, int lonSteps, int latSteps) {
     generateUVSphere(lonSteps, latSteps);
     // init per-cell colors to pastel
     m_cellColors.resize(m_seedPositions.size());
+    m_paintedStates.resize(m_seedPositions.size(), 0);
     std::mt19937 rng(12345);
     std::uniform_real_distribution<float> d(0.5f, 1.0f);
     for (size_t i = 0; i < m_cellColors.size(); ++i) {
         m_cellColors[i] = glm::vec3(d(rng), d(rng), d(rng));
     }
+    std::fill(m_paintedStates.begin(), m_paintedStates.end(), 0);
 }
 
 void VoronoiPlanet::generateSeeds(int count) {
@@ -160,10 +197,15 @@ void VoronoiPlanet::paintAtPosition(const glm::vec3 &worldPos, const glm::vec3 &
     int id = findNearestSeed(p);
     if (id < 0 || id >= (int)m_cellColors.size()) return;
     m_cellColors[id] = color;
+    m_paintedStates[id] = 1;
     // Log painted cell for debugging mapping issues
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "VoronoiPlanet: paint cell %d at pos (%f,%f,%f), norm len=%f", id, (double)p.x, (double)p.y, (double)p.z, (double)glm::length(worldPos));
     if (m_uploaded) {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_cellColorSSBO);
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(glm::vec3), sizeof(glm::vec3), glm::value_ptr(color));
+        if (m_paintedSSBO != 0) {
+            uint32_t painted = 1;
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_paintedSSBO);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(uint32_t), sizeof(uint32_t), &painted);
+        }
     }
 }

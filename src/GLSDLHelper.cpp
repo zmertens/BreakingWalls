@@ -120,17 +120,14 @@ namespace
         case GL_DEBUG_SEVERITY_MEDIUM:
             severityStr = "MEDIUM";
             break;
-        case GL_DEBUG_SEVERITY_LOW:
-            severityStr = "LOW";
-            break;
-        case GL_DEBUG_SEVERITY_NOTIFICATION:
-            severityStr = "NOTIFICATION";
-            break;
+        case GL_DEBUG_SEVERITY_LOW: [[fallthrough]];
+        case GL_DEBUG_SEVERITY_NOTIFICATION: [[fallthrough]];
         default:
-            severityStr = "UNKNOWN";
+            // Ignore low severity messages to reduce log spam
+            return;
         }
 
-        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION,
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
                      "OpenGL - Source: %s, Type: %s, Severity: %s, Message: %s\n",
                      sourceStr.c_str(), typeStr.c_str(), severityStr.c_str(), message);
     }

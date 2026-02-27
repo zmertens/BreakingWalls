@@ -1,4 +1,7 @@
-#version 450 core
+ #version 450 core
+// Voronoi planet placement
+uniform vec3 uVoronoiPlanetCenter;
+uniform float uVoronoiPlanetRadius;
 
 // Path tracing compute shader with progressive refinement
 // Based on physically-based rendering principles
@@ -24,6 +27,21 @@
 #define DIELECTRIC 2
 
 // ============================================================================
+
+// Voronoi cell color buffer (binding = 3)
+layout (std430, binding = 3) buffer VoronoiCellColorBuffer {
+    vec3 bVoronoiCellColors[];
+};
+// Voronoi cell seed buffer (binding = 4)
+layout (std430, binding = 4) buffer VoronoiCellSeedBuffer {
+    vec3 bVoronoiCellSeeds[];
+};
+// Voronoi cell painted state buffer (binding = 5)
+layout (std430, binding = 5) buffer VoronoiCellPaintedBuffer {
+    uint bVoronoiCellPainted[];
+};
+
+uniform uint uVoronoiCellCount;
 // Random Number Generation (PCG Hash)
 // ============================================================================
 
@@ -152,12 +170,7 @@ uniform uint uSamplesPerBatch;
 uniform uint uSphereCount;  // Actual number of spheres to check
 uniform uint uPrimaryRaySphereCount;  // Sphere count for primary rays (exclude reflection-only proxy)
 uniform uint uTriangleCount;
-uniform vec3 uGroundPlanePoint;
-uniform vec3 uGroundPlaneNormal;
-uniform vec3 uGroundPlaneAlbedo;
-uniform uint uGroundPlaneMaterialType;
-uniform float uGroundPlaneFuzz;
-uniform float uGroundPlaneRefractiveIndex;
+
 uniform float uTime;
 uniform float uHistoryBlend;
 uniform sampler2D uNoiseTex;
@@ -178,6 +191,24 @@ layout (std430, binding = 2) buffer TriangleBuffer {
 
 // ============================================================================
 // Intersection Functions
+// Voronoi planet intersection
+bool voronoiPlanetIntersect(in Ray ray, out float t, out vec3 hitPoint, out vec3 normal) {
+    vec3 oc = ray.origin - uVoronoiPlanetCenter;
+    float a = dot(ray.direction, ray.direction);
+    float b = 2.0 * dot(oc, ray.direction);
+    float c = dot(oc, oc) - uVoronoiPlanetRadius * uVoronoiPlanetRadius;
+    float discriminant = b * b - 4.0 * a * c;
+    if (discriminant < 0.0) return false;
+    float sqrtD = sqrt(discriminant);
+    float t0 = (-b - sqrtD) / (2.0 * a);
+    float t1 = (-b + sqrtD) / (2.0 * a);
+    t = t0;
+    if (t < EPSILON) t = t1;
+    if (t < EPSILON) return false;
+    hitPoint = ray.origin + t * ray.direction;
+    normal = normalize(hitPoint - uVoronoiPlanetCenter);
+    return true;
+}
 // ============================================================================
 
 bool sphereIntersect(in Sphere sphere, in Ray ray, float tMin, float tMax, out HitRecord hit) {
@@ -229,30 +260,7 @@ bool hitWorld(in Ray ray, float tMin, float tMax, uint sphereCount, out HitRecor
     return hitAnything;
 }
 
-bool planeIntersect(in Ray ray, float tMin, float tMax, out HitRecord hit) {
-    vec3 planeNormal = normalize(uGroundPlaneNormal);
-    float denom = dot(planeNormal, ray.direction);
 
-    if (abs(denom) < EPSILON) {
-        return false;
-    }
-
-    float t = dot(uGroundPlanePoint - ray.origin, planeNormal) / denom;
-    if (t < tMin || t > tMax) {
-        return false;
-    }
-
-    hit.t = t;
-    hit.point = ray.origin + ray.direction * t;
-    hit.frontFace = dot(ray.direction, planeNormal) < 0.0;
-    hit.normal = hit.frontFace ? planeNormal : -planeNormal;
-    hit.materialType = uGroundPlaneMaterialType;
-    hit.albedo = uGroundPlaneAlbedo;
-    hit.fuzz = uGroundPlaneFuzz;
-    hit.refractiveIndex = uGroundPlaneRefractiveIndex;
-
-    return true;
-}
 
 bool triangleIntersect(in Triangle triangle, in Ray ray, float tMin, float tMax, out HitRecord hit) {
     vec3 v0 = triangle.v0.xyz;
@@ -373,16 +381,7 @@ bool testSpheresShadow(in Ray shadowRay, float maxDist) {
     return false;
 }
 
-bool testPlaneShadow(in Ray shadowRay, float maxDist) {
-    // Test if shadow ray intersects ground plane
-    vec3 planeNormal = normalize(uGroundPlaneNormal);
-    float denom = dot(planeNormal, shadowRay.direction);
-    
-    if (abs(denom) < EPSILON) return false;
-    
-    float t = dot(uGroundPlanePoint - shadowRay.origin, planeNormal) / denom;
-    return t > EPSILON && t < maxDist;
-}
+
 
 bool testTrianglesShadow(in Ray shadowRay, float maxDist) {
     uint total = min(uTriangleCount, uint(MAX_TRIANGLES));
@@ -447,13 +446,7 @@ float calculateShadow(vec3 hitPoint, vec3 normal) {
         shadowFactor = min(shadowFactor, triShadow);
     }
     
-    // Ground plane adds subtle soft shadow with noise
-    if (testPlaneShadow(shadowRay, maxDist)) {
-        // Very subtle shadow with noise jitter for ground
-        float groundNoise = texture(uNoiseTex, hitPoint.xz * 0.1).r;
-        float groundShadow = mix(0.88, 0.92, groundNoise);
-        shadowFactor = min(shadowFactor, groundShadow);
-    }
+
     
     return shadowFactor;
 }
@@ -710,74 +703,75 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit;
         HitRecord sphereHit;
-        HitRecord planeHit;
         HitRecord triangleHit;
         uint sphereCountForBounce = (bounce == 0u) ? uPrimaryRaySphereCount : uSphereCount;
         bool hasSphereHit = hitWorld(ray, EPSILON, uCamera.far, sphereCountForBounce, sphereHit);
-        bool hasPlaneHit = planeIntersect(ray, EPSILON, uCamera.far, planeHit);
         uint triangleCountForBounce = (bounce == 0u)
             ? uTriangleCount
             : ((bounce == 1u) ? min(uTriangleCount, 32u) : 0u);
         bool hasTriangleHit = hitTriangles(ray, EPSILON, uCamera.far, triangleCountForBounce, triangleHit);
-        bool hitIsPlane = false;
 
-        bool hasAnyHit = false;
+        // Voronoi planet intersection
+        float planetT;
+        vec3 planetHitPoint, planetNormal;
+        bool hasPlanetHit = voronoiPlanetIntersect(ray, planetT, planetHitPoint, planetNormal);
+
+        // Find closest hit
         float closestT = uCamera.far;
+        int hitType = -1; // 0 = planet, 1 = sphere, 2 = triangle
 
+        if (hasPlanetHit && planetT < closestT) {
+            closestT = planetT;
+            hitType = 0;
+        }
         if (hasSphereHit && sphereHit.t < closestT) {
-            hit = sphereHit;
             closestT = sphereHit.t;
-            hasAnyHit = true;
-            hitIsPlane = false;
+            hitType = 1;
         }
-
         if (hasTriangleHit && triangleHit.t < closestT) {
-            hit = triangleHit;
             closestT = triangleHit.t;
-            hasAnyHit = true;
-            hitIsPlane = false;
+            hitType = 2;
         }
 
-        if (hasPlaneHit && planeHit.t < closestT) {
-            hit = planeHit;
-            closestT = planeHit.t;
-            hasAnyHit = true;
-            hitIsPlane = true;
-        }
-
-        if (hasAnyHit) {
-            vec3 attenuation;
-            Ray scattered;
-
-            vec3 direct = throughput * estimateDirectSun(hit);
-            direct = clampByLuminance(direct, DIRECT_LUMA_CLAMP);
-            radiance += direct;
-
-            if (scatter(hit, ray, attenuation, scattered, pixel, sampleIndex, bounce)) {
-                // Highlight only the tile under the player (no grid lines)
-                if (hitIsPlane) {
-                    vec2 tileIdx = floor(hit.point.xz * 0.3);
-                    vec2 playerTileIdx = floor(uPlayerPos.xz * 0.3);
-                    bool isPlayerTile = all(equal(tileIdx, playerTileIdx));
-                    if (isPlayerTile) {
-                        float glow = 0.85 + 0.15 * sin(uTime * 8.0);
-                        attenuation = mix(vec3(0.7, 1.0, 1.0), vec3(1.0, 1.0, 1.0), glow);
-                        attenuation = vec3(1.0, 1.0, 1.0); // Pure white highlight
-                    } else {
-                        attenuation = vec3(0.7, 1.0, 1.0); // Light cyan
-                    }
-                }
-
-                throughput *= attenuation;
-                throughput = clampByLuminance(throughput, THROUGHPUT_LUMA_CLAMP);
-                ray = scattered;
-            } else {
-                // Absorbed
-                return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
+        if (hitType == 0) {
+            // Shade Voronoi planet
+            // Find closest seed to hit point (true Voronoi cell index)
+            uint cellIdx = 0u;
+            float minDist = 1e20;
+            for (uint i = 0u; i < uVoronoiCellCount; ++i) {
+                float d = distance(planetHitPoint - uVoronoiPlanetCenter, bVoronoiCellSeeds[i] * uVoronoiPlanetRadius);
+                if (d < minDist) { minDist = d; cellIdx = i; }
             }
+            vec3 cellColor = bVoronoiCellColors[cellIdx];
+            // If painted, override color (yellow highlight)
+            if (bVoronoiCellPainted[cellIdx] != 0u) {
+                cellColor = mix(cellColor, vec3(1.0, 1.0, 0.2), 0.7);
+            }
+            radiance += throughput * cellColor;
+            return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
+        } else if (hitType == 1) {
+            hit = sphereHit;
+        } else if (hitType == 2) {
+            hit = triangleHit;
         } else {
             // Hit sky
             radiance += throughput * starfieldColor(ray.direction, pixel, sampleIndex);
+            return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
+        }
+
+        // Standard material shading for spheres/triangles
+        vec3 attenuation;
+        Ray scattered;
+        vec3 direct = throughput * estimateDirectSun(hit);
+        direct = clampByLuminance(direct, DIRECT_LUMA_CLAMP);
+        radiance += direct;
+
+        if (scatter(hit, ray, attenuation, scattered, pixel, sampleIndex, bounce)) {
+            throughput *= attenuation;
+            throughput = clampByLuminance(throughput, THROUGHPUT_LUMA_CLAMP);
+            ray = scattered;
+        } else {
+            // Absorbed
             return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
         }
 

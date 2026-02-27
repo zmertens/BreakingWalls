@@ -1342,9 +1342,28 @@ void GameState::renderWithComputeShaders() const noexcept
 
         const uint32_t samplesPerBatch = kEnableTrianglePathTraceProxy ? 1u : mSamplesPerBatch;
 
+
         // Set batch uniforms for progressive rendering
         mComputeShader->setUniform("uBatch", mCurrentBatch);
         mComputeShader->setUniform("uSamplesPerBatch", samplesPerBatch);
+
+        // Bind Voronoi cell color SSBO, seed SSBO, and painted state SSBO, and set cell count uniform
+        if (mVoronoiCellColorSSBO != 0) {
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, mVoronoiCellColorSSBO);
+            mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(mVoronoiPlanet.getCellCount()));
+        }
+        if (mVoronoiCellSeedSSBO != 0) {
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, mVoronoiCellSeedSSBO);
+        }
+        if (mVoronoiCellPaintedSSBO != 0) {
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, mVoronoiCellPaintedSSBO);
+        }
+
+        // Set Voronoi planet center and radius (planet under player, radius = 30)
+        glm::vec3 planetCenter = mPlayer.getPosition();
+        float planetRadius = 30.0f;
+        mComputeShader->setUniform("uVoronoiPlanetCenter", planetCenter);
+        mComputeShader->setUniform("uVoronoiPlanetRadius", planetRadius);
 
         // Set sphere count uniform (NEW - tells shader how many spheres to check)
         mComputeShader->setUniform("uSphereCount", static_cast<uint32_t>(totalSphereCount));
@@ -1712,6 +1731,19 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     {
         glm::vec3 p = glm::normalize(mPlayer.getPosition());
         mVoronoiPlanet.paintAtPosition(p, glm::vec3(1.0f));
+        // Upload Voronoi cell colors, seeds, and painted states to SSBOs for compute shader
+        if (mVoronoiCellColorSSBO == 0) {
+            glGenBuffers(1, &mVoronoiCellColorSSBO);
+        }
+        if (mVoronoiCellSeedSSBO == 0) {
+            glGenBuffers(1, &mVoronoiCellSeedSSBO);
+        }
+        if (mVoronoiCellPaintedSSBO == 0) {
+            glGenBuffers(1, &mVoronoiCellPaintedSSBO);
+        }
+        mVoronoiPlanet.uploadCellColorsToSSBO(mVoronoiCellColorSSBO);
+        mVoronoiPlanet.uploadCellSeedsToSSBO(mVoronoiCellSeedSSBO);
+        mVoronoiPlanet.uploadPaintedStatesToSSBO(mVoronoiCellPaintedSSBO);
     }
 
     // Update mSoundPlayer: set listener position based on camera and remove stopped mSoundPlayer
@@ -1879,30 +1911,7 @@ void GameState::renderPlayerCharacter() const noexcept
     GLSDLHelper::setBillboardOITPass(false);
 
     // Render Voronoi planet into the billboard target so it gets composited
-    if (mVoronoiShader)
-    {
-        const int safeHeight = std::max(1, mWindowHeight);
-        const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
-
-        // Place a debug-scaled planet in front of the camera so we can verify painting visually.
-        glm::vec3 camPos = mCamera.getActualPosition();
-        glm::vec3 forward = glm::normalize(mCamera.getTarget());
-        const float previewDistance = 12.0f;
-        const float previewScale = 6.0f; // scale unit-sphere to visible size
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), camPos + forward * previewDistance);
-        model = glm::scale(model, glm::vec3(previewScale));
-
-        mVoronoiShader->bind();
-        mVoronoiShader->setUniform("uModel", model);
-        mVoronoiShader->setUniform("uView", mCamera.getLookAt());
-        mVoronoiShader->setUniform("uProjection", mCamera.getPerspective(aspectRatio));
-        // Draw wireframe briefly to verify geometry is rendered into billboard target
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        glLineWidth(1.0f);
-        mVoronoiPlanet.draw();
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        mVoronoiShader->release();
-    }
+    // (VoronoiPlanet overlay rendering removed)
 
     bool renderedModel = false;
     if (mSkinnedModelShader)

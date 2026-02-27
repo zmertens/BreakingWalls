@@ -200,6 +200,10 @@ private:
     Shader *mVoronoiShader{nullptr}; // Voronoi planet shader
     std::unique_ptr<Shader> mVoronoiShaderOwned;
     VoronoiPlanet mVoronoiPlanet;
+    // SSBOs for Voronoi cell data (for compute shader)
+    GLuint mVoronoiCellColorSSBO{0};
+    GLuint mVoronoiCellSeedSSBO{0};
+    GLuint mVoronoiCellPaintedSSBO{0};
 
     Texture *mAccumTex{nullptr};
     Texture *mDisplayTex{nullptr};

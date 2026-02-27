@@ -58,7 +58,7 @@ World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures,
       mGroundPlane{
           glm::vec3(0.0f, 0.0f, 0.0f),
           glm::vec3(0.0f, 1.0f, 0.0f),
-          Material(glm::vec3(0.46f, 0.48f, 0.52f), Material::MaterialType::METAL, 0.22f, 1.0f)},
+          Material(glm::vec3(0.0f, 0.0f, 0.0f), Material::MaterialType::LAMBERTIAN, 0.0f, 1.0f)}, // Transparent/black ground to reveal pathtraced planet
       mLastChunkUpdatePosition{},
       mPlayerSpawnPosition{},
       mRunnerPlayerPosition{}
