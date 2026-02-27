@@ -15,7 +15,7 @@ namespace
     constexpr float kPlayerJumpVelocity = 14.0f;
 }
 
-Player::Player() : mIsActive(true), mIsOnGround(false)
+Player::Player() : mIsActive(false), mIsOnGround(false)
 {
     mKeyBinding[SDL_SCANCODE_A] = Action::MOVE_LEFT;
     mKeyBinding[SDL_SCANCODE_D] = Action::MOVE_RIGHT;

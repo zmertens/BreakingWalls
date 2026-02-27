@@ -1,5 +1,5 @@
 {
-	"window_icon": "textures/icon2.bmp",
+	"window_icon": "textures/icon3.bmp",
     "splash_image": "textures/title.png",
     "generate_ogg": "audio/generate.ogg",
 	"game_menu_remixed_music": "audio/game-menu_remixed.mp3",

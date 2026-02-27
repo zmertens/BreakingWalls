@@ -133,7 +133,7 @@ void MenuState::draw() const noexcept
         ImGui::Spacing();
 
         const array<string, static_cast<size_t>(MenuItem::COUNT)> menuItems = {
-            "Resume", "New Game", "Network Game", "Settings", "Splash screen", "Quit"};
+            "Resume", "Just run endlessly", "Multiplayer Game", "Settings", "Return to Splash Screen", "Quit"};
 
         // Use Selectable with bool* overload so ImGui keeps a consistent toggled state
         const auto active = static_cast<size_t>(getContext().getPlayer()->isActive());
