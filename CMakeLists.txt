@@ -33,15 +33,13 @@ install(TARGETS breakingwalls
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-# Install DLLs (add all required DLLs here)
-install(FILES
-    $<TARGET_FILE:SDL3::SDL3-static>
-    $<TARGET_FILE:SFML::Audio>
-    $<TARGET_FILE:SFML::Network>
-    $<TARGET_FILE:assimp::assimp>
-    $<TARGET_FILE:box2d::box2d>
-    DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+# Install required runtime DLLs for the main executable (Windows only)
+if (WIN32)
+    install(FILES
+        $<TARGET_RUNTIME_DLLS:breakingwalls>
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
 
 install(FILES "${CMAKE_SOURCE_DIR}/deps/run-breakingwalls.bat" DESTINATION "${CMAKE_INSTALL_BINDIR}")   
 
