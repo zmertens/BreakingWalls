@@ -57,8 +57,8 @@ namespace JSONKeys
     constexpr std::string_view OGG_FILES = "ogg_files";
     constexpr std::string_view PLAYER_HITPOINTS_DEFAULT = "player_hitpoints_default";
     constexpr std::string_view PLAYER_SPEED_DEFAULT = "player_speed_default";
-    constexpr std::string_view SDL_LOGO = "SDL_logo";
-    constexpr std::string_view SFML_LOGO = "SFML_logo";
+    constexpr std::string_view SDL_LOGO = "SDL_SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATIONo";
+    constexpr std::string_view SFML_LOGO = "SFML_SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATIONo";
     constexpr std::string_view SHADER_BILLBOARD_VERTEX = "shader_billboard_vert_glsl";
     constexpr std::string_view SHADER_BILLBOARD_FRAGMENT = "shader_billboard_frag_glsl";
     constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";
@@ -566,7 +566,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     {
         if (const auto resources = resourceLoader().getResources(); !resources.empty())
         {
-            log("Loading complete! Loaded " + std::to_string(resources.size()) + " resources.");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("Loading complete! Loaded " + std::to_string(resources.size()) + " resources.").c_str());
 
             // Now actually load the getTextureManager() from the worker-collected texture requests
             loadTexturesFromWorkerRequests();
@@ -584,7 +584,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     if (!mHasFinished)
     {
         setCompletion(resourceLoader().getCompletion());
-        log("LoadingState::update - completion: " + std::to_string(resourceLoader().getCompletion() * 100.f) + "%");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState::update - completion: " + std::to_string(resourceLoader().getCompletion() * 100.f) + "%").c_str());
     }
 
     return true;
@@ -603,7 +603,7 @@ void LoadingState::setCompletion(float percent) noexcept
     }
 
     // Update loading sprite or progress bar based on percent
-    log("Loading progress: " + std::to_string(percent * 100.f));
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("Loading progress: " + std::to_string(percent * 100.f) + "%").c_str());
 }
 
 bool LoadingState::isFinished() const noexcept { return mHasFinished; }
@@ -612,7 +612,7 @@ bool LoadingState::isFinished() const noexcept { return mHasFinished; }
 /// @param resourcePath Path to the JSON resource configuration
 void LoadingState::loadResources() noexcept
 {
-    log("Loading resources from:\t" + mResourcePath);
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("Loading resources from:\t" + mResourcePath).c_str());
 
     if (resourceLoader().isDone())
     {
@@ -647,7 +647,7 @@ void LoadingState::loadAudio() noexcept
     // Use the same resource path prefix that was computed by the ResourceLoader
     auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
 
-    log("LoadingState::loadAudio - resourcePathPrefix: " + resourcePathPrefix);
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState::loadAudio - resourcePathPrefix: " + resourcePathPrefix).c_str());
 
     try
     {
@@ -673,7 +673,7 @@ void LoadingState::loadAudio() noexcept
                        std::string_view{gameMenuRemixedMusicPath},
                        options.get(GUIOptions::ID::DE_FACTO).getMusicVolume(), true);
 
-            log("LoadingState: Music loaded successfully");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Music loaded successfully");
             music.get(Music::ID::GAME_MUSIC).print();
         }
     }
@@ -719,7 +719,7 @@ void LoadingState::loadLevels() noexcept
         std::vector<configurator> levelConfigs;
         levelConfigs.push_back(configurator().rows(50).columns(50));
         levels.load(Levels::ID::LEVEL_ONE, std::cref(levelConfigs), false);
-        log("LoadingState: Levels loaded successfully");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Levels loaded successfully");
     }
     catch (const std::exception &e)
     {
@@ -739,20 +739,20 @@ void LoadingState::loadModels() noexcept
 
         if (modelPath.empty())
         {
-            log("LoadingState: model resource key not found in configuration");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: model resource key not found in configuration");
         }
         else
         {
             models.load(Models::ID::STYLIZED_CHARACTER, modelPath);
 
-            log("LoadingState: Found model path: " + modelPath);
-            log("LoadingState: Loading model into manager...");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState: Found model path: " + modelPath).c_str());
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loading model into manager...");
 
             try
             {
                 auto &model = models.get(Models::ID::STYLIZED_CHARACTER);
                 
-                // Break down the logging into smaller chunks for better debugging
+                // Break down the SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATIONging into smaller chunks for better debugging
                 const size_t meshCount = model.getMeshes().size();
                 const size_t boneCount = model.getBoneCount();
                 const size_t totalMeshBones = model.getTotalMeshBones();
@@ -768,13 +768,13 @@ void LoadingState::loadModels() noexcept
             }
             catch (const std::exception &e)
             {
-                log("LoadingState: Failed to verify model in manager: " + std::string(e.what()));
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState: Failed to verify model in manager: " + std::string(e.what())).c_str());
             }
         }
     }
     catch (const std::exception &e)
     {
-        log("LoadingState: Failed to load models: " + std::string(e.what()));
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState: Failed to load models: " + std::string(e.what())).c_str());
     }
 }
 
@@ -797,7 +797,7 @@ void LoadingState::loadShaders() noexcept
         displayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SCREEN_FRAGMENT));
         displayShader->linkProgram();
 
-        log("LoadingState: Display shader compiled and linked");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Display shader compiled and linked");
 
         // Insert display shader into manager (using vertex ID as the combined shader program ID)
         shaders.insert(Shaders::ID::GLSL_FULLSCREEN_QUAD, std::move(displayShader));
@@ -806,21 +806,21 @@ void LoadingState::loadShaders() noexcept
         particlesDisplayShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_PARTICLES_VERTEX));
         particlesDisplayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_PARTICLES_FRAGMENT));
         particlesDisplayShader->linkProgram();
-        log("LoadingState: Particles display shader compiled and linked");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Particles display shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP, std::move(particlesDisplayShader));
 
         auto compositeShader = std::make_unique<Shader>();
         compositeShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_COMPOSITE_VERTEX));
         compositeShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_COMPOSITE_FRAGMENT));
         compositeShader->linkProgram();
-        log("LoadingState: Composite shader compiled and linked");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Composite shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_COMPOSITE_SCENE, std::move(compositeShader));
 
         auto oitResolveShader = std::make_unique<Shader>();
         oitResolveShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_COMPOSITE_VERTEX));
         oitResolveShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_OIT_RESOLVE_FRAGMENT));
         oitResolveShader->linkProgram();
-        log("LoadingState: OIT resolve shader compiled and linked");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: OIT resolve shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_OIT_RESOLVE, std::move(oitResolveShader));
 
         // Load shadow volume shader for character shadow rendering (vertex + geometry + fragment)
@@ -829,7 +829,7 @@ void LoadingState::loadShaders() noexcept
         shadowShader->compileAndAttachShader(Shader::ShaderType::GEOMETRY, shaderPath(JSONKeys::SHADER_SHADOW_GEOMETRY));
         shadowShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SHADOW_FRAGMENT));
         shadowShader->linkProgram();
-        log("LoadingState: Shadow shader compiled and linked");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Shadow shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_SHADOW_VOLUME, std::move(shadowShader));
 
         // Load compute shader for path tracing
@@ -841,7 +841,7 @@ void LoadingState::loadShaders() noexcept
         computeShader2->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PARTICLES_COMPUTE));
         computeShader2->linkProgram();
 
-        log("LoadingState: Compute shaders compiled and linked");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Compute shaders compiled and linked");
 
         shaders.insert(Shaders::ID::GLSL_PATH_TRACER_COMPUTE, std::move(computeShader));
         shaders.insert(Shaders::ID::GLSL_PARTICLES_COMPUTE, std::move(computeShader2));
@@ -853,7 +853,7 @@ void LoadingState::loadShaders() noexcept
         billboardShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_BILLBOARD_FRAGMENT));
         billboardShader->linkProgram();
 
-        log("LoadingState: Billboard shader compiled and linked");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Billboard shader compiled and linked");
         // Insert billboard shader into manager
         shaders.insert(Shaders::ID::GLSL_BILLBOARD_SPRITE, std::move(billboardShader));
 
@@ -861,10 +861,10 @@ void LoadingState::loadShaders() noexcept
         modelShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MODEL_VERTEX));
         modelShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_MODEL_FRAGMENT));
         modelShader->linkProgram();
-        log("LoadingState: Model shader compiled and linked");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Model shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_MODEL_WITH_SKINNING, std::move(modelShader));
         
-        log("LoadingState: All shaders loaded successfully");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: All shaders loaded successfully");
     }
     catch (const std::exception &e)
     {
@@ -880,7 +880,7 @@ void LoadingState::loadNetworkConfig() noexcept
     {
         const auto resources = resourceLoader().getResources();
 
-        if (const auto url = JSONUtils::getResourcePath(std::string(JSONKeys::NETWORK_URL), resources, resourceLoader().getResourcePathPrefix())
+        if (const auto url = JSONUtils::getResourcePath(std::string(JSONKeys::NETWORK_URL), resources, resourceLoader())
         ; url.empty())
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
@@ -889,7 +889,7 @@ void LoadingState::loadNetworkConfig() noexcept
         else
         {
             httpClient.setServerURL(url);
-            log("LoadingState: Found network URL: " + url);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState: Found network URL: " + url).c_str());
         }
     }
     catch (const std::exception &e)

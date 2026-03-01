@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <random>
+#include <ranges>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -197,10 +198,10 @@ GameState::GameState(StateStack &stack, Context context)
     mCamera.setThirdPersonHeight(8.0f);
     mCamera.updateThirdPersonPosition();
 
-    log("GameState: Camera spawned at:\t" +
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("GameState: Camera spawned at:\t" +
         std::to_string(cameraSpawn.x) + ", " +
         std::to_string(cameraSpawn.y) + ", " +
-        std::to_string(cameraSpawn.z));
+        std::to_string(cameraSpawn.z)).c_str());
 
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
@@ -281,7 +282,7 @@ void GameState::initializeGraphicsResources() noexcept
             {
                 mWindowWidth = width;
                 mWindowHeight = height;
-                log("GameState: Initial window size in pixels: " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight));
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("GameState: Initial window size in pixels: " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight)).c_str());
             }
         }
     }
@@ -568,10 +569,10 @@ void GameState::createPathTracerTextures() noexcept
         return;
     }
 
-    log("GameState: Path tracer textures recreated (window/internal):\t" +
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("GameState: Path tracer textures recreated (window/internal):\t" +
         std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " / " +
         std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight) +
-        " (IDs: " + std::to_string(mAccumTex->get()) + ", " + std::to_string(mDisplayTex->get()) + ")");
+        " (IDs: " + std::to_string(mAccumTex->get()) + ", " + std::to_string(mDisplayTex->get()) + ")").c_str());
 }
 
 void GameState::handleWindowResize() noexcept
@@ -771,7 +772,7 @@ void GameState::initializeReflectionResources() noexcept
     {
         glDeleteTextures(1, &mReflectionColorTex);
         mReflectionColorTex = 0;
-        log("GameState: Deleted old reflection texture");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Deleted old reflection texture");
     }
     if (mReflectionDepthRbo != 0)
     {
@@ -782,7 +783,7 @@ void GameState::initializeReflectionResources() noexcept
     {
         glDeleteFramebuffers(1, &mReflectionFBO);
         mReflectionFBO = 0;
-        log("GameState: Deleted old reflection FBO");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Deleted old reflection FBO");
     }
 
     // Create reflection color texture
@@ -1668,7 +1669,7 @@ void GameState::cleanupResources() noexcept
     mOITResolveShader = nullptr;
     mShadowShader = nullptr;
 
-    log("GameState: OpenGL resources cleaned up");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: OpenGL resources cleaned up");
 }
 
 void GameState::updateSounds() noexcept
@@ -1812,7 +1813,7 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
                     initializeReflectionResources();
                     // Reset accumulation for new size
                     mCurrentBatch = 0;
-                    log("GameState: Window resized to physical pixels " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " with render resolution " + std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight));
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("GameState: Window resized to physical pixels " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " with render resolution " + std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight)).c_str());
                 }
             }
         }
@@ -1855,7 +1856,7 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
             {
                 mSoundPlayer->play(SoundEffect::ID::GENERATE, sf::Vector2f{resetPos.x, resetPos.z});
             }
-            log("Camera reset to initial position");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Camera reset to initial position");
         }
     }
 
@@ -1963,6 +1964,7 @@ void GameState::renderPlayerCharacter() const noexcept
                 if (!loggedOnce)
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Skinned model render failed; using billboard fallback: %s", e.what());
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Skinned model render failed; using billboard fallback");
                     loggedOnce = true;
                 }
             }

@@ -151,6 +151,11 @@ struct PhysicsGame::PhysicsGameImpl
 
     void processInput() const noexcept
     {
+        if (!mStateStack)
+        {
+            return;
+        }
+
         SDL_Event event;
 
         while (SDL_PollEvent(&event))
@@ -176,45 +181,18 @@ struct PhysicsGame::PhysicsGameImpl
 
     void update(const float dt, int subSteps = 4) const noexcept
     {
-#if defined(BREAKING_WALLS_DEBUG)
-        static State *observedState{nullptr};
-        const auto emitConsumedLogs = [](State *state) noexcept
+        if (!mStateStack)
         {
-            if (!state)
-            {
-                return;
-            }
-
-            const auto logs = state->consumeView();
-            if (!logs.empty())
-            {
-                const auto logText = std::string{logs};
-                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "%s", logText.c_str());
-            }
-        };
-
-        if (!observedState)
-        {
-            observedState = mStateStack->peekState<State *>();
+            return;
         }
-#endif
 
         mStateStack->update(dt, subSteps);
-
-#if defined(BREAKING_WALLS_DEBUG)
-        if (const auto statePtr = mStateStack->peekState<State *>(); statePtr != observedState)
-        {
-            // Flush logs from the state that was previously observed (the outgoing state)
-            emitConsumedLogs(observedState);
-            observedState = statePtr;
-        }
-#endif
     }
 
     void render(const double elapsed) const noexcept
     {
         // Only render if state stack has states
-        if (!(mRenderWindow->isOpen() || mStateStack->isEmpty()))
+        if (!mRenderWindow || !mStateStack || !(mRenderWindow->isOpen() || mStateStack->isEmpty()))
         {
             return;
         }
@@ -235,6 +213,11 @@ struct PhysicsGame::PhysicsGameImpl
 
     void registerStates() noexcept
     {
+        if (!mStateStack)
+        {
+            return;
+        }
+
         mStateStack->registerState<GameState>(States::ID::GAME);
         mStateStack->registerState<LoadingState>(States::ID::LOADING, mResourcePath);
         mStateStack->registerState<MenuState>(States::ID::MENU);
@@ -279,16 +262,19 @@ struct PhysicsGame::PhysicsGameImpl
             ImGui::Text("FPS: %d", mSmoothedFPS);
             ImGui::Text("Frame Time: %.2f ms", mSmoothedFrameTime);
 
-            if (const auto gameState = mStateStack->peekState<GameState *>(); gameState)
+            if (mStateStack && mStateStack->peekState<GameState *>())
             {
-                const auto windowSize = gameState->getWindowDimensions();
-                const auto renderSize = gameState->getRenderDimensions();
-                const float renderScale = gameState->getRenderScale();
+                if (auto *gameState = mStateStack->peekState<GameState *>())
+                {
+                    const auto windowSize = gameState->getWindowDimensions();
+                    const auto renderSize = gameState->getRenderDimensions();
+                    const float renderScale = gameState->getRenderScale();
 
-                ImGui::Separator();
-                ImGui::Text("Window: %d x %d", windowSize.x, windowSize.y);
-                ImGui::Text("Render: %d x %d", renderSize.x, renderSize.y);
-                ImGui::Text("Scale: %.2fx", renderScale);
+                    ImGui::Separator();
+                    ImGui::Text("Window: %d x %d", windowSize.x, windowSize.y);
+                    ImGui::Text("Render: %d x %d", renderSize.x, renderSize.y);
+                    ImGui::Text("Scale: %.2fx", renderScale);
+                }
             }
 
             ImGui::End();
