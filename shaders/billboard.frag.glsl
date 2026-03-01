@@ -5,6 +5,8 @@ in vec2 TexCoord;
 uniform sampler2D SpriteTex;
 uniform vec4 TintColor;
 uniform int UseRedAsAlpha;
+uniform int uOITPass;
+uniform float uOITWeightScale;
 
 layout(location = 0) out vec4 FragColor;
 

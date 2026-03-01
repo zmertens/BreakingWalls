@@ -68,6 +68,8 @@ public:
 
     [[nodiscard]] std::vector<std::string> getAnimationNames() const;
     [[nodiscard]] std::string getActiveAnimationName() const;
+    [[nodiscard]] std::size_t getAnimationCount() const noexcept;
+    bool setPreferredAnimationIndex(int animationIndex) noexcept;
 
     [[nodiscard]] std::vector<std::string> getMeshes() const;
     [[nodiscard]] std::size_t getTotalMeshBones() const noexcept;

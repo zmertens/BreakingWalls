@@ -109,6 +109,9 @@ public:
     /// Check if billboard rendering is initialized
     [[nodiscard]] static bool isBillboardInitialized() noexcept;
 
+    /// Toggle billboard shader OIT output mode for weighted blended transparency passes
+    static void setBillboardOITPass(bool enabled) noexcept;
+
 private:
     std::once_flag mInitializedFlag;
 
@@ -116,6 +119,7 @@ private:
     static GLuint sBillboardVAO;
     static GLuint sBillboardVBO;
     static bool sBillboardInitialized;
+    static bool sBillboardOITPass;
 };
 
 #endif // GLSDL_HELPER_HPP

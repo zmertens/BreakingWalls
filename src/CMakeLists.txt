@@ -1,6 +1,8 @@
 include(BuildInfo)
 
 include(FetchGitRepo)
+set(DEPENDENCY_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install")
+set(CMAKE_INSTALL_PREFIX "${DEPENDENCY_INSTALL_PREFIX}" CACHE PATH "Install path for dependencies" FORCE)
 
 find_package(OpenGL REQUIRED)
 
@@ -85,6 +87,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/Shader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SoundPlayer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Sphere.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/VoronoiPlanet.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SplashState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/StateStack.cpp
@@ -117,6 +120,12 @@ set(GLAD_SOURCES ${CMAKE_SOURCE_DIR}/deps/glad/src/glad_4_3.c)
 set(NOISE_SOURCES ${CMAKE_SOURCE_DIR}/deps/noise/noise.c)
 
 add_executable(${BREAKING_WALLS_APP_NAME} ${DEAR_IMGUI_SRC_FILES} ${GLAD_SOURCES} ${NOISE_SOURCES} ${BREAKING_WALLS_SRC_FILES})
+
+# Set the icon resource for Windows builds
+if(MSVC)
+    set(APP_ICON_RESOURCE "${CMAKE_SOURCE_DIR}/textures/app_icon.rc")
+    target_sources(${BREAKING_WALLS_APP_NAME} PRIVATE ${APP_ICON_RESOURCE})
+endif()
 
 target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<OR:$<STREQUAL:$<CONFIG>,Debug>,$<STREQUAL:$<CONFIG>,RelWithDebInfo>>:${BREAKING_WALLS_DEBUG_DEF}>")
 target_compile_features(${BREAKING_WALLS_APP_NAME} PRIVATE cxx_std_20)
@@ -193,5 +202,3 @@ if(WIN32)
         VERBATIM
     )
 endif()
-
-
