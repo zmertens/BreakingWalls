@@ -70,7 +70,8 @@ namespace Shaders
         GLSL_PATH_TRACER_COMPUTE = 5,
         GLSL_PARTICLES_COMPUTE = 6,
         GLSL_SHADOW_VOLUME = 7,
-        GLSL_TOTAL_SHADERS = 8
+        GLSL_OIT_RESOLVE = 8,
+        GLSL_TOTAL_SHADERS = 9
     };
 }
 

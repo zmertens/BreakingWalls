@@ -177,15 +177,38 @@ struct PhysicsGame::PhysicsGameImpl
     void update(const float dt, int subSteps = 4) const noexcept
     {
 #if defined(BREAKING_WALLS_DEBUG)
-        static State *lastState{nullptr};
-        if (const auto statePtr = mStateStack->peekState<State *>(); statePtr != lastState)
+        static State *observedState{nullptr};
+        const auto emitConsumedLogs = [](State *state) noexcept
         {
-            lastState = statePtr;
-            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "%s", statePtr->view().data());
+            if (!state)
+            {
+                return;
+            }
+
+            const auto logs = state->consumeView();
+            if (!logs.empty())
+            {
+                const auto logText = std::string{logs};
+                SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "%s", logText.c_str());
+            }
+        };
+
+        if (!observedState)
+        {
+            observedState = mStateStack->peekState<State *>();
         }
 #endif
 
         mStateStack->update(dt, subSteps);
+
+#if defined(BREAKING_WALLS_DEBUG)
+        if (const auto statePtr = mStateStack->peekState<State *>(); statePtr != observedState)
+        {
+            // Flush logs from the state that was previously observed (the outgoing state)
+            emitConsumedLogs(observedState);
+            observedState = statePtr;
+        }
+#endif
     }
 
     void render(const double elapsed) const noexcept

@@ -15,7 +15,7 @@ namespace
     constexpr float kPlayerJumpVelocity = 14.0f;
 }
 
-Player::Player() : mIsActive(true), mIsOnGround(false)
+Player::Player() : mIsActive(false), mIsOnGround(false)
 {
     mKeyBinding[SDL_SCANCODE_A] = Action::MOVE_LEFT;
     mKeyBinding[SDL_SCANCODE_D] = Action::MOVE_RIGHT;
@@ -108,6 +108,42 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
                     break;
                 }
             }
+        }
+    }
+
+    // Mouse drag strafing (left button held)
+    float mouseX = 0.f;
+    float mouseY = 0.f;
+    SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&mouseX, &mouseY);
+    if (!mHasMouseState)
+    {
+        mLastMouseX = mouseX;
+        mHasMouseState = true;
+    }
+
+    const float mouseDeltaX = mouseX - mLastMouseX;
+    mLastMouseX = mouseX;
+
+    if (mouseButtons & SDL_BUTTON_LMASK)
+    {
+        static constexpr float kMouseStrafeThreshold = 2.0f;
+        if (mouseDeltaX <= -kMouseStrafeThreshold)
+        {
+            if (auto actionIt = mCameraActions.find(Action::MOVE_LEFT); actionIt != mCameraActions.cend())
+            {
+                actionIt->second(camera, dt);
+            }
+            mMovingLeft = true;
+            mIsMoving = true;
+        }
+        else if (mouseDeltaX >= kMouseStrafeThreshold)
+        {
+            if (auto actionIt = mCameraActions.find(Action::MOVE_RIGHT); actionIt != mCameraActions.cend())
+            {
+                actionIt->second(camera, dt);
+            }
+            mMovingRight = true;
+            mIsMoving = true;
         }
     }
 

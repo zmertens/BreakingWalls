@@ -4,6 +4,7 @@
 #include "Camera.hpp"
 #include "State.hpp"
 #include "World.hpp"
+#include "VoronoiPlanet.hpp"
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -85,6 +86,9 @@ private:
     /// Composite billboard and path traced scene
     void renderCompositeScene() const noexcept;
 
+    /// Resolve weighted-blended OIT buffers and blend into billboard texture
+    void resolveOITToBillboardTarget() const noexcept;
+
     /// Render player character (third-person mode only)
     void renderPlayerCharacter() const noexcept;
 
@@ -130,6 +134,21 @@ private:
     /// Draw floating score labels above collision points
     void drawRunnerScorePopups() const noexcept;
 
+    /// Create tiny texture/resources used by runner break plane billboard rendering
+    void initializeRunnerBreakPlaneResources() noexcept;
+
+    /// Update offscreen plane texture using particle compute + point render pass
+    void renderRunnerBreakPlaneTexture() const noexcept;
+
+    /// Update break-plane lifecycle and check pass-through shatter events
+    void updateRunnerBreakPlane(float dt) noexcept;
+
+    /// Trigger break-plane shatter effects and scoring
+    void shatterRunnerBreakPlane() noexcept;
+
+    /// Render active break-plane and flying shards in runner lane
+    void renderRunnerBreakPlane() const noexcept;
+
     /// Clean up OpenGL resources
     void cleanupResources() noexcept;
 
@@ -149,6 +168,15 @@ private:
         float riseSpeed{3.2f};
     };
 
+    struct RunnerBreakPlaneShard
+    {
+        glm::vec3 position{};
+        glm::vec3 velocity{};
+        glm::vec2 halfSize{0.35f, 0.35f};
+        float age{0.0f};
+        float lifetime{0.55f};
+    };
+
     World mWorld;    // Manages both 2D physics and 3D sphere scene
     Player &mPlayer; // Restored for camera input handling
 
@@ -164,10 +192,18 @@ private:
     Shader *mDisplayShader{nullptr};
     Shader *mComputeShader{nullptr};
     Shader *mCompositeShader{nullptr};
+    Shader *mOITResolveShader{nullptr};
     Shader *mSkinnedModelShader{nullptr};
     Shader *mWalkParticlesComputeShader{nullptr};
     Shader *mWalkParticlesRenderShader{nullptr};
     Shader *mShadowShader{nullptr};  // Shadow volume + stencil rendering
+    Shader *mVoronoiShader{nullptr}; // Voronoi planet shader
+    std::unique_ptr<Shader> mVoronoiShaderOwned;
+    VoronoiPlanet mVoronoiPlanet;
+    // SSBOs for Voronoi cell data (for compute shader)
+    GLuint mVoronoiCellColorSSBO{0};
+    GLuint mVoronoiCellSeedSSBO{0};
+    GLuint mVoronoiCellPaintedSSBO{0};
 
     Texture *mAccumTex{nullptr};
     Texture *mDisplayTex{nullptr};
@@ -180,6 +216,10 @@ private:
     GLuint mBillboardFBO{0};
     GLuint mBillboardColorTex{0};
     GLuint mBillboardDepthRbo{0};
+    GLuint mOITFBO{0};
+    GLuint mOITAccumTex{0};
+    GLuint mOITRevealTex{0};
+    GLuint mOITDepthRbo{0};
     GLuint mWalkParticlesVAO{0};
     GLuint mWalkParticlesPosSSBO{0};
     GLuint mWalkParticlesVelSSBO{0};
@@ -196,6 +236,7 @@ private:
     GLuint mReflectionColorTex{0};     // Reflection color texture
     GLuint mReflectionDepthRbo{0};     // Reflection depth buffer
     bool mReflectionsInitialized{false};
+    bool mOITInitialized{false};
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
@@ -254,6 +295,24 @@ private:
     mutable glm::vec3 mLastFxPlayerPosition{0.0f};
     mutable float mPlayerPlanarSpeedForFx{0.0f};
     mutable GLuint mWalkParticleCount{1600};
+    mutable GLuint mRunnerBreakPlaneTexture{0};
+    mutable GLuint mRunnerBreakPlaneFBO{0};
+    mutable GLuint mRunnerBreakPlaneVAO{0};
+    mutable GLuint mRunnerBreakPlanePosSSBO{0};
+    mutable GLuint mRunnerBreakPlaneVelSSBO{0};
+    mutable GLuint mRunnerBreakPlaneParticleCount{4096};
+    mutable float mRunnerBreakPlaneFxTime{0.0f};
+    int mRunnerBreakPlaneTextureWidth{512};
+    int mRunnerBreakPlaneTextureHeight{512};
+    bool mRunnerBreakPlaneActive{true};
+    float mRunnerBreakPlaneX{0.0f};
+    float mRunnerBreakPlaneRespawnTimer{0.0f};
+    float mRunnerBreakPlaneRespawnDelay{0.60f};
+    float mRunnerBreakPlaneSpacing{170.0f};
+    float mRunnerBreakPlaneHeight{8.5f};
+    int mRunnerBreakPlanePoints{100};
+    float mRunnerBreakPlaneLastPlayerX{0.0f};
+    std::vector<RunnerBreakPlaneShard> mRunnerBreakPlaneShards;
     std::vector<RunnerPointEvent> mRunnerPointEvents;
     std::vector<RunnerScorePopup> mRunnerScorePopups;
     std::mt19937 mRunnerRng{1337u};

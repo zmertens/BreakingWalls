@@ -116,6 +116,10 @@ private:
     float mCollisionAnimTimer{0.0f};
     CharacterAnimState mCollisionAnimState{CharacterAnimState::IDLE};
 
+    // Mouse drag strafing state
+    bool mHasMouseState{false};
+    int mLastMouseX{0};
+
     // Vertical locomotion
     float mVerticalVelocity{0.0f};
 };

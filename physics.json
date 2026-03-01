@@ -21,6 +21,7 @@
 	"shader_particles_cs_glsl": "shaders/particles.cs.glsl",
 	"shader_particles_frag_glsl": "shaders/particles.frag.glsl",
 	"shader_particles_vert_glsl": "shaders/particles.vert.glsl",
+	"shader_oit_resolve_frag_glsl": "shaders/oit_resolve.frag.glsl",
 	"shader_shadow_vert_glsl": "shaders/shadow.vert.glsl",
 	"shader_shadow_frag_glsl": "shaders/shadow.frag.glsl",
 	"shader_shadow_geom_glsl": "shaders/shadow.geom.glsl",

@@ -70,6 +70,7 @@ namespace JSONKeys
     constexpr std::string_view SHADER_PATHTRACER_COMPUTE = "shader_pathtracer_cs_glsl";
     constexpr std::string_view SHADER_PARTICLES_VERTEX = "shader_particles_vert_glsl";
     constexpr std::string_view SHADER_PARTICLES_FRAGMENT = "shader_particles_frag_glsl";
+    constexpr std::string_view SHADER_OIT_RESOLVE_FRAGMENT = "shader_oit_resolve_frag_glsl";
     constexpr std::string_view SHADER_SCREEN_VERTEX = "shader_screen_vert_glsl";
     constexpr std::string_view SHADER_SCREEN_FRAGMENT = "shader_screen_frag_glsl";
     constexpr std::string_view SHADER_SHADOW_VERTEX = "shader_shadow_vert_glsl";
@@ -202,9 +203,6 @@ public:
         }
 
         mResourcePathPrefix = mazes::io_utils::getDirectoryPath(absolutePath) + "/";
-
-        SDL_Log("ResourceLoader: Resource path: %s,\nabsolute: %s,\nprefix: %s\n",
-                resourcePath.data(), absolutePath.c_str(), mResourcePathPrefix.c_str());
 
         std::unordered_map<std::string, std::string> resources{};
 
@@ -817,6 +815,13 @@ void LoadingState::loadShaders() noexcept
         compositeShader->linkProgram();
         log("LoadingState: Composite shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_COMPOSITE_SCENE, std::move(compositeShader));
+
+        auto oitResolveShader = std::make_unique<Shader>();
+        oitResolveShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_COMPOSITE_VERTEX));
+        oitResolveShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_OIT_RESOLVE_FRAGMENT));
+        oitResolveShader->linkProgram();
+        log("LoadingState: OIT resolve shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_OIT_RESOLVE, std::move(oitResolveShader));
 
         // Load shadow volume shader for character shadow rendering (vertex + geometry + fragment)
         auto shadowShader = std::make_unique<Shader>();

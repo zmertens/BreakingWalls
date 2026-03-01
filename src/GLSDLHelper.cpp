@@ -16,6 +16,7 @@
 GLuint GLSDLHelper::sBillboardVAO = 0;
 GLuint GLSDLHelper::sBillboardVBO = 0;
 bool GLSDLHelper::sBillboardInitialized = false;
+bool GLSDLHelper::sBillboardOITPass = false;
 
 namespace
 {
@@ -119,17 +120,14 @@ namespace
         case GL_DEBUG_SEVERITY_MEDIUM:
             severityStr = "MEDIUM";
             break;
-        case GL_DEBUG_SEVERITY_LOW:
-            severityStr = "LOW";
-            break;
-        case GL_DEBUG_SEVERITY_NOTIFICATION:
-            severityStr = "NOTIFICATION";
-            break;
+        case GL_DEBUG_SEVERITY_LOW: [[fallthrough]];
+        case GL_DEBUG_SEVERITY_NOTIFICATION: [[fallthrough]];
         default:
-            severityStr = "UNKNOWN";
+            // Ignore low severity messages to reduce log spam
+            return;
         }
 
-        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION,
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
                      "OpenGL - Source: %s, Type: %s, Severity: %s, Message: %s\n",
                      sourceStr.c_str(), typeStr.c_str(), severityStr.c_str(), message);
     }
@@ -359,7 +357,6 @@ void GLSDLHelper::initializeBillboardRendering() noexcept
     glBindVertexArray(0);
 
     sBillboardInitialized = true;
-    SDL_Log("Billboard rendering initialized successfully");
 }
 
 void GLSDLHelper::cleanupBillboardRendering() noexcept
@@ -382,7 +379,6 @@ void GLSDLHelper::cleanupBillboardRendering() noexcept
     }
 
     sBillboardInitialized = false;
-    SDL_Log("Billboard rendering cleaned up");
 }
 
 void GLSDLHelper::renderBillboardSprite(
@@ -417,7 +413,10 @@ void GLSDLHelper::renderBillboardSprite(
 
     // Enable blending for transparency
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (!sBillboardOITPass)
+    {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
 
     // Disable face culling for billboards
     glDisable(GL_CULL_FACE);
@@ -515,6 +514,8 @@ void GLSDLHelper::renderBillboardSpriteUV(
     billboardShader.setUniform("FlipX", static_cast<GLint>(flipX ? 1 : 0));
     billboardShader.setUniform("FlipY", static_cast<GLint>(flipY ? 1 : 0));
     billboardShader.setUniform("UseRedAsAlpha", static_cast<GLint>(useRedAsAlpha ? 1 : 0));
+    billboardShader.setUniform("uOITPass", static_cast<GLint>(sBillboardOITPass ? 1 : 0));
+    billboardShader.setUniform("uOITWeightScale", 6.0f);
 
     GLint prevActiveTexture = GL_TEXTURE0;
     glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTexture);
@@ -531,4 +532,9 @@ void GLSDLHelper::renderBillboardSpriteUV(
 bool GLSDLHelper::isBillboardInitialized() noexcept
 { 
     return sBillboardInitialized;
+}
+
+void GLSDLHelper::setBillboardOITPass(bool enabled) noexcept
+{
+    sBillboardOITPass = enabled;
 }
