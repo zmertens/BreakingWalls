@@ -1,4 +1,4 @@
- #version 450 core
+#version 450 core
 
 // Path tracing compute shader with progressive refinement
 // Based on physically-based rendering principles
