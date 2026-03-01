@@ -192,7 +192,7 @@ struct PhysicsGame::PhysicsGameImpl
     void render(const double elapsed) const noexcept
     {
         // Only render if state stack has states
-        if (!mRenderWindow || !mStateStack || !(mRenderWindow->isOpen() || mStateStack->isEmpty()))
+        if (!mRenderWindow || !mStateStack || !mRenderWindow->isOpen() || mStateStack->isEmpty())
         {
             return;
         }
