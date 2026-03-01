@@ -110,7 +110,6 @@ void VoronoiPlanet::generateUVSphere(int lonSteps, int latSteps)
     m_normals.clear();
     m_indices.clear();
     m_cellIds.clear();
-    constexpr float kGroundHalfExtent = 50.0f;
     for (int lat = 0; lat <= latSteps; ++lat)
     {
         float v = (float)lat / (float)latSteps;
