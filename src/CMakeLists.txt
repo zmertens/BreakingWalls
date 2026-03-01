@@ -2,7 +2,9 @@ include(BuildInfo)
 
 include(FetchGitRepo)
 set(DEPENDENCY_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install")
-set(CMAKE_INSTALL_PREFIX "${DEPENDENCY_INSTALL_PREFIX}" CACHE PATH "Install path for dependencies" FORCE)
+if(NOT CMAKE_INSTALL_PREFIX_INITIALIZED_BY_USER)
+    set(CMAKE_INSTALL_PREFIX "${DEPENDENCY_INSTALL_PREFIX}" CACHE PATH "Install path for dependencies")
+endif()
 
 find_package(OpenGL REQUIRED)
 
