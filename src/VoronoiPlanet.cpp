@@ -278,17 +278,4 @@ void VoronoiPlanet::paintAtPosition(const glm::vec3 &worldPos, const glm::vec3 &
             glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(uint32_t), sizeof(uint32_t), &painted);
         }
     }
-    m_paintedStates[id] = 1;
-    // Log painted cell for debugging mapping issues
-    if (m_uploaded)
-    {
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_cellColorSSBO);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(glm::vec3), sizeof(glm::vec3), glm::value_ptr(color));
-        if (m_paintedSSBO != 0)
-        {
-            uint32_t painted = 1;
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_paintedSSBO);
-            glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(uint32_t), sizeof(uint32_t), &painted);
-        }
-    }
 }
