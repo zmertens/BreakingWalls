@@ -204,7 +204,8 @@ struct PhysicsGame::PhysicsGameImpl
 #if defined(BREAKING_WALLS_DEBUG)
         if (const auto statePtr = mStateStack->peekState<State *>(); statePtr != observedState)
         {
-            emitConsumedLogs(statePtr);
+            // Flush logs from the state that was previously observed (the outgoing state)
+            emitConsumedLogs(observedState);
             observedState = statePtr;
         }
 #endif
