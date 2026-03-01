@@ -1491,6 +1491,9 @@ void GameState::resolveOITToBillboardTarget() const noexcept
     glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
     glGetBooleanv(GL_BLEND, &blendEnabled);
 
+    GLint prevActiveTexture = GL_TEXTURE0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTexture);
+
     glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glViewport(0, 0, mWindowWidth, mWindowHeight);
@@ -1511,6 +1514,8 @@ void GameState::resolveOITToBillboardTarget() const noexcept
 
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    glActiveTexture(static_cast<GLenum>(prevActiveTexture));
 
     if (!blendEnabled)
     {
