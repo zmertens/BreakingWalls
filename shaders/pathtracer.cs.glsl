@@ -9,6 +9,10 @@
 #define MAX_LIGHTS 5
 #define MAX_BOUNCES 8
 #define EPSILON 0.001
+#define INV_PI 0.31830988618
+#define THROUGHPUT_LUMA_CLAMP 6.0
+#define DIRECT_LUMA_CLAMP 8.0
+#define SAMPLE_LUMA_CLAMP 12.0
 
 // Starfield parameters
 #define PI 3.14159265359
@@ -20,6 +24,8 @@
 #define DIELECTRIC 2
 
 // ============================================================================
+
+// ...existing code...
 // Random Number Generation (PCG Hash)
 // ============================================================================
 
@@ -52,6 +58,33 @@ vec3 randomInUnitSphere(uvec2 pixel, uint sampleIndex, uint bounce) {
         r * sin(phi) * sin(theta),
         r * cos(phi)
     );
+}
+
+vec3 randomCosineHemisphere(vec3 normal, uvec2 pixel, uint sampleIndex, uint bounce) {
+    vec2 xi = random2(pixel, sampleIndex, bounce * 17u + 3u);
+    float phi = TWO_PI * xi.x;
+    float r = sqrt(xi.y);
+    float x = r * cos(phi);
+    float y = r * sin(phi);
+    float z = sqrt(max(0.0, 1.0 - xi.y));
+
+    vec3 up = abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+
+    return normalize(tangent * x + bitangent * y + normal * z);
+}
+
+float luminance(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec3 clampByLuminance(vec3 c, float maxLuma) {
+    float y = luminance(c);
+    if (y > maxLuma && y > EPSILON) {
+        c *= (maxLuma / y);
+    }
+    return c;
 }
 
 // Image textures for accumulation and display
@@ -88,7 +121,7 @@ struct Sphere {
     uint materialType;
     float fuzz;
     float refractiveIndex;
-    uint padding;
+    float textureBlend;
 };
 
 struct Triangle {
@@ -106,12 +139,14 @@ struct Triangle {
 struct HitRecord {
     vec3 point;
     vec3 normal;
+    vec2 texCoord;
     float t;
     bool frontFace;
     uint materialType;
     vec3 albedo;
     float fuzz;
     float refractiveIndex;
+    float textureBlend;
 };
 
 // Uniforms
@@ -121,18 +156,19 @@ uniform uint uSamplesPerBatch;
 uniform uint uSphereCount;  // Actual number of spheres to check
 uniform uint uPrimaryRaySphereCount;  // Sphere count for primary rays (exclude reflection-only proxy)
 uniform uint uTriangleCount;
-uniform vec3 uGroundPlanePoint;
-uniform vec3 uGroundPlaneNormal;
-uniform vec3 uGroundPlaneAlbedo;
-uniform uint uGroundPlaneMaterialType;
-uniform float uGroundPlaneFuzz;
-uniform float uGroundPlaneRefractiveIndex;
+uniform uint uTriangleShadowTestBudget;
+
 uniform float uTime;
 uniform float uHistoryBlend;
 uniform sampler2D uNoiseTex;
+uniform sampler2D uTestAlbedoTex;
+uniform float uTestTextureStrength;
+uniform vec2 uSphereTexScale;
+uniform vec2 uTriangleTexScale;
+uniform vec3 uPlayerPos; // Player position in world space
+uniform uint uVoronoiCellCount;
 
 // Shadow casting uniforms
-uniform vec3 uPlayerPos;          // Player position in world space
 uniform float uPlayerRadius;      // Player shadow radius
 uniform vec3 uLightDir;           // Light direction (normalized)
 
@@ -145,8 +181,45 @@ layout (std430, binding = 2) buffer TriangleBuffer {
     Triangle bTriangles[MAX_TRIANGLES];
 };
 
+layout (std430, binding = 3) readonly buffer VoronoiCellColorBuffer {
+    vec4 bVoronoiCellColors[];
+};
+
+layout (std430, binding = 4) readonly buffer VoronoiSeedBuffer {
+    vec4 bVoronoiSeeds[];
+};
+
+layout (std430, binding = 5) readonly buffer VoronoiPaintedBuffer {
+    uint bVoronoiPainted[];
+};
+
 // ============================================================================
 // Intersection Functions
+// Plane intersection (Y=0 ground plane)
+bool planeIntersect(in Ray ray, out float t, out vec3 hitPoint, out vec3 normal) {
+    // Plane: y = 0
+    if (abs(ray.direction.y) < EPSILON) return false;
+    t = -ray.origin.y / ray.direction.y;
+    if (t < EPSILON) return false;
+    hitPoint = ray.origin + t * ray.direction;
+    normal = vec3(0.0, 1.0, 0.0);
+    return true;
+}
+
+// Voronoi coloring for ground plane
+vec3 voronoiColorAt(vec3 p) {
+    // Project to XZ plane and wrap for infinite tiling
+    float tileSize = 100.0; // Should match seed generation range
+    vec2 pos = mod(p.xz + tileSize * 1000.0, tileSize); // Offset to avoid negative mod issues
+    float minDist = 1e20;
+    uint cellIdx = 0u;
+    for (uint i = 0u; i < uVoronoiCellCount; ++i) {
+        vec2 seed = mod(bVoronoiSeeds[i].xz + tileSize * 1000.0, tileSize);
+        float d = distance(pos, seed);
+        if (d < minDist) { minDist = d; cellIdx = i; }
+    }
+    return bVoronoiCellColors[cellIdx].rgb;
+}
 // ============================================================================
 
 bool sphereIntersect(in Sphere sphere, in Ray ray, float tMin, float tMax, out HitRecord hit) {
@@ -174,10 +247,16 @@ bool sphereIntersect(in Sphere sphere, in Ray ray, float tMin, float tMax, out H
     vec3 outwardNormal = (hit.point - sphere.center.xyz) / sphere.radius;
     hit.frontFace = dot(ray.direction, outwardNormal) < 0.0;
     hit.normal = hit.frontFace ? outwardNormal : -outwardNormal;
+
+    float phi = atan(outwardNormal.z, outwardNormal.x);
+    float theta = acos(clamp(outwardNormal.y, -1.0, 1.0));
+    hit.texCoord = vec2(phi / TWO_PI + 0.5, theta / PI) * uSphereTexScale;
+
     hit.materialType = sphere.materialType;
     hit.albedo = sphere.albedo.rgb;
     hit.fuzz = sphere.fuzz;
     hit.refractiveIndex = sphere.refractiveIndex;
+    hit.textureBlend = clamp(sphere.textureBlend, 0.0, 1.0);
 
     return true;
 }
@@ -198,30 +277,7 @@ bool hitWorld(in Ray ray, float tMin, float tMax, uint sphereCount, out HitRecor
     return hitAnything;
 }
 
-bool planeIntersect(in Ray ray, float tMin, float tMax, out HitRecord hit) {
-    vec3 planeNormal = normalize(uGroundPlaneNormal);
-    float denom = dot(planeNormal, ray.direction);
 
-    if (abs(denom) < EPSILON) {
-        return false;
-    }
-
-    float t = dot(uGroundPlanePoint - ray.origin, planeNormal) / denom;
-    if (t < tMin || t > tMax) {
-        return false;
-    }
-
-    hit.t = t;
-    hit.point = ray.origin + ray.direction * t;
-    hit.frontFace = dot(ray.direction, planeNormal) < 0.0;
-    hit.normal = hit.frontFace ? planeNormal : -planeNormal;
-    hit.materialType = uGroundPlaneMaterialType;
-    hit.albedo = uGroundPlaneAlbedo;
-    hit.fuzz = uGroundPlaneFuzz;
-    hit.refractiveIndex = uGroundPlaneRefractiveIndex;
-
-    return true;
-}
 
 bool triangleIntersect(in Triangle triangle, in Ray ray, float tMin, float tMax, out HitRecord hit) {
     vec3 v0 = triangle.v0.xyz;
@@ -266,10 +322,20 @@ bool triangleIntersect(in Triangle triangle, in Ray ray, float tMin, float tMax,
     hit.point = ray.origin + ray.direction * t;
     hit.frontFace = dot(ray.direction, interpNormal) < 0.0;
     hit.normal = hit.frontFace ? interpNormal : -interpNormal;
+    vec2 uv0 = vec2(triangle.v0.w, triangle.n0.w);
+    vec2 uv1 = vec2(triangle.v1.w, triangle.n1.w);
+    vec2 uv2 = vec2(triangle.v2.w, triangle.n2.w);
+    hit.texCoord = uv0 * w + uv1 * u + uv2 * v;
+    float uvSpan = length(uv0 - uv1) + length(uv1 - uv2) + length(uv2 - uv0);
+    if (uvSpan < 1e-5) {
+        hit.texCoord = hit.point.xz * 0.12;
+    }
+    hit.texCoord *= uTriangleTexScale;
     hit.materialType = uint(triangle.albedoAndMaterial.w + 0.5);
     hit.albedo = triangle.albedoAndMaterial.rgb;
     hit.fuzz = triangle.materialParams.x;
     hit.refractiveIndex = triangle.materialParams.y;
+    hit.textureBlend = clamp(triangle.materialParams.z, 0.0, 1.0);
 
     return true;
 }
@@ -342,20 +408,12 @@ bool testSpheresShadow(in Ray shadowRay, float maxDist) {
     return false;
 }
 
-bool testPlaneShadow(in Ray shadowRay, float maxDist) {
-    // Test if shadow ray intersects ground plane
-    vec3 planeNormal = normalize(uGroundPlaneNormal);
-    float denom = dot(planeNormal, shadowRay.direction);
-    
-    if (abs(denom) < EPSILON) return false;
-    
-    float t = dot(uGroundPlanePoint - shadowRay.origin, planeNormal) / denom;
-    return t > EPSILON && t < maxDist;
-}
+
 
 bool testTrianglesShadow(in Ray shadowRay, float maxDist) {
     uint total = min(uTriangleCount, uint(MAX_TRIANGLES));
-    uint count = min(total, uint(MAX_TRIANGLE_SHADOW_TESTS));
+    uint adaptiveBudget = max(1u, min(uTriangleShadowTestBudget, uint(MAX_TRIANGLE_SHADOW_TESTS)));
+    uint count = min(total, adaptiveBudget);
     if (count == 0u) {
         return false;
     }
@@ -416,30 +474,91 @@ float calculateShadow(vec3 hitPoint, vec3 normal) {
         shadowFactor = min(shadowFactor, triShadow);
     }
     
-    // Ground plane adds subtle soft shadow with noise
-    if (testPlaneShadow(shadowRay, maxDist)) {
-        // Very subtle shadow with noise jitter for ground
-        float groundNoise = texture(uNoiseTex, hitPoint.xz * 0.1).r;
-        float groundShadow = mix(0.88, 0.92, groundNoise);
-        shadowFactor = min(shadowFactor, groundShadow);
-    }
+
     
     return shadowFactor;
 }
 
-// ============================================================================
-// Grid Function for Ground Plane
-// ============================================================================
+float visibilityToSun(vec3 hitPoint, vec3 normal) {
+    vec3 lightDir = normalize(-uLightDir);
+    Ray shadowRay = Ray(hitPoint + normal * 0.02, lightDir);
+    float maxDist = uCamera.far;
 
-float grid(vec2 uv, float perspective) {
-    vec2 size = vec2(uv.y, uv.y * uv.y * 0.2) * 0.01;
-    uv += vec2(0.0, uTime * 4.0 * (perspective + 0.05));
-    uv = abs(fract(uv) - 0.5);
-    vec2 lines = smoothstep(size, vec2(0.0), uv);
-    lines += smoothstep(size * 5.0, vec2(0.0), uv) * 0.4 * perspective;
-    return clamp(lines.x + lines.y, 0.0, 3.0);
+    if (testPlayerShadow(shadowRay, maxDist)) return 0.0;
+    if (testSpheresShadow(shadowRay, maxDist)) return 0.0;
+    if (testTrianglesShadow(shadowRay, maxDist)) return 0.0;
+
+    return 1.0;
 }
 
+vec3 estimateDirectSun(in HitRecord hit) {
+    if (hit.materialType != LAMBERTIAN) {
+        return vec3(0.0);
+    }
+
+    vec3 lightDir = normalize(-uLightDir);
+    float nDotL = max(dot(hit.normal, lightDir), 0.0);
+    if (nDotL <= 0.0) {
+        return vec3(0.0);
+    }
+
+    float visibility = visibilityToSun(hit.point, hit.normal);
+    if (visibility <= 0.0) {
+        return vec3(0.0);
+    }
+
+    vec3 sunRadiance = vec3(2.5, 2.3, 2.1);
+    vec3 lambertBRDF = hit.albedo * INV_PI;
+    float bsdfPdf = nDotL * INV_PI;
+    float neeWeight = 1.0 / (1.0 + bsdfPdf);
+    return lambertBRDF * sunRadiance * nDotL * visibility * neeWeight;
+}
+
+// ============================================================================
+
+vec3 sampleVoronoiGroundColor(vec3 point) {
+
+    uint count = uVoronoiCellCount;
+    if (count == 0u) {
+        return vec3(0.0);
+    }
+
+    float bestDist2 = 1e30;
+    float secondBestDist2 = 1e30;
+    uint bestIndex = 0u;
+    vec2 pointXZ = point.xz;
+
+    for (uint i = 0u; i < count; ++i) {
+        vec2 seedXZ = bVoronoiSeeds[i].xz;
+        vec2 delta = pointXZ - seedXZ;
+        float dist2 = dot(delta, delta);
+        if (dist2 < bestDist2) {
+            secondBestDist2 = bestDist2;
+            bestDist2 = dist2;
+            bestIndex = i;
+        } else if (dist2 < secondBestDist2) {
+            secondBestDist2 = dist2;
+        }
+    }
+
+    vec3 baseColor = bVoronoiCellColors[bestIndex].rgb;
+
+    float edgeDistance2 = secondBestDist2 - bestDist2;
+    float edgeMask = clamp(1.0 - edgeDistance2 * 0.28, 0.0, 1.0);
+    vec3 edgeLineColor = vec3(0.02, 0.02, 0.03);
+
+    vec3 cellColor = baseColor;
+    cellColor = mix(cellColor, edgeLineColor, edgeMask * 0.92);
+
+    // Keep the full Voronoi grid visible even before cells are painted.
+    // Painted cells keep full intensity; unpainted cells are muted but still readable.
+    if (bVoronoiPainted[bestIndex] == 0u) {
+        vec3 neutralFloorTint = vec3(0.12, 0.13, 0.15);
+        return mix(neutralFloorTint, cellColor, 0.56);
+    }
+
+    return cellColor;
+}
 // ============================================================================
 // Material Scattering Functions
 // ============================================================================
@@ -451,18 +570,36 @@ float schlickReflectance(float cosine, float refractiveRatio) {
     return r0 + (1.0 - r0) * pow(1.0 - cosine, 5.0);
 }
 
+vec3 fresnelSchlickVec(float cosTheta, vec3 F0) {
+    return F0 + (vec3(1.0) - F0) * pow(1.0 - clamp(cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 sampleGGXHalfVector(vec3 normal, float roughness, uvec2 pixel, uint sampleIndex, uint bounce) {
+    vec2 xi = random2(pixel, sampleIndex, bounce * 29u + 11u);
+
+    float alpha = max(0.02, roughness * roughness);
+    float alpha2 = alpha * alpha;
+
+    float phi = TWO_PI * xi.x;
+    float cosTheta = sqrt((1.0 - xi.y) / (1.0 + (alpha2 - 1.0) * xi.y));
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+
+    vec3 hLocal = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+
+    vec3 up = abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+
+    return normalize(tangent * hLocal.x + bitangent * hLocal.y + normal * hLocal.z);
+}
+
 // Scatter ray based on material type
 bool scatter(in HitRecord hit, in Ray rayIn, out vec3 attenuation, out Ray scattered,
              uvec2 pixel, uint sampleIndex, uint bounce) {
 
     // LAMBERTIAN (Diffuse)
     if (hit.materialType == LAMBERTIAN) {
-        vec3 scatterDir = hit.normal + randomInUnitSphere(pixel, sampleIndex, bounce);
-
-        // Catch degenerate scatter direction
-        if (abs(scatterDir.x) < EPSILON && abs(scatterDir.y) < EPSILON && abs(scatterDir.z) < EPSILON) {
-            scatterDir = hit.normal;
-        }
+        vec3 scatterDir = randomCosineHemisphere(hit.normal, pixel, sampleIndex, bounce);
 
         scattered = Ray(hit.point, normalize(scatterDir));
         attenuation = hit.albedo;
@@ -471,33 +608,56 @@ bool scatter(in HitRecord hit, in Ray rayIn, out vec3 attenuation, out Ray scatt
 
     // METAL (Reflective)
     if (hit.materialType == METAL) {
-        vec3 reflected = reflect(normalize(rayIn.direction), hit.normal);
-        reflected += hit.fuzz * randomInUnitSphere(pixel, sampleIndex, bounce);
-        scattered = Ray(hit.point, normalize(reflected));
-        attenuation = hit.albedo;
-        return dot(scattered.direction, hit.normal) > 0.0;
+        vec3 V = normalize(-rayIn.direction);
+        float roughness = clamp(hit.fuzz, 0.02, 1.0);
+        vec3 H = sampleGGXHalfVector(hit.normal, roughness, pixel, sampleIndex, bounce);
+        if (dot(V, H) <= 0.0) {
+            H = -H;
+        }
+
+        vec3 L = normalize(reflect(rayIn.direction, H));
+        if (dot(L, hit.normal) <= EPSILON) {
+            return false;
+        }
+
+        vec3 F0 = clamp(hit.albedo, vec3(0.04), vec3(0.98));
+        attenuation = fresnelSchlickVec(max(dot(L, H), 0.0), F0);
+        vec3 offsetNormal = dot(L, hit.normal) > 0.0 ? hit.normal : -hit.normal;
+        scattered = Ray(hit.point + offsetNormal * 0.01, L);
+        return true;
     }
 
     // DIELECTRIC (Glass)
     if (hit.materialType == DIELECTRIC) {
-        attenuation = vec3(1.0);
-        float ri = hit.frontFace ? (1.0 / hit.refractiveIndex) : hit.refractiveIndex;
-
-        vec3 unitDir = normalize(rayIn.direction);
-        float cosTheta = min(dot(-unitDir, hit.normal), 1.0);
-        float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
-
-        bool cannotRefract = ri * sinTheta > 1.0;
-        float reflectProb = schlickReflectance(cosTheta, ri);
-
-        vec3 direction;
-        if (cannotRefract || reflectProb > random(pixel, sampleIndex, bounce * 100u + 50u)) {
-            direction = reflect(unitDir, hit.normal);
-        } else {
-            direction = refract(unitDir, hit.normal, ri);
+        vec3 V = normalize(-rayIn.direction);
+        float roughness = clamp(hit.fuzz, 0.0, 1.0);
+        vec3 H = sampleGGXHalfVector(hit.normal, roughness, pixel, sampleIndex, bounce);
+        if (dot(V, H) <= 0.0) {
+            H = -H;
         }
 
-        scattered = Ray(hit.point, direction);
+        float etaI = hit.frontFace ? 1.0 : hit.refractiveIndex;
+        float etaT = hit.frontFace ? hit.refractiveIndex : 1.0;
+        float eta = etaI / etaT;
+
+        float F0s = ((etaT - etaI) / (etaT + etaI));
+        F0s *= F0s;
+        float cosVH = max(dot(V, H), 0.0);
+        float reflectProb = F0s + (1.0 - F0s) * pow(1.0 - cosVH, 5.0);
+
+        vec3 direction;
+        if (random(pixel, sampleIndex, bounce * 131u + 73u) < reflectProb) {
+            direction = reflect(rayIn.direction, H);
+        } else {
+            direction = refract(rayIn.direction, H, eta);
+            if (length(direction) < EPSILON) {
+                direction = reflect(rayIn.direction, H);
+            }
+        }
+
+        attenuation = vec3(1.0);
+        vec3 offsetNormal = dot(direction, hit.normal) > 0.0 ? hit.normal : -hit.normal;
+        scattered = Ray(hit.point + offsetNormal * 0.01, normalize(direction));
         return true;
     }
 
@@ -603,96 +763,110 @@ vec3 skyColor(vec3 direction) {
     return starfieldColor(direction, uvec2(0u), 0u);
 }
 
+vec3 sampleTestAlbedo(vec2 uv) {
+    vec4 texel = textureLod(uTestAlbedoTex, fract(uv), 0.0);
+    return mix(vec3(1.0), texel.rgb, texel.a);
+}
+
 // ============================================================================
 // Path Tracing
 // ============================================================================
 
 vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
-    vec3 color = vec3(1.0);
+    vec3 throughput = vec3(1.0);
+    vec3 radiance = vec3(0.0);
+
 
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit;
         HitRecord sphereHit;
-        HitRecord planeHit;
         HitRecord triangleHit;
+        float planeT;
+        vec3 planeHitPoint, planeNormal;
         uint sphereCountForBounce = (bounce == 0u) ? uPrimaryRaySphereCount : uSphereCount;
         bool hasSphereHit = hitWorld(ray, EPSILON, uCamera.far, sphereCountForBounce, sphereHit);
-        bool hasPlaneHit = planeIntersect(ray, EPSILON, uCamera.far, planeHit);
         uint triangleCountForBounce = (bounce == 0u)
             ? uTriangleCount
             : ((bounce == 1u) ? min(uTriangleCount, 32u) : 0u);
         bool hasTriangleHit = hitTriangles(ray, EPSILON, uCamera.far, triangleCountForBounce, triangleHit);
-        bool hitIsPlane = false;
+        bool hasPlaneHit = planeIntersect(ray, planeT, planeHitPoint, planeNormal);
 
-        bool hasAnyHit = false;
+        // Find closest hit
         float closestT = uCamera.far;
+        int hitType = -1; // 0 = plane, 1 = sphere, 2 = triangle
 
+        if (hasPlaneHit && planeT < closestT) {
+            closestT = planeT;
+            hitType = 0;
+        }
         if (hasSphereHit && sphereHit.t < closestT) {
-            hit = sphereHit;
             closestT = sphereHit.t;
-            hasAnyHit = true;
-            hitIsPlane = false;
+            hitType = 1;
         }
-
         if (hasTriangleHit && triangleHit.t < closestT) {
-            hit = triangleHit;
             closestT = triangleHit.t;
-            hasAnyHit = true;
-            hitIsPlane = false;
+            hitType = 2;
         }
 
-        if (hasPlaneHit && planeHit.t < closestT) {
-            hit = planeHit;
-            closestT = planeHit.t;
-            hasAnyHit = true;
-            hitIsPlane = true;
-        }
+        if (hitType == 0) {
+            // Shade Voronoi ground plane, taking painted state into account
+            vec3 cellColor = sampleVoronoiGroundColor(planeHitPoint);
+            vec3 lightDir = normalize(-uLightDir);
+            float nDotL = max(dot(planeNormal, lightDir), 0.0);
+            float shadow = calculateShadow(planeHitPoint, planeNormal);
+            float ambient = 0.24;
+            float diffuse = 0.80 * nDotL * shadow;
 
-        if (hasAnyHit) {
-            vec3 attenuation;
-            Ray scattered;
+            vec3 litGround = cellColor * (ambient + diffuse);
+            litGround = clamp(litGround, vec3(0.0), vec3(1.0));
 
-            if (scatter(hit, ray, attenuation, scattered, pixel, sampleIndex, bounce)) {
-                // Calculate shadow factor
-                float shadowFactor = calculateShadow(hit.point, hit.normal);
-                
-                // Apply grid overlay to ground plane
-                if (hitIsPlane) {
-                    // Use hit point XZ coordinates for grid pattern
-                    vec2 gridUV = hit.point.xz * 0.3;  // Scale factor for grid size
-                    float gridVal = grid(gridUV, 0.8);
-                    
-                    // Blend grid with ground plane color - more prominent
-                    vec3 gridColor = vec3(0.0, 1.0, 1.0);  // Cyan grid color
-                    attenuation = mix(attenuation, gridColor, gridVal * 0.6);
-                }
-                
-                // Apply shadow to attenuation
-                attenuation *= shadowFactor;
-                
-                color *= attenuation;
-                ray = scattered;
-            } else {
-                // Absorbed
-                return vec3(0.0);
-            }
+            radiance += throughput * litGround;
+            return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
+        } else if (hitType == 1) {
+            hit = sphereHit;
+        } else if (hitType == 2) {
+            hit = triangleHit;
         } else {
             // Hit sky
-            color *= starfieldColor(ray.direction, pixel, sampleIndex);
-            return color;
+            radiance += throughput * starfieldColor(ray.direction, pixel, sampleIndex);
+            return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
+        }
+
+        if (uTestTextureStrength > EPSILON && hit.textureBlend > EPSILON) {
+            vec3 texAlbedo = sampleTestAlbedo(hit.texCoord);
+            float blend = clamp(hit.textureBlend * uTestTextureStrength, 0.0, 1.0);
+            hit.albedo = mix(hit.albedo, texAlbedo, blend);
+        }
+
+        // Standard material shading for spheres/triangles
+        vec3 attenuation;
+        Ray scattered;
+        vec3 direct = throughput * estimateDirectSun(hit);
+        direct = clampByLuminance(direct, DIRECT_LUMA_CLAMP);
+        radiance += direct;
+
+        if (scatter(hit, ray, attenuation, scattered, pixel, sampleIndex, bounce)) {
+            throughput *= attenuation;
+            throughput = clampByLuminance(throughput, THROUGHPUT_LUMA_CLAMP);
+            ray = scattered;
+        } else {
+            // Absorbed
+            return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
         }
 
         // Russian roulette termination for performance
         if (bounce > 3) {
-            float p = max(color.r, max(color.g, color.b));
+            float p = max(throughput.r, max(throughput.g, throughput.b));
+            p = clamp(p, 0.05, 0.99);
             if (random(pixel, sampleIndex, bounce * 1000u) > p) {
-                return vec3(0.0);
+                return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
             }
-            color /= p;
+            throughput /= p;
+            throughput = clampByLuminance(throughput, THROUGHPUT_LUMA_CLAMP);
         }
     }
 
-    return vec3(0.0); // Exceeded max bounces
+    return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP); // Exceeded max bounces
 }
 
 // ============================================================================
@@ -729,6 +903,7 @@ void main() {
 
         // Trace the ray
         vec3 color = traceRay(ray, pixel, sampleIndex);
+        color = clampByLuminance(color, SAMPLE_LUMA_CLAMP);
         accumulatedColor += color;
     }
 

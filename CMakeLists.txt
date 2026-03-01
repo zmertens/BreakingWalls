@@ -24,3 +24,38 @@ option(BREAKING_WALLS_DEMO_DEF "Define BREAKING_WALLS_DEMO macro" OFF)
 include(NoInSourceBuilds)
 
 add_subdirectory(src bin)
+############################################################
+# Install rules for packaging with CPack
+include(GNUInstallDirs)
+
+# Install main executable
+install(TARGETS breakingwalls
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# Install required runtime DLLs for the main executable (Windows only)
+if (WIN32)
+    install(FILES
+        $<TARGET_RUNTIME_DLLS:breakingwalls>
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
+
+install(FILES "${CMAKE_SOURCE_DIR}/deps/run-breakingwalls.bat" DESTINATION "${CMAKE_INSTALL_BINDIR}")   
+
+# Install assets
+install(DIRECTORY audio/ DESTINATION ${CMAKE_INSTALL_BINDIR}/audio)
+install(DIRECTORY models/ DESTINATION ${CMAKE_INSTALL_BINDIR}/models)
+install(DIRECTORY shaders/ DESTINATION ${CMAKE_INSTALL_BINDIR}/shaders)
+install(DIRECTORY textures/ DESTINATION ${CMAKE_INSTALL_BINDIR}/textures)
+install(FILES physics.json DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES LICENSE README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+# Enable CPack
+include(InstallRequiredSystemLibraries)
+include(CPack)
+set(CPACK_PACKAGE_NAME "BreakingWalls")
+set(CPACK_PACKAGE_VERSION ${BREAKING_WALLS_PROJECT_VERSION})
+set(CPACK_PACKAGE_CONTACT "Your Name <your@email.com>")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${CMAKE_SOURCE_DIR}/README.md")

@@ -397,7 +397,7 @@ bool SettingsState::handleEvent(const SDL_Event &event) noexcept
     {
         if (event.key.scancode == SDL_SCANCODE_ESCAPE)
         {
-            log("SettingsState: Escape key pressed, returning to menu...");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SettingsState: Escape key pressed, returning to menu...");
             mShowSettingsWindow = false;
         }
     }

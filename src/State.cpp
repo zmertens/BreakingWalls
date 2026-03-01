@@ -11,6 +11,9 @@
 State::State(StateStack &stack, Context context)
     : mStack{&stack}, mContext{context}
 {
+#if defined(BREAKING_WALLS_DEBUG)
+    mLogCondition = true;
+#endif
 }
 
 void State::requestStackPush(States::ID stateID)
@@ -38,50 +41,7 @@ StateStack &State::getStack() const noexcept
     return *mStack;
 }
 
-/// @brief
-/// @param message
-/// @param delimiter '\n'
-void State::log(std::string_view message, const char delimiter) noexcept
+bool State::isLoggable(const bool newCondition) const noexcept
 {
-    auto nextLine = std::string{message} + delimiter;
-    mLogs.emplace_back(nextLine);
-}
-
-std::string_view State::view() const noexcept
-{
-    mLogViewBuffer.clear();
-
-    size_t totalSize = 0;
-    for (const auto &line : mLogs)
-    {
-        totalSize += line.size();
-    }
-
-    mLogViewBuffer.reserve(totalSize);
-    for (const auto &line : mLogs)
-    {
-        mLogViewBuffer += line;
-    }
-
-    return std::string_view{mLogViewBuffer};
-}
-
-std::string_view State::consumeView() noexcept
-{
-    mLogViewBuffer.clear();
-
-    size_t totalSize = 0;
-    for (const auto &line : mLogs)
-    {
-        totalSize += line.size();
-    }
-
-    mLogViewBuffer.reserve(totalSize);
-    for (const auto &line : mLogs)
-    {
-        mLogViewBuffer += line;
-    }
-
-    mLogs.clear();
-    return std::string_view{mLogViewBuffer};
+    return mLogCondition || newCondition;
 }

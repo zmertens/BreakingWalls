@@ -145,10 +145,7 @@ public:
     virtual bool update(float dt, unsigned int subSteps) noexcept = 0;
     virtual bool handleEvent(const SDL_Event &event) noexcept = 0;
 
-    virtual void log(std::string_view message, const char delimiter = '\n') noexcept override;
-    virtual std::string_view view() const noexcept override;
-    virtual std::string_view consumeView() noexcept override;
-
+    virtual bool isLoggable(const bool logCondition = false) const noexcept override;
 protected:
     void requestStackPush(States::ID stateID);
     void requestStackPop();
@@ -158,11 +155,9 @@ protected:
 
     StateStack &getStack() const noexcept;
 
-    std::vector<std::string> mLogs;
-
+    bool mLogCondition{false};
 private:
     StateStack *mStack;
     Context mContext;
-    mutable std::string mLogViewBuffer;
 };
 #endif // STATE_HPP

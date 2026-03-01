@@ -14,6 +14,7 @@ uniform uint uBoneCount;
 
 out vec3 vWorldPos;
 out vec3 vWorldNormal;
+out vec2 vTexCoord;
 
 void main()
 {
@@ -52,6 +53,7 @@ void main()
     mat3 normalMat = mat3(transpose(inverse(uModel)));
     vWorldNormal = normalize(normalMat * localNormal);
     vWorldPos = worldPos.xyz;
+    vTexCoord = TexCoord;
 
     gl_Position = uProjection * uView * worldPos;
 }

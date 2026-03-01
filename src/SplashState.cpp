@@ -139,7 +139,7 @@ bool SplashState::handleEvent(const SDL_Event &event) noexcept
             return true;
         }
 
-        log("SplashState: Input received, transitioning to MenuState...");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SplashState: Input received, transitioning to MenuState...");
         if (mWhiteNoise && mWhiteNoise->isEnabled())
         {
             mWhiteNoise->stop(SoundEffect::ID::WHITE_NOISE);

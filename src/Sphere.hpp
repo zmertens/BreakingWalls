@@ -28,6 +28,8 @@ public:
     float getRefractiveIndex() const noexcept;
     void setFuzz(float fuzziness) noexcept;
     float getFuzz() const noexcept;
+    void setTextureBlend(float blend) noexcept;
+    float getTextureBlend() const noexcept;
 
 private:
     glm::vec4 mCenter;
@@ -48,8 +50,8 @@ private:
     float mFuzz;
     // Refractive index for dielectrics
     float mRefractiveIndex;
-    // Alignment padding
-    std::uint32_t mPadding;
+    // Texture mapping blend factor [0..1]
+    float mTextureBlend;
 };
 
 #endif // SPHERE_HPP

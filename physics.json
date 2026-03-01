@@ -1,5 +1,5 @@
 {
-	"window_icon": "textures/icon2.bmp",
+	"window_icon": "textures/icon3.bmp",
     "splash_image": "textures/title.png",
     "generate_ogg": "audio/generate.ogg",
 	"game_menu_remixed_music": "audio/game-menu_remixed.mp3",
@@ -15,6 +15,7 @@
 	"shader_billboard_geom_glsl": "shaders/billboard.geom.glsl",
 	"shader_composite_vert_glsl": "shaders/composite.vert.glsl",
 	"shader_composite_frag_glsl": "shaders/composite.frag.glsl",
+	"shader_oit_resolve_frag_glsl": "shaders/oit_resolve.frag.glsl",
 	"shader_model_vert_glsl": "shaders/model.vert.glsl",
 	"shader_model_frag_glsl": "shaders/model.frag.glsl",
 	"shader_pathtracer_cs_glsl": "shaders/pathtracer.cs.glsl",
@@ -26,7 +27,7 @@
 	"shader_shadow_frag_glsl": "shaders/shadow.frag.glsl",
 	"shader_shadow_geom_glsl": "shaders/shadow.geom.glsl",
 	"network_url": "http://localhost:3000",
-	"character_default_image": "textures/character_beige_front.png",
+	"character_default_image": "textures/character_beige_front.bmp",
 	"characters_spritesheet": "textures/spritesheet-characters-default.png",
 	"explosion_spritesheet": "textures/Explosion.png",
 	"ball_normal": "textures/bomb.png",

@@ -241,6 +241,18 @@ unsigned int Shader::getProgramHandle() const
     return static_cast<unsigned int>(mProgram);
 }
 
+bool Shader::isLinked() const
+{
+    if (mProgram == 0 || glIsProgram(mProgram) == GL_FALSE)
+    {
+        return false;
+    }
+
+    GLint linked = GL_FALSE;
+    glGetProgramiv(mProgram, GL_LINK_STATUS, &linked);
+    return linked == GL_TRUE;
+}
+
 GLenum Shader::getShaderType(ShaderType shaderType) const
 {
     switch (shaderType)

@@ -208,6 +208,7 @@ private:
     Texture *mAccumTex{nullptr};
     Texture *mDisplayTex{nullptr};
     Texture *mNoiseTexture{nullptr};
+    Texture *mTestAlbedoTexture{nullptr};
 
     // GPU resources
     GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres

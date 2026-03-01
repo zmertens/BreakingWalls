@@ -8,8 +8,8 @@ uniform int UseRedAsAlpha;
 uniform int uOITPass;
 uniform float uOITWeightScale;
 
-layout(location = 0) out vec4 outAccum;
-layout(location = 1) out vec4 outReveal;
+layout(location = 0) out vec4 OutColor;
+layout(location = 1) out float OutReveal;
 
 void main()
 {
@@ -23,20 +23,20 @@ void main()
     // Alpha testing - discard transparent pixels
     if (alpha < 0.1)
         discard;
+    
 
     if (uOITPass != 0)
     {
-        // Weighted blended OIT accumulation pass
-        // outAccum receives weighted color; outReveal receives alpha for the
-        // multiplicative blend (GL_ZERO, GL_ONE_MINUS_SRC_COLOR) that accumulates
-        // the product of (1 - alpha) across all transparent fragments.
-        float weight = clamp(pow(alpha * uOITWeightScale, 2.0), 0.01, 300.0);
-        outAccum = vec4(rgb * alpha * weight, alpha * weight);
-        outReveal = vec4(alpha, 0.0, 0.0, 0.0);
+        float depth = clamp(gl_FragCoord.z, 0.0, 1.0);
+        float depthWeight = max(0.05, 1.0 - depth);
+        float weight = max(0.01, alpha * depthWeight * uOITWeightScale);
+
+        OutColor = vec4(rgb * alpha * weight, alpha * weight);
+        OutReveal = alpha;
     }
     else
     {
-        outAccum = vec4(rgb, alpha);
-        outReveal = vec4(0.0);
+        OutColor = vec4(rgb, alpha);
+        OutReveal = 0.0;
     }
 }

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <random>
+#include <ranges>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -29,15 +30,17 @@
 
 namespace
 {
+    constexpr GLint kTestAlbedoTextureUnit = 3;
     constexpr float kRunnerLockedSunYawDeg = 0.0f; // +X heading (toward sunset)
     constexpr float kTracksideBillboardBorderMargin = 7.5f;
+    constexpr float kTracksideGuardRailBorderMargin = 4.8f;
     constexpr std::size_t kMaxPathTracerSpheres = 200;
     constexpr std::size_t kMaxPathTracerTriangles = 192;
     constexpr bool kEnableTrianglePathTraceProxy = true;
-    constexpr float kPlayerProxyRadius = 1.35f;
-    constexpr float kPlayerShadowCenterYOffset = 1.35f;
-    constexpr float kCharacterRasterScale = 1.42f;
-    constexpr float kCharacterPathTraceProxyScale = 1.42f;
+    constexpr float kPlayerProxyRadius = 1.4175f;
+    constexpr float kPlayerShadowCenterYOffset = 1.4175f;
+    constexpr float kCharacterRasterScale = 1.491f;
+    constexpr float kCharacterPathTraceProxyScale = 1.491f;
     constexpr float kCharacterModelYOffset = 0.25f;
 
     glm::vec3 computeSunDirection(float /*timeSeconds*/) noexcept
@@ -64,6 +67,54 @@ namespace
         const int renderWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(windowWidth) * scale)));
         const int renderHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(windowHeight) * scale)));
         return {renderWidth, renderHeight};
+    }
+
+    uint32_t computeAdaptiveVoronoiCellBudget(uint32_t availableCells, int renderWidth, int renderHeight) noexcept
+    {
+        if (availableCells == 0u)
+        {
+            return 0u;
+        }
+
+        const std::size_t renderPixels = static_cast<std::size_t>(std::max(1, renderWidth)) *
+                                         static_cast<std::size_t>(std::max(1, renderHeight));
+
+        uint32_t budget = 1024u;
+        if (renderPixels > 1800ull * 1000ull)
+        {
+            budget = 448u;
+        }
+        else if (renderPixels > 1400ull * 1000ull)
+        {
+            budget = 576u;
+        }
+        else if (renderPixels > 1000ull * 1000ull)
+        {
+            budget = 768u;
+        }
+
+        budget = std::max(256u, budget);
+        return std::min(availableCells, budget);
+    }
+
+    uint32_t computeAdaptiveTriangleShadowBudget(int renderWidth, int renderHeight) noexcept
+    {
+        const std::size_t renderPixels = static_cast<std::size_t>(std::max(1, renderWidth)) *
+                                         static_cast<std::size_t>(std::max(1, renderHeight));
+
+        if (renderPixels > 1800ull * 1000ull)
+        {
+            return 28u;
+        }
+        if (renderPixels > 1400ull * 1000ull)
+        {
+            return 40u;
+        }
+        if (renderPixels > 1000ull * 1000ull)
+        {
+            return 56u;
+        }
+        return 72u;
     }
 
     bool projectWorldToScreen(const glm::vec3 &worldPos,
@@ -145,11 +196,21 @@ GameState::GameState(StateStack &stack, Context context)
         mAccumTex = &textures.get(Textures::ID::PATH_TRACER_ACCUM);
         mDisplayTex = &textures.get(Textures::ID::PATH_TRACER_DISPLAY);
         mNoiseTexture = &textures.get(Textures::ID::NOISE2D);
+        mTestAlbedoTexture = &textures.get(Textures::ID::SDL_LOGO);
+        if (mTestAlbedoTexture)
+        {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "GameState: Test albedo texture (SDL_logo) ready id=%u size=%dx%d",
+                mTestAlbedoTexture->get(),
+                mTestAlbedoTexture->getWidth(),
+                mTestAlbedoTexture->getHeight());
+        }
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get noise texture: %s", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get texture resources: %s", e.what());
         mNoiseTexture = nullptr;
+        mTestAlbedoTexture = nullptr;
     }
 
     // Get and play game music from context
@@ -197,10 +258,8 @@ GameState::GameState(StateStack &stack, Context context)
     mCamera.setThirdPersonHeight(8.0f);
     mCamera.updateThirdPersonPosition();
 
-    log("GameState: Camera spawned at:\t" +
-        std::to_string(cameraSpawn.x) + ", " +
-        std::to_string(cameraSpawn.y) + ", " +
-        std::to_string(cameraSpawn.z));
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Camera spawned at:\t%.2f, %.2f, %.2f",
+        cameraSpawn.x, cameraSpawn.y, cameraSpawn.z);
 
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
@@ -281,7 +340,8 @@ void GameState::initializeGraphicsResources() noexcept
             {
                 mWindowWidth = width;
                 mWindowHeight = height;
-                log("GameState: Initial window size in pixels: " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight));
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Initial window size in pixels: %dx%d",
+                    mWindowWidth, mWindowHeight);
             }
         }
     }
@@ -339,7 +399,7 @@ void GameState::initializeGraphicsResources() noexcept
         // mVoronoiShader = mVoronoiShaderOwned.get();
 
         // Initialize planet with moderate seed count
-        mVoronoiPlanet.initialize(512, 128, 64);
+        mVoronoiPlanet.initialize(1024, 128, 64);
         mVoronoiPlanet.uploadToGPU();
     }
     catch (const std::exception &e)
@@ -465,6 +525,11 @@ void GameState::renderRunnerBreakPlaneTexture() const noexcept
         return;
     }
 
+    if (!mWalkParticlesComputeShader->isLinked())
+    {
+        return;
+    }
+
     const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
     const float dt = (mRunnerBreakPlaneFxTime <= 0.0f) ? 0.0f : std::min(0.03f, now - mRunnerBreakPlaneFxTime);
     mRunnerBreakPlaneFxTime = now;
@@ -568,10 +633,9 @@ void GameState::createPathTracerTextures() noexcept
         return;
     }
 
-    log("GameState: Path tracer textures recreated (window/internal):\t" +
-        std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " / " +
-        std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight) +
-        " (IDs: " + std::to_string(mAccumTex->get()) + ", " + std::to_string(mDisplayTex->get()) + ")");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Path tracer textures recreated (window/internal):\t%dx%d / %dx%d (IDs: %u, %u)",
+        mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight,
+        mAccumTex->get(), mDisplayTex->get());
 }
 
 void GameState::handleWindowResize() noexcept
@@ -771,7 +835,7 @@ void GameState::initializeReflectionResources() noexcept
     {
         glDeleteTextures(1, &mReflectionColorTex);
         mReflectionColorTex = 0;
-        log("GameState: Deleted old reflection texture");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Deleted old reflection texture");
     }
     if (mReflectionDepthRbo != 0)
     {
@@ -782,7 +846,7 @@ void GameState::initializeReflectionResources() noexcept
     {
         glDeleteFramebuffers(1, &mReflectionFBO);
         mReflectionFBO = 0;
-        log("GameState: Deleted old reflection FBO");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Deleted old reflection FBO");
     }
 
     // Create reflection color texture
@@ -899,6 +963,11 @@ void GameState::initializeWalkParticles() noexcept
 void GameState::renderWalkParticles() const noexcept
 {
     if (!mWalkParticlesInitialized || !mWalkParticlesComputeShader || !mWalkParticlesRenderShader || mWalkParticleCount == 0)
+    {
+        return;
+    }
+
+    if (!mWalkParticlesComputeShader->isLinked())
     {
         return;
     }
@@ -1200,6 +1269,11 @@ void GameState::renderWithComputeShaders() const noexcept
         return;
     }
 
+    if (!mComputeShader->isLinked())
+    {
+        return;
+    }
+
     if (auto *window = getContext().getRenderWindow(); window != nullptr)
     {
         if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
@@ -1347,16 +1421,23 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uBatch", mCurrentBatch);
         mComputeShader->setUniform("uSamplesPerBatch", samplesPerBatch);
 
-        // Bind Voronoi cell color SSBO, seed SSBO, and painted state SSBO, and set cell count uniform
-        if (mVoronoiCellColorSSBO != 0) {
+        const uint32_t adaptiveVoronoiCellCount = computeAdaptiveVoronoiCellBudget(
+            static_cast<uint32_t>(mVoronoiPlanet.getCellCount()),
+            mRenderWidth,
+            mRenderHeight);
+        const uint32_t adaptiveTriangleShadowBudget = computeAdaptiveTriangleShadowBudget(
+            mRenderWidth,
+            mRenderHeight);
+
+        // Bind Voronoi cell color/seed/painted SSBOs used by the compute shader.
+        // Keep cell count at zero unless all buffers exist for safe access.
+        mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(0));
+        mComputeShader->setUniform("uTriangleShadowTestBudget", adaptiveTriangleShadowBudget);
+        if (mVoronoiCellColorSSBO != 0 && mVoronoiCellSeedSSBO != 0 && mVoronoiCellPaintedSSBO != 0) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, mVoronoiCellColorSSBO);
-            mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(mVoronoiPlanet.getCellCount()));
-        }
-        if (mVoronoiCellSeedSSBO != 0) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, mVoronoiCellSeedSSBO);
-        }
-        if (mVoronoiCellPaintedSSBO != 0) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, mVoronoiCellPaintedSSBO);
+            mComputeShader->setUniform("uVoronoiCellCount", adaptiveVoronoiCellCount);
         }
 
         // Set Voronoi planet center and radius (planet under player, radius = 30)
@@ -1385,6 +1466,10 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uTime", static_cast<GLfloat>(timeSeconds));
         mComputeShader->setUniform("uHistoryBlend", historyBlend);
         mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(NOISE_TEXTURE_UNIT));
+        mComputeShader->setUniform("uTestAlbedoTex", kTestAlbedoTextureUnit);
+        mComputeShader->setUniform("uTestTextureStrength", mTestAlbedoTexture ? 1.0f : 0.0f);
+        mComputeShader->setUniform("uSphereTexScale", glm::vec2(2.2f, 1.0f));
+        mComputeShader->setUniform("uTriangleTexScale", glm::vec2(3.0f, 3.0f));
 
         // Shadow casting uniforms
         mComputeShader->setUniform("uPlayerPos", mPlayer.getPosition() + glm::vec3(0.0f, kPlayerShadowCenterYOffset, 0.0f));
@@ -1399,6 +1484,9 @@ void GameState::renderWithComputeShaders() const noexcept
         // Bind starfield noise texture sampler to texture unit 2
         glActiveTexture(GL_TEXTURE0 + NOISE_TEXTURE_UNIT);
         glBindTexture(GL_TEXTURE_2D, mNoiseTexture ? mNoiseTexture->get() : 0);
+
+        glActiveTexture(GL_TEXTURE0 + kTestAlbedoTextureUnit);
+        glBindTexture(GL_TEXTURE_2D, mTestAlbedoTexture ? mTestAlbedoTexture->get() : 0);
 
         // Dispatch compute shader with work groups (using 20x20 local work group size)
         GLuint groupsX = (mRenderWidth + 19) / 20;
@@ -1668,7 +1756,7 @@ void GameState::cleanupResources() noexcept
     mOITResolveShader = nullptr;
     mShadowShader = nullptr;
 
-    log("GameState: OpenGL resources cleaned up");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: OpenGL resources cleaned up");
 }
 
 void GameState::updateSounds() noexcept
@@ -1731,10 +1819,10 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     chunkAnchor.x += mRunnerPickupSpawnAhead;
     mWorld.updateSphereChunks(chunkAnchor);
 
-    // Paint planet cell under player
+    // Paint ground-plane Voronoi cell under player
     if (dt > 0.0f)
     {
-        glm::vec3 p = glm::normalize(mPlayer.getPosition());
+        const glm::vec3 p = mPlayer.getPosition();
         mVoronoiPlanet.paintAtPosition(p, glm::vec3(1.0f));
         // Upload Voronoi cell colors, seeds, and painted states to SSBOs for compute shader
         if (mVoronoiCellColorSSBO == 0) {
@@ -1812,7 +1900,8 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
                     initializeReflectionResources();
                     // Reset accumulation for new size
                     mCurrentBatch = 0;
-                    log("GameState: Window resized to physical pixels " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " with render resolution " + std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight));
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Window resized to physical pixels %dx%d with render resolution %dx%d",
+                        mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight);
                 }
             }
         }
@@ -1855,7 +1944,7 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
             {
                 mSoundPlayer->play(SoundEffect::ID::GENERATE, sf::Vector2f{resetPos.x, resetPos.z});
             }
-            log("Camera reset to initial position");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Camera reset to initial position");
         }
     }
 
@@ -1946,6 +2035,12 @@ void GameState::renderPlayerCharacter() const noexcept
 
                     mSkinnedModelShader->bind();
                     mSkinnedModelShader->setUniform("uSunDir", computeSunDirection(timeSeconds));
+                    mSkinnedModelShader->setUniform("uAlbedoTex", kTestAlbedoTextureUnit);
+                    mSkinnedModelShader->setUniform("uUseAlbedoTex", mTestAlbedoTexture ? 1 : 0);
+                    mSkinnedModelShader->setUniform("uAlbedoUVScale", glm::vec2(3.0f, 3.0f));
+
+                    glActiveTexture(GL_TEXTURE0 + kTestAlbedoTextureUnit);
+                    glBindTexture(GL_TEXTURE_2D, mTestAlbedoTexture ? mTestAlbedoTexture->get() : 0);
 
                     characterModel.render(
                         *mSkinnedModelShader,
@@ -1963,6 +2058,7 @@ void GameState::renderPlayerCharacter() const noexcept
                 if (!loggedOnce)
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Skinned model render failed; using billboard fallback: %s", e.what());
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Skinned model render failed; using billboard fallback");
                     loggedOnce = true;
                 }
             }
@@ -2044,7 +2140,46 @@ void GameState::renderTracksideBillboards() const noexcept
     constexpr int kBillboardsBehind = 4;
     constexpr float kBillboardSpacing = 28.0f;
     constexpr float kBillboardHeight = 2.9f;
+    constexpr int kGuardRailSegmentsAhead = 22;
+    constexpr int kGuardRailSegmentsBehind = 8;
+    constexpr float kGuardRailSpacing = 12.0f;
+    constexpr float kGuardRailHeight = 2.4f;
+    constexpr float kGuardRailHalfSize = 1.0f;
+    const glm::vec2 guardRailHalfSizeXY(6.4f, 1.4f);
+    const glm::vec3 guardRailRightAxisWS(1.0f, 0.0f, 0.0f);
+    const glm::vec3 guardRailUpAxisWS(0.0f, 1.0f, 0.0f);
+    const glm::vec3 sidelineSpriteRightAxisWS(1.0f, 0.0f, 0.0f);
+    const glm::vec3 sidelineSpriteUpAxisWS(0.0f, 1.0f, 0.0f);
+
     const float borderZ = mRunnerStrafeLimit + kTracksideBillboardBorderMargin;
+    const float guardRailZ = mRunnerStrafeLimit + kTracksideGuardRailBorderMargin;
+
+    for (int i = -kGuardRailSegmentsBehind; i <= kGuardRailSegmentsAhead; ++i)
+    {
+        const float x = playerPos.x + static_cast<float>(i) * kGuardRailSpacing;
+
+        mWorld.renderTexturedBillboard(
+            glm::vec3(x, kGuardRailHeight, guardRailZ),
+            kGuardRailHalfSize,
+            guardRailHalfSizeXY,
+            Textures::ID::WALL_HORIZONTAL,
+            true,
+            guardRailRightAxisWS,
+            guardRailUpAxisWS,
+            true,
+            mCamera);
+
+        mWorld.renderTexturedBillboard(
+            glm::vec3(x, kGuardRailHeight, -guardRailZ),
+            kGuardRailHalfSize,
+            guardRailHalfSizeXY,
+            Textures::ID::WALL_HORIZONTAL,
+            true,
+            guardRailRightAxisWS,
+            guardRailUpAxisWS,
+            true,
+            mCamera);
+    }
 
     for (int i = -kBillboardsBehind; i <= kBillboardsAhead; ++i)
     {
@@ -2055,13 +2190,21 @@ void GameState::renderTracksideBillboards() const noexcept
             glm::vec3(x, kBillboardHeight, borderZ + stagger),
             180.0f,
             frame,
-            mCamera);
+            mCamera,
+            true,
+            sidelineSpriteRightAxisWS,
+            sidelineSpriteUpAxisWS,
+            true);
 
         mWorld.renderCharacterFromState(
             glm::vec3(x, kBillboardHeight, -borderZ - stagger),
             0.0f,
             frame,
-            mCamera);
+            mCamera,
+            true,
+            sidelineSpriteRightAxisWS,
+            sidelineSpriteUpAxisWS,
+            true);
     }
 }
 
@@ -2428,7 +2571,8 @@ void GameState::updateRunnerScorePopups(float dt) noexcept
 void GameState::resetRunnerRun() noexcept
 {
     mPlayerPoints = mRunnerStartingPoints;
-    mRunnerDistance = 0.0f;
+    // Start at positive X for grid shader visibility
+    mRunnerDistance = 100.0f;
     mRunnerCollisionTimer = 0.0f;
     mRunnerPointEvents.clear();
     mRunnerScorePopups.clear();
@@ -2436,7 +2580,7 @@ void GameState::resetRunnerRun() noexcept
     mRunLost = false;
 
     glm::vec3 current = mPlayer.getPosition();
-    current.x = 0.0f;
+    current.x = 100.0f;
     current.y = 1.0f;
     current.z = 0.0f;
 

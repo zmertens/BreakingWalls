@@ -32,6 +32,7 @@ private:
     void loadTexturesFromWorkerRequests() const noexcept;
 
     void loadWindowIcon(const std::unordered_map<std::string, std::string> &resources) const noexcept;
+    void loadCursor(const std::unordered_map<std::string, std::string> &resources) noexcept;
 
     void loadProceduralTextures() const noexcept;
 

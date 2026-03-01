@@ -85,16 +85,16 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
     switch (mSelectedMenuItem)
     {
     case static_cast<unsigned int>(States::ID::DONE):
-        log("PauseState: Exiting game...");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Exiting game...");
         requestStateClear();
         requestStackPush(States::ID::SPLASH);
         break;
     case static_cast<unsigned int>(States::ID::GAME):
-        log("PauseState: Resuming game...");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Resuming game...");
         requestStackPop();
         break;
     case static_cast<unsigned int>(States::ID::MENU):
-        log("PauseState: Menu selected, entering MenuState");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Menu selected, entering MenuState");
         if (mMusic && mMusic->isPlaying())
         {
             mMusic->stop();
@@ -116,7 +116,7 @@ bool PauseState::handleEvent(const SDL_Event &event) noexcept
     {
         if (event.key.scancode == SDL_SCANCODE_ESCAPE)
         {
-            log("PauseState: Escape Key pressed, returning to previous state");
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Escape Key pressed, returning to previous state");
 
             mSelectedMenuItem = static_cast<unsigned int>(States::ID::GAME);
         }

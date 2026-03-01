@@ -2,10 +2,15 @@
 
 in vec3 vWorldPos;
 in vec3 vWorldNormal;
+in vec2 vTexCoord;
 
 out vec4 FragColor;
 
 uniform vec3 uSunDir;
+uniform sampler2D uAlbedoTex;
+uniform int uUseAlbedoTex;
+uniform int uHasTexCoord;
+uniform vec2 uAlbedoUVScale;
 
 void main()
 {
@@ -32,7 +37,17 @@ void main()
     detailTone = mix(detailTone, skinTone, clamp((vWorldPos.y - 2.0) * 0.35, 0.0, 1.0));
     base = mix(base, detailTone, 0.45 + 0.18 * grain);
 
+    vec3 textureAlbedo = vec3(1.0);
+    if (uUseAlbedoTex != 0) {
+        vec2 sampleUV = (uHasTexCoord != 0)
+            ? fract(vTexCoord * uAlbedoUVScale)
+            : fract(vWorldPos.xz * 0.12 * uAlbedoUVScale);
+        vec4 texel = texture(uAlbedoTex, sampleUV);
+        textureAlbedo = mix(vec3(1.0), texel.rgb, texel.a);
+    }
+
     vec3 color = base * mix(shadowTint, litTint, ndotl);
+    color = mix(color, textureAlbedo * mix(shadowTint, litTint, ndotl), 0.92);
 
     color.r *= 0.96;
     color.g *= 0.88;
