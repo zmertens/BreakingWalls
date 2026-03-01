@@ -766,8 +766,8 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
         }
 
         if (hitType == 0) {
-            // Shade Voronoi ground plane
-            vec3 cellColor = voronoiColorAt(planeHitPoint);
+            // Shade Voronoi ground plane, taking painted state into account
+            vec3 cellColor = sampleVoronoiGroundColor(planeHitPoint);
             radiance += throughput * cellColor;
             return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
         } else if (hitType == 1) {
