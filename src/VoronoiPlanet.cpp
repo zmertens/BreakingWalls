@@ -27,14 +27,7 @@ void VoronoiPlanet::uploadPaintedStatesToSSBO(unsigned int ssbo) const
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssbo); // Binding 5 for compute shader
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
-#include "VoronoiPlanet.hpp"
-#include <glad/glad.h>
-#include <glm/gtc/constants.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <random>
-#include <SDL3/SDL.h>
 
-#include <cstring>
 // Upload cell color data to a provided SSBO (for compute shader use)
 void VoronoiPlanet::uploadCellColorsToSSBO(unsigned int ssbo) const
 {
