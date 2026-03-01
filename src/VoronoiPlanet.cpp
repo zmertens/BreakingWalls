@@ -11,8 +11,19 @@ void VoronoiPlanet::uploadCellSeedsToSSBO(unsigned int ssbo) const
 {
     if (m_seedPositions.empty() || ssbo == 0)
         return;
+
+    std::vector<glm::vec4> packedSeeds;
+    packedSeeds.reserve(m_seedPositions.size());
+    for (const glm::vec3 &seed : m_seedPositions)
+    {
+        packedSeeds.emplace_back(seed, 0.0f);
+    }
+
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, m_seedPositions.size() * sizeof(glm::vec3), m_seedPositions.data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+                 packedSeeds.size() * sizeof(glm::vec4),
+                 packedSeeds.data(),
+                 GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssbo); // Binding 4 for compute shader
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
@@ -32,8 +43,19 @@ void VoronoiPlanet::uploadCellColorsToSSBO(unsigned int ssbo) const
 {
     if (m_cellColors.empty() || ssbo == 0)
         return;
+
+    std::vector<glm::vec4> packedColors;
+    packedColors.reserve(m_cellColors.size());
+    for (const glm::vec3 &color : m_cellColors)
+    {
+        packedColors.emplace_back(color, 1.0f);
+    }
+
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, m_cellColors.size() * sizeof(glm::vec3), m_cellColors.data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+                 packedColors.size() * sizeof(glm::vec4),
+                 packedColors.data(),
+                 GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo); // Binding 3 for compute shader (convention)
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
@@ -72,9 +94,10 @@ void VoronoiPlanet::generateSeeds(int count)
     m_seedPositions.clear();
     m_seedPositions.reserve(count);
     // 2D random distribution in XZ for ground plane
+    // Player runs in positive X starting from ~100, extended range for runner gameplay
     std::mt19937 rng(static_cast<unsigned int>(SDL_GetTicks()));
-    std::uniform_real_distribution<float> distX(-50.0f, 50.0f); // Adjust range as needed
-    std::uniform_real_distribution<float> distZ(-50.0f, 50.0f);
+    std::uniform_real_distribution<float> distX(0.0f, 2000.0f);
+    std::uniform_real_distribution<float> distZ(-75.0f, 75.0f);
     for (int i = 0; i < count; ++i)
     {
         float x = distX(rng);
@@ -90,34 +113,36 @@ void VoronoiPlanet::generateUVSphere(int lonSteps, int latSteps)
     m_indices.clear();
     m_cellIds.clear();
 
-    for (int lat = 0; lat <= latSteps; ++lat)
+    constexpr float kGroundHalfExtent = 50.0f;
+
+    for (int zStep = 0; zStep <= latSteps; ++zStep)
     {
-        float v = (float)lat / (float)latSteps;
-        float theta = v * glm::pi<float>();
-        for (int lon = 0; lon <= lonSteps; ++lon)
+        const float v = static_cast<float>(zStep) / static_cast<float>(latSteps);
+        const float z = glm::mix(-kGroundHalfExtent, kGroundHalfExtent, v);
+
+        for (int xStep = 0; xStep <= lonSteps; ++xStep)
         {
-            float u = (float)lon / (float)lonSteps;
-            float phi = u * glm::two_pi<float>();
-            float x = sin(theta) * cos(phi);
-            float y = cos(theta);
-            float z = sin(theta) * sin(phi);
-            glm::vec3 pos = glm::normalize(glm::vec3(x, y, z));
+            const float u = static_cast<float>(xStep) / static_cast<float>(lonSteps);
+            const float x = glm::mix(-kGroundHalfExtent, kGroundHalfExtent, u);
+
+            const glm::vec3 pos(x, 0.0f, z);
             m_vertices.push_back(pos);
-            m_normals.push_back(pos);
-            int cid = findNearestSeed(pos);
-            m_cellIds.push_back((unsigned int)cid);
+            m_normals.emplace_back(0.0f, 1.0f, 0.0f);
+
+            const int cid = findNearestSeed(pos);
+            m_cellIds.push_back(static_cast<unsigned int>(cid));
         }
     }
 
-    int vertsPerRow = lonSteps + 1;
-    for (int lat = 0; lat < latSteps; ++lat)
+    const int vertsPerRow = lonSteps + 1;
+    for (int zStep = 0; zStep < latSteps; ++zStep)
     {
-        for (int lon = 0; lon < lonSteps; ++lon)
+        for (int xStep = 0; xStep < lonSteps; ++xStep)
         {
-            int a = lat * vertsPerRow + lon;
-            int b = a + vertsPerRow;
-            int c = b + 1;
-            int d = a + 1;
+            const int a = zStep * vertsPerRow + xStep;
+            const int b = a + vertsPerRow;
+            const int c = b + 1;
+            const int d = a + 1;
             m_indices.push_back(a);
             m_indices.push_back(b);
             m_indices.push_back(c);
@@ -130,15 +155,25 @@ void VoronoiPlanet::generateUVSphere(int lonSteps, int latSteps)
 
 int VoronoiPlanet::findNearestSeed(const glm::vec3 &p) const
 {
+    if (m_seedPositions.empty())
+    {
+        return 0;
+    }
+
     int best = 0;
-    float bestDist = glm::dot(p - m_seedPositions[0], p - m_seedPositions[0]);
+    const glm::vec2 pXZ(p.x, p.z);
+    const glm::vec2 bestSeedXZ(m_seedPositions[0].x, m_seedPositions[0].z);
+    float bestDist = glm::dot(pXZ - bestSeedXZ, pXZ - bestSeedXZ);
+
     for (size_t i = 1; i < m_seedPositions.size(); ++i)
     {
-        float d = glm::dot(p - m_seedPositions[i], p - m_seedPositions[i]);
+        const glm::vec2 seedXZ(m_seedPositions[i].x, m_seedPositions[i].z);
+        const glm::vec2 delta = pXZ - seedXZ;
+        const float d = glm::dot(delta, delta);
         if (d < bestDist)
         {
             bestDist = d;
-            best = (int)i;
+            best = static_cast<int>(i);
         }
     }
     return best;
@@ -195,8 +230,18 @@ void VoronoiPlanet::uploadToGPU()
 
     // SSBO for cell colors
     glGenBuffers(1, &m_cellColorSSBO);
+    std::vector<glm::vec4> packedColors;
+    packedColors.reserve(m_cellColors.size());
+    for (const glm::vec3 &color : m_cellColors)
+    {
+        packedColors.emplace_back(color, 1.0f);
+    }
+
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_cellColorSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, m_cellColors.size() * sizeof(glm::vec3), m_cellColors.data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+                 packedColors.size() * sizeof(glm::vec4),
+                 packedColors.data(),
+                 GL_DYNAMIC_DRAW);
     // bind to binding point 1 by default
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_cellColorSSBO);
 
@@ -218,21 +263,25 @@ void VoronoiPlanet::draw() const
 
 void VoronoiPlanet::paintAtPosition(const glm::vec3 &worldPos, const glm::vec3 &color)
 {
-    // worldPos should be normalized to unit sphere
-    glm::vec3 p = glm::normalize(worldPos);
-    int id = findNearestSeed(p);
-    if (id < 0 || id >= (int)m_cellColors.size())
+    const glm::vec3 planePos(worldPos.x, 0.0f, worldPos.z);
+    const int id = findNearestSeed(planePos);
+    if (id < 0 || id >= static_cast<int>(m_cellColors.size()))
         return;
+
     m_cellColors[id] = color;
     m_paintedStates[id] = 1;
-    // Log painted cell for debugging mapping issues
+
     if (m_uploaded)
     {
+        const glm::vec4 packedColor(color, 1.0f);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_cellColorSSBO);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(glm::vec3), sizeof(glm::vec3), glm::value_ptr(color));
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+                        id * sizeof(glm::vec4),
+                        sizeof(glm::vec4),
+                        glm::value_ptr(packedColor));
         if (m_paintedSSBO != 0)
         {
-            uint32_t painted = 1;
+            const uint32_t painted = 1;
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_paintedSSBO);
             glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(uint32_t), sizeof(uint32_t), &painted);
         }

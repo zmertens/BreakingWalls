@@ -167,11 +167,11 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
     if (mDebugAccumulator >= 5.0f)
     {
         mDebugAccumulator = 0.0f;
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Update tick (peers=" +
-            std::to_string(mRemotePlayers.size()) +
-            ", sockets=" + std::to_string(mPeerSockets.size()) +
-            ", reg=" + std::to_string(mRegistrationInFlight ? 1 : 0) +
-            ", disc=" + std::to_string(mDiscoveryInFlight ? 1 : 0) + ")").c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Update tick (peers=%zu, sockets=%zu, reg=%d, disc=%d)",
+            mRemotePlayers.size(),
+            mPeerSockets.size(),
+            mRegistrationInFlight ? 1 : 0,
+            mDiscoveryInFlight ? 1 : 0);
     }
 
     mPacketLogAccumulator += dt;
@@ -180,7 +180,7 @@ bool MultiplayerGameState::update(float dt, unsigned int subSteps) noexcept
         mPacketLogAccumulator = 0.0f;
         if (mPacketCount > 0)
         {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Packets received/s=" + std::to_string(mPacketCount)).c_str());
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Packets received/s=%zu", mPacketCount);
         }
         mPacketCount = 0;
     }
@@ -401,7 +401,7 @@ bool MultiplayerGameState::startListener()
 
     mSelector.add(mListener);
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Listening on port " + std::to_string(mLocalPort)).c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Listening on port %u", mLocalPort);
 
     return true;
 }
@@ -459,7 +459,7 @@ void MultiplayerGameState::pollRegistration()
     }
     catch (const std::exception &e)
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("WARN: MultiplayerGameState: Registration future error: " + std::string(e.what())).c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "WARN: MultiplayerGameState: Registration future error: %s", e.what());
         return;
     }
     catch (...)
@@ -474,7 +474,7 @@ void MultiplayerGameState::pollRegistration()
     }
 
     mRegistrationCompleteOnce = true;
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, makeResponseSnippet("Registration response", response).c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s", makeResponseSnippet("Registration response", response).c_str());
 }
 
 void MultiplayerGameState::startDiscovery()
@@ -521,7 +521,7 @@ void MultiplayerGameState::pollDiscovery()
     }
     catch (const std::exception &e)
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("WARN: MultiplayerGameState: Discovery future error: " + std::string(e.what())).c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "WARN: MultiplayerGameState: Discovery future error: %s", e.what());
         return;
     }
     catch (...)
@@ -531,7 +531,7 @@ void MultiplayerGameState::pollDiscovery()
     }
     if (!response.empty())
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, makeResponseSnippet("Discovery response", response).c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s", makeResponseSnippet("Discovery response", response).c_str());
     }
 
     discoverPeers(response);
@@ -546,8 +546,8 @@ void MultiplayerGameState::discoverPeers(const std::string &response)
     }
 
     const auto peers = parseActivePlayers(response);
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Discovery response " + std::to_string(response.size()) +
-        " bytes, " + std::to_string(peers.size()) + " peer(s)").c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Discovery response %zu bytes, %zu peer(s)",
+        response.size(), peers.size());
     for (const auto &peer : peers)
     {
         if (peer.port == 0)
@@ -568,8 +568,8 @@ void MultiplayerGameState::discoverPeers(const std::string &response)
 
         mKnownPeers.insert(peerKey);
 
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Peer " + peer.name + " @ " +
-            peer.ip.toString() + ":" + std::to_string(peer.port)).c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Peer %s @ %s:%u",
+            peer.name.c_str(), peer.ip.toString().c_str(), peer.port);
         connectToPeer(peer);
     }
 }
@@ -579,13 +579,13 @@ void MultiplayerGameState::connectToPeer(const PeerInfo &peer)
     auto socket = std::make_unique<sf::TcpSocket>();
     socket->setBlocking(true);
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Connecting to " + peer.ip.toString() + ":" +
-        std::to_string(peer.port)).c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Connecting to %s:%u",
+        peer.ip.toString().c_str(), peer.port);
 
     if (socket->connect(peer.ip, peer.port, sf::seconds(0.2f)) != sf::Socket::Status::Done)
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("WARN: MultiplayerGameState: Failed to connect to " +
-            peer.ip.toString() + ":" + std::to_string(peer.port)).c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "WARN: MultiplayerGameState: Failed to connect to %s:%u",
+            peer.ip.toString().c_str(), peer.port);
         return;
     }
 
@@ -593,8 +593,8 @@ void MultiplayerGameState::connectToPeer(const PeerInfo &peer)
     mSelector.add(*socket);
     mPeerSockets.push_back(std::move(socket));
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Connected to " + peer.ip.toString() + ":" +
-        std::to_string(peer.port)).c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Connected to %s:%u",
+        peer.ip.toString().c_str(), peer.port);
 }
 
 void MultiplayerGameState::pollNetwork()
@@ -698,8 +698,8 @@ void MultiplayerGameState::handlePacket(sf::Packet &packet)
             if (loggedPlayers.find(name) == loggedPlayers.end())
             {
                 loggedPlayers.insert(name);
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: First position update from " + name +
-                    " at (" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")").c_str());
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: First position update from %s at (%.2f, %.2f, %.2f)",
+                    name.c_str(), x, y, z);
             }
         }
     }
@@ -755,8 +755,8 @@ void MultiplayerGameState::sendLocalState(float dt)
         const auto status = socket->send(packet);
         if (status != sf::Socket::Status::Done)
         {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("WARN: MultiplayerGameState: Failed to send packet (status=" +
-                std::to_string(static_cast<int>(status)) + ")").c_str());
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "WARN: MultiplayerGameState: Failed to send packet (status=%d)",
+                static_cast<int>(status));
         }
     }
 }
@@ -841,9 +841,8 @@ void MultiplayerGameState::checkLobbyReady()
 
     if (!wasReady && mLobbyReady)
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Lobby ready! Players: " +
-            std::to_string(mConnectedPlayerCount) + "/" +
-            std::to_string(mMinimumPlayers) + " - GAME STARTING").c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Lobby ready! Players: %d/%d - GAME STARTING",
+            mConnectedPlayerCount, mMinimumPlayers);
 
         // Broadcast ready status
         sf::Packet packet;
@@ -855,15 +854,13 @@ void MultiplayerGameState::checkLobbyReady()
     }
     else if (wasReady && !mLobbyReady)
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Lobby not ready (player disconnected). Players: " +
-            std::to_string(mConnectedPlayerCount) + "/" +
-            std::to_string(mMinimumPlayers)).c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Lobby not ready (player disconnected). Players: %d/%d",
+            mConnectedPlayerCount, mMinimumPlayers);
     }
     else if (!mLobbyReady)
     {
         // Periodic waiting message (throttled above)
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("MultiplayerGameState: Waiting for players... (" +
-            std::to_string(mConnectedPlayerCount) + "/" +
-            std::to_string(mMinimumPlayers) + ")").c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "MultiplayerGameState: Waiting for players... (%d/%d)",
+            mConnectedPlayerCount, mMinimumPlayers);
     }
 }

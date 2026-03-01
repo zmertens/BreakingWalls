@@ -198,10 +198,8 @@ GameState::GameState(StateStack &stack, Context context)
     mCamera.setThirdPersonHeight(8.0f);
     mCamera.updateThirdPersonPosition();
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("GameState: Camera spawned at:\t" +
-        std::to_string(cameraSpawn.x) + ", " +
-        std::to_string(cameraSpawn.y) + ", " +
-        std::to_string(cameraSpawn.z)).c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Camera spawned at:\t%.2f, %.2f, %.2f",
+        cameraSpawn.x, cameraSpawn.y, cameraSpawn.z);
 
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
@@ -282,7 +280,8 @@ void GameState::initializeGraphicsResources() noexcept
             {
                 mWindowWidth = width;
                 mWindowHeight = height;
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("GameState: Initial window size in pixels: " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight)).c_str());
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Initial window size in pixels: %dx%d",
+                    mWindowWidth, mWindowHeight);
             }
         }
     }
@@ -340,7 +339,7 @@ void GameState::initializeGraphicsResources() noexcept
         // mVoronoiShader = mVoronoiShaderOwned.get();
 
         // Initialize planet with moderate seed count
-        mVoronoiPlanet.initialize(512, 128, 64);
+        mVoronoiPlanet.initialize(2048, 128, 64);
         mVoronoiPlanet.uploadToGPU();
     }
     catch (const std::exception &e)
@@ -569,10 +568,9 @@ void GameState::createPathTracerTextures() noexcept
         return;
     }
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("GameState: Path tracer textures recreated (window/internal):\t" +
-        std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " / " +
-        std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight) +
-        " (IDs: " + std::to_string(mAccumTex->get()) + ", " + std::to_string(mDisplayTex->get()) + ")").c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Path tracer textures recreated (window/internal):\t%dx%d / %dx%d (IDs: %u, %u)",
+        mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight,
+        mAccumTex->get(), mDisplayTex->get());
 }
 
 void GameState::handleWindowResize() noexcept
@@ -1348,16 +1346,14 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uBatch", mCurrentBatch);
         mComputeShader->setUniform("uSamplesPerBatch", samplesPerBatch);
 
-        // Bind Voronoi cell color SSBO, seed SSBO, and painted state SSBO, and set cell count uniform
-        if (mVoronoiCellColorSSBO != 0) {
+        // Bind Voronoi cell color/seed/painted SSBOs used by the compute shader.
+        // Keep cell count at zero unless all buffers exist for safe access.
+        mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(0));
+        if (mVoronoiCellColorSSBO != 0 && mVoronoiCellSeedSSBO != 0 && mVoronoiCellPaintedSSBO != 0) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, mVoronoiCellColorSSBO);
-            mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(mVoronoiPlanet.getCellCount()));
-        }
-        if (mVoronoiCellSeedSSBO != 0) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, mVoronoiCellSeedSSBO);
-        }
-        if (mVoronoiCellPaintedSSBO != 0) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, mVoronoiCellPaintedSSBO);
+            mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(mVoronoiPlanet.getCellCount()));
         }
 
         // Set Voronoi planet center and radius (planet under player, radius = 30)
@@ -1732,10 +1728,10 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     chunkAnchor.x += mRunnerPickupSpawnAhead;
     mWorld.updateSphereChunks(chunkAnchor);
 
-    // Paint planet cell under player
+    // Paint ground-plane Voronoi cell under player
     if (dt > 0.0f)
     {
-        glm::vec3 p = glm::normalize(mPlayer.getPosition());
+        const glm::vec3 p = mPlayer.getPosition();
         mVoronoiPlanet.paintAtPosition(p, glm::vec3(1.0f));
         // Upload Voronoi cell colors, seeds, and painted states to SSBOs for compute shader
         if (mVoronoiCellColorSSBO == 0) {
@@ -1813,7 +1809,8 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
                     initializeReflectionResources();
                     // Reset accumulation for new size
                     mCurrentBatch = 0;
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("GameState: Window resized to physical pixels " + std::to_string(mWindowWidth) + "x" + std::to_string(mWindowHeight) + " with render resolution " + std::to_string(mRenderWidth) + "x" + std::to_string(mRenderHeight)).c_str());
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Window resized to physical pixels %dx%d with render resolution %dx%d",
+                        mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight);
                 }
             }
         }
@@ -2430,7 +2427,8 @@ void GameState::updateRunnerScorePopups(float dt) noexcept
 void GameState::resetRunnerRun() noexcept
 {
     mPlayerPoints = mRunnerStartingPoints;
-    mRunnerDistance = 0.0f;
+    // Start at positive X for grid shader visibility
+    mRunnerDistance = 100.0f;
     mRunnerCollisionTimer = 0.0f;
     mRunnerPointEvents.clear();
     mRunnerScorePopups.clear();
@@ -2438,7 +2436,7 @@ void GameState::resetRunnerRun() noexcept
     mRunLost = false;
 
     glm::vec3 current = mPlayer.getPosition();
-    current.x = 0.0f;
+    current.x = 100.0f;
     current.y = 1.0f;
     current.z = 0.0f;
 

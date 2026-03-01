@@ -7,7 +7,7 @@ public:
     VoronoiPlanet();
     ~VoronoiPlanet();
 
-    // generate seeds and sphere mesh; seedCount controls Voronoi resolution
+    // generate seeds and ground-plane Voronoi mesh; seedCount controls Voronoi resolution
     void initialize(int seedCount = 512, int lonSteps = 64, int latSteps = 32);
 
     // upload GPU buffers (requires GL context)
@@ -24,7 +24,7 @@ public:
     // render with provided shader program (shader must set uModel/uView/uProjection)
     void draw() const;
 
-    // paint nearest cell to world-space position (normalized position on unit sphere)
+    // paint nearest cell to world-space position projected onto the XZ ground plane
     void paintAtPosition(const glm::vec3 &worldPos, const glm::vec3 &color);
 
 private:

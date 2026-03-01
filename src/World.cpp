@@ -77,7 +77,8 @@ void World::init() noexcept
 
     mWorldId = b2CreateWorld(&worldDef);
 
-    mPlayerSpawnPosition = glm::vec3(0.0f, 1.0f, 0.0f);
+    // Spawn in positive X/Z for grid shader visibility
+    mPlayerSpawnPosition = glm::vec3(100.0f, 1.0f, 0.0f);
 
     initPathTracerScene();
 

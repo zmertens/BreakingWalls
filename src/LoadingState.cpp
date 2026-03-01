@@ -566,7 +566,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     {
         if (const auto resources = resourceLoader().getResources(); !resources.empty())
         {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("Loading complete! Loaded " + std::to_string(resources.size()) + " resources.").c_str());
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loading complete! Loaded %zu resources.", resources.size());
 
             // Now actually load the getTextureManager() from the worker-collected texture requests
             loadTexturesFromWorkerRequests();
@@ -584,7 +584,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     if (!mHasFinished)
     {
         setCompletion(resourceLoader().getCompletion());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState::update - completion: " + std::to_string(resourceLoader().getCompletion() * 100.f) + "%").c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState::update - completion: %.0f%%", resourceLoader().getCompletion() * 100.f);
     }
 
     return true;
@@ -603,7 +603,7 @@ void LoadingState::setCompletion(float percent) noexcept
     }
 
     // Update loading sprite or progress bar based on percent
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("Loading progress: " + std::to_string(percent * 100.f) + "%").c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loading progress: %.0f%%", percent * 100.f);
 }
 
 bool LoadingState::isFinished() const noexcept { return mHasFinished; }
@@ -612,7 +612,7 @@ bool LoadingState::isFinished() const noexcept { return mHasFinished; }
 /// @param resourcePath Path to the JSON resource configuration
 void LoadingState::loadResources() noexcept
 {
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("Loading resources from:\t" + mResourcePath).c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loading resources from:\t%s", mResourcePath.c_str());
 
     if (resourceLoader().isDone())
     {
@@ -647,7 +647,7 @@ void LoadingState::loadAudio() noexcept
     // Use the same resource path prefix that was computed by the ResourceLoader
     auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState::loadAudio - resourcePathPrefix: " + resourcePathPrefix).c_str());
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState::loadAudio - resourcePathPrefix: %s", resourcePathPrefix.c_str());
 
     try
     {
@@ -745,7 +745,7 @@ void LoadingState::loadModels() noexcept
         {
             models.load(Models::ID::STYLIZED_CHARACTER, modelPath);
 
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState: Found model path: " + modelPath).c_str());
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s", ("LoadingState: Found model path: " + modelPath).c_str());
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loading model into manager...");
 
             try
@@ -768,13 +768,13 @@ void LoadingState::loadModels() noexcept
             }
             catch (const std::exception &e)
             {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState: Failed to verify model in manager: " + std::string(e.what())).c_str());
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Failed to verify model in manager: %s", e.what());
             }
         }
     }
     catch (const std::exception &e)
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState: Failed to load models: " + std::string(e.what())).c_str());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Failed to load models: %s", e.what());
     }
 }
 
@@ -880,16 +880,15 @@ void LoadingState::loadNetworkConfig() noexcept
     {
         const auto resources = resourceLoader().getResources();
 
-        if (const auto url = JSONUtils::getResourcePath(std::string(JSONKeys::NETWORK_URL), resources, resourceLoader())
+        if (const auto url = JSONUtils::getResourcePath(std::string(JSONKeys::NETWORK_URL), resources, resourceLoader().getResourcePathPrefix())
         ; url.empty())
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
-                "LoadingState: NETWORK_URL resource key not found in configuration");
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: NETWORK_URL resource key not found in configuration");
         }
         else
         {
             httpClient.setServerURL(url);
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, ("LoadingState: Found network URL: " + url).c_str());
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s", ("LoadingState: Found network URL: " + url).c_str());
         }
     }
     catch (const std::exception &e)

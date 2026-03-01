@@ -130,6 +130,7 @@ uniform float uGroundPlaneRefractiveIndex;
 uniform float uTime;
 uniform float uHistoryBlend;
 uniform sampler2D uNoiseTex;
+uniform uint uVoronoiCellCount;
 
 // Shadow casting uniforms
 uniform vec3 uPlayerPos;          // Player position in world space
@@ -143,6 +144,18 @@ layout (std430, binding = 1) buffer SphereBuffer {
 
 layout (std430, binding = 2) buffer TriangleBuffer {
     Triangle bTriangles[MAX_TRIANGLES];
+};
+
+layout (std430, binding = 3) readonly buffer VoronoiCellColorBuffer {
+    vec4 bVoronoiCellColors[];
+};
+
+layout (std430, binding = 4) readonly buffer VoronoiSeedBuffer {
+    vec4 bVoronoiSeeds[];
+};
+
+layout (std430, binding = 5) readonly buffer VoronoiPaintedBuffer {
+    uint bVoronoiPainted[];
 };
 
 // ============================================================================
@@ -440,6 +453,36 @@ float grid(vec2 uv, float perspective) {
     return clamp(lines.x + lines.y, 0.0, 3.0);
 }
 
+vec3 sampleVoronoiGroundColor(vec3 point, out bool hasVoronoiData) {
+    hasVoronoiData = false;
+
+    uint count = uVoronoiCellCount;
+    if (count == 0u) {
+        return vec3(0.0);
+    }
+
+    float bestDist2 = 1e30;
+    uint bestIndex = 0u;
+    vec2 pointXZ = point.xz;
+
+    for (uint i = 0u; i < count; ++i) {
+        vec2 seedXZ = bVoronoiSeeds[i].xz;
+        vec2 delta = pointXZ - seedXZ;
+        float dist2 = dot(delta, delta);
+        if (dist2 < bestDist2) {
+            bestDist2 = dist2;
+            bestIndex = i;
+        }
+    }
+
+    if (bVoronoiPainted[bestIndex] == 0u) {
+        return vec3(0.0);
+    }
+
+    hasVoronoiData = true;
+    return bVoronoiCellColors[bestIndex].rgb;
+}
+
 // ============================================================================
 // Material Scattering Functions
 // ============================================================================
@@ -656,15 +699,32 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
                 // Calculate shadow factor
                 float shadowFactor = calculateShadow(hit.point, hit.normal);
                 
-                // Apply grid overlay to ground plane
+                // Apply ground-plane overlays (grid + painted Voronoi cells)
                 if (hitIsPlane) {
                     // Use hit point XZ coordinates for grid pattern
-                    vec2 gridUV = hit.point.xz * 0.3;  // Scale factor for grid size
+                    vec2 gridUV = hit.point.xz * 0.3;
                     float gridVal = grid(gridUV, 0.8);
-                    
-                    // Blend grid with ground plane color - more prominent
-                    vec3 gridColor = vec3(0.0, 1.0, 1.0);  // Cyan grid color
-                    attenuation = mix(attenuation, gridColor, gridVal * 0.6);
+
+                    // Blend grid with ground plane color
+                    vec3 gridColor = vec3(0.0, 1.0, 1.0);
+                    vec3 baseColor = mix(attenuation, gridColor, gridVal * 0.6);
+
+                    // Overlay Voronoi color only for cells marked as painted
+                    bool hasVoronoiPaint = false;
+                    vec3 voronoiColor = sampleVoronoiGroundColor(hit.point, hasVoronoiPaint);
+                    if (hasVoronoiPaint) {
+                        // Tint Voronoi color with cyan to harmonize with grid
+                        vec3 tintedVoronoi = mix(voronoiColor, voronoiColor * gridColor, 0.3);
+                        
+                        // Blend Voronoi at reduced opacity and preserve grid lines
+                        attenuation = mix(baseColor, tintedVoronoi, 0.45);
+                        
+                        // Preserve bright grid lines by multiplying with enhanced grid value
+                        float gridPreservation = 1.0 + gridVal * 1.5;
+                        attenuation = mix(attenuation, attenuation * gridPreservation, gridVal * 0.7);
+                    } else {
+                        attenuation = baseColor;
+                    }
                 }
                 
                 // Apply shadow to attenuation
