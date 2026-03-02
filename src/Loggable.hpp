@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #ifndef LOGGABLE_HPP
 #define LOGGABLE_HPP
 
@@ -13,3 +14,17 @@ public:
 };
 
 #endif // LOGGABLE_HPP
+=======
+#ifndef LOGGABLE_HPP
+#define LOGGABLE_HPP
+
+class Loggable
+{
+public:
+    virtual ~Loggable() = default;
+
+    virtual bool isLoggable(const bool newCondition = false) const noexcept = 0;
+};
+
+#endif // LOGGABLE_HPP
+>>>>>>> d3122ee0e58222ba762f9edf23a88344c9a14b0d
