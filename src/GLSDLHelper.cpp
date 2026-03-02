@@ -482,7 +482,11 @@ void GLSDLHelper::renderBillboardSpriteUV(
     bool flipX,
     bool flipY,
     bool useRedAsAlpha,
-    const glm::vec2 &halfSizeXY) noexcept
+    const glm::vec2 &halfSizeXY,
+    bool useWorldAxes,
+    const glm::vec3 &rightAxisWS,
+    const glm::vec3 &upAxisWS,
+    bool doubleSided) noexcept
 {
     if (!sBillboardInitialized)
     {
@@ -508,6 +512,11 @@ void GLSDLHelper::renderBillboardSpriteUV(
     billboardShader.setUniform("ProjectionMatrix", projMatrix);
     billboardShader.setUniform("Size2", halfSize);
     billboardShader.setUniform("SizeXY", halfSizeXY);
+    billboardShader.setUniform("UseWorldAxes", static_cast<GLint>(useWorldAxes ? 1 : 0));
+    billboardShader.setUniform("ViewMatrix", viewMatrix);
+    billboardShader.setUniform("RightAxisWS", glm::normalize(rightAxisWS));
+    billboardShader.setUniform("UpAxisWS", glm::normalize(upAxisWS));
+    billboardShader.setUniform("DoubleSided", static_cast<GLint>(doubleSided ? 1 : 0));
     billboardShader.setUniform("TexRect", glm::vec4(uMin, vMin, uMax, vMax));
     billboardShader.setUniform("SpriteTex", static_cast<GLint>(0));
     billboardShader.setUniform("TintColor", tintColor);

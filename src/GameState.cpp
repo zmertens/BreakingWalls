@@ -33,6 +33,7 @@ namespace
     constexpr GLint kTestAlbedoTextureUnit = 3;
     constexpr float kRunnerLockedSunYawDeg = 0.0f; // +X heading (toward sunset)
     constexpr float kTracksideBillboardBorderMargin = 7.5f;
+    constexpr float kTracksideGuardRailBorderMargin = 4.8f;
     constexpr std::size_t kMaxPathTracerSpheres = 200;
     constexpr std::size_t kMaxPathTracerTriangles = 192;
     constexpr bool kEnableTrianglePathTraceProxy = true;
@@ -2139,7 +2140,46 @@ void GameState::renderTracksideBillboards() const noexcept
     constexpr int kBillboardsBehind = 4;
     constexpr float kBillboardSpacing = 28.0f;
     constexpr float kBillboardHeight = 2.9f;
+    constexpr int kGuardRailSegmentsAhead = 22;
+    constexpr int kGuardRailSegmentsBehind = 8;
+    constexpr float kGuardRailSpacing = 12.0f;
+    constexpr float kGuardRailHeight = 2.4f;
+    constexpr float kGuardRailHalfSize = 1.0f;
+    const glm::vec2 guardRailHalfSizeXY(6.4f, 1.4f);
+    const glm::vec3 guardRailRightAxisWS(1.0f, 0.0f, 0.0f);
+    const glm::vec3 guardRailUpAxisWS(0.0f, 1.0f, 0.0f);
+    const glm::vec3 sidelineSpriteRightAxisWS(1.0f, 0.0f, 0.0f);
+    const glm::vec3 sidelineSpriteUpAxisWS(0.0f, 1.0f, 0.0f);
+
     const float borderZ = mRunnerStrafeLimit + kTracksideBillboardBorderMargin;
+    const float guardRailZ = mRunnerStrafeLimit + kTracksideGuardRailBorderMargin;
+
+    for (int i = -kGuardRailSegmentsBehind; i <= kGuardRailSegmentsAhead; ++i)
+    {
+        const float x = playerPos.x + static_cast<float>(i) * kGuardRailSpacing;
+
+        mWorld.renderTexturedBillboard(
+            glm::vec3(x, kGuardRailHeight, guardRailZ),
+            kGuardRailHalfSize,
+            guardRailHalfSizeXY,
+            Textures::ID::WALL_HORIZONTAL,
+            true,
+            guardRailRightAxisWS,
+            guardRailUpAxisWS,
+            true,
+            mCamera);
+
+        mWorld.renderTexturedBillboard(
+            glm::vec3(x, kGuardRailHeight, -guardRailZ),
+            kGuardRailHalfSize,
+            guardRailHalfSizeXY,
+            Textures::ID::WALL_HORIZONTAL,
+            true,
+            guardRailRightAxisWS,
+            guardRailUpAxisWS,
+            true,
+            mCamera);
+    }
 
     for (int i = -kBillboardsBehind; i <= kBillboardsAhead; ++i)
     {
@@ -2150,13 +2190,21 @@ void GameState::renderTracksideBillboards() const noexcept
             glm::vec3(x, kBillboardHeight, borderZ + stagger),
             180.0f,
             frame,
-            mCamera);
+            mCamera,
+            true,
+            sidelineSpriteRightAxisWS,
+            sidelineSpriteUpAxisWS,
+            true);
 
         mWorld.renderCharacterFromState(
             glm::vec3(x, kBillboardHeight, -borderZ - stagger),
             0.0f,
             frame,
-            mCamera);
+            mCamera,
+            true,
+            sidelineSpriteRightAxisWS,
+            sidelineSpriteUpAxisWS,
+            true);
     }
 }
 

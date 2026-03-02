@@ -104,7 +104,11 @@ public:
         bool flipX,
         bool flipY,
         bool useRedAsAlpha,
-        const glm::vec2 &halfSizeXY = glm::vec2(0.0f)) noexcept;
+        const glm::vec2 &halfSizeXY = glm::vec2(0.0f),
+        bool useWorldAxes = false,
+        const glm::vec3 &rightAxisWS = glm::vec3(1.0f, 0.0f, 0.0f),
+        const glm::vec3 &upAxisWS = glm::vec3(0.0f, 1.0f, 0.0f),
+        bool doubleSided = false) noexcept;
 
     /// Check if billboard rendering is initialized
     [[nodiscard]] static bool isBillboardInitialized() noexcept;

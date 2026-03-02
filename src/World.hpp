@@ -76,7 +76,28 @@ public:
     /// @param frame Animation frame to render
     /// @param camera Camera for view/projection matrices
     void renderCharacterFromState(const glm::vec3 &position, float facing,
-                                  const AnimationRect &frame, const Camera &camera) const noexcept;
+                                  const AnimationRect &frame,
+                                  const Camera &camera,
+                                  bool useWorldAxes = false,
+                                  const glm::vec3 &rightAxisWS = glm::vec3(1.0f, 0.0f, 0.0f),
+                                  const glm::vec3 &upAxisWS = glm::vec3(0.0f, 1.0f, 0.0f),
+                                  bool doubleSided = false) const noexcept;
+
+    /// Render a textured billboard quad from a full texture (for runner track props)
+    /// @param position World position of billboard center
+    /// @param halfSize Billboard half-size fallback used by shader path
+    /// @param halfSizeXY Explicit half-width/half-height override (0 uses halfSize)
+    /// @param textureId Texture resource identifier
+    /// @param camera Camera for view/projection matrices
+    void renderTexturedBillboard(const glm::vec3 &position,
+                                 float halfSize,
+                                 const glm::vec2 &halfSizeXY,
+                                 Textures::ID textureId,
+                                 bool useWorldAxes,
+                                 const glm::vec3 &rightAxisWS,
+                                 const glm::vec3 &upAxisWS,
+                                 bool doubleSided,
+                                 const Camera &camera) const noexcept;
 
     /// Get the character sprite sheet texture (for external rendering)
     [[nodiscard]] const Texture *getCharacterSpriteSheet() const noexcept;

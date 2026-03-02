@@ -1,11 +1,16 @@
 #version 430 core
 
 layout(points) in;
-layout(triangle_strip, max_vertices = 4) out;
+layout(triangle_strip, max_vertices = 8) out;
 
 uniform float Size2;           // Half the width/height of the quad
 uniform vec2 SizeXY;           // Optional non-square half-size override (x, y)
 uniform mat4 ProjectionMatrix;
+uniform mat4 ViewMatrix;
+uniform int UseWorldAxes;
+uniform vec3 RightAxisWS;
+uniform vec3 UpAxisWS;
+uniform int DoubleSided;
 uniform vec4 TexRect;          // UV rect: uMin, vMin, uMax, vMax in UV space
 uniform int FlipX;
 uniform int FlipY;
@@ -31,25 +36,57 @@ void main()
     float vTop = (FlipY != 0) ? vMax : vMin;
     float vBottom = (FlipY != 0) ? vMin : vMax;
 
-    // Bottom-left vertex
-    gl_Position = ProjectionMatrix * (viewPos + vec4(-sizeX, -sizeY, 0.0, 0.0));
+    vec3 rightVS = vec3(1.0, 0.0, 0.0);
+    vec3 upVS = vec3(0.0, 1.0, 0.0);
+    if (UseWorldAxes != 0)
+    {
+        rightVS = normalize(mat3(ViewMatrix) * RightAxisWS);
+        upVS = normalize(mat3(ViewMatrix) * UpAxisWS);
+    }
+
+    vec3 pBL = rightVS * (-sizeX) + upVS * (-sizeY);
+    vec3 pBR = rightVS * ( sizeX) + upVS * (-sizeY);
+    vec3 pTL = rightVS * (-sizeX) + upVS * ( sizeY);
+    vec3 pTR = rightVS * ( sizeX) + upVS * ( sizeY);
+
+    // Front face
+    gl_Position = ProjectionMatrix * (viewPos + vec4(pBL, 0.0));
     TexCoord = vec2(uLeft, vBottom);
     EmitVertex();
 
-    // Bottom-right vertex
-    gl_Position = ProjectionMatrix * (viewPos + vec4(sizeX, -sizeY, 0.0, 0.0));
+    gl_Position = ProjectionMatrix * (viewPos + vec4(pBR, 0.0));
     TexCoord = vec2(uRight, vBottom);
     EmitVertex();
 
-    // Top-left vertex
-    gl_Position = ProjectionMatrix * (viewPos + vec4(-sizeX, sizeY, 0.0, 0.0));
+    gl_Position = ProjectionMatrix * (viewPos + vec4(pTL, 0.0));
     TexCoord = vec2(uLeft, vTop);
     EmitVertex();
 
-    // Top-right vertex
-    gl_Position = ProjectionMatrix * (viewPos + vec4(sizeX, sizeY, 0.0, 0.0));
+    gl_Position = ProjectionMatrix * (viewPos + vec4(pTR, 0.0));
     TexCoord = vec2(uRight, vTop);
     EmitVertex();
 
     EndPrimitive();
+
+    if (DoubleSided != 0)
+    {
+        // Back face with reversed winding
+        gl_Position = ProjectionMatrix * (viewPos + vec4(pBL, 0.0));
+        TexCoord = vec2(uLeft, vBottom);
+        EmitVertex();
+
+        gl_Position = ProjectionMatrix * (viewPos + vec4(pTL, 0.0));
+        TexCoord = vec2(uLeft, vTop);
+        EmitVertex();
+
+        gl_Position = ProjectionMatrix * (viewPos + vec4(pBR, 0.0));
+        TexCoord = vec2(uRight, vBottom);
+        EmitVertex();
+
+        gl_Position = ProjectionMatrix * (viewPos + vec4(pTR, 0.0));
+        TexCoord = vec2(uRight, vTop);
+        EmitVertex();
+
+        EndPrimitive();
+    }
 }

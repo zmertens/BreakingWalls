@@ -1127,7 +1127,12 @@ void World::renderPlayerCharacter(const Player &player, const Camera &camera) co
 }
 
 void World::renderCharacterFromState(const glm::vec3 &position, float facing,
-                                     const AnimationRect &frame, const Camera &camera) const noexcept
+                                     const AnimationRect &frame,
+                                     const Camera &camera,
+                                     bool useWorldAxes,
+                                     const glm::vec3 &rightAxisWS,
+                                     const glm::vec3 &upAxisWS,
+                                     bool doubleSided) const noexcept
 {
     // Only render in third-person mode (or always for remote players)
     // For remote players, we always want to render them
@@ -1167,17 +1172,99 @@ void World::renderCharacterFromState(const glm::vec3 &position, float facing,
     glm::mat4 viewMatrix = camera.getLookAt();
     glm::mat4 projMatrix = camera.getPerspective(aspectRatio);
 
-    // Render the character as a billboard sprite
-    GLSDLHelper::renderBillboardSprite(
+    const float sheetWidth = static_cast<float>(std::max(1, spriteSheet->getWidth()));
+    const float sheetHeight = static_cast<float>(std::max(1, spriteSheet->getHeight()));
+    const float uMin = static_cast<float>(frame.left) / sheetWidth;
+    const float vMin = static_cast<float>(frame.top) / sheetHeight;
+    const float uMax = static_cast<float>(frame.left + frame.width) / sheetWidth;
+    const float vMax = static_cast<float>(frame.top + frame.height) / sheetHeight;
+
+    const bool flipX = (facing >= 90.0f);
+
+    GLSDLHelper::renderBillboardSpriteUV(
         *billboardShader,
         spriteSheet->get(),
-        frame,
+        glm::vec4(uMin, vMin, uMax, vMax),
         position,
         halfSize,
         viewMatrix,
         projMatrix,
-        spriteSheet->getWidth(),
-        spriteSheet->getHeight());
+        glm::vec4(1.0f),
+        flipX,
+        true,
+        false,
+        glm::vec2(0.0f),
+        useWorldAxes,
+        rightAxisWS,
+        upAxisWS,
+        doubleSided);
+}
+
+void World::renderTexturedBillboard(const glm::vec3 &position,
+                                    float halfSize,
+                                    const glm::vec2 &halfSizeXY,
+                                    Textures::ID textureId,
+                                    bool useWorldAxes,
+                                    const glm::vec3 &rightAxisWS,
+                                    const glm::vec3 &upAxisWS,
+                                    bool doubleSided,
+                                    const Camera &camera) const noexcept
+{
+    const Texture *texture = nullptr;
+    try
+    {
+        texture = &mTextures.get(textureId);
+    }
+    catch (const std::exception &)
+    {
+        return;
+    }
+
+    if (!texture || texture->get() == 0)
+    {
+        return;
+    }
+
+    Shader *billboardShader = nullptr;
+    try
+    {
+        billboardShader = &mShaders.get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
+    }
+    catch (const std::exception &)
+    {
+        return;
+    }
+
+    int windowWidth = 1280;
+    int windowHeight = 720;
+    SDL_Window *sdlWindow = mWindow.getSDLWindow();
+    if (sdlWindow)
+    {
+        SDL_GetWindowSize(sdlWindow, &windowWidth, &windowHeight);
+    }
+
+    const int safeHeight = std::max(1, windowHeight);
+    const float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(safeHeight);
+    const glm::mat4 viewMatrix = camera.getLookAt();
+    const glm::mat4 projMatrix = camera.getPerspective(aspectRatio);
+
+    GLSDLHelper::renderBillboardSpriteUV(
+        *billboardShader,
+        texture->get(),
+        glm::vec4(0.0f, 0.0f, 1.0f, 1.0f),
+        position,
+        halfSize,
+        viewMatrix,
+        projMatrix,
+        glm::vec4(1.0f),
+        false,
+        false,
+        false,
+        halfSizeXY,
+        useWorldAxes,
+        rightAxisWS,
+        upAxisWS,
+        doubleSided);
 }
 
 const Texture *World::getCharacterSpriteSheet() const noexcept
