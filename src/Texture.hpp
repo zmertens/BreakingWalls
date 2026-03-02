@@ -13,6 +13,13 @@ struct SDL_Window;
 class Texture
 {
 public:
+    enum class RenderTargetFormat
+    {
+        RGBA32F,
+        RGBA16F,
+        R16F
+    };
+
     Texture() = default;
 
     ~Texture() noexcept;
@@ -34,6 +41,11 @@ public:
     [[nodiscard]] int getWidth() const noexcept;
 
     [[nodiscard]] int getHeight() const noexcept;
+
+    /// Create an empty texture for use as a render target with explicit format
+    bool loadRenderTarget(int width, int height,
+                          RenderTargetFormat format,
+                          std::uint32_t channelOffset = 0) noexcept;
 
     /// Create an empty texture for use as a render target
     bool loadRGBA32F(int width, int height, std::uint32_t channelOffset = 0) noexcept;

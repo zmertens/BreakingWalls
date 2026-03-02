@@ -110,10 +110,42 @@ int Texture::getHeight() const noexcept
 
 bool Texture::loadRGBA32F(const int width, const int height, const std::uint32_t channelOffset) noexcept
 {
+    return loadRenderTarget(width, height, RenderTargetFormat::RGBA32F, channelOffset);
+}
+
+bool Texture::loadRenderTarget(const int width, const int height,
+                               const RenderTargetFormat format,
+                               const std::uint32_t channelOffset) noexcept
+{
+    if (width <= 0 || height <= 0)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid render target size %dx%d\n", width, height);
+        return false;
+    }
+
     this->free();
 
     mWidth = width;
     mHeight = height;
+
+    GLenum internalFormat = GL_RGBA32F;
+    GLenum uploadFormat = GL_RGBA;
+
+    switch (format)
+    {
+    case RenderTargetFormat::RGBA32F:
+        internalFormat = GL_RGBA32F;
+        uploadFormat = GL_RGBA;
+        break;
+    case RenderTargetFormat::RGBA16F:
+        internalFormat = GL_RGBA16F;
+        uploadFormat = GL_RGBA;
+        break;
+    case RenderTargetFormat::R16F:
+        internalFormat = GL_R16F;
+        uploadFormat = GL_RED;
+        break;
+    }
 
     glGenTextures(1, &mTextureId);
     glActiveTexture(GL_TEXTURE0 + channelOffset);
@@ -122,7 +154,7 @@ bool Texture::loadRGBA32F(const int width, const int height, const std::uint32_t
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, width, height);
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, uploadFormat, GL_FLOAT, nullptr);
     glBindTexture(GL_TEXTURE_2D, 0);
 
     return true;

@@ -215,11 +215,11 @@ private:
     GLuint mTriangleSSBO{0};
     GLuint mVAO{0};        // Vertex Array Object for fullscreen quad
     GLuint mBillboardFBO{0};
-    GLuint mBillboardColorTex{0};
+    Texture *mBillboardColorTex{nullptr};
     GLuint mBillboardDepthRbo{0};
     GLuint mOITFBO{0};
-    GLuint mOITAccumTex{0};
-    GLuint mOITRevealTex{0};
+    Texture *mOITAccumTex{nullptr};
+    Texture *mOITRevealTex{nullptr};
     GLuint mOITDepthRbo{0};
     GLuint mWalkParticlesVAO{0};
     GLuint mWalkParticlesPosSSBO{0};
@@ -227,14 +227,14 @@ private:
     
     // Shadow rendering resources
     GLuint mShadowFBO{0};              // Shadow render target
-    GLuint mShadowTexture{0};          // Shadow map texture
+    Texture *mShadowTexture{nullptr};  // Shadow map texture
     GLuint mShadowVAO{0};              // Shadow quad VAO
     GLuint mShadowVBO{0};              // Shadow quad VBO
     bool mShadowsInitialized{false};
 
     // Reflection rendering resources
     GLuint mReflectionFBO{0};          // Reflection render target
-    GLuint mReflectionColorTex{0};     // Reflection color texture
+    Texture *mReflectionColorTex{nullptr}; // Reflection color texture
     GLuint mReflectionDepthRbo{0};     // Reflection depth buffer
     bool mReflectionsInitialized{false};
     bool mOITInitialized{false};
@@ -296,7 +296,7 @@ private:
     mutable glm::vec3 mLastFxPlayerPosition{0.0f};
     mutable float mPlayerPlanarSpeedForFx{0.0f};
     mutable GLuint mWalkParticleCount{1600};
-    mutable GLuint mRunnerBreakPlaneTexture{0};
+    mutable Texture *mRunnerBreakPlaneTexture{nullptr};
     mutable GLuint mRunnerBreakPlaneFBO{0};
     mutable GLuint mRunnerBreakPlaneVAO{0};
     mutable GLuint mRunnerBreakPlanePosSSBO{0};

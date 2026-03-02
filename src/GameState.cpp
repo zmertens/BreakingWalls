@@ -197,6 +197,12 @@ GameState::GameState(StateStack &stack, Context context)
         mDisplayTex = &textures.get(Textures::ID::PATH_TRACER_DISPLAY);
         mNoiseTexture = &textures.get(Textures::ID::NOISE2D);
         mTestAlbedoTexture = &textures.get(Textures::ID::SDL_LOGO);
+        mBillboardColorTex = &textures.get(Textures::ID::BILLBOARD_COLOR);
+        mOITAccumTex = &textures.get(Textures::ID::OIT_ACCUM);
+        mOITRevealTex = &textures.get(Textures::ID::OIT_REVEAL);
+        mShadowTexture = &textures.get(Textures::ID::SHADOW_MAP);
+        mReflectionColorTex = &textures.get(Textures::ID::REFLECTION_COLOR);
+        mRunnerBreakPlaneTexture = &textures.get(Textures::ID::RUNNER_BREAK_PLANE);
         if (mTestAlbedoTexture)
         {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -209,8 +215,16 @@ GameState::GameState(StateStack &stack, Context context)
     catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get texture resources: %s", e.what());
+        mAccumTex = nullptr;
+        mDisplayTex = nullptr;
         mNoiseTexture = nullptr;
         mTestAlbedoTexture = nullptr;
+        mBillboardColorTex = nullptr;
+        mOITAccumTex = nullptr;
+        mOITRevealTex = nullptr;
+        mShadowTexture = nullptr;
+        mReflectionColorTex = nullptr;
+        mRunnerBreakPlaneTexture = nullptr;
     }
 
     // Get and play game music from context
@@ -318,7 +332,7 @@ void GameState::draw() const noexcept
         // Reset viewport to main window before compositing
         glViewport(0, 0, mWindowWidth, mWindowHeight);
 
-        if (mCompositeShader && mBillboardFBO != 0 && mBillboardColorTex != 0)
+        if (mCompositeShader && mBillboardFBO != 0 && mBillboardColorTex)
         {
             renderCompositeScene();
         }
@@ -410,37 +424,33 @@ void GameState::initializeGraphicsResources() noexcept
 
 void GameState::initializeRunnerBreakPlaneResources() noexcept
 {
-    if (mRunnerBreakPlaneTexture != 0 && mRunnerBreakPlaneFBO != 0)
+    if (mRunnerBreakPlaneTexture && mRunnerBreakPlaneTexture->get() != 0 && mRunnerBreakPlaneFBO != 0)
     {
         return;
     }
 
-    if (mRunnerBreakPlaneTexture == 0)
+    if (!mRunnerBreakPlaneTexture)
     {
-        glGenTextures(1, &mRunnerBreakPlaneTexture);
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "GameState: Runner break-plane texture not initialized in manager");
+        return;
     }
 
-    glBindTexture(GL_TEXTURE_2D, mRunnerBreakPlaneTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D,
-                 0,
-                 GL_RGBA16F,
-                 mRunnerBreakPlaneTextureWidth,
-                 mRunnerBreakPlaneTextureHeight,
-                 0,
-                 GL_RGBA,
-                 GL_FLOAT,
-                 nullptr);
+    if (!mRunnerBreakPlaneTexture->loadRenderTarget(
+            mRunnerBreakPlaneTextureWidth,
+            mRunnerBreakPlaneTextureHeight,
+            Texture::RenderTargetFormat::RGBA16F,
+            0))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "GameState: Failed to allocate runner break-plane texture");
+        return;
+    }
 
     if (mRunnerBreakPlaneFBO == 0)
     {
         glGenFramebuffers(1, &mRunnerBreakPlaneFBO);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, mRunnerBreakPlaneFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mRunnerBreakPlaneTexture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mRunnerBreakPlaneTexture->get(), 0);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -515,7 +525,7 @@ void GameState::initializeRunnerBreakPlaneResources() noexcept
 
 void GameState::renderRunnerBreakPlaneTexture() const noexcept
 {
-    if (mRunnerBreakPlaneTexture == 0 || mRunnerBreakPlaneFBO == 0 || mRunnerBreakPlaneVAO == 0)
+    if (!mRunnerBreakPlaneTexture || mRunnerBreakPlaneTexture->get() == 0 || mRunnerBreakPlaneFBO == 0 || mRunnerBreakPlaneVAO == 0)
     {
         return;
     }
@@ -651,16 +661,17 @@ void GameState::createCompositeTargets() noexcept
         return;
     }
 
-    if (mBillboardColorTex == 0)
+    if (!mBillboardColorTex || !mOITAccumTex || !mOITRevealTex)
     {
-        glGenTextures(1, &mBillboardColorTex);
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Composite textures not initialized in manager");
+        return;
     }
-    glBindTexture(GL_TEXTURE_2D, mBillboardColorTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
+
+    if (!mBillboardColorTex->loadRenderTarget(mWindowWidth, mWindowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to allocate billboard texture");
+        return;
+    }
 
     if (mBillboardDepthRbo == 0)
     {
@@ -674,7 +685,7 @@ void GameState::createCompositeTargets() noexcept
         glGenFramebuffers(1, &mBillboardFBO);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mBillboardColorTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mBillboardColorTex->get(), 0);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mBillboardDepthRbo);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
@@ -685,30 +696,20 @@ void GameState::createCompositeTargets() noexcept
     }
     else
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Billboard FBO=%u, ColorTex=%u", mBillboardFBO, mBillboardColorTex);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Billboard FBO=%u, ColorTex=%u", mBillboardFBO, mBillboardColorTex->get());
     }
 
-    if (mOITAccumTex == 0)
+    if (!mOITAccumTex->loadRenderTarget(mWindowWidth, mWindowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
     {
-        glGenTextures(1, &mOITAccumTex);
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to allocate OIT accum texture");
+        return;
     }
-    glBindTexture(GL_TEXTURE_2D, mOITAccumTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
 
-    if (mOITRevealTex == 0)
+    if (!mOITRevealTex->loadRenderTarget(mWindowWidth, mWindowHeight, Texture::RenderTargetFormat::R16F, 0))
     {
-        glGenTextures(1, &mOITRevealTex);
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to allocate OIT reveal texture");
+        return;
     }
-    glBindTexture(GL_TEXTURE_2D, mOITRevealTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, mWindowWidth, mWindowHeight, 0, GL_RED, GL_FLOAT, nullptr);
 
     if (mOITDepthRbo == 0)
     {
@@ -722,8 +723,8 @@ void GameState::createCompositeTargets() noexcept
         glGenFramebuffers(1, &mOITFBO);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, mOITFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mOITAccumTex, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, mOITRevealTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mOITAccumTex->get(), 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, mOITRevealTex->get(), 0);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mOITDepthRbo);
     constexpr GLenum oitDrawBuffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
     glDrawBuffers(2, oitDrawBuffers);
@@ -752,31 +753,29 @@ void GameState::initializeShadowResources() noexcept
         return;
     }
 
-    // Delete existing resources if resizing
-    if (mShadowTexture != 0)
+    if (!mShadowTexture)
     {
-        glDeleteTextures(1, &mShadowTexture);
-        mShadowTexture = 0;
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "GameState: Shadow texture not initialized in manager");
+        return;
     }
+
+    // Delete existing non-texture resources if resizing
     if (mShadowFBO != 0)
     {
         glDeleteFramebuffers(1, &mShadowFBO);
         mShadowFBO = 0;
     }
 
-    // Create shadow map texture
-    glGenTextures(1, &mShadowTexture);
-    glBindTexture(GL_TEXTURE_2D, mShadowTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
+    if (!mShadowTexture->loadRenderTarget(mWindowWidth, mWindowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to allocate shadow texture");
+        return;
+    }
 
     // Create shadow FBO
     glGenFramebuffers(1, &mShadowFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, mShadowFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mShadowTexture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mShadowTexture->get(), 0);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -830,13 +829,13 @@ void GameState::initializeReflectionResources() noexcept
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindRenderbuffer(GL_RENDERBUFFER, 0);
 
-    // Delete existing resources if resizing
-    if (mReflectionColorTex != 0)
+    if (!mReflectionColorTex)
     {
-        glDeleteTextures(1, &mReflectionColorTex);
-        mReflectionColorTex = 0;
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Deleted old reflection texture");
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "GameState: Reflection texture not initialized in manager");
+        return;
     }
+
+    // Delete existing non-texture resources if resizing
     if (mReflectionDepthRbo != 0)
     {
         glDeleteRenderbuffers(1, &mReflectionDepthRbo);
@@ -849,17 +848,15 @@ void GameState::initializeReflectionResources() noexcept
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Deleted old reflection FBO");
     }
 
-    // Create reflection color texture
-    glGenTextures(1, &mReflectionColorTex);
-    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, mWindowWidth, mWindowHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
+    if (!mReflectionColorTex->loadRenderTarget(mWindowWidth, mWindowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to allocate reflection texture");
+        return;
+    }
 
     // Verify texture size was created correctly
     GLint texWidth = 0, texHeight = 0;
+    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex->get());
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texWidth);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
 
@@ -871,7 +868,7 @@ void GameState::initializeReflectionResources() noexcept
     // Create reflection FBO
     glGenFramebuffers(1, &mReflectionFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, mReflectionFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mReflectionColorTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mReflectionColorTex->get(), 0);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mReflectionDepthRbo);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
@@ -1084,7 +1081,7 @@ float GameState::getScoreBracketBoost() const noexcept
 
 void GameState::renderCharacterShadow() const noexcept
 {
-    if (!mShadowsInitialized || !mShadowShader || mShadowFBO == 0 || mShadowTexture == 0)
+    if (!mShadowsInitialized || !mShadowShader || mShadowFBO == 0 || !mShadowTexture || mShadowTexture->get() == 0)
     {
         return;
     }
@@ -1165,7 +1162,7 @@ void GameState::renderCharacterShadow() const noexcept
 
 void GameState::renderPlayerReflection() const noexcept
 {
-    if (!mReflectionsInitialized || mReflectionFBO == 0 || mReflectionColorTex == 0)
+    if (!mReflectionsInitialized || mReflectionFBO == 0 || !mReflectionColorTex || mReflectionColorTex->get() == 0)
     {
         return;
     }
@@ -1182,7 +1179,7 @@ void GameState::renderPlayerReflection() const noexcept
     }
 
     // Verify texture size matches expected size
-    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex);
+    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex->get());
     GLint texWidth = 0, texHeight = 0;
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texWidth);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
@@ -1517,9 +1514,9 @@ void GameState::renderWithComputeShaders() const noexcept
 
     // DEBUG: show billboard target directly on-screen to verify Voronoi draw
     glActiveTexture(GL_TEXTURE0);
-    if (mBillboardColorTex != 0)
+    if (mBillboardColorTex && mBillboardColorTex->get() != 0)
     {
-        glBindTexture(GL_TEXTURE_2D, mBillboardColorTex);
+        glBindTexture(GL_TEXTURE_2D, mBillboardColorTex->get());
     }
     else
     {
@@ -1533,7 +1530,7 @@ void GameState::renderWithComputeShaders() const noexcept
 
 void GameState::renderCompositeScene() const noexcept
 {
-    if (!mCompositeShader || !mDisplayTex || mBillboardColorTex == 0)
+    if (!mCompositeShader || !mDisplayTex || !mBillboardColorTex || mBillboardColorTex->get() == 0)
     {
         return;
     }
@@ -1551,17 +1548,17 @@ void GameState::renderCompositeScene() const noexcept
     mCompositeShader->setUniform("uBloomStrength", 0.32f);
     mCompositeShader->setUniform("uSpriteAlpha", 1.0f);
     mCompositeShader->setUniform("uShadowStrength", 0.65f);
-    mCompositeShader->setUniform("uEnableShadows", mShadowsInitialized && mShadowTexture != 0);
-    mCompositeShader->setUniform("uEnableReflections", mReflectionsInitialized && mReflectionColorTex != 0);
+    mCompositeShader->setUniform("uEnableShadows", mShadowsInitialized && mShadowTexture && mShadowTexture->get() != 0);
+    mCompositeShader->setUniform("uEnableReflections", mReflectionsInitialized && mReflectionColorTex && mReflectionColorTex->get() != 0);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, mBillboardColorTex);
+    glBindTexture(GL_TEXTURE_2D, mBillboardColorTex->get());
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, mShadowTexture);
+    glBindTexture(GL_TEXTURE_2D, mShadowTexture ? mShadowTexture->get() : 0);
     glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex);
+    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex ? mReflectionColorTex->get() : 0);
 
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -1569,7 +1566,7 @@ void GameState::renderCompositeScene() const noexcept
 
 void GameState::resolveOITToBillboardTarget() const noexcept
 {
-    if (!mOITResolveShader || mBillboardFBO == 0 || mOITAccumTex == 0 || mOITRevealTex == 0)
+    if (!mOITResolveShader || mBillboardFBO == 0 || !mOITAccumTex || !mOITRevealTex || mOITAccumTex->get() == 0 || mOITRevealTex->get() == 0)
     {
         return;
     }
@@ -1596,9 +1593,9 @@ void GameState::resolveOITToBillboardTarget() const noexcept
     mOITResolveShader->setUniform("uOITRevealTex", 1);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, mOITAccumTex);
+    glBindTexture(GL_TEXTURE_2D, mOITAccumTex->get());
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, mOITRevealTex);
+    glBindTexture(GL_TEXTURE_2D, mOITRevealTex->get());
 
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -1634,11 +1631,7 @@ void GameState::cleanupResources() noexcept
         glDeleteFramebuffers(1, &mBillboardFBO);
         mBillboardFBO = 0;
     }
-    if (mBillboardColorTex != 0)
-    {
-        glDeleteTextures(1, &mBillboardColorTex);
-        mBillboardColorTex = 0;
-    }
+    mBillboardColorTex = nullptr;
     if (mBillboardDepthRbo != 0)
     {
         glDeleteRenderbuffers(1, &mBillboardDepthRbo);
@@ -1650,16 +1643,8 @@ void GameState::cleanupResources() noexcept
         glDeleteFramebuffers(1, &mOITFBO);
         mOITFBO = 0;
     }
-    if (mOITAccumTex != 0)
-    {
-        glDeleteTextures(1, &mOITAccumTex);
-        mOITAccumTex = 0;
-    }
-    if (mOITRevealTex != 0)
-    {
-        glDeleteTextures(1, &mOITRevealTex);
-        mOITRevealTex = 0;
-    }
+    mOITAccumTex = nullptr;
+    mOITRevealTex = nullptr;
     if (mOITDepthRbo != 0)
     {
         glDeleteRenderbuffers(1, &mOITDepthRbo);
@@ -1673,11 +1658,7 @@ void GameState::cleanupResources() noexcept
         glDeleteFramebuffers(1, &mShadowFBO);
         mShadowFBO = 0;
     }
-    if (mShadowTexture != 0)
-    {
-        glDeleteTextures(1, &mShadowTexture);
-        mShadowTexture = 0;
-    }
+    mShadowTexture = nullptr;
     GLSDLHelper::deleteVAO(mShadowVAO);
     GLSDLHelper::deleteBuffer(mShadowVBO);
     mShadowsInitialized = false;
@@ -1688,11 +1669,7 @@ void GameState::cleanupResources() noexcept
         glDeleteFramebuffers(1, &mReflectionFBO);
         mReflectionFBO = 0;
     }
-    if (mReflectionColorTex != 0)
-    {
-        glDeleteTextures(1, &mReflectionColorTex);
-        mReflectionColorTex = 0;
-    }
+    mReflectionColorTex = nullptr;
     if (mReflectionDepthRbo != 0)
     {
         glDeleteRenderbuffers(1, &mReflectionDepthRbo);
@@ -1735,11 +1712,7 @@ void GameState::cleanupResources() noexcept
         glDeleteFramebuffers(1, &mRunnerBreakPlaneFBO);
         mRunnerBreakPlaneFBO = 0;
     }
-    if (mRunnerBreakPlaneTexture != 0)
-    {
-        glDeleteTextures(1, &mRunnerBreakPlaneTexture);
-        mRunnerBreakPlaneTexture = 0;
-    }
+    mRunnerBreakPlaneTexture = nullptr;
     mWalkParticlesInitialized = false;
     mWalkParticlesComputeShader = nullptr;
     mWalkParticlesRenderShader = nullptr;
@@ -2210,7 +2183,7 @@ void GameState::renderTracksideBillboards() const noexcept
 
 void GameState::renderRunnerBreakPlane() const noexcept
 {
-    if (!mArcadeModeEnabled || mCamera.getMode() != CameraMode::THIRD_PERSON || mRunnerBreakPlaneTexture == 0)
+    if (!mArcadeModeEnabled || mCamera.getMode() != CameraMode::THIRD_PERSON || !mRunnerBreakPlaneTexture || mRunnerBreakPlaneTexture->get() == 0)
     {
         return;
     }
@@ -2245,7 +2218,7 @@ void GameState::renderRunnerBreakPlane() const noexcept
 
         GLSDLHelper::renderBillboardSpriteUV(
             *billboardShader,
-            mRunnerBreakPlaneTexture,
+            mRunnerBreakPlaneTexture->get(),
             uvRect,
             planeCenter,
             1.0f,
@@ -2269,7 +2242,7 @@ void GameState::renderRunnerBreakPlane() const noexcept
 
         GLSDLHelper::renderBillboardSpriteUV(
             *billboardShader,
-            mRunnerBreakPlaneTexture,
+            mRunnerBreakPlaneTexture->get(),
             uvRect,
             shard.position,
             1.0f,

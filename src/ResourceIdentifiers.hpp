@@ -107,7 +107,13 @@ namespace Textures
         SPLASH_TITLE_IMAGE = 14,
         WALL_HORIZONTAL = 15,
         WINDOW_ICON = 16,
-        TOTAL_IDS = 17
+        BILLBOARD_COLOR = 17,
+        OIT_ACCUM = 18,
+        OIT_REVEAL = 19,
+        SHADOW_MAP = 20,
+        REFLECTION_COLOR = 21,
+        RUNNER_BREAK_PLANE = 22,
+        TOTAL_IDS = 23
     };
 }
 

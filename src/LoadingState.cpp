@@ -1025,6 +1025,33 @@ void LoadingState::loadProceduralTextures() const noexcept
         textures.load(Textures::ID::PATH_TRACER_ACCUM, 512, 512, {}, 0);
         textures.load(Textures::ID::PATH_TRACER_DISPLAY, 512, 512, {}, 0);
         textures.load(Textures::ID::NOISE2D, 256, 256, generator, 2);
+
+        // Seed manager-owned render targets used by GameState.
+        // Keep insert-only manager semantics by creating each ID once here,
+        // then GameState resizes/reformats these Texture instances in place.
+        textures.load(Textures::ID::BILLBOARD_COLOR, 1, 1, {}, 0);
+        textures.get(Textures::ID::BILLBOARD_COLOR)
+            .loadRenderTarget(1, 1, Texture::RenderTargetFormat::RGBA16F, 0);
+
+        textures.load(Textures::ID::OIT_ACCUM, 1, 1, {}, 0);
+        textures.get(Textures::ID::OIT_ACCUM)
+            .loadRenderTarget(1, 1, Texture::RenderTargetFormat::RGBA16F, 0);
+
+        textures.load(Textures::ID::OIT_REVEAL, 1, 1, {}, 0);
+        textures.get(Textures::ID::OIT_REVEAL)
+            .loadRenderTarget(1, 1, Texture::RenderTargetFormat::R16F, 0);
+
+        textures.load(Textures::ID::SHADOW_MAP, 1, 1, {}, 0);
+        textures.get(Textures::ID::SHADOW_MAP)
+            .loadRenderTarget(1, 1, Texture::RenderTargetFormat::RGBA16F, 0);
+
+        textures.load(Textures::ID::REFLECTION_COLOR, 1, 1, {}, 0);
+        textures.get(Textures::ID::REFLECTION_COLOR)
+            .loadRenderTarget(1, 1, Texture::RenderTargetFormat::RGBA16F, 0);
+
+        textures.load(Textures::ID::RUNNER_BREAK_PLANE, 1, 1, {}, 0);
+        textures.get(Textures::ID::RUNNER_BREAK_PLANE)
+            .loadRenderTarget(1, 1, Texture::RenderTargetFormat::RGBA16F, 0);
     }
     catch (const std::exception &e)
     {
