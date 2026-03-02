@@ -1115,7 +1115,6 @@ void GameState::renderCharacterShadow() const noexcept
     mShadowShader->setUniform("uProjectionMatrix", projection);
     mShadowShader->setUniform("uLightDir", lightDir);
     mShadowShader->setUniform("uGroundY", groundY);
-    mShadowShader->setUniform("uInvResolution", glm::vec2(1.0f / static_cast<float>(mWindowWidth), 1.0f / static_cast<float>(mWindowHeight)));
 
     glBindVertexArray(mShadowVAO);
 
@@ -1437,28 +1436,12 @@ void GameState::renderWithComputeShaders() const noexcept
             mComputeShader->setUniform("uVoronoiCellCount", adaptiveVoronoiCellCount);
         }
 
-        // Set Voronoi planet center and radius (planet under player, radius = 30)
-        glm::vec3 planetCenter = mPlayer.getPosition();
-        float planetRadius = 30.0f;
-        mComputeShader->setUniform("uVoronoiPlanetCenter", planetCenter);
-        mComputeShader->setUniform("uVoronoiPlanetRadius", planetRadius);
-
         // Set sphere count uniform (NEW - tells shader how many spheres to check)
         mComputeShader->setUniform("uSphereCount", static_cast<uint32_t>(totalSphereCount));
         mComputeShader->setUniform("uPrimaryRaySphereCount", static_cast<uint32_t>(primarySphereCount));
         mComputeShader->setUniform("uTriangleCount", kEnableTrianglePathTraceProxy ? static_cast<uint32_t>(traceTriangles.size()) : 0u);
 
         static constexpr auto NOISE_TEXTURE_UNIT = 2;
-
-        // Set infinite reflective ground plane uniforms
-        const Plane &groundPlane = mWorld.getGroundPlane();
-        const Material &groundMaterial = groundPlane.getMaterial();
-        mComputeShader->setUniform("uGroundPlanePoint", groundPlane.getPoint());
-        mComputeShader->setUniform("uGroundPlaneNormal", groundPlane.getNormal());
-        mComputeShader->setUniform("uGroundPlaneAlbedo", groundMaterial.getAlbedo());
-        mComputeShader->setUniform("uGroundPlaneMaterialType", static_cast<GLuint>(groundMaterial.getType()));
-        mComputeShader->setUniform("uGroundPlaneFuzz", groundMaterial.getFuzz());
-        mComputeShader->setUniform("uGroundPlaneRefractiveIndex", groundMaterial.getRefractiveIndex());
 
         mComputeShader->setUniform("uTime", static_cast<GLfloat>(timeSeconds));
         mComputeShader->setUniform("uHistoryBlend", historyBlend);

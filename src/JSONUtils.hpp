@@ -134,6 +134,22 @@ public:
         return resolveResourcePath(resourcePathPrefix, extractedValue);
     }
 
+    /// @brief Look up a raw (non-file-path) resource value from configuration
+    /// @param key Resource key to look up
+    /// @param resources Resource map
+    /// @return Extracted resource value, or empty string if key not found
+    [[nodiscard]] static std::string getResourceValue(
+        const std::string &key,
+        const std::unordered_map<std::string, std::string> &resources)
+    {
+        if (auto it = resources.find(key); it != resources.cend())
+        {
+            return extractJsonValue(it->second);
+        }
+
+        return "";
+    }
+
     static void loadConfiguration(const std::string &configPath, std::unordered_map<std::string, std::string> &resourceMap)
     {
         using std::runtime_error;

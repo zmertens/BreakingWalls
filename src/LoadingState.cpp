@@ -803,6 +803,7 @@ void LoadingState::loadShaders() noexcept
         displayShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SCREEN_VERTEX));
         displayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SCREEN_FRAGMENT));
         displayShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_FULLSCREEN_QUAD", displayShader->getProgramHandle());
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Display shader compiled and linked");
 
@@ -813,6 +814,7 @@ void LoadingState::loadShaders() noexcept
         particlesDisplayShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_PARTICLES_VERTEX));
         particlesDisplayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_PARTICLES_FRAGMENT));
         particlesDisplayShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_FULLSCREEN_QUAD_MVP", particlesDisplayShader->getProgramHandle());
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Particles display shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP, std::move(particlesDisplayShader));
 
@@ -820,6 +822,7 @@ void LoadingState::loadShaders() noexcept
         compositeShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_COMPOSITE_VERTEX));
         compositeShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_COMPOSITE_FRAGMENT));
         compositeShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_COMPOSITE_SCENE", compositeShader->getProgramHandle());
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Composite shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_COMPOSITE_SCENE, std::move(compositeShader));
 
@@ -827,6 +830,7 @@ void LoadingState::loadShaders() noexcept
         oitResolveShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_COMPOSITE_VERTEX));
         oitResolveShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_OIT_RESOLVE_FRAGMENT));
         oitResolveShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_OIT_RESOLVE", oitResolveShader->getProgramHandle());
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: OIT resolve shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_OIT_RESOLVE, std::move(oitResolveShader));
 
@@ -836,6 +840,7 @@ void LoadingState::loadShaders() noexcept
         shadowShader->compileAndAttachShader(Shader::ShaderType::GEOMETRY, shaderPath(JSONKeys::SHADER_SHADOW_GEOMETRY));
         shadowShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SHADOW_FRAGMENT));
         shadowShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_SHADOW_VOLUME", shadowShader->getProgramHandle());
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Shadow shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_SHADOW_VOLUME, std::move(shadowShader));
 
@@ -843,10 +848,12 @@ void LoadingState::loadShaders() noexcept
         auto computeShader = std::make_unique<Shader>();
         computeShader->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PATHTRACER_COMPUTE));
         computeShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PATH_TRACER_COMPUTE", computeShader->getProgramHandle());
 
         auto computeShader2 = std::make_unique<Shader>();
         computeShader2->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PARTICLES_COMPUTE));
         computeShader2->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PARTICLES_COMPUTE", computeShader2->getProgramHandle());
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Compute shaders compiled and linked");
 
@@ -859,6 +866,7 @@ void LoadingState::loadShaders() noexcept
         billboardShader->compileAndAttachShader(Shader::ShaderType::GEOMETRY, shaderPath(JSONKeys::SHADER_BILLBOARD_GEOMETRY));
         billboardShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_BILLBOARD_FRAGMENT));
         billboardShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_BILLBOARD_SPRITE", billboardShader->getProgramHandle());
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Billboard shader compiled and linked");
         // Insert billboard shader into manager
@@ -868,6 +876,7 @@ void LoadingState::loadShaders() noexcept
         modelShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MODEL_VERTEX));
         modelShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_MODEL_FRAGMENT));
         modelShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_MODEL_WITH_SKINNING", modelShader->getProgramHandle());
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Model shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_MODEL_WITH_SKINNING, std::move(modelShader));
         
@@ -887,8 +896,8 @@ void LoadingState::loadNetworkConfig() noexcept
     {
         const auto resources = resourceLoader().getResources();
 
-        if (const auto url = JSONUtils::getResourcePath(std::string(JSONKeys::NETWORK_URL), resources, resourceLoader().getResourcePathPrefix())
-        ; url.empty())
+        const std::string url = JSONUtils::getResourceValue(std::string(JSONKeys::NETWORK_URL), resources);
+        if (url.empty())
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: NETWORK_URL resource key not found in configuration");
         }
