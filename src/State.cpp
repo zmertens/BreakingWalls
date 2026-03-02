@@ -11,9 +11,6 @@
 State::State(StateStack &stack, Context context)
     : mStack{&stack}, mContext{context}
 {
-#if defined(BREAKING_WALLS_DEBUG)
-    mLogCondition = true;
-#endif
 }
 
 void State::requestStackPush(States::ID stateID)
@@ -39,9 +36,4 @@ State::Context State::getContext() const noexcept
 StateStack &State::getStack() const noexcept
 {
     return *mStack;
-}
-
-bool State::isLoggable(const bool newCondition) const noexcept
-{
-    return mLogCondition || newCondition;
 }

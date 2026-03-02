@@ -45,6 +45,16 @@ SplashState::SplashState(StateStack &stack, Context context)
         mWhiteNoise->setVolume(getContext().getOptionsManager()->get(GUIOptions::ID::DE_FACTO).getSfxVolume());
         mWhiteNoise->play(SoundEffect::ID::WHITE_NOISE);
     }
+
+    try
+    {
+        mFont = &getContext().getFontManager()->get(Fonts::ID::NUNITO_SANS);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SplashState: Failed to load font: %s", e.what());
+        mFont = nullptr;
+    }
 }
 
 SplashState::~SplashState()
@@ -66,7 +76,7 @@ void SplashState::draw() const noexcept
     ImGuiIO &io = ImGui::GetIO();
     ImVec2 screenSize = io.DisplaySize;
 
-    ImGui::PushFont(getContext().getFontManager()->get(Fonts::ID::NUNITO_SANS).get());
+    ImGui::PushFont(mFont->get());
 
     // Draw the splash image to cover the whole screen
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
@@ -117,9 +127,6 @@ void SplashState::draw() const noexcept
     ImGui::PopStyleVar();
 
     ImGui::PopFont();
-
-    glClearColor(0.3, 0.3, 0.3, 1.0);
-    glClear(GL_COLOR_BUFFER_BIT);
 }
 
 bool SplashState::update(float dt, unsigned int subSteps) noexcept

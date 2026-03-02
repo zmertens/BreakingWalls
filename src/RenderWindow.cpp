@@ -1,28 +1,13 @@
 #include "RenderWindow.hpp"
 
-#include <dearimgui/imgui.h>
-#include <dearimgui/backends/imgui_impl_sdl3.h>
-#include <dearimgui/backends/imgui_impl_opengl3.h>
-
 #include <glad/glad.h>
+
 #include <SDL3/SDL.h>
 
 RenderWindow::RenderWindow(SDL_Window *window)
     : mWindow(window)
 {
 
-}
-
-void RenderWindow::beginFrame() const noexcept
-{
-    if (!mWindow)
-    {
-        return;
-    }
-
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
 }
 
 void RenderWindow::clear() const noexcept
@@ -42,9 +27,6 @@ void RenderWindow::display() const noexcept
     {
         return;
     }
-
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     SDL_GL_SwapWindow(mWindow);
 }

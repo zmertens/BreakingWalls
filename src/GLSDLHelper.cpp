@@ -145,6 +145,8 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
         }
 
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, title.data());
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, title.data());
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, title.data());
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Flips And Ale");
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "MIT License");
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "csv");

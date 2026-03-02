@@ -27,11 +27,20 @@ PauseState::PauseState(StateStack &stack, Context context)
         mMusic = nullptr;
     }
     
+    try
+    {
+        mFont = &getContext().getFontManager()->get(Fonts::ID::NUNITO_SANS);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Failed to load font: %s", e.what());
+        mFont = nullptr;
+    }
 }
 
 void PauseState::draw() const noexcept
 {
-    ImGui::PushFont(getContext().getFontManager()->get(Fonts::ID::NUNITO_SANS).get());
+    ImGui::PushFont(mFont->get());
 
     // Apply color schema
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.016f, 0.047f, 0.024f, 0.95f));     // #040c06

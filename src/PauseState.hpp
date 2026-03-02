@@ -3,6 +3,9 @@
 
 #include "State.hpp"
 
+class Font;
+class MusicPlayer;
+
 class PauseState : public State
 {
 public:
@@ -13,6 +16,7 @@ public:
     bool handleEvent(const SDL_Event &event) noexcept override;
 
 private:
+    Font *mFont;
     MusicPlayer *mMusic;
 
     mutable unsigned int mSelectedMenuItem;

@@ -20,8 +20,6 @@ public:
     RenderWindow(RenderWindow &&) = default;
     RenderWindow &operator=(RenderWindow &&) = default;
 
-    void beginFrame() const noexcept;
-
     /// @brief Clear the render target
     void clear() const noexcept;
 

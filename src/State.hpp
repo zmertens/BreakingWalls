@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "HttpClient.hpp"
-#include "Loggable.hpp"
 #include "Player.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
@@ -22,7 +21,7 @@ class StateStack;
 
 union SDL_Event;
 
-class State : public Loggable
+class State
 {
 public:
     typedef std::unique_ptr<State> Ptr;
@@ -144,8 +143,6 @@ public:
     virtual void draw() const noexcept = 0;
     virtual bool update(float dt, unsigned int subSteps) noexcept = 0;
     virtual bool handleEvent(const SDL_Event &event) noexcept = 0;
-
-    virtual bool isLoggable(const bool logCondition = false) const noexcept override;
 protected:
     void requestStackPush(States::ID stateID);
     void requestStackPop();
@@ -154,8 +151,6 @@ protected:
     Context getContext() const noexcept;
 
     StateStack &getStack() const noexcept;
-
-    bool mLogCondition{false};
 private:
     StateStack *mStack;
     Context mContext;

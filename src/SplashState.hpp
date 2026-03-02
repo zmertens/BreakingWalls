@@ -10,6 +10,7 @@
 
 #include <glm/glm.hpp>
 
+class Font;
 class Texture;
 
 class SplashState : public State
@@ -31,7 +32,8 @@ public:
 private:
     bool isLoadingComplete() const noexcept;
     SoundPlayer *mWhiteNoise;
-    Texture* mSplashTexture;
+    Texture *mSplashTexture;
+    Font *mFont;
 };
 
 #endif // SPLASH_STATE_HPP

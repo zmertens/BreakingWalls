@@ -18,15 +18,22 @@
 #include "StateStack.hpp"
 
 SettingsState::SettingsState(StateStack &stack, Context context)
-    : State(stack, context), mShowText{true}, mFont{&context.getFontManager()->get(Fonts::ID::COUSINE_REGULAR)}, mShowSettingsWindow(true)
+    : State(stack, context), mShowText{true}, mShowSettingsWindow(true)
 {
+    // Load font with error handling
+    try
+    {
+        mFont = &context.getFontManager()->get(Fonts::ID::NUNITO_SANS);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SettingsState: Failed to load font: %s", e.what());
+        mFont = nullptr;
+    }
 }
 
 void SettingsState::draw() const noexcept
 {
-    // Draw the game background FIRST, before any ImGui calls
-    const auto &window = *getContext().getRenderWindow();
-
     ImGui::PushFont(mFont->get());
 
     // Apply color schema (matching MenuState)

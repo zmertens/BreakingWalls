@@ -14,7 +14,7 @@ bool Font::loadFromMemoryCompressedTTF(const void *compressedData, std::size_t c
 
     IM_ASSERT(mFont != nullptr);
 
-    return true;
+    return mFont != nullptr;
 }
 
 ImFont *Font::get() const

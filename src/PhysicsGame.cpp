@@ -10,6 +10,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string_view>
 #include <string>
@@ -46,6 +47,21 @@
 #include "StateStack.hpp"
 #include "Texture.hpp"
 
+namespace
+{
+    void configureGlobalLogging() noexcept
+    {
+        static std::once_flag configured;
+        std::call_once(configured, []() {
+#if defined(BREAKING_WALLS_DEBUG)
+            SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
+#else
+            SDL_SetLogPriorities(SDL_LOG_PRIORITY_CRITICAL);
+#endif
+        });
+    }
+}
+
 struct PhysicsGame::PhysicsGameImpl
 {
     Player mPlayer1;
@@ -77,6 +93,7 @@ struct PhysicsGame::PhysicsGameImpl
     PhysicsGameImpl(std::string_view title, int w, int h, std::string_view resourcePath = "")
         : mWindowTitle{title}, mResourcePath{resourcePath}, INIT_WINDOW_W{w}, INIT_WINDOW_H{h}, mRenderWindow{nullptr}, mGLSDLHelper{}, mStateStack{nullptr}, mOptions{}, mSounds{nullptr}, mPlayer1{}, mHttpClient{}
     {
+        configureGlobalLogging();
         initSDL();
         if (!mGLSDLHelper.mWindow)
         {
@@ -199,7 +216,11 @@ struct PhysicsGame::PhysicsGameImpl
 
         // Clear, draw, and present (like SFML)
         mRenderWindow->clear();
-        mRenderWindow->beginFrame();
+        
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+
         mStateStack->draw();
 
         // Window might be closed during draw calls/events
@@ -207,6 +228,9 @@ struct PhysicsGame::PhysicsGameImpl
         {
             handleFPS(elapsed);
         }
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         mRenderWindow->display();
     }
@@ -242,6 +266,11 @@ struct PhysicsGame::PhysicsGameImpl
             mFPSUpdateTimer = 0.0;
         }
 
+        if (auto *nunitoFont = mFonts.get(Fonts::ID::NUNITO_SANS).get())
+        {
+            ImGui::PushFont(nunitoFont);
+        }
+
         // Create ImGui overlay mRenderWindow positioned at top-right corner
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 10.0f), ImGuiCond_Always,
                                 ImVec2(1.0f, 0.0f));
@@ -261,6 +290,7 @@ struct PhysicsGame::PhysicsGameImpl
         {
             ImGui::Text("FPS: %d", mSmoothedFPS);
             ImGui::Text("Frame Time: %.2f ms", mSmoothedFrameTime);
+            ImGui::Separator();
 
             if (mStateStack && mStateStack->peekState<GameState *>())
             {
@@ -279,6 +309,7 @@ struct PhysicsGame::PhysicsGameImpl
 
             ImGui::End();
         }
+        ImGui::PopFont();
     }
 }; // impl
 

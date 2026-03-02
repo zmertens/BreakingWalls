@@ -35,6 +35,8 @@
 #include <fonts/Limelight_Regular.h>
 #include <fonts/nunito_sans.h>
 
+#include <dearimgui/backends/imgui_impl_opengl3.h>
+
 extern "C"
 {
     float simplex2(float x, float y, int octaves, float persistence, float lacunarity);
@@ -646,6 +648,12 @@ void LoadingState::loadFonts() noexcept
     fonts.load(Fonts::ID::COUSINE_REGULAR,
                Cousine_Regular_compressed_data,
                Cousine_Regular_compressed_size);
+
+    ImGuiIO &io = ImGui::GetIO();
+    io.Fonts->Build();
+    ImGui_ImplOpenGL3_DestroyDeviceObjects();
+    ImGui_ImplOpenGL3_CreateDeviceObjects();
+    io.FontDefault = fonts.get(Fonts::ID::NUNITO_SANS).get();
 }
 
 void LoadingState::loadAudio() noexcept
