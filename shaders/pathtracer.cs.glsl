@@ -1,7 +1,12 @@
  #version 450 core
-// Voronoi planet placement
-uniform vec3 uVoronoiPlanetCenter;
-uniform float uVoronoiPlanetRadius;
+// Voronoi cell data for ground plane
+layout (std430, binding = 3) buffer VoronoiCellColorBuffer {
+    vec3 bVoronoiCellColors[];
+};
+layout (std430, binding = 4) buffer VoronoiCellSeedBuffer {
+    vec3 bVoronoiCellSeeds[];
+};
+uniform uint uVoronoiCellCount;
 
 // Path tracing compute shader with progressive refinement
 // Based on physically-based rendering principles
@@ -28,20 +33,7 @@ uniform float uVoronoiPlanetRadius;
 
 // ============================================================================
 
-// Voronoi cell color buffer (binding = 3)
-layout (std430, binding = 3) buffer VoronoiCellColorBuffer {
-    vec3 bVoronoiCellColors[];
-};
-// Voronoi cell seed buffer (binding = 4)
-layout (std430, binding = 4) buffer VoronoiCellSeedBuffer {
-    vec3 bVoronoiCellSeeds[];
-};
-// Voronoi cell painted state buffer (binding = 5)
-layout (std430, binding = 5) buffer VoronoiCellPaintedBuffer {
-    uint bVoronoiCellPainted[];
-};
-
-uniform uint uVoronoiCellCount;
+// ...existing code...
 // Random Number Generation (PCG Hash)
 // ============================================================================
 
@@ -207,23 +199,30 @@ layout (std430, binding = 5) readonly buffer VoronoiPaintedBuffer {
 
 // ============================================================================
 // Intersection Functions
-// Voronoi planet intersection
-bool voronoiPlanetIntersect(in Ray ray, out float t, out vec3 hitPoint, out vec3 normal) {
-    vec3 oc = ray.origin - uVoronoiPlanetCenter;
-    float a = dot(ray.direction, ray.direction);
-    float b = 2.0 * dot(oc, ray.direction);
-    float c = dot(oc, oc) - uVoronoiPlanetRadius * uVoronoiPlanetRadius;
-    float discriminant = b * b - 4.0 * a * c;
-    if (discriminant < 0.0) return false;
-    float sqrtD = sqrt(discriminant);
-    float t0 = (-b - sqrtD) / (2.0 * a);
-    float t1 = (-b + sqrtD) / (2.0 * a);
-    t = t0;
-    if (t < EPSILON) t = t1;
+// Plane intersection (Y=0 ground plane)
+bool planeIntersect(in Ray ray, out float t, out vec3 hitPoint, out vec3 normal) {
+    // Plane: y = 0
+    if (abs(ray.direction.y) < EPSILON) return false;
+    t = -ray.origin.y / ray.direction.y;
     if (t < EPSILON) return false;
     hitPoint = ray.origin + t * ray.direction;
-    normal = normalize(hitPoint - uVoronoiPlanetCenter);
+    normal = vec3(0.0, 1.0, 0.0);
     return true;
+}
+
+// Voronoi coloring for ground plane
+vec3 voronoiColorAt(vec3 p) {
+    // Project to XZ plane and wrap for infinite tiling
+    float tileSize = 100.0; // Should match seed generation range
+    vec2 pos = mod(p.xz + tileSize * 1000.0, tileSize); // Offset to avoid negative mod issues
+    float minDist = 1e20;
+    uint cellIdx = 0u;
+    for (uint i = 0u; i < uVoronoiCellCount; ++i) {
+        vec2 seed = mod(bVoronoiCellSeeds[i].xz + tileSize * 1000.0, tileSize);
+        float d = distance(pos, seed);
+        if (d < minDist) { minDist = d; cellIdx = i; }
+    }
+    return bVoronoiCellColors[cellIdx];
 }
 // ============================================================================
 
@@ -749,28 +748,27 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
     vec3 throughput = vec3(1.0);
     vec3 radiance = vec3(0.0);
 
+
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit;
         HitRecord sphereHit;
         HitRecord triangleHit;
+        float planeT;
+        vec3 planeHitPoint, planeNormal;
         uint sphereCountForBounce = (bounce == 0u) ? uPrimaryRaySphereCount : uSphereCount;
         bool hasSphereHit = hitWorld(ray, EPSILON, uCamera.far, sphereCountForBounce, sphereHit);
         uint triangleCountForBounce = (bounce == 0u)
             ? uTriangleCount
             : ((bounce == 1u) ? min(uTriangleCount, 32u) : 0u);
         bool hasTriangleHit = hitTriangles(ray, EPSILON, uCamera.far, triangleCountForBounce, triangleHit);
-
-        // Voronoi planet intersection
-        float planetT;
-        vec3 planetHitPoint, planetNormal;
-        bool hasPlanetHit = voronoiPlanetIntersect(ray, planetT, planetHitPoint, planetNormal);
+        bool hasPlaneHit = planeIntersect(ray, planeT, planeHitPoint, planeNormal);
 
         // Find closest hit
         float closestT = uCamera.far;
-        int hitType = -1; // 0 = planet, 1 = sphere, 2 = triangle
+        int hitType = -1; // 0 = plane, 1 = sphere, 2 = triangle
 
-        if (hasPlanetHit && planetT < closestT) {
-            closestT = planetT;
+        if (hasPlaneHit && planeT < closestT) {
+            closestT = planeT;
             hitType = 0;
         }
         if (hasSphereHit && sphereHit.t < closestT) {
@@ -784,6 +782,7 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
 
 <<<<<<< HEAD
         if (hitType == 0) {
+<<<<<<< Updated upstream
             // Shade Voronoi planet
             // Find closest seed to hit point (true Voronoi cell index)
             uint cellIdx = 0u;
@@ -850,6 +849,10 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
             if (bVoronoiCellPainted[cellIdx] != 0u) {
                 cellColor = mix(cellColor, vec3(1.0, 1.0, 0.2), 0.7);
             }
+=======
+            // Shade Voronoi ground plane
+            vec3 cellColor = voronoiColorAt(planeHitPoint);
+>>>>>>> Stashed changes
             radiance += throughput * cellColor;
             return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
         } else if (hitType == 1) {

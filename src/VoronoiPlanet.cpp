@@ -43,14 +43,12 @@ void VoronoiPlanet::uploadCellColorsToSSBO(unsigned int ssbo) const
 {
     if (m_cellColors.empty() || ssbo == 0)
         return;
-
     std::vector<glm::vec4> packedColors;
     packedColors.reserve(m_cellColors.size());
     for (const glm::vec3 &color : m_cellColors)
     {
         packedColors.emplace_back(color, 1.0f);
     }
-
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
     glBufferData(GL_SHADER_STORAGE_BUFFER,
                  packedColors.size() * sizeof(glm::vec4),
@@ -112,37 +110,34 @@ void VoronoiPlanet::generateUVSphere(int lonSteps, int latSteps)
     m_normals.clear();
     m_indices.clear();
     m_cellIds.clear();
-
     constexpr float kGroundHalfExtent = 50.0f;
-
-    for (int zStep = 0; zStep <= latSteps; ++zStep)
+    for (int lat = 0; lat <= latSteps; ++lat)
     {
-        const float v = static_cast<float>(zStep) / static_cast<float>(latSteps);
-        const float z = glm::mix(-kGroundHalfExtent, kGroundHalfExtent, v);
-
-        for (int xStep = 0; xStep <= lonSteps; ++xStep)
+        float v = (float)lat / (float)latSteps;
+        float theta = v * glm::pi<float>();
+        for (int lon = 0; lon <= lonSteps; ++lon)
         {
-            const float u = static_cast<float>(xStep) / static_cast<float>(lonSteps);
-            const float x = glm::mix(-kGroundHalfExtent, kGroundHalfExtent, u);
-
-            const glm::vec3 pos(x, 0.0f, z);
+            float u = (float)lon / (float)lonSteps;
+            float phi = u * glm::two_pi<float>();
+            float x = sin(theta) * cos(phi);
+            float y = cos(theta);
+            float z = sin(theta) * sin(phi);
+            glm::vec3 pos = glm::normalize(glm::vec3(x, y, z));
             m_vertices.push_back(pos);
-            m_normals.emplace_back(0.0f, 1.0f, 0.0f);
-
+            m_normals.push_back(pos); // Normal is the position on a unit sphere
             const int cid = findNearestSeed(pos);
             m_cellIds.push_back(static_cast<unsigned int>(cid));
         }
     }
-
     const int vertsPerRow = lonSteps + 1;
-    for (int zStep = 0; zStep < latSteps; ++zStep)
+    for (int lat = 0; lat < latSteps; ++lat)
     {
-        for (int xStep = 0; xStep < lonSteps; ++xStep)
+        for (int lon = 0; lon < lonSteps; ++lon)
         {
-            const int a = zStep * vertsPerRow + xStep;
-            const int b = a + vertsPerRow;
-            const int c = b + 1;
-            const int d = a + 1;
+            int a = lat * vertsPerRow + lon;
+            int b = a + vertsPerRow;
+            int c = b + 1;
+            int d = a + 1;
             m_indices.push_back(a);
             m_indices.push_back(b);
             m_indices.push_back(c);
@@ -159,7 +154,6 @@ int VoronoiPlanet::findNearestSeed(const glm::vec3 &p) const
     {
         return 0;
     }
-
     int best = 0;
     const glm::vec2 pXZ(p.x, p.z);
     const glm::vec2 bestSeedXZ(m_seedPositions[0].x, m_seedPositions[0].z);
@@ -267,10 +261,8 @@ void VoronoiPlanet::paintAtPosition(const glm::vec3 &worldPos, const glm::vec3 &
     const int id = findNearestSeed(planePos);
     if (id < 0 || id >= static_cast<int>(m_cellColors.size()))
         return;
-
     m_cellColors[id] = color;
     m_paintedStates[id] = 1;
-
     if (m_uploaded)
     {
         const glm::vec4 packedColor(color, 1.0f);
@@ -281,7 +273,20 @@ void VoronoiPlanet::paintAtPosition(const glm::vec3 &worldPos, const glm::vec3 &
                         glm::value_ptr(packedColor));
         if (m_paintedSSBO != 0)
         {
-            const uint32_t painted = 1;
+            uint32_t painted = 1;
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_paintedSSBO);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(uint32_t), sizeof(uint32_t), &painted);
+        }
+    }
+    m_paintedStates[id] = 1;
+    // Log painted cell for debugging mapping issues
+    if (m_uploaded)
+    {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_cellColorSSBO);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(glm::vec3), sizeof(glm::vec3), glm::value_ptr(color));
+        if (m_paintedSSBO != 0)
+        {
+            uint32_t painted = 1;
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_paintedSSBO);
             glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(uint32_t), sizeof(uint32_t), &painted);
         }
