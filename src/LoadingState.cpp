@@ -87,6 +87,12 @@ namespace JSONKeys
 
 namespace
 {
+    SDL_Cursor *&activeAppCursor() noexcept
+    {
+        static SDL_Cursor *cursor = nullptr;
+        return cursor;
+    }
+
     /// @brief Represents a single resource loading work item
     struct ResourceWorkItem
     {
@@ -572,6 +578,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
             loadTexturesFromWorkerRequests();
             // Handle window icon separately (special case, not managed by TextureManager)
             loadWindowIcon(resources);
+            loadCursor(resources);
             loadAudio();
             loadModels();
         }
@@ -951,6 +958,50 @@ void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::str
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load icon: %s - %s\n", windowIconPath.c_str(),
                      SDL_GetError());
     }
+}
+
+void LoadingState::loadCursor(const std::unordered_map<std::string, std::string> &resources) noexcept
+{
+    using std::string;
+
+    auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
+
+    const string cursorImagePath = JSONUtils::getResourcePath(
+        std::string(JSONKeys::CHARACTER_IMAGE), resources, resourcePathPrefix);
+
+    if (cursorImagePath.empty())
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Cursor image resource not found in configuration");
+        return;
+    }
+
+    SDL_Surface *cursorSurface = SDL_LoadBMP(cursorImagePath.c_str());
+    if (cursorSurface == nullptr)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Failed to load cursor image: %s - %s",
+                    cursorImagePath.c_str(), SDL_GetError());
+        return;
+    }
+
+    SDL_Cursor *newCursor = SDL_CreateColorCursor(cursorSurface, 0, 0);
+    SDL_DestroySurface(cursorSurface);
+
+    if (newCursor == nullptr)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Failed to create cursor: %s", SDL_GetError());
+        return;
+    }
+
+    SDL_SetCursor(newCursor);
+
+    SDL_Cursor *&currentCursor = activeAppCursor();
+    if (currentCursor != nullptr)
+    {
+        SDL_DestroyCursor(currentCursor);
+    }
+
+    currentCursor = newCursor;
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Cursor loaded from:\t%s", cursorImagePath.c_str());
 }
 
 void LoadingState::loadProceduralTextures() const noexcept

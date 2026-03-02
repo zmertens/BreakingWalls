@@ -27,7 +27,7 @@
 	"shader_shadow_frag_glsl": "shaders/shadow.frag.glsl",
 	"shader_shadow_geom_glsl": "shaders/shadow.geom.glsl",
 	"network_url": "http://localhost:3000",
-	"character_default_image": "textures/character_beige_front.png",
+	"character_default_image": "textures/character_beige_front.bmp",
 	"characters_spritesheet": "textures/spritesheet-characters-default.png",
 	"explosion_spritesheet": "textures/Explosion.png",
 	"ball_normal": "textures/bomb.png",
