@@ -121,7 +121,7 @@ struct Sphere {
     uint materialType;
     float fuzz;
     float refractiveIndex;
-    uint padding;
+    float textureBlend;
 };
 
 struct Triangle {
@@ -139,12 +139,14 @@ struct Triangle {
 struct HitRecord {
     vec3 point;
     vec3 normal;
+    vec2 texCoord;
     float t;
     bool frontFace;
     uint materialType;
     vec3 albedo;
     float fuzz;
     float refractiveIndex;
+    float textureBlend;
 };
 
 // Uniforms
@@ -159,6 +161,10 @@ uniform uint uTriangleShadowTestBudget;
 uniform float uTime;
 uniform float uHistoryBlend;
 uniform sampler2D uNoiseTex;
+uniform sampler2D uTestAlbedoTex;
+uniform float uTestTextureStrength;
+uniform vec2 uSphereTexScale;
+uniform vec2 uTriangleTexScale;
 uniform vec3 uPlayerPos; // Player position in world space
 uniform uint uVoronoiCellCount;
 
@@ -241,10 +247,16 @@ bool sphereIntersect(in Sphere sphere, in Ray ray, float tMin, float tMax, out H
     vec3 outwardNormal = (hit.point - sphere.center.xyz) / sphere.radius;
     hit.frontFace = dot(ray.direction, outwardNormal) < 0.0;
     hit.normal = hit.frontFace ? outwardNormal : -outwardNormal;
+
+    float phi = atan(outwardNormal.z, outwardNormal.x);
+    float theta = acos(clamp(outwardNormal.y, -1.0, 1.0));
+    hit.texCoord = vec2(phi / TWO_PI + 0.5, theta / PI) * uSphereTexScale;
+
     hit.materialType = sphere.materialType;
     hit.albedo = sphere.albedo.rgb;
     hit.fuzz = sphere.fuzz;
     hit.refractiveIndex = sphere.refractiveIndex;
+    hit.textureBlend = clamp(sphere.textureBlend, 0.0, 1.0);
 
     return true;
 }
@@ -310,10 +322,20 @@ bool triangleIntersect(in Triangle triangle, in Ray ray, float tMin, float tMax,
     hit.point = ray.origin + ray.direction * t;
     hit.frontFace = dot(ray.direction, interpNormal) < 0.0;
     hit.normal = hit.frontFace ? interpNormal : -interpNormal;
+    vec2 uv0 = vec2(triangle.v0.w, triangle.n0.w);
+    vec2 uv1 = vec2(triangle.v1.w, triangle.n1.w);
+    vec2 uv2 = vec2(triangle.v2.w, triangle.n2.w);
+    hit.texCoord = uv0 * w + uv1 * u + uv2 * v;
+    float uvSpan = length(uv0 - uv1) + length(uv1 - uv2) + length(uv2 - uv0);
+    if (uvSpan < 1e-5) {
+        hit.texCoord = hit.point.xz * 0.12;
+    }
+    hit.texCoord *= uTriangleTexScale;
     hit.materialType = uint(triangle.albedoAndMaterial.w + 0.5);
     hit.albedo = triangle.albedoAndMaterial.rgb;
     hit.fuzz = triangle.materialParams.x;
     hit.refractiveIndex = triangle.materialParams.y;
+    hit.textureBlend = clamp(triangle.materialParams.z, 0.0, 1.0);
 
     return true;
 }
@@ -741,6 +763,11 @@ vec3 skyColor(vec3 direction) {
     return starfieldColor(direction, uvec2(0u), 0u);
 }
 
+vec3 sampleTestAlbedo(vec2 uv) {
+    vec4 texel = textureLod(uTestAlbedoTex, fract(uv), 0.0);
+    return mix(vec3(1.0), texel.rgb, texel.a);
+}
+
 // ============================================================================
 // Path Tracing
 // ============================================================================
@@ -803,6 +830,12 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
             // Hit sky
             radiance += throughput * starfieldColor(ray.direction, pixel, sampleIndex);
             return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
+        }
+
+        if (uTestTextureStrength > EPSILON && hit.textureBlend > EPSILON) {
+            vec3 texAlbedo = sampleTestAlbedo(hit.texCoord);
+            float blend = clamp(hit.textureBlend * uTestTextureStrength, 0.0, 1.0);
+            hit.albedo = mix(hit.albedo, texAlbedo, blend);
         }
 
         // Standard material shading for spheres/triangles

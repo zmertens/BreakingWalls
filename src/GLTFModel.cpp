@@ -98,7 +98,8 @@ namespace
         }
 
         albedoAndMaterial = glm::vec4(albedo, materialType);
-        materialParams = glm::vec4(fuzz, refractiveIndex, 0.0f, 0.0f);
+        const float textureBlend = (materialType == 2.0f) ? 0.35f : 1.00f;
+        materialParams = glm::vec4(fuzz, refractiveIndex, textureBlend, 0.0f);
     }
 
     float normalizedKeyLerp(float animationTime, float keyTime, float nextKeyTime) noexcept
@@ -678,6 +679,7 @@ void GLTFModel::render(Shader &shader,
         }
 
         shader.setUniform("uModel", model * nodeTransform);
+        shader.setUniform("uHasTexCoord", mesh.hasTexCoords ? 1 : 0);
         glBindVertexArray(mesh.vao);
         glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, nullptr);
     }
@@ -753,12 +755,12 @@ void GLTFModel::extractRayTraceTriangles(std::vector<RayTraceTriangle> &outTrian
             const glm::vec3 worldN2 = glm::normalize(normalMatrix * glm::normalize(localN2));
 
             RayTraceTriangle tri{};
-            tri.v0 = glm::vec4(worldPos0, 1.0f);
-            tri.v1 = glm::vec4(worldPos1, 1.0f);
-            tri.v2 = glm::vec4(worldPos2, 1.0f);
-            tri.n0 = glm::vec4(worldN0, 0.0f);
-            tri.n1 = glm::vec4(worldN1, 0.0f);
-            tri.n2 = glm::vec4(worldN2, 0.0f);
+            tri.v0 = glm::vec4(worldPos0, v0.texCoord.x);
+            tri.v1 = glm::vec4(worldPos1, v1.texCoord.x);
+            tri.v2 = glm::vec4(worldPos2, v2.texCoord.x);
+            tri.n0 = glm::vec4(worldN0, v0.texCoord.y);
+            tri.n1 = glm::vec4(worldN1, v1.texCoord.y);
+            tri.n2 = glm::vec4(worldN2, v2.texCoord.y);
             tri.albedoAndMaterial = mesh.rayTraceAlbedoAndMaterial;
             tri.materialParams = mesh.rayTraceMaterialParams;
 
@@ -1003,6 +1005,7 @@ void GLTFModel::buildMeshesFromScene(const aiScene *scene)
         gpuMesh.indexCount = static_cast<GLsizei>(indices.size());
         gpuMesh.nodeTransform = meshNodeTransform;
         gpuMesh.nodeName = meshIndex < meshNodeNames.size() ? meshNodeNames[meshIndex] : std::string{};
+        gpuMesh.hasTexCoords = mesh->HasTextureCoords(0);
 
         const bool usesSkinning = std::any_of(vertexBones.begin(), vertexBones.end(), [](const VertexBoneData &boneData)
                                               {

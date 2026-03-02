@@ -30,6 +30,7 @@
 
 namespace
 {
+    constexpr GLint kTestAlbedoTextureUnit = 3;
     constexpr float kRunnerLockedSunYawDeg = 0.0f; // +X heading (toward sunset)
     constexpr float kTracksideBillboardBorderMargin = 7.5f;
     constexpr std::size_t kMaxPathTracerSpheres = 200;
@@ -194,11 +195,21 @@ GameState::GameState(StateStack &stack, Context context)
         mAccumTex = &textures.get(Textures::ID::PATH_TRACER_ACCUM);
         mDisplayTex = &textures.get(Textures::ID::PATH_TRACER_DISPLAY);
         mNoiseTexture = &textures.get(Textures::ID::NOISE2D);
+        mTestAlbedoTexture = &textures.get(Textures::ID::SDL_LOGO);
+        if (mTestAlbedoTexture)
+        {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "GameState: Test albedo texture (SDL_logo) ready id=%u size=%dx%d",
+                mTestAlbedoTexture->get(),
+                mTestAlbedoTexture->getWidth(),
+                mTestAlbedoTexture->getHeight());
+        }
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get noise texture: %s", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get texture resources: %s", e.what());
         mNoiseTexture = nullptr;
+        mTestAlbedoTexture = nullptr;
     }
 
     // Get and play game music from context
@@ -1454,6 +1465,10 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uTime", static_cast<GLfloat>(timeSeconds));
         mComputeShader->setUniform("uHistoryBlend", historyBlend);
         mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(NOISE_TEXTURE_UNIT));
+        mComputeShader->setUniform("uTestAlbedoTex", kTestAlbedoTextureUnit);
+        mComputeShader->setUniform("uTestTextureStrength", mTestAlbedoTexture ? 1.0f : 0.0f);
+        mComputeShader->setUniform("uSphereTexScale", glm::vec2(2.2f, 1.0f));
+        mComputeShader->setUniform("uTriangleTexScale", glm::vec2(3.0f, 3.0f));
 
         // Shadow casting uniforms
         mComputeShader->setUniform("uPlayerPos", mPlayer.getPosition() + glm::vec3(0.0f, kPlayerShadowCenterYOffset, 0.0f));
@@ -1468,6 +1483,9 @@ void GameState::renderWithComputeShaders() const noexcept
         // Bind starfield noise texture sampler to texture unit 2
         glActiveTexture(GL_TEXTURE0 + NOISE_TEXTURE_UNIT);
         glBindTexture(GL_TEXTURE_2D, mNoiseTexture ? mNoiseTexture->get() : 0);
+
+        glActiveTexture(GL_TEXTURE0 + kTestAlbedoTextureUnit);
+        glBindTexture(GL_TEXTURE_2D, mTestAlbedoTexture ? mTestAlbedoTexture->get() : 0);
 
         // Dispatch compute shader with work groups (using 20x20 local work group size)
         GLuint groupsX = (mRenderWidth + 19) / 20;
@@ -2016,6 +2034,12 @@ void GameState::renderPlayerCharacter() const noexcept
 
                     mSkinnedModelShader->bind();
                     mSkinnedModelShader->setUniform("uSunDir", computeSunDirection(timeSeconds));
+                    mSkinnedModelShader->setUniform("uAlbedoTex", kTestAlbedoTextureUnit);
+                    mSkinnedModelShader->setUniform("uUseAlbedoTex", mTestAlbedoTexture ? 1 : 0);
+                    mSkinnedModelShader->setUniform("uAlbedoUVScale", glm::vec2(3.0f, 3.0f));
+
+                    glActiveTexture(GL_TEXTURE0 + kTestAlbedoTextureUnit);
+                    glBindTexture(GL_TEXTURE_2D, mTestAlbedoTexture ? mTestAlbedoTexture->get() : 0);
 
                     characterModel.render(
                         *mSkinnedModelShader,

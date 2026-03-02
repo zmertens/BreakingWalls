@@ -94,6 +94,7 @@ private:
         GLuint ebo{0};
         GLsizei indexCount{0};
         bool usesSkinning{false};
+        bool hasTexCoords{false};
         glm::mat4 nodeTransform{1.0f};
         std::string nodeName;
     };

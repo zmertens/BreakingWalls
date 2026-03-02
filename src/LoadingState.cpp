@@ -57,8 +57,8 @@ namespace JSONKeys
     constexpr std::string_view OGG_FILES = "ogg_files";
     constexpr std::string_view PLAYER_HITPOINTS_DEFAULT = "player_hitpoints_default";
     constexpr std::string_view PLAYER_SPEED_DEFAULT = "player_speed_default";
-    constexpr std::string_view SDL_LOGO = "SDL_SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATIONo";
-    constexpr std::string_view SFML_LOGO = "SFML_SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATIONo";
+    constexpr std::string_view SDL_LOGO = "SDL_logo";
+    constexpr std::string_view SFML_LOGO = "SFML_logo";
     constexpr std::string_view SHADER_BILLBOARD_VERTEX = "shader_billboard_vert_glsl";
     constexpr std::string_view SHADER_BILLBOARD_FRAGMENT = "shader_billboard_frag_glsl";
     constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";

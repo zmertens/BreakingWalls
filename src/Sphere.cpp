@@ -15,7 +15,7 @@ Sphere::Sphere(const glm::vec3 &cent, const float rad,
       mMaterialType(static_cast<std::uint32_t>(matType)),
       mFuzz(fuzziness),
       mRefractiveIndex(refractIdx),
-      mPadding(0)
+    mTextureBlend(1.00f)
 {
 }
 
@@ -67,6 +67,16 @@ void Sphere::setFuzz(float fuzziness) noexcept
 float Sphere::getFuzz() const noexcept
 {
     return mFuzz;
+}
+
+void Sphere::setTextureBlend(float blend) noexcept
+{
+    mTextureBlend = blend;
+}
+
+float Sphere::getTextureBlend() const noexcept
+{
+    return mTextureBlend;
 }
 
 
