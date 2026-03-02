@@ -492,8 +492,7 @@ vec3 estimateDirectSun(in HitRecord hit) {
 
 // ============================================================================
 
-vec3 sampleVoronoiGroundColor(vec3 point, out bool hasVoronoiData) {
-    hasVoronoiData = false;
+vec3 sampleVoronoiGroundColor(vec3 point) {
 
     uint count = uVoronoiCellCount;
     if (count == 0u) {
@@ -501,6 +500,7 @@ vec3 sampleVoronoiGroundColor(vec3 point, out bool hasVoronoiData) {
     }
 
     float bestDist2 = 1e30;
+    float secondBestDist2 = 1e30;
     uint bestIndex = 0u;
     vec2 pointXZ = point.xz;
 
@@ -509,17 +509,33 @@ vec3 sampleVoronoiGroundColor(vec3 point, out bool hasVoronoiData) {
         vec2 delta = pointXZ - seedXZ;
         float dist2 = dot(delta, delta);
         if (dist2 < bestDist2) {
+            secondBestDist2 = bestDist2;
             bestDist2 = dist2;
             bestIndex = i;
+        } else if (dist2 < secondBestDist2) {
+            secondBestDist2 = dist2;
         }
     }
 
+    vec3 baseColor = bVoronoiCellColors[bestIndex].rgb;
+
+    float d1 = sqrt(bestDist2);
+    float d2 = sqrt(secondBestDist2);
+    float edgeDistance = d2 - d1;
+    float edgeMask = 1.0 - smoothstep(0.0, 0.95, edgeDistance);
+    vec3 edgeLineColor = vec3(0.02, 0.02, 0.03);
+
+    vec3 cellColor = baseColor;
+    cellColor = mix(cellColor, edgeLineColor, edgeMask * 0.92);
+
+    // Keep the full Voronoi grid visible even before cells are painted.
+    // Painted cells keep full intensity; unpainted cells are muted but still readable.
     if (bVoronoiPainted[bestIndex] == 0u) {
-        return vec3(0.0);
+        vec3 neutralFloorTint = vec3(0.12, 0.13, 0.15);
+        return mix(neutralFloorTint, cellColor, 0.56);
     }
 
-    hasVoronoiData = true;
-    return bVoronoiCellColors[bestIndex].rgb;
+    return cellColor;
 }
 // ============================================================================
 // Material Scattering Functions
@@ -768,7 +784,19 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
         if (hitType == 0) {
             // Shade Voronoi ground plane, taking painted state into account
             vec3 cellColor = sampleVoronoiGroundColor(planeHitPoint);
-            radiance += throughput * cellColor;
+            vec3 lightDir = normalize(-uLightDir);
+            float nDotL = max(dot(planeNormal, lightDir), 0.0);
+            float shadow = calculateShadow(planeHitPoint, planeNormal);
+            float ambient = 0.24;
+            float diffuse = 0.80 * nDotL * shadow;
+
+            float groundNoise = texture(uNoiseTex, planeHitPoint.xz * 0.025).r;
+            float microVariation = mix(0.95, 1.08, groundNoise);
+
+            vec3 litGround = cellColor * (ambient + diffuse) * microVariation;
+            litGround = clamp(litGround, vec3(0.0), vec3(1.0));
+
+            radiance += throughput * litGround;
             return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
         } else if (hitType == 1) {
             hit = sphereHit;

@@ -35,10 +35,10 @@ namespace
     constexpr std::size_t kMaxPathTracerSpheres = 200;
     constexpr std::size_t kMaxPathTracerTriangles = 192;
     constexpr bool kEnableTrianglePathTraceProxy = true;
-    constexpr float kPlayerProxyRadius = 1.35f;
-    constexpr float kPlayerShadowCenterYOffset = 1.35f;
-    constexpr float kCharacterRasterScale = 1.42f;
-    constexpr float kCharacterPathTraceProxyScale = 1.42f;
+    constexpr float kPlayerProxyRadius = 1.4175f;
+    constexpr float kPlayerShadowCenterYOffset = 1.4175f;
+    constexpr float kCharacterRasterScale = 1.491f;
+    constexpr float kCharacterPathTraceProxyScale = 1.491f;
     constexpr float kCharacterModelYOffset = 0.25f;
 
     glm::vec3 computeSunDirection(float /*timeSeconds*/) noexcept

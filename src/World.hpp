@@ -204,7 +204,7 @@ private:
     static constexpr float RUNNER_DESPAWN_BEHIND_DISTANCE = 45.0f;
     static constexpr float RUNNER_SPAWN_Z_MARGIN = 2.0f;
     static constexpr float RUNNER_BOUNDS_HALF_WIDTH = 9000.0f;
-    static constexpr float RUNNER_PLAYER_RADIUS = 1.0f;
+    static constexpr float RUNNER_PLAYER_RADIUS = 1.05f;
 
     // Character sprite sheet dimensions (for animation rendering)
     static constexpr int CHARACTER_TILE_SIZE = 128;
