@@ -154,6 +154,7 @@ uniform uint uSamplesPerBatch;
 uniform uint uSphereCount;  // Actual number of spheres to check
 uniform uint uPrimaryRaySphereCount;  // Sphere count for primary rays (exclude reflection-only proxy)
 uniform uint uTriangleCount;
+uniform uint uTriangleShadowTestBudget;
 
 uniform float uTime;
 uniform float uHistoryBlend;
@@ -389,7 +390,8 @@ bool testSpheresShadow(in Ray shadowRay, float maxDist) {
 
 bool testTrianglesShadow(in Ray shadowRay, float maxDist) {
     uint total = min(uTriangleCount, uint(MAX_TRIANGLES));
-    uint count = min(total, uint(MAX_TRIANGLE_SHADOW_TESTS));
+    uint adaptiveBudget = max(1u, min(uTriangleShadowTestBudget, uint(MAX_TRIANGLE_SHADOW_TESTS)));
+    uint count = min(total, adaptiveBudget);
     if (count == 0u) {
         return false;
     }
@@ -519,10 +521,8 @@ vec3 sampleVoronoiGroundColor(vec3 point) {
 
     vec3 baseColor = bVoronoiCellColors[bestIndex].rgb;
 
-    float d1 = sqrt(bestDist2);
-    float d2 = sqrt(secondBestDist2);
-    float edgeDistance = d2 - d1;
-    float edgeMask = 1.0 - smoothstep(0.0, 0.95, edgeDistance);
+    float edgeDistance2 = secondBestDist2 - bestDist2;
+    float edgeMask = clamp(1.0 - edgeDistance2 * 0.28, 0.0, 1.0);
     vec3 edgeLineColor = vec3(0.02, 0.02, 0.03);
 
     vec3 cellColor = baseColor;
@@ -790,10 +790,7 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
             float ambient = 0.24;
             float diffuse = 0.80 * nDotL * shadow;
 
-            float groundNoise = texture(uNoiseTex, planeHitPoint.xz * 0.025).r;
-            float microVariation = mix(0.95, 1.08, groundNoise);
-
-            vec3 litGround = cellColor * (ambient + diffuse) * microVariation;
+            vec3 litGround = cellColor * (ambient + diffuse);
             litGround = clamp(litGround, vec3(0.0), vec3(1.0));
 
             radiance += throughput * litGround;

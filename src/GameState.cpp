@@ -67,6 +67,54 @@ namespace
         return {renderWidth, renderHeight};
     }
 
+    uint32_t computeAdaptiveVoronoiCellBudget(uint32_t availableCells, int renderWidth, int renderHeight) noexcept
+    {
+        if (availableCells == 0u)
+        {
+            return 0u;
+        }
+
+        const std::size_t renderPixels = static_cast<std::size_t>(std::max(1, renderWidth)) *
+                                         static_cast<std::size_t>(std::max(1, renderHeight));
+
+        uint32_t budget = 1024u;
+        if (renderPixels > 1800ull * 1000ull)
+        {
+            budget = 448u;
+        }
+        else if (renderPixels > 1400ull * 1000ull)
+        {
+            budget = 576u;
+        }
+        else if (renderPixels > 1000ull * 1000ull)
+        {
+            budget = 768u;
+        }
+
+        budget = std::max(256u, budget);
+        return std::min(availableCells, budget);
+    }
+
+    uint32_t computeAdaptiveTriangleShadowBudget(int renderWidth, int renderHeight) noexcept
+    {
+        const std::size_t renderPixels = static_cast<std::size_t>(std::max(1, renderWidth)) *
+                                         static_cast<std::size_t>(std::max(1, renderHeight));
+
+        if (renderPixels > 1800ull * 1000ull)
+        {
+            return 28u;
+        }
+        if (renderPixels > 1400ull * 1000ull)
+        {
+            return 40u;
+        }
+        if (renderPixels > 1000ull * 1000ull)
+        {
+            return 56u;
+        }
+        return 72u;
+    }
+
     bool projectWorldToScreen(const glm::vec3 &worldPos,
                               const glm::mat4 &view,
                               const glm::mat4 &projection,
@@ -339,7 +387,7 @@ void GameState::initializeGraphicsResources() noexcept
         // mVoronoiShader = mVoronoiShaderOwned.get();
 
         // Initialize planet with moderate seed count
-        mVoronoiPlanet.initialize(2048, 128, 64);
+        mVoronoiPlanet.initialize(1024, 128, 64);
         mVoronoiPlanet.uploadToGPU();
     }
     catch (const std::exception &e)
@@ -1361,14 +1409,23 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uBatch", mCurrentBatch);
         mComputeShader->setUniform("uSamplesPerBatch", samplesPerBatch);
 
+        const uint32_t adaptiveVoronoiCellCount = computeAdaptiveVoronoiCellBudget(
+            static_cast<uint32_t>(mVoronoiPlanet.getCellCount()),
+            mRenderWidth,
+            mRenderHeight);
+        const uint32_t adaptiveTriangleShadowBudget = computeAdaptiveTriangleShadowBudget(
+            mRenderWidth,
+            mRenderHeight);
+
         // Bind Voronoi cell color/seed/painted SSBOs used by the compute shader.
         // Keep cell count at zero unless all buffers exist for safe access.
         mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(0));
+        mComputeShader->setUniform("uTriangleShadowTestBudget", adaptiveTriangleShadowBudget);
         if (mVoronoiCellColorSSBO != 0 && mVoronoiCellSeedSSBO != 0 && mVoronoiCellPaintedSSBO != 0) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, mVoronoiCellColorSSBO);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, mVoronoiCellSeedSSBO);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, mVoronoiCellPaintedSSBO);
-            mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(mVoronoiPlanet.getCellCount()));
+            mComputeShader->setUniform("uVoronoiCellCount", adaptiveVoronoiCellCount);
         }
 
         // Set Voronoi planet center and radius (planet under player, radius = 30)
