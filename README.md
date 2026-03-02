@@ -1,13 +1,12 @@
-![Sample](textures/icon2.bmp)
+![Sample](textures/icon3.bmp)
 
 # Breaking Walls
 
-A cozy float-in-space game with cutting edge graphics.
+An endless runner with synthwave feels and cutting edge graphics.
 
   - Players interact with and dodge obstacles using deterministic physics
-  - Zen mode that includes maintaining balance in a procedurally generated open world
+  - Zen mode that includes **just running mode**.
   - Simple event handling (mouse, touch, keyboard) and haptic feedback
-  - Performance goal-seeking mode with points given to obstacles avoided
   - Spatialized sound effects
   - Break down the 4th wall and advance into evolving worlds with online gameplay
 

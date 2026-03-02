@@ -413,6 +413,11 @@ void MenuState::renderParticleScene() const noexcept
         return;
     }
 
+    if (!mParticlesComputeShader->isLinked())
+    {
+        return;
+    }
+
     const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
     mParticleDeltaT = (mParticleTime == 0.0f) ? 0.0f : std::min(0.033f, now - mParticleTime);
     mParticleTime = now;

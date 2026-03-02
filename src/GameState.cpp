@@ -465,6 +465,11 @@ void GameState::renderRunnerBreakPlaneTexture() const noexcept
         return;
     }
 
+    if (!mWalkParticlesComputeShader->isLinked())
+    {
+        return;
+    }
+
     const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
     const float dt = (mRunnerBreakPlaneFxTime <= 0.0f) ? 0.0f : std::min(0.03f, now - mRunnerBreakPlaneFxTime);
     mRunnerBreakPlaneFxTime = now;
@@ -902,6 +907,11 @@ void GameState::renderWalkParticles() const noexcept
         return;
     }
 
+    if (!mWalkParticlesComputeShader->isLinked())
+    {
+        return;
+    }
+
     if (mPlayerPlanarSpeedForFx < 1.0f)
     {
         return;
@@ -1195,6 +1205,11 @@ void GameState::renderPlayerReflection() const noexcept
 void GameState::renderWithComputeShaders() const noexcept
 {
     if (!mComputeShader || !mDisplayShader)
+    {
+        return;
+    }
+
+    if (!mComputeShader->isLinked())
     {
         return;
     }

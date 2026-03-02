@@ -1,12 +1,4 @@
  #version 450 core
-// Voronoi cell data for ground plane
-layout (std430, binding = 3) buffer VoronoiCellColorBuffer {
-    vec3 bVoronoiCellColors[];
-};
-layout (std430, binding = 4) buffer VoronoiCellSeedBuffer {
-    vec3 bVoronoiCellSeeds[];
-};
-uniform uint uVoronoiCellCount;
 
 // Path tracing compute shader with progressive refinement
 // Based on physically-based rendering principles
@@ -166,11 +158,8 @@ uniform uint uTriangleCount;
 uniform float uTime;
 uniform float uHistoryBlend;
 uniform sampler2D uNoiseTex;
-<<<<<<< HEAD
 uniform vec3 uPlayerPos; // Player position in world space
-=======
 uniform uint uVoronoiCellCount;
->>>>>>> d3122ee0e58222ba762f9edf23a88344c9a14b0d
 
 // Shadow casting uniforms
 uniform float uPlayerRadius;      // Player shadow radius
@@ -218,11 +207,11 @@ vec3 voronoiColorAt(vec3 p) {
     float minDist = 1e20;
     uint cellIdx = 0u;
     for (uint i = 0u; i < uVoronoiCellCount; ++i) {
-        vec2 seed = mod(bVoronoiCellSeeds[i].xz + tileSize * 1000.0, tileSize);
+        vec2 seed = mod(bVoronoiSeeds[i].xz + tileSize * 1000.0, tileSize);
         float d = distance(pos, seed);
         if (d < minDist) { minDist = d; cellIdx = i; }
     }
-    return bVoronoiCellColors[cellIdx];
+    return bVoronoiCellColors[cellIdx].rgb;
 }
 // ============================================================================
 
@@ -478,7 +467,6 @@ float visibilityToSun(vec3 hitPoint, vec3 normal) {
     return 1.0;
 }
 
-<<<<<<< HEAD
 vec3 estimateDirectSun(in HitRecord hit) {
     if (hit.materialType != LAMBERTIAN) {
         return vec3(0.0);
@@ -504,7 +492,6 @@ vec3 estimateDirectSun(in HitRecord hit) {
 
 // ============================================================================
 
-=======
 vec3 sampleVoronoiGroundColor(vec3 point, out bool hasVoronoiData) {
     hasVoronoiData = false;
 
@@ -534,8 +521,6 @@ vec3 sampleVoronoiGroundColor(vec3 point, out bool hasVoronoiData) {
     hasVoronoiData = true;
     return bVoronoiCellColors[bestIndex].rgb;
 }
-
->>>>>>> d3122ee0e58222ba762f9edf23a88344c9a14b0d
 // ============================================================================
 // Material Scattering Functions
 // ============================================================================
@@ -780,79 +765,9 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
             hitType = 2;
         }
 
-<<<<<<< HEAD
         if (hitType == 0) {
-<<<<<<< Updated upstream
-            // Shade Voronoi planet
-            // Find closest seed to hit point (true Voronoi cell index)
-            uint cellIdx = 0u;
-            float minDist = 1e20;
-            for (uint i = 0u; i < uVoronoiCellCount; ++i) {
-                float d = distance(planetHitPoint - uVoronoiPlanetCenter, bVoronoiCellSeeds[i] * uVoronoiPlanetRadius);
-                if (d < minDist) { minDist = d; cellIdx = i; }
-=======
-        if (hasPlaneHit && planeHit.t < closestT) {
-            hit = planeHit;
-            closestT = planeHit.t;
-            hasAnyHit = true;
-            hitIsPlane = true;
-        }
-
-        if (hasAnyHit) {
-            vec3 attenuation;
-            Ray scattered;
-
-            if (scatter(hit, ray, attenuation, scattered, pixel, sampleIndex, bounce)) {
-                // Calculate shadow factor
-                float shadowFactor = calculateShadow(hit.point, hit.normal);
-                
-                // Apply ground-plane overlays (grid + painted Voronoi cells)
-                if (hitIsPlane) {
-                    // Use hit point XZ coordinates for grid pattern
-                    vec2 gridUV = hit.point.xz * 0.3;
-                    float gridVal = grid(gridUV, 0.8);
-
-                    // Blend grid with ground plane color
-                    vec3 gridColor = vec3(0.0, 1.0, 1.0);
-                    vec3 baseColor = mix(attenuation, gridColor, gridVal * 0.6);
-
-                    // Overlay Voronoi color only for cells marked as painted
-                    bool hasVoronoiPaint = false;
-                    vec3 voronoiColor = sampleVoronoiGroundColor(hit.point, hasVoronoiPaint);
-                    if (hasVoronoiPaint) {
-                        // Tint Voronoi color with cyan to harmonize with grid
-                        vec3 tintedVoronoi = mix(voronoiColor, voronoiColor * gridColor, 0.3);
-                        
-                        // Blend Voronoi at reduced opacity and preserve grid lines
-                        attenuation = mix(baseColor, tintedVoronoi, 0.45);
-                        
-                        // Preserve bright grid lines by multiplying with enhanced grid value
-                        float gridPreservation = 1.0 + gridVal * 1.5;
-                        attenuation = mix(attenuation, attenuation * gridPreservation, gridVal * 0.7);
-                    } else {
-                        attenuation = baseColor;
-                    }
-                }
-                
-                // Apply shadow to attenuation
-                attenuation *= shadowFactor;
-                
-                color *= attenuation;
-                ray = scattered;
-            } else {
-                // Absorbed
-                return vec3(0.0);
->>>>>>> d3122ee0e58222ba762f9edf23a88344c9a14b0d
-            }
-            vec3 cellColor = bVoronoiCellColors[cellIdx];
-            // If painted, override color (yellow highlight)
-            if (bVoronoiCellPainted[cellIdx] != 0u) {
-                cellColor = mix(cellColor, vec3(1.0, 1.0, 0.2), 0.7);
-            }
-=======
             // Shade Voronoi ground plane
             vec3 cellColor = voronoiColorAt(planeHitPoint);
->>>>>>> Stashed changes
             radiance += throughput * cellColor;
             return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
         } else if (hitType == 1) {

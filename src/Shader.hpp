@@ -74,6 +74,7 @@ public:
     void bindAttribLocation(const std::string &str, GLuint loc);
 
     [[nodiscard]] unsigned int getProgramHandle() const;
+    [[nodiscard]] bool isLinked() const;
     [[nodiscard]] GLenum getShaderType(ShaderType shaderType) const;
     [[nodiscard]] std::unordered_map<std::string, GLint> getGLSLLocations() const;
     [[nodiscard]] std::unordered_map<ShaderType, std::string> getFileNames() const;
