@@ -160,6 +160,16 @@ void Shader::setUniform(const std::string &str, const glm::vec2 &vec)
     glUniform2f(getUniformLocation(str), vec.x, vec.y);
 }
 
+void Shader::setUniform(const std::string &str, const glm::ivec2 &vec)
+{
+    glUniform2i(getUniformLocation(str), vec.x, vec.y);
+}
+
+void Shader::setUniform(const std::string &str, const glm::uvec2 &vec)
+{
+    glUniform2ui(getUniformLocation(str), vec.x, vec.y);
+}
+
 void Shader::setUniform(const std::string &str, const glm::vec3 &vec)
 {
     glUniform3f(getUniformLocation(str), vec.x, vec.y, vec.z);

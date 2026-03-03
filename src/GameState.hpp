@@ -21,6 +21,7 @@ class SoundPlayer;
 class Texture;
 
 union SDL_Event;
+struct SDL_Joystick;
 
 /// @brief Main game state managing physics, rendering, and input
 /// @details Orchestrates World updates, player input, and GPU-accelerated graphics pipeline
@@ -152,6 +153,21 @@ private:
     /// Clean up OpenGL resources
     void cleanupResources() noexcept;
 
+    /// Hide/show cursor and configure relative mouse mode.
+    void configureCursorLock(bool enabled) noexcept;
+
+    /// Open first available joystick and initialize rumble support if available.
+    void initializeJoystickAndHaptics() noexcept;
+
+    /// Release joystick resources.
+    void cleanupJoystickAndHaptics() noexcept;
+
+    /// Apply joystick left-stick horizontal movement as runner strafe.
+    void updateJoystickInput(float dt) noexcept;
+
+    /// Trigger a short haptic rumble pulse (used for input testing).
+    void triggerHapticTest(float strength, float seconds) noexcept;
+
     struct RunnerPointEvent
     {
         glm::vec3 position{};
@@ -194,6 +210,7 @@ private:
     Shader *mCompositeShader{nullptr};
     Shader *mOITResolveShader{nullptr};
     Shader *mSkinnedModelShader{nullptr};
+    Shader *mStencilOutlineShader{nullptr};
     Shader *mWalkParticlesComputeShader{nullptr};
     Shader *mWalkParticlesRenderShader{nullptr};
     Shader *mShadowShader{nullptr};  // Shadow volume + stencil rendering
@@ -241,6 +258,7 @@ private:
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
+    mutable uint32_t mCurrentTileIndex{0};
     uint32_t mSamplesPerBatch{4};
     uint32_t mTotalBatches{250};
 
@@ -263,6 +281,12 @@ private:
 
     // Single-player endless runner arcade state
     bool mArcadeModeEnabled{false};
+    bool mStencilOutlineEnabled{true};
+    bool mStencilOutlinePulseEnabled{false};
+    float mStencilOutlineWidth{0.05f};
+    float mStencilOutlinePulseSpeed{2.4f};
+    float mStencilOutlinePulseAmount{0.28f};
+    glm::vec3 mStencilOutlineColor{0.38f, 0.94f, 1.0f};
     int mPlayerPoints{0};
     float mRunnerDistance{0.0f};
     float mRunnerSpeed{30.0f};
@@ -317,6 +341,12 @@ private:
     std::vector<RunnerPointEvent> mRunnerPointEvents;
     std::vector<RunnerScorePopup> mRunnerScorePopups;
     std::mt19937 mRunnerRng{1337u};
+
+    SDL_Joystick *mJoystick{nullptr};
+    bool mJoystickRumbleSupported{false};
+    bool mCursorLocked{false};
+    float mJoystickDeadzone{0.22f};
+    float mJoystickStrafeSpeed{55.0f};
 
     bool mGameIsPaused{true};
 };

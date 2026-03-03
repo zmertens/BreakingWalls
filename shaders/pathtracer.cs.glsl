@@ -165,6 +165,8 @@ uniform sampler2D uTestAlbedoTex;
 uniform float uTestTextureStrength;
 uniform vec2 uSphereTexScale;
 uniform vec2 uTriangleTexScale;
+uniform uvec2 uTileOrigin;
+uniform uvec2 uTileSize;
 uniform vec3 uPlayerPos; // Player position in world space
 uniform uint uVoronoiCellCount;
 
@@ -526,10 +528,11 @@ vec3 sampleVoronoiGroundColor(vec3 point) {
     float bestDist2 = 1e30;
     float secondBestDist2 = 1e30;
     uint bestIndex = 0u;
-    vec2 pointXZ = point.xz;
+    float tileSize = 100.0;
+    vec2 pointXZ = mod(point.xz + tileSize * 1000.0, tileSize);
 
     for (uint i = 0u; i < count; ++i) {
-        vec2 seedXZ = bVoronoiSeeds[i].xz;
+        vec2 seedXZ = mod(bVoronoiSeeds[i].xz + tileSize * 1000.0, tileSize);
         vec2 delta = pointXZ - seedXZ;
         float dist2 = dot(delta, delta);
         if (dist2 < bestDist2) {
@@ -553,8 +556,8 @@ vec3 sampleVoronoiGroundColor(vec3 point) {
     // Keep the full Voronoi grid visible even before cells are painted.
     // Painted cells keep full intensity; unpainted cells are muted but still readable.
     if (bVoronoiPainted[bestIndex] == 0u) {
-        vec3 neutralFloorTint = vec3(0.12, 0.13, 0.15);
-        return mix(neutralFloorTint, cellColor, 0.56);
+        vec3 neutralFloorTint = vec3(0.16, 0.18, 0.24);
+        return mix(neutralFloorTint, cellColor, 0.76);
     }
 
     return cellColor;
@@ -876,7 +879,10 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
 layout (local_size_x = 20, local_size_y = 20) in;
 
 void main() {
-    uvec2 pixel = gl_GlobalInvocationID.xy;
+    uvec2 localPixel = gl_GlobalInvocationID.xy;
+    if (localPixel.x >= uTileSize.x || localPixel.y >= uTileSize.y) return;
+
+    uvec2 pixel = uTileOrigin + localPixel;
     uvec2 size = imageSize(uDisplayTexture);
 
     if (pixel.x >= size.x || pixel.y >= size.y) return;

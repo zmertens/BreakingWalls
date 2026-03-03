@@ -47,7 +47,7 @@ namespace
             if (material->Get(AI_MATKEY_COLOR_SPECULAR, specular) == AI_SUCCESS)
             {
                 const float specAvg = (specular.r + specular.g + specular.b) / 3.0f;
-                if (specAvg > 0.25f)
+                if (specAvg > 0.18f)
                 {
                     materialType = 1.0f;
                 }
@@ -76,7 +76,7 @@ namespace
             float reflectivity = 0.0f;
             if (material->Get(AI_MATKEY_REFLECTIVITY, reflectivity) == AI_SUCCESS)
             {
-                if (reflectivity > 0.25f)
+                if (reflectivity > 0.15f)
                 {
                     materialType = 1.0f;
                     fuzz = std::max(0.03f, 0.30f - 0.22f * std::clamp(reflectivity, 0.0f, 1.0f));
@@ -84,17 +84,24 @@ namespace
             }
         }
 
+        const float luma = glm::dot(albedo, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+        const glm::vec3 synthCyan(0.40f, 0.92f, 0.98f);
+        const glm::vec3 synthLavender(0.76f, 0.68f, 0.97f);
+        const glm::vec3 synthPastel = glm::mix(synthCyan, synthLavender, std::clamp(luma * 1.10f, 0.0f, 1.0f));
+        albedo = glm::mix(albedo, synthPastel, 0.72f);
+
         if (materialType == 1.0f)
         {
-            albedo = glm::clamp(albedo * 1.20f, glm::vec3(0.16f), glm::vec3(1.0f));
+            albedo = glm::clamp(albedo * 1.25f, glm::vec3(0.20f), glm::vec3(1.0f));
+            fuzz = std::min(fuzz, 0.14f);
         }
         else if (materialType == 2.0f)
         {
-            albedo = glm::clamp(albedo * 1.10f, glm::vec3(0.20f), glm::vec3(1.0f));
+            albedo = glm::clamp(albedo * 1.12f, glm::vec3(0.24f), glm::vec3(1.0f));
         }
         else
         {
-            albedo = glm::clamp(albedo * 1.15f, glm::vec3(0.22f), glm::vec3(1.0f));
+            albedo = glm::clamp(albedo * 1.18f, glm::vec3(0.24f), glm::vec3(1.0f));
         }
 
         albedoAndMaterial = glm::vec4(albedo, materialType);

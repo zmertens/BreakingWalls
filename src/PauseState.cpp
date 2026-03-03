@@ -13,6 +13,15 @@
 PauseState::PauseState(StateStack &stack, Context context)
     : State(stack, context), mMusic{}, mSelectedMenuItem(static_cast<unsigned int>(States::ID::PAUSE))
 {
+    if (auto *renderWindow = getContext().getRenderWindow(); renderWindow != nullptr)
+    {
+        if (SDL_Window *window = renderWindow->getSDLWindow(); window != nullptr)
+        {
+            SDL_SetWindowRelativeMouseMode(window, false);
+        }
+    }
+    SDL_ShowCursor();
+
     try
     {
         mMusic = &getContext().getMusicManager()->get(Music::ID::GAME_MUSIC);
@@ -40,53 +49,100 @@ PauseState::PauseState(StateStack &stack, Context context)
 
 void PauseState::draw() const noexcept
 {
-    ImGui::PushFont(mFont->get());
-
-    // Apply color schema
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.016f, 0.047f, 0.024f, 0.95f));     // #040c06
-    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.067f, 0.137f, 0.094f, 1.0f));       // #112318
-    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.118f, 0.227f, 0.161f, 1.0f)); // #1e3a29
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.188f, 0.365f, 0.259f, 1.0f));        // #305d42
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.302f, 0.502f, 0.380f, 1.0f)); // #4d8061
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.537f, 0.635f, 0.341f, 1.0f));  // #89a257
-    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.302f, 0.502f, 0.380f, 1.0f));        // #4d8061
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.537f, 0.635f, 0.341f, 1.0f)); // #89a257
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.745f, 0.863f, 0.498f, 1.0f));  // #bedc7f
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.933f, 1.0f, 0.8f, 1.0f));              // #eeffcc
-
-    static auto showThePauseStateWindow{true};
-    if (ImGui::Begin("Pause Menu", &showThePauseStateWindow, ImGuiWindowFlags_NoCollapse))
+    if (mFont)
     {
+        ImGui::PushFont(mFont->get());
+    }
 
-        ImGui::Text("Welcome to MazeBuilder Physics");
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 5.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 7.0f));
+
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.058f, 0.027f, 0.114f, 0.94f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.078f, 0.039f, 0.149f, 0.84f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.165f, 0.055f, 0.294f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.263f, 0.098f, 0.451f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.365f, 0.094f, 0.569f, 0.92f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.612f, 0.208f, 0.851f, 0.96f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.765f, 0.341f, 0.965f, 0.98f));
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.184f, 0.459f, 0.808f, 0.60f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.208f, 0.610f, 0.961f, 0.72f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.341f, 0.733f, 1.0f, 0.84f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.109f, 0.055f, 0.184f, 0.88f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.165f, 0.090f, 0.278f, 0.94f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.220f, 0.114f, 0.369f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.846f, 0.965f, 1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.337f, 0.761f, 1.0f, 0.55f));
+
+    ImGuiIO &io = ImGui::GetIO();
+    const ImVec2 center(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
+    const float panelWidth = std::clamp(io.DisplaySize.x * 0.30f, 320.0f, 560.0f);
+    const float panelHeight = std::clamp(io.DisplaySize.y * 0.34f, 260.0f, 460.0f);
+    const ImVec2 buttonSize(
+        std::clamp(panelWidth - 96.0f, 200.0f, 420.0f),
+        std::clamp(panelHeight * 0.14f, 40.0f, 56.0f));
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(panelWidth, panelHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.825f);
+
+    constexpr ImGuiWindowFlags pauseFlags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoCollapse;
+
+    if (ImGui::Begin("PauseMenuPanel", nullptr, pauseFlags))
+    {
+        const float contentWidth = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
+
+        const char *titleText = "**Breaking Walls is Paused**";
+        const float titleWidth = ImGui::CalcTextSize(titleText).x;
+        ImGui::SetCursorPosX((contentWidth - titleWidth) * 0.5f);
+        ImGui::Text("%s", titleText);
+
         ImGui::Separator();
         ImGui::Spacing();
 
         // Navigation options
-        ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "Navigation Options:");
+        const char *navText = "Navigation Options:";
+        const float navWidth = ImGui::CalcTextSize(navText).x;
+        ImGui::SetCursorPosX((contentWidth - navWidth) * 0.5f);
+        ImGui::TextColored(ImVec4(0.745f, 0.863f, 0.498f, 1.0f), "%s", navText);
         ImGui::Spacing();
 
-        if (ImGui::Button("Resume Game", ImVec2(200, 40)))
+        ImGui::SetCursorPosX((contentWidth - buttonSize.x) * 0.5f);
+        if (ImGui::Button("Resume Game", buttonSize))
         {
             mSelectedMenuItem = static_cast<unsigned int>(States::ID::GAME);
         }
         ImGui::Spacing();
 
-        if (ImGui::Button("Main Menu", ImVec2(200, 40)))
+        ImGui::SetCursorPosX((contentWidth - buttonSize.x) * 0.5f);
+        if (ImGui::Button("Main Menu", buttonSize))
         {
             mSelectedMenuItem = static_cast<unsigned int>(States::ID::MENU);
         }
         ImGui::Spacing();
 
-        if (ImGui::Button("Exit Game", ImVec2(200, 40)))
+        ImGui::SetCursorPosX((contentWidth - buttonSize.x) * 0.5f);
+        if (ImGui::Button("Exit Game", buttonSize))
         {
             mSelectedMenuItem = static_cast<unsigned int>(States::ID::DONE);
         }
         ImGui::Spacing();
     }
     ImGui::End();
-    ImGui::PopStyleColor(10);
-    ImGui::PopFont();
+    ImGui::PopStyleColor(16);
+    ImGui::PopStyleVar(5);
+    if (mFont)
+    {
+        ImGui::PopFont();
+    }
 }
 
 bool PauseState::update(float dt, unsigned int subSteps) noexcept
@@ -100,6 +156,14 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
         break;
     case static_cast<unsigned int>(States::ID::GAME):
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Resuming game...");
+        if (auto *renderWindow = getContext().getRenderWindow(); renderWindow != nullptr)
+        {
+            if (SDL_Window *window = renderWindow->getSDLWindow(); window != nullptr)
+            {
+                SDL_SetWindowRelativeMouseMode(window, true);
+            }
+        }
+        SDL_HideCursor();
         requestStackPop();
         break;
     case static_cast<unsigned int>(States::ID::MENU):

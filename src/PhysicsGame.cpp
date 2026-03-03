@@ -39,7 +39,6 @@
 #include "RenderWindow.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
-#include "SettingsState.hpp"
 #include "Shader.hpp"
 #include "SoundPlayer.hpp"
 #include "SplashState.hpp"
@@ -120,7 +119,10 @@ struct PhysicsGame::PhysicsGameImpl
     {
         if (auto &&sdl = mGLSDLHelper; sdl.mWindow)
         {
-            mStateStack->clearStates();
+            if (mStateStack)
+            {
+                mStateStack.reset();
+            }
 
             mFonts.clear();
             mLevels.clear();
@@ -247,7 +249,6 @@ struct PhysicsGame::PhysicsGameImpl
         mStateStack->registerState<MenuState>(States::ID::MENU);
         mStateStack->registerState<MultiplayerGameState>(States::ID::MULTIPLAYER_GAME);
         mStateStack->registerState<PauseState>(States::ID::PAUSE);
-        mStateStack->registerState<SettingsState>(States::ID::SETTINGS);
         mStateStack->registerState<SplashState>(States::ID::SPLASH);
     }
 

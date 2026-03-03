@@ -68,6 +68,7 @@ namespace JSONKeys
     constexpr std::string_view SHADER_COMPOSITE_FRAGMENT = "shader_composite_frag_glsl";
     constexpr std::string_view SHADER_MODEL_VERTEX = "shader_model_vert_glsl";
     constexpr std::string_view SHADER_MODEL_FRAGMENT = "shader_model_frag_glsl";
+    constexpr std::string_view SHADER_STENCIL_OUTLINE_FRAGMENT = "shader_stencil_outline_frag_glsl";
     constexpr std::string_view SHADER_PARTICLES_COMPUTE = "shader_particles_cs_glsl";
     constexpr std::string_view SHADER_PATHTRACER_COMPUTE = "shader_pathtracer_cs_glsl";
     constexpr std::string_view SHADER_PARTICLES_VERTEX = "shader_particles_vert_glsl";
@@ -549,6 +550,10 @@ LoadingState::LoadingState(StateStack &stack, Context context, std::string_view 
     }
 }
 
+LoadingState::~LoadingState()
+{
+}
+
 void LoadingState::draw() const noexcept
 {
     // Show resource loading progress in a simple ImGui window near bottom-left
@@ -887,6 +892,14 @@ void LoadingState::loadShaders() noexcept
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_MODEL_WITH_SKINNING", modelShader->getProgramHandle());
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Model shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_MODEL_WITH_SKINNING, std::move(modelShader));
+
+        auto stencilOutlineShader = std::make_unique<Shader>();
+        stencilOutlineShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MODEL_VERTEX));
+        stencilOutlineShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_STENCIL_OUTLINE_FRAGMENT));
+        stencilOutlineShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_STENCIL_OUTLINE", stencilOutlineShader->getProgramHandle());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Stencil outline shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_STENCIL_OUTLINE, std::move(stencilOutlineShader));
         
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: All shaders loaded successfully");
     }

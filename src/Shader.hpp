@@ -56,6 +56,8 @@ public:
     void setUniform(const std::string &str, const glm::mat3 &matrix);
     void setUniform(const std::string &str, const glm::mat4 &matrix);
     void setUniform(const std::string &str, const glm::vec2 &vec);
+    void setUniform(const std::string &str, const glm::ivec2 &vec);
+    void setUniform(const std::string &str, const glm::uvec2 &vec);
     void setUniform(const std::string &str, const glm::vec3 &vec);
     void setUniform(const std::string &str, const glm::vec4 &vec);
     void setUniform(const std::string &str, const glm::mat4 *matrices, unsigned int count);

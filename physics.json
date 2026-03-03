@@ -18,6 +18,7 @@
 	"shader_oit_resolve_frag_glsl": "shaders/oit_resolve.frag.glsl",
 	"shader_model_vert_glsl": "shaders/model.vert.glsl",
 	"shader_model_frag_glsl": "shaders/model.frag.glsl",
+	"shader_stencil_outline_frag_glsl": "shaders/stencil_outline.frag.glsl",
 	"shader_pathtracer_cs_glsl": "shaders/pathtracer.cs.glsl",
 	"shader_particles_cs_glsl": "shaders/particles.cs.glsl",
 	"shader_particles_frag_glsl": "shaders/particles.frag.glsl",

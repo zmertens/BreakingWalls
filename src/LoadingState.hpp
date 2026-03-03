@@ -18,6 +18,7 @@ class LoadingState : public State
 {
 public:
     explicit LoadingState(StateStack &stack, State::Context context, std::string_view resourcePath = "");
+    ~LoadingState() override;
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;

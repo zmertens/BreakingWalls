@@ -117,6 +117,28 @@ namespace
         return 72u;
     }
 
+    uint32_t computeAdaptivePathTraceTileEdge(int renderWidth, int renderHeight) noexcept
+    {
+        const std::size_t renderPixels = static_cast<std::size_t>(std::max(1, renderWidth)) *
+                                         static_cast<std::size_t>(std::max(1, renderHeight));
+
+        // Keep tile sizes aligned with the 20x20 local workgroup while adapting
+        // frame cost for higher resolutions.
+        if (renderPixels > 1800ull * 1000ull)
+        {
+            return 220u;
+        }
+        if (renderPixels > 1400ull * 1000ull)
+        {
+            return 280u;
+        }
+        if (renderPixels > 1000ull * 1000ull)
+        {
+            return 340u;
+        }
+        return 420u;
+    }
+
     bool projectWorldToScreen(const glm::vec3 &worldPos,
                               const glm::mat4 &view,
                               const glm::mat4 &projection,
@@ -168,6 +190,7 @@ GameState::GameState(StateStack &stack, Context context)
         mCompositeShader = &shaders.get(Shaders::ID::GLSL_COMPOSITE_SCENE);
         mOITResolveShader = &shaders.get(Shaders::ID::GLSL_OIT_RESOLVE);
         mSkinnedModelShader = &shaders.get(Shaders::ID::GLSL_MODEL_WITH_SKINNING);
+        mStencilOutlineShader = &shaders.get(Shaders::ID::GLSL_STENCIL_OUTLINE);
         mShadowShader = &shaders.get(Shaders::ID::GLSL_SHADOW_VOLUME);
         mWalkParticlesComputeShader = &shaders.get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
         mWalkParticlesRenderShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
@@ -271,6 +294,8 @@ GameState::GameState(StateStack &stack, Context context)
     mCamera.setThirdPersonDistance(15.0f);
     mCamera.setThirdPersonHeight(8.0f);
     mCamera.updateThirdPersonPosition();
+    configureCursorLock(true);
+    initializeJoystickAndHaptics();
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Camera spawned at:\t%.2f, %.2f, %.2f",
         cameraSpawn.x, cameraSpawn.y, cameraSpawn.z);
@@ -299,6 +324,9 @@ GameState::GameState(StateStack &stack, Context context)
 
 GameState::~GameState()
 {
+    configureCursorLock(false);
+    cleanupJoystickAndHaptics();
+
     // Stop game music when leaving GameState
     if (mGameMusic)
     {
@@ -678,7 +706,7 @@ void GameState::createCompositeTargets() noexcept
         glGenRenderbuffers(1, &mBillboardDepthRbo);
     }
     glBindRenderbuffer(GL_RENDERBUFFER, mBillboardDepthRbo);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, mWindowWidth, mWindowHeight);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, mWindowWidth, mWindowHeight);
 
     if (mBillboardFBO == 0)
     {
@@ -686,7 +714,7 @@ void GameState::createCompositeTargets() noexcept
     }
     glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mBillboardColorTex->get(), 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mBillboardDepthRbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, mBillboardDepthRbo);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -716,7 +744,7 @@ void GameState::createCompositeTargets() noexcept
         glGenRenderbuffers(1, &mOITDepthRbo);
     }
     glBindRenderbuffer(GL_RENDERBUFFER, mOITDepthRbo);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, mWindowWidth, mWindowHeight);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, mWindowWidth, mWindowHeight);
 
     if (mOITFBO == 0)
     {
@@ -725,7 +753,7 @@ void GameState::createCompositeTargets() noexcept
     glBindFramebuffer(GL_FRAMEBUFFER, mOITFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mOITAccumTex->get(), 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, mOITRevealTex->get(), 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mOITDepthRbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, mOITDepthRbo);
     constexpr GLenum oitDrawBuffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
     glDrawBuffers(2, oitDrawBuffers);
 
@@ -1282,7 +1310,7 @@ void GameState::renderWithComputeShaders() const noexcept
     }
 
     // Keep camera tracking up to date for accumulation policy decisions
-    checkCameraMovement();
+    const bool cameraMoved = checkCameraMovement();
 
     // Update sphere data on GPU every frame (physics may have changed positions)
     const auto &spheres = mWorld.getSpheres();
@@ -1394,6 +1422,9 @@ void GameState::renderWithComputeShaders() const noexcept
     const float effectiveBlurFactor = std::clamp(blurFactor + scoreBlurBoost, 0.0f, 1.0f);
     const float historyBlend = kStaticHistoryBlend + (kMovingHistoryBlend - kStaticHistoryBlend) * effectiveBlurFactor;
 
+    constexpr uint32_t kStaticTilesPerFrame = 4u;
+    const bool preferFullFrameDispatch = cameraMoved || effectiveBlurFactor > 0.12f;
+
     // Always compute each frame; temporal history blending controls persistence.
     if (mTotalBatches > 0u)
     {
@@ -1424,6 +1455,16 @@ void GameState::renderWithComputeShaders() const noexcept
         const uint32_t adaptiveTriangleShadowBudget = computeAdaptiveTriangleShadowBudget(
             mRenderWidth,
             mRenderHeight);
+        const uint32_t adaptiveTileEdge = computeAdaptivePathTraceTileEdge(
+            mRenderWidth,
+            mRenderHeight);
+        const uint32_t tilesX = std::max(1u, (static_cast<uint32_t>(mRenderWidth) + adaptiveTileEdge - 1u) / adaptiveTileEdge);
+        const uint32_t tilesY = std::max(1u, (static_cast<uint32_t>(mRenderHeight) + adaptiveTileEdge - 1u) / adaptiveTileEdge);
+        const uint32_t totalTiles = std::max(1u, tilesX * tilesY);
+
+        const uint32_t dispatchTileCount = preferFullFrameDispatch
+            ? totalTiles
+            : std::min(totalTiles, kStaticTilesPerFrame);
 
         // Bind Voronoi cell color/seed/painted SSBOs used by the compute shader.
         // Keep cell count at zero unless all buffers exist for safe access.
@@ -1450,7 +1491,6 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uTestTextureStrength", mTestAlbedoTexture ? 1.0f : 0.0f);
         mComputeShader->setUniform("uSphereTexScale", glm::vec2(2.2f, 1.0f));
         mComputeShader->setUniform("uTriangleTexScale", glm::vec2(3.0f, 3.0f));
-
         // Shadow casting uniforms
         mComputeShader->setUniform("uPlayerPos", mPlayer.getPosition() + glm::vec3(0.0f, kPlayerShadowCenterYOffset, 0.0f));
         mComputeShader->setUniform("uPlayerRadius", kPlayerProxyRadius);
@@ -1468,21 +1508,44 @@ void GameState::renderWithComputeShaders() const noexcept
         glActiveTexture(GL_TEXTURE0 + kTestAlbedoTextureUnit);
         glBindTexture(GL_TEXTURE_2D, mTestAlbedoTexture ? mTestAlbedoTexture->get() : 0);
 
-        // Dispatch compute shader with work groups (using 20x20 local work group size)
-        GLuint groupsX = (mRenderWidth + 19) / 20;
-        GLuint groupsY = (mRenderHeight + 19) / 20;
-        glDispatchCompute(groupsX, groupsY, 1);
+        // Dispatch one or more adaptive tiles this frame.
+        // Movement/camera changes force full-frame updates to avoid patchy temporal lag.
+        for (uint32_t tileOffset = 0u; tileOffset < dispatchTileCount; ++tileOffset)
+        {
+            const uint32_t tileIndex = (mCurrentTileIndex + tileOffset) % totalTiles;
+            const uint32_t tileX = tileIndex % tilesX;
+            const uint32_t tileY = tileIndex / tilesX;
+
+            const uint32_t tileOriginX = tileX * adaptiveTileEdge;
+            const uint32_t tileOriginY = tileY * adaptiveTileEdge;
+            const uint32_t tileWidth = std::max(1u, std::min(adaptiveTileEdge, static_cast<uint32_t>(mRenderWidth) - tileOriginX));
+            const uint32_t tileHeight = std::max(1u, std::min(adaptiveTileEdge, static_cast<uint32_t>(mRenderHeight) - tileOriginY));
+
+            mComputeShader->setUniform("uTileOrigin", glm::uvec2(tileOriginX, tileOriginY));
+            mComputeShader->setUniform("uTileSize", glm::uvec2(tileWidth, tileHeight));
+
+            GLuint groupsX = (tileWidth + 19) / 20;
+            GLuint groupsY = (tileHeight + 19) / 20;
+            glDispatchCompute(groupsX, groupsY, 1);
+        }
 
         // Memory barrier to ensure compute shader writes are visible
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-        if (mCurrentBatch == 0xFFFFFFFFu)
+        const uint32_t advancedTiles = dispatchTileCount;
+        const uint32_t nextTile = (mCurrentTileIndex + advancedTiles) % totalTiles;
+        const uint32_t wraps = (mCurrentTileIndex + advancedTiles) / totalTiles;
+        mCurrentTileIndex = nextTile;
+        for (uint32_t i = 0u; i < wraps; ++i)
         {
-            mCurrentBatch = 0u;
-        }
-        else
-        {
-            mCurrentBatch++;
+            if (mCurrentBatch == 0xFFFFFFFFu)
+            {
+                mCurrentBatch = 0u;
+            }
+            else
+            {
+                mCurrentBatch++;
+            }
         }
     }
 
@@ -1710,6 +1773,7 @@ void GameState::cleanupResources() noexcept
     mComputeShader = nullptr;
     mCompositeShader = nullptr;
     mOITResolveShader = nullptr;
+    mStencilOutlineShader = nullptr;
     mShadowShader = nullptr;
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: OpenGL resources cleaned up");
@@ -1767,6 +1831,7 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     // Handle camera input through Player (A/D strafing remains useful in runner mode)
     mPlayer.handleRealtimeInput(mCamera, dt);
+    updateJoystickInput(dt);
 
     updateRunnerGameplay(dt);
 
@@ -1856,6 +1921,7 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
                     initializeReflectionResources();
                     // Reset accumulation for new size
                     mCurrentBatch = 0;
+                    mCurrentTileIndex = 0;
                     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Window resized to physical pixels %dx%d with render resolution %dx%d",
                         mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight);
                 }
@@ -1902,6 +1968,12 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
             }
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Camera reset to initial position");
         }
+
+        // Test haptic pulse with A key while keeping A strafe behavior unchanged.
+        if (event.key.scancode == SDL_SCANCODE_A)
+        {
+            triggerHapticTest(0.65f, 0.08f);
+        }
     }
 
     // Handle mouse motion for camera rotation (right mouse button)
@@ -1931,6 +2003,135 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
     return true;
 }
 
+void GameState::configureCursorLock(bool enabled) noexcept
+{
+    if (mCursorLocked == enabled)
+    {
+        return;
+    }
+
+    auto *window = getContext().getRenderWindow();
+    if (!window)
+    {
+        return;
+    }
+
+    SDL_Window *sdlWindow = window->getSDLWindow();
+    if (!sdlWindow)
+    {
+        return;
+    }
+
+    if (enabled)
+    {
+        SDL_WarpMouseInWindow(sdlWindow,
+                              static_cast<float>(mWindowWidth) * 0.5f,
+                              static_cast<float>(mWindowHeight) * 0.5f);
+        SDL_SetWindowRelativeMouseMode(sdlWindow, true);
+        SDL_HideCursor();
+    }
+    else
+    {
+        SDL_SetWindowRelativeMouseMode(sdlWindow, false);
+        SDL_ShowCursor();
+    }
+
+    mCursorLocked = enabled;
+}
+
+void GameState::initializeJoystickAndHaptics() noexcept
+{
+    if (mJoystick)
+    {
+        return;
+    }
+
+    int joystickCount = 0;
+    SDL_JoystickID *joysticks = SDL_GetJoysticks(&joystickCount);
+    if (!joysticks || joystickCount <= 0)
+    {
+        if (joysticks)
+        {
+            SDL_free(joysticks);
+        }
+        return;
+    }
+
+    mJoystick = SDL_OpenJoystick(joysticks[0]);
+    SDL_free(joysticks);
+
+    if (!mJoystick)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_INPUT, "GameState: Unable to open joystick: %s", SDL_GetError());
+        return;
+    }
+
+    mJoystickRumbleSupported = SDL_RumbleJoystick(mJoystick, 0xFFFF, 0xFFFF, 1);
+    if (!mJoystickRumbleSupported)
+    {
+        SDL_LogInfo(SDL_LOG_CATEGORY_INPUT, "GameState: Joystick connected without rumble support");
+    }
+    else
+    {
+        SDL_RumbleJoystick(mJoystick, 0, 0, 0);
+        SDL_LogInfo(SDL_LOG_CATEGORY_INPUT, "GameState: Joystick and rumble initialized");
+    }
+}
+
+void GameState::cleanupJoystickAndHaptics() noexcept
+{
+    if (mJoystick)
+    {
+        SDL_CloseJoystick(mJoystick);
+        mJoystick = nullptr;
+    }
+    mJoystickRumbleSupported = false;
+}
+
+void GameState::updateJoystickInput(float dt) noexcept
+{
+    if (!mJoystick || dt <= 0.0f)
+    {
+        return;
+    }
+
+    constexpr int kLeftStickXAxis = 0;
+    const Sint16 axisRaw = SDL_GetJoystickAxis(mJoystick, kLeftStickXAxis);
+    const float axisNorm = std::clamp(static_cast<float>(axisRaw) / 32767.0f, -1.0f, 1.0f);
+    if (std::abs(axisNorm) <= mJoystickDeadzone)
+    {
+        return;
+    }
+
+    const float sign = (axisNorm >= 0.0f) ? 1.0f : -1.0f;
+    const float mag = (std::abs(axisNorm) - mJoystickDeadzone) / std::max(0.001f, 1.0f - mJoystickDeadzone);
+    const float strafe = sign * std::clamp(mag, 0.0f, 1.0f) * mJoystickStrafeSpeed * dt;
+
+    glm::vec3 playerPos = mPlayer.getPosition();
+    playerPos.z += strafe;
+    mPlayer.setPosition(playerPos);
+    mCamera.setFollowTarget(playerPos);
+    if (mCamera.getMode() == CameraMode::THIRD_PERSON)
+    {
+        mCamera.updateThirdPersonPosition();
+    }
+}
+
+void GameState::triggerHapticTest(float strength, float seconds) noexcept
+{
+    if (!mJoystick || !mJoystickRumbleSupported)
+    {
+        return;
+    }
+
+    const float clampedStrength = std::clamp(strength, 0.0f, 1.0f);
+    const Uint16 low = static_cast<Uint16>(clampedStrength * 65535.0f);
+    const Uint16 high = static_cast<Uint16>(clampedStrength * 65535.0f);
+    const Uint32 durationMs = static_cast<Uint32>(std::max(0.0f, seconds) * 1000.0f);
+
+    SDL_RumbleJoystick(mJoystick, low, high, durationMs);
+}
+
 void GameState::renderPlayerCharacter() const noexcept
 {
     // Only render in third-person mode
@@ -1944,7 +2145,7 @@ void GameState::renderPlayerCharacter() const noexcept
         glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
         glViewport(0, 0, mWindowWidth, mWindowHeight);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         glDrawBuffer(GL_COLOR_ATTACHMENT0);
     }
 
@@ -1958,6 +2159,7 @@ void GameState::renderPlayerCharacter() const noexcept
 
     // Also ensure we have proper 3D projection set up
     glEnable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
     GLSDLHelper::setBillboardOITPass(false);
 
     // Render Voronoi planet into the billboard target so it gets composited
@@ -1979,10 +2181,26 @@ void GameState::renderPlayerCharacter() const noexcept
                     const int safeHeight = std::max(mWindowHeight, 1);
                     const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
                     const float timeSeconds = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+                    const glm::mat4 viewMatrix = mCamera.getLookAt();
+                    const glm::mat4 projMatrix = mCamera.getPerspective(aspectRatio);
+                    const bool drawStencilOutline =
+                        mStencilOutlineEnabled &&
+                        mStencilOutlineShader &&
+                        mStencilOutlineShader->isLinked() &&
+                        mStencilOutlineWidth > 0.0005f;
 
                     glGetBooleanv(GL_CULL_FACE, &cullFaceWasEnabled);
                     cullStateCaptured = true;
                     glDisable(GL_CULL_FACE);
+
+                    if (drawStencilOutline)
+                    {
+                        glEnable(GL_STENCIL_TEST);
+                        glStencilMask(0xFF);
+                        glClear(GL_STENCIL_BUFFER_BIT);
+                        glStencilFunc(GL_ALWAYS, 1, 0xFF);
+                        glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+                    }
 
                     glm::mat4 modelMatrix(1.0f);
                     modelMatrix = glm::translate(modelMatrix, mPlayer.getPosition() + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f));
@@ -2001,9 +2219,43 @@ void GameState::renderPlayerCharacter() const noexcept
                     characterModel.render(
                         *mSkinnedModelShader,
                         modelMatrix,
-                        mCamera.getLookAt(),
-                        mCamera.getPerspective(aspectRatio),
+                        viewMatrix,
+                        projMatrix,
                         mModelAnimTimeSeconds);
+
+                    if (drawStencilOutline)
+                    {
+                        const float outlineScale = 1.0f + mStencilOutlineWidth;
+                        glm::mat4 outlineModel = modelMatrix;
+                        outlineModel = glm::scale(outlineModel, glm::vec3(outlineScale));
+
+                        glm::vec3 outlineColor = mStencilOutlineColor;
+                        if (mStencilOutlinePulseEnabled)
+                        {
+                            const float pulse = 0.5f + 0.5f * std::sin(timeSeconds * mStencilOutlinePulseSpeed * 6.2831853f);
+                            const float pulseMix = std::clamp(mStencilOutlinePulseAmount * pulse, 0.0f, 0.85f);
+                            outlineColor = glm::mix(outlineColor, glm::vec3(1.0f), pulseMix);
+                        }
+
+                        glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+                        glStencilMask(0x00);
+                        glDisable(GL_DEPTH_TEST);
+
+                        mStencilOutlineShader->bind();
+                        mStencilOutlineShader->setUniform("uOutlineColor", glm::vec4(outlineColor, 1.0f));
+
+                        characterModel.render(
+                            *mStencilOutlineShader,
+                            outlineModel,
+                            viewMatrix,
+                            projMatrix,
+                            mModelAnimTimeSeconds);
+
+                        glStencilMask(0xFF);
+                        glStencilFunc(GL_ALWAYS, 0, 0xFF);
+                        glEnable(GL_DEPTH_TEST);
+                        glDisable(GL_STENCIL_TEST);
+                    }
 
                     renderedModel = true;
                 }
@@ -2260,6 +2512,16 @@ void GameState::syncRunnerSettingsFromOptions() noexcept
         mRunnerObstaclePenalty = std::max(1, opts.getRunnerObstaclePenalty());
         mRunnerCollisionCooldown = std::max(0.05f, opts.getRunnerCollisionCooldown());
 
+        mStencilOutlineEnabled = opts.getStencilOutlineEnabled();
+        mStencilOutlinePulseEnabled = opts.getStencilOutlinePulseEnabled();
+        mStencilOutlineWidth = std::clamp(opts.getStencilOutlineWidth(), 0.0f, 0.20f);
+        mStencilOutlinePulseSpeed = std::clamp(opts.getStencilOutlinePulseSpeed(), 0.2f, 10.0f);
+        mStencilOutlinePulseAmount = std::clamp(opts.getStencilOutlinePulseAmount(), 0.0f, 0.8f);
+        mStencilOutlineColor = glm::vec3(
+            std::clamp(opts.getStencilOutlineColorR(), 0.0f, 1.0f),
+            std::clamp(opts.getStencilOutlineColorG(), 0.0f, 1.0f),
+            std::clamp(opts.getStencilOutlineColorB(), 0.0f, 1.0f));
+
         mMotionBlurBracket1Points = std::max(0, opts.getMotionBlurBracket1Points());
         mMotionBlurBracket2Points = std::max(mMotionBlurBracket1Points, opts.getMotionBlurBracket2Points());
         mMotionBlurBracket3Points = std::max(mMotionBlurBracket2Points, opts.getMotionBlurBracket3Points());
@@ -2350,7 +2612,6 @@ void GameState::shatterRunnerBreakPlane() noexcept
     mRunnerBreakPlaneActive = false;
     mRunnerBreakPlaneRespawnTimer = mRunnerBreakPlaneRespawnDelay;
     mPlayerPoints += mRunnerBreakPlanePoints;
-    mCurrentBatch = 0;
 
     if (auto *models = getContext().getModelsManager(); models)
     {
@@ -2504,7 +2765,6 @@ void GameState::processRunnerCollisions(float dt) noexcept
     if (mPlayerPoints != mLastAnnouncedPoints)
     {
         mLastAnnouncedPoints = mPlayerPoints;
-        mCurrentBatch = 0;
     }
 }
 
@@ -2556,6 +2816,7 @@ void GameState::resetRunnerRun() noexcept
 
     mLastAnnouncedPoints = mPlayerPoints;
     mCurrentBatch = 0;
+    mCurrentTileIndex = 0;
 }
 
 void GameState::drawRunnerHud() const noexcept

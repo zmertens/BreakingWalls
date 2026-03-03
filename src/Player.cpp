@@ -13,6 +13,8 @@ namespace
     constexpr float kGroundPlaneY = 1.0f;
     constexpr float kPlayerGravity = 40.0f;
     constexpr float kPlayerJumpVelocity = 14.0f;
+    constexpr float kMouseStrafeUnitsPerPixel = 0.09f;
+    constexpr float kMouseStrafeDeadzonePixels = 0.5f;
 }
 
 Player::Player() : mIsActive(false), mIsOnGround(false)
@@ -111,40 +113,46 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
         }
     }
 
-    // Mouse drag strafing (left button held)
-    float mouseX = 0.f;
-    float mouseY = 0.f;
-    SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&mouseX, &mouseY);
-    if (!mHasMouseState)
+    // Relative mouse strafing (cursor is hidden/center-locked by GameState)
+    float relMouseX = 0.0f;
+    float relMouseY = 0.0f;
+    SDL_GetRelativeMouseState(&relMouseX, &relMouseY);
+    if (std::abs(relMouseX) >= kMouseStrafeDeadzonePixels)
     {
-        mLastMouseX = mouseX;
-        mHasMouseState = true;
-    }
-
-    const float mouseDeltaX = mouseX - mLastMouseX;
-    mLastMouseX = mouseX;
-
-    if (mouseButtons & SDL_BUTTON_LMASK)
-    {
-        static constexpr float kMouseStrafeThreshold = 2.0f;
-        if (mouseDeltaX <= -kMouseStrafeThreshold)
+        glm::vec3 rightDir = camera.getRight();
+        glm::vec3 horizontalRight = glm::vec3(rightDir.x, 0.0f, rightDir.z);
+        if (glm::length(horizontalRight) > 0.01f)
         {
-            if (auto actionIt = mCameraActions.find(Action::MOVE_LEFT); actionIt != mCameraActions.cend())
-            {
-                actionIt->second(camera, dt);
-            }
+            horizontalRight = glm::normalize(horizontalRight);
+        }
+        else
+        {
+            horizontalRight = glm::vec3(1.0f, 0.0f, 0.0f);
+        }
+
+        const glm::vec3 movement = horizontalRight * (relMouseX * kMouseStrafeUnitsPerPixel);
+        if (camera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            mPosition += movement;
+            mAnimator.setPosition(mPosition);
+            camera.setFollowTarget(mPosition);
+            camera.updateThirdPersonPosition();
+        }
+        else
+        {
+            glm::vec3 newPos = camera.getPosition() + movement;
+            camera.setPosition(newPos);
+        }
+
+        if (relMouseX < 0.0f)
+        {
             mMovingLeft = true;
-            mIsMoving = true;
         }
-        else if (mouseDeltaX >= kMouseStrafeThreshold)
+        else
         {
-            if (auto actionIt = mCameraActions.find(Action::MOVE_RIGHT); actionIt != mCameraActions.cend())
-            {
-                actionIt->second(camera, dt);
-            }
             mMovingRight = true;
-            mIsMoving = true;
         }
+        mIsMoving = true;
     }
 
     // Apply gravity and vertical motion

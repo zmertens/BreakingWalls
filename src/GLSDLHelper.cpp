@@ -20,6 +20,101 @@ bool GLSDLHelper::sBillboardOITPass = false;
 
 namespace
 {
+    void configureSDLInputHints() noexcept
+    {
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM, "0");
+    }
+
+    void closeAllOpenJoysticks() noexcept
+    {
+        int joystickCount = 0;
+        SDL_JoystickID *joystickIDs = SDL_GetJoysticks(&joystickCount);
+        if (!joystickIDs || joystickCount <= 0)
+        {
+            if (joystickIDs)
+            {
+                SDL_free(joystickIDs);
+            }
+            return;
+        }
+
+        for (int i = 0; i < joystickCount; ++i)
+        {
+            const SDL_JoystickID joystickID = joystickIDs[i];
+            int closedHandles = 0;
+
+            SDL_Joystick *joystick = SDL_GetJoystickFromID(joystickID);
+            while (joystick != nullptr)
+            {
+                SDL_CloseJoystick(joystick);
+                ++closedHandles;
+
+                if (closedHandles > 16)
+                {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
+                                "SDLHelper::destroyAndQuit() - Stopping repeated closes for joystick ID %d after %d handles",
+                                static_cast<int>(joystickID), closedHandles);
+                    break;
+                }
+
+                joystick = SDL_GetJoystickFromID(joystickID);
+            }
+
+            if (closedHandles > 0)
+            {
+                SDL_Log("SDLHelper::destroyAndQuit() - Closed %d open joystick handle(s) for instance ID %d",
+                        closedHandles, static_cast<int>(joystickID));
+            }
+        }
+
+        SDL_free(joystickIDs);
+    }
+
+    void closeAllOpenGamepads() noexcept
+    {
+        int gamepadCount = 0;
+        SDL_JoystickID *gamepadIDs = SDL_GetGamepads(&gamepadCount);
+        if (!gamepadIDs || gamepadCount <= 0)
+        {
+            if (gamepadIDs)
+            {
+                SDL_free(gamepadIDs);
+            }
+            return;
+        }
+
+        for (int i = 0; i < gamepadCount; ++i)
+        {
+            const SDL_JoystickID gamepadID = gamepadIDs[i];
+            int closedHandles = 0;
+
+            SDL_Gamepad *gamepad = SDL_GetGamepadFromID(gamepadID);
+            while (gamepad != nullptr)
+            {
+                SDL_CloseGamepad(gamepad);
+                ++closedHandles;
+
+                if (closedHandles > 16)
+                {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
+                                "SDLHelper::destroyAndQuit() - Stopping repeated closes for gamepad ID %d after %d handles",
+                                static_cast<int>(gamepadID), closedHandles);
+                    break;
+                }
+
+                gamepad = SDL_GetGamepadFromID(gamepadID);
+            }
+
+            if (closedHandles > 0)
+            {
+                SDL_Log("SDLHelper::destroyAndQuit() - Closed %d open gamepad handle(s) for instance ID %d",
+                        closedHandles, static_cast<int>(gamepadID));
+            }
+        }
+
+        SDL_free(gamepadIDs);
+    }
+
     bool checkForOpenGLError(const std::string &file, int line)
     {
         bool error = false;
@@ -136,6 +231,8 @@ namespace
 
 void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 {
+    configureSDLInputHints();
+
     auto initFunc = [this, title, width, height]()
     {
         if (!SDL_SetAppMetadata("Breaking Walls with physics", title.data(),
@@ -200,7 +297,7 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 #endif
     };
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC))
     {
         std::call_once(mInitializedFlag, initFunc);
 
@@ -230,6 +327,24 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
         else
         {
             SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "SDL Audio subsystem failed to initialize");
+        }
+
+        if (SDL_WasInit(SDL_INIT_JOYSTICK))
+        {
+            SDL_Log("SDL Joystick subsystem initialized successfully");
+        }
+        else
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_INPUT, "SDL Joystick subsystem failed to initialize");
+        }
+
+        if (SDL_WasInit(SDL_INIT_HAPTIC))
+        {
+            SDL_Log("SDL Haptic subsystem initialized successfully");
+        }
+        else
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_INPUT, "SDL Haptic subsystem failed to initialize");
         }
     }
     else
@@ -265,6 +380,36 @@ void GLSDLHelper::destroyAndQuit() noexcept
 
     if (SDL_WasInit(0) != 0)
     {
+        SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
+        SDL_Log("SDLHelper::destroyAndQuit() - Shutdown diagnostics begin");
+        SDL_Log("SDLHelper::destroyAndQuit() - SDL_WasInit(VIDEO)=%d AUDIO=%d JOYSTICK=%d GAMEPAD=%d HAPTIC=%d EVENTS=%d",
+                SDL_WasInit(SDL_INIT_VIDEO) != 0,
+                SDL_WasInit(SDL_INIT_AUDIO) != 0,
+                SDL_WasInit(SDL_INIT_JOYSTICK) != 0,
+                SDL_WasInit(SDL_INIT_GAMEPAD) != 0,
+                SDL_WasInit(SDL_INIT_HAPTIC) != 0,
+                SDL_WasInit(SDL_INIT_EVENTS) != 0);
+
+        if (SDL_Cursor *cursor = SDL_GetCursor(); cursor != nullptr)
+        {
+            SDL_Log("SDLHelper::destroyAndQuit() - Current SDL cursor handle before quit: %p", static_cast<void *>(cursor));
+        }
+        else
+        {
+            SDL_Log("SDLHelper::destroyAndQuit() - No custom SDL cursor set before quit");
+        }
+
+        if (SDL_Cursor *cursor = SDL_GetCursor(); cursor != nullptr)
+        {
+            SDL_SetCursor(nullptr);
+            SDL_DestroyCursor(cursor);
+            SDL_Log("SDLHelper::destroyAndQuit() - Destroyed active SDL cursor handle before quit");
+        }
+
+        closeAllOpenJoysticks();
+        closeAllOpenGamepads();
+        SDL_QuitSubSystem(SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK);
+
         SDL_Log("SDLHelper::destroyAndQuit() - Calling SDL_Quit()\n");
         SDL_Quit();
     }

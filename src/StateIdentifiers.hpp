@@ -13,9 +13,8 @@ namespace States
         MENU = 5,
         MULTIPLAYER_GAME = 6,
         PAUSE = 7,
-        SETTINGS = 8,
-        SPLASH = 9,
-        WORMHOLE = 10
+        SPLASH = 8,
+        WORMHOLE = 9
     };
 }
 
