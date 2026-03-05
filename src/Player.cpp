@@ -67,6 +67,9 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
     if (!keyState)
         return;
 
+    // Store previous position to calculate movement direction
+    mPreviousPosition = mPosition;
+
     // Reset movement flags
     mMovingForward = false;
     mMovingBackward = false;
@@ -114,10 +117,15 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
     }
 
     // Relative mouse strafing (cursor is hidden/center-locked by GameState)
+    // Only apply mouse strafing when right mouse button is NOT held (to avoid conflict with camera rotation)
+    std::uint32_t mouseButtonState = SDL_GetMouseState(nullptr, nullptr);
+    bool rightMouseHeld = (mouseButtonState & SDL_BUTTON_RMASK) != 0;
+    
     float relMouseX = 0.0f;
     float relMouseY = 0.0f;
     SDL_GetRelativeMouseState(&relMouseX, &relMouseY);
-    if (std::abs(relMouseX) >= kMouseStrafeDeadzonePixels)
+    
+    if (!rightMouseHeld && std::abs(relMouseX) >= kMouseStrafeDeadzonePixels)
     {
         glm::vec3 rightDir = camera.getRight();
         glm::vec3 horizontalRight = glm::vec3(rightDir.x, 0.0f, rightDir.z);
@@ -156,18 +164,52 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
     }
 
     // Apply gravity and vertical motion
-    mVerticalVelocity -= kPlayerGravity * dt;
-    mPosition.y += mVerticalVelocity * dt;
-
-    if (mPosition.y <= kGroundPlaneY)
+    if (mUseSphericalGravity)
     {
-        mPosition.y = kGroundPlaneY;
-        mVerticalVelocity = 0.0f;
-        mIsOnGround = true;
+        glm::vec3 radialDir = mPosition - mPlanetCenter;
+        float radialLen = glm::length(radialDir);
+        if (radialLen < 0.0001f)
+        {
+            radialDir = glm::vec3(0.0f, 1.0f, 0.0f);
+            radialLen = 1.0f;
+        }
+        else
+        {
+            radialDir /= radialLen;
+        }
+
+        float altitude = radialLen - mPlanetRadius;
+        mVerticalVelocity -= kPlayerGravity * dt;
+        altitude += mVerticalVelocity * dt;
+
+        if (altitude <= kGroundPlaneY)
+        {
+            altitude = kGroundPlaneY;
+            mVerticalVelocity = 0.0f;
+            mIsOnGround = true;
+        }
+        else
+        {
+            mIsOnGround = false;
+        }
+
+        mPosition = mPlanetCenter + radialDir * (mPlanetRadius + altitude);
     }
     else
     {
-        mIsOnGround = false;
+        mVerticalVelocity -= kPlayerGravity * dt;
+        mPosition.y += mVerticalVelocity * dt;
+
+        if (mPosition.y <= kGroundPlaneY)
+        {
+            mPosition.y = kGroundPlaneY;
+            mVerticalVelocity = 0.0f;
+            mIsOnGround = true;
+        }
+        else
+        {
+            mIsOnGround = false;
+        }
     }
 
     // Update animator with new position after physics
@@ -180,15 +222,57 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
         cameraPos.y = mPosition.y;
         camera.setPosition(cameraPos);
         mPosition = cameraPos;
+        // In first person, player faces camera direction
+        mFacingDirection = camera.getYaw();
     }
     else
     {
         camera.setFollowTarget(mPosition);
         camera.updateThirdPersonPosition();
+        
+        // In third person, calculate facing direction from movement
+        // The sprite system is 2D side-view: facing < 90° shows right-facing sprite, >= 90° shows left-facing
+        glm::vec3 movementDelta = mPosition - mPreviousPosition;
+        movementDelta.y = 0.0f; // Ignore vertical movement for facing direction
+        
+        if (glm::length(movementDelta) > 0.001f)
+        {
+            // Simple 2D facing logic: check primary movement direction
+            // In arcade mode, +X is forward (right), -X is backward (left)
+            // Use atan2 to get angle from movement vector
+            float movementAngle = glm::degrees(std::atan2(movementDelta.z, movementDelta.x));
+            
+            // Normalize to 0-360 range
+            if (movementAngle < 0.0f)
+            {
+                movementAngle += 360.0f;
+            }
+            
+            // For 2D side-view sprites:
+            // 0-180° (right hemisphere) = face right (facing = 0)
+            // 180-360° (left hemisphere) = face left (facing = 180)
+            if (movementAngle >= 0.0f && movementAngle < 180.0f)
+            {
+                mTargetFacingDirection = 0.0f; // Face right
+            }
+            else
+            {
+                mTargetFacingDirection = 180.0f; // Face left (will trigger sprite flip)
+            }
+            
+            // Smooth transition between left and right
+            float angleDiff = mTargetFacingDirection - mFacingDirection;
+            
+            // Normalize angle difference to [-180, 180]
+            while (angleDiff > 180.0f) angleDiff -= 360.0f;
+            while (angleDiff < -180.0f) angleDiff += 360.0f;
+            
+            // Quick snap for 2D facing (no smooth rotation needed)
+            mFacingDirection = mTargetFacingDirection;
+        }
+        // If not moving, maintain current facing direction
     }
-
-    // Update facing direction based on camera yaw
-    mFacingDirection = camera.getYaw();
+    
     mAnimator.setRotation(mFacingDirection);
 
     // Update animation state
@@ -524,7 +608,7 @@ AnimationRect Player::getCurrentAnimationFrame() const
 void Player::setPosition(const glm::vec3 &position) noexcept
 {
     mPosition = position;
-    if (mPosition.y <= kGroundPlaneY)
+    if (!mUseSphericalGravity && mPosition.y <= kGroundPlaneY)
     {
         mPosition.y = kGroundPlaneY;
         mVerticalVelocity = 0.0f;
@@ -535,6 +619,30 @@ void Player::setPosition(const glm::vec3 &position) noexcept
         mIsOnGround = false;
     }
     mAnimator.setPosition(mPosition);
+}
+
+void Player::configureSphericalGravity(bool enabled, const glm::vec3 &planetCenter, float planetRadius) noexcept
+{
+    mUseSphericalGravity = enabled;
+    mPlanetCenter = planetCenter;
+    mPlanetRadius = std::max(1.0f, planetRadius);
+    if (enabled)
+    {
+        glm::vec3 radial = mPosition - mPlanetCenter;
+        float radialLen = glm::length(radial);
+        if (radialLen < 0.0001f)
+        {
+            radial = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+        else
+        {
+            radial = radial / radialLen;
+        }
+        mPosition = mPlanetCenter + radial * (mPlanetRadius + kGroundPlaneY);
+        mVerticalVelocity = 0.0f;
+        mIsOnGround = true;
+        mAnimator.setPosition(mPosition);
+    }
 }
 
 void Player::triggerCollisionAnimation(bool positiveCollision) noexcept

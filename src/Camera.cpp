@@ -117,7 +117,12 @@ glm::vec3 Camera::getUp() const
 
 void Camera::setUp(const glm::vec3 &up)
 {
-    mUp = up;
+    if (glm::length(up) > 0.0001f)
+    {
+        mUp = glm::normalize(up);
+        mUseCustomUpVector = true;
+        updateVectors();
+    }
 }
 
 glm::vec3 Camera::getRight() const
@@ -192,8 +197,18 @@ void Camera::updateVectors()
     target.y = std::sin(glm::radians(mPitch));
     target.z = std::sin(glm::radians(mYaw)) * std::cos(glm::radians(mPitch));
     mTarget = glm::normalize(target);
-    mRight = glm::normalize(glm::cross(mTarget, yAxis));
-    mUp = glm::normalize(glm::cross(mRight, mTarget));
+    const glm::vec3 referenceUp = mUseCustomUpVector ? mUp : yAxis;
+    mRight = glm::normalize(glm::cross(mTarget, referenceUp));
+    if (glm::length(mRight) < 0.0001f)
+    {
+        mRight = glm::normalize(glm::cross(mTarget, yAxis));
+    }
+    // When using custom up vector (e.g., for spherical planet), preserve it exactly
+    // Otherwise, recompute up from right/target for standard Cartesian movement
+    if (!mUseCustomUpVector)
+    {
+        mUp = glm::normalize(glm::cross(mRight, mTarget));
+    }
 }
 
 // ============================================================================
@@ -207,33 +222,61 @@ void Camera::updateThirdPersonPosition()
         return;
     }
 
-    // Calculate camera position behind and above the follow target
-    // Use the camera's yaw to determine the orbit position around the target
-    float horizontalDistance = mThirdPersonDistance * std::cos(glm::radians(mPitch));
-    float verticalDistance = mThirdPersonDistance * std::sin(glm::radians(mPitch));
+    const glm::vec3 upAxis = glm::normalize(mUp);
+    
+    // For spherical planets with custom up vector, use the target direction directly
+    // Project target onto plane perpendicular to up to get horizontal forward direction
+    glm::vec3 forwardFlat = mTarget - upAxis * glm::dot(mTarget, upAxis);
+    const float forwardFlatLen = glm::length(forwardFlat);
+    
+    if (forwardFlatLen < 0.0001f)
+    {
+        // If looking straight up/down, use right vector to determine backward direction
+        glm::vec3 fallbackForward = glm::cross(upAxis, mRight);
+        if (glm::length(fallbackForward) > 0.0001f)
+        {
+            forwardFlat = glm::normalize(fallbackForward);
+        }
+        else
+        {
+            forwardFlat = glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+    }
+    else
+    {
+        forwardFlat = forwardFlat / forwardFlatLen;
+    }
 
-    // Calculate offset from target
-    float offsetX = horizontalDistance * std::cos(glm::radians(mYaw + 180.0f));
-    float offsetZ = horizontalDistance * std::sin(glm::radians(mYaw + 180.0f));
-    float offsetY = mThirdPersonHeight + verticalDistance;
-
-    // Update position
-    mPosition = mFollowTarget + glm::vec3(offsetX, offsetY, offsetZ);
+    mPosition = mFollowTarget - forwardFlat * mThirdPersonDistance + upAxis * mThirdPersonHeight;
 }
 
 glm::vec3 Camera::getActualPosition() const
 {
     if (mMode == CameraMode::THIRD_PERSON)
     {
-        // Return the calculated third-person camera position
-        float horizontalDistance = mThirdPersonDistance * std::cos(glm::radians(mPitch));
-        float verticalDistance = mThirdPersonDistance * std::sin(glm::radians(mPitch));
+        const glm::vec3 upAxis = glm::normalize(mUp);
+        glm::vec3 forwardFlat = mTarget - upAxis * glm::dot(mTarget, upAxis);
+        const float forwardFlatLen = glm::length(forwardFlat);
+        
+        if (forwardFlatLen < 0.0001f)
+        {
+            // Use right vector fallback for degenerate cases
+            glm::vec3 fallbackForward = glm::cross(upAxis, mRight);
+            if (glm::length(fallbackForward) > 0.0001f)
+            {
+                forwardFlat = glm::normalize(fallbackForward);
+            }
+            else
+            {
+                forwardFlat = glm::vec3(0.0f, 0.0f, 1.0f);
+            }
+        }
+        else
+        {
+            forwardFlat = forwardFlat / forwardFlatLen;
+        }
 
-        float offsetX = horizontalDistance * std::cos(glm::radians(mYaw + 180.0f));
-        float offsetZ = horizontalDistance * std::sin(glm::radians(mYaw + 180.0f));
-        float offsetY = mThirdPersonHeight + verticalDistance;
-
-        return mFollowTarget + glm::vec3(offsetX, offsetY, offsetZ);
+        return mFollowTarget - forwardFlat * mThirdPersonDistance + upAxis * mThirdPersonHeight;
     }
     return mPosition;
 }
@@ -242,7 +285,7 @@ glm::mat4 Camera::getThirdPersonLookAt() const
 {
     glm::vec3 cameraPos = getActualPosition();
     // Look at the follow target (player position) plus a slight height offset
-    glm::vec3 lookAtPoint = mFollowTarget + glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 lookAtPoint = mFollowTarget + mUp;
 
     // Debug log on first call
     static bool firstCall = true;
@@ -251,5 +294,5 @@ glm::mat4 Camera::getThirdPersonLookAt() const
         firstCall = false;
     }
 
-    return glm::lookAt(cameraPos, lookAtPoint, glm::vec3(0.0f, 1.0f, 0.0f));
+    return glm::lookAt(cameraPos, lookAtPoint, glm::normalize(mUp));
 }

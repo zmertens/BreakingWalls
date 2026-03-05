@@ -104,6 +104,10 @@ public:
 
 private:
     void initPathTracerScene() noexcept;
+    
+    // Sphere physics coordinate transformation
+    glm::vec3 projectOntoSphere(glm::vec2 flatPos) const noexcept;
+    glm::vec2 projectFromSphere(const glm::vec3 &spherePos) const noexcept;
     void syncPhysicsToSpheres() noexcept;
     void createRunnerBounds() noexcept;
     void updateRunnerSpheres(float dt) noexcept;
@@ -221,6 +225,11 @@ private:
 
     static constexpr int TOTAL_SPHERES = 200;
     static constexpr size_t RUNNER_PERSISTENT_SPHERES = 0;
+    
+        // Voronoi sphere planet parameters
+        static constexpr float PLANET_RADIUS = 50.0f;
+        float mPlanetRadius{PLANET_RADIUS};
+        glm::vec3 mPlanetCenter{glm::vec3(0.0f)};
     static constexpr float RUNNER_SPAWN_INTERVAL_SECONDS = 0.22f;
     static constexpr float RUNNER_DESPAWN_BEHIND_DISTANCE = 45.0f;
     static constexpr float RUNNER_SPAWN_Z_MARGIN = 2.0f;

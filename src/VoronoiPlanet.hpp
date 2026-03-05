@@ -9,8 +9,11 @@ public:
     VoronoiPlanet();
     ~VoronoiPlanet();
 
-    // generate seeds and ground-plane Voronoi mesh; seedCount controls Voronoi resolution
+    // generate seeds and ground-plane Voronoi mesh on sphere; seedCount controls Voronoi resolution
     void initialize(int seedCount = 512, int lonSteps = 64, int latSteps = 32);
+    
+    // generate seeds and ground-plane Voronoi mesh on sphere with custom radius and center
+    void initialize(float radius, const glm::vec3 &center, int seedCount = 512, int lonSteps = 64, int latSteps = 32);
 
     // upload GPU buffers (requires GL context)
     void uploadToGPU();
@@ -22,12 +25,18 @@ public:
     const std::vector<glm::vec3>& getCellColors() const { return m_cellColors; }
     const std::vector<glm::vec3>& getSeedPositions() const { return m_seedPositions; }
     size_t getCellCount() const { return m_cellColors.size(); }
+    size_t getPaintedCellCount() const;
+    bool isPlanetComplete() const;
 
     // render with provided shader program (shader must set uModel/uView/uProjection)
     void draw() const;
 
-    // paint nearest cell to world-space position projected onto the XZ ground plane
+    // paint nearest cell to world-space position projected onto sphere surface
     void paintAtPosition(const glm::vec3 &worldPos, const glm::vec3 &color);
+    
+    // getters for sphere parameters
+    float getRadius() const { return m_radius; }
+    glm::vec3 getCenter() const { return m_center; }
 
 private:
     void generateSeeds(int count);
@@ -35,6 +44,8 @@ private:
     int findNearestSeed(const glm::vec3 &p) const;
 
     // CPU-side data
+    float m_radius = 50.0f;
+    glm::vec3 m_center = glm::vec3(0.0f);
     std::vector<glm::vec3> m_vertices;
     std::vector<glm::vec3> m_normals;
     std::vector<unsigned int> m_indices;

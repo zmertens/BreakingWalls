@@ -360,7 +360,13 @@ void World::update(float dt)
     {
         if (b2Body_IsValid(mRunnerPlayerBodyId))
         {
-            b2Body_SetTransform(mRunnerPlayerBodyId, {mRunnerPlayerPosition.x, mRunnerPlayerPosition.z}, b2MakeRot(0.0f));
+            // Convert player 3D position to 2D theta-phi coordinates for physics
+            const glm::vec3 relPos = mRunnerPlayerPosition - mPlanetCenter;
+            const float theta = std::atan2(relPos.z, relPos.x);
+            const float lateralArc = relPos.y; // Simplified: use Y as lateral offset
+            
+            // Update physics body in 2D theta-phi space
+            b2Body_SetTransform(mRunnerPlayerBodyId, {theta * mPlanetRadius, lateralArc}, b2MakeRot(0.0f));
             b2Body_SetLinearVelocity(mRunnerPlayerBodyId, {0.0f, 0.0f});
             b2Body_SetAwake(mRunnerPlayerBodyId, true);
         }
@@ -484,21 +490,35 @@ void World::initPathTracerScene() noexcept
 
 void World::syncPhysicsToSpheres() noexcept
 {
-    // Sync physics body positions back to 3D sphere positions
+    // Sync physics body positions (in 2D theta-phi space) back to 3D sphere positions on planet surface
     for (size_t i = 0; i < mSpheres.size() && i < mSphereBodyIds.size(); ++i)
     {
         b2BodyId bodyId = mSphereBodyIds[i];
         if (b2Body_IsValid(bodyId))
         {
             b2Vec2 pos = b2Body_GetPosition(bodyId);
-
-            // Update sphere center: map 2D physics (x, y) back to 3D (x, y_original, z)
-            // Keep Y coordinate from original sphere, use physics Y as Z coordinate
-            float originalY = mSpheres[i].getCenter().y;
-            glm::vec3 newCenter = mSpheres[i].getCenter();
-            newCenter.x = pos.x;
-            newCenter.y = originalY;
-            newCenter.z = pos.y;
+            
+            // pos.x = theta * radius (arc length around planet)
+            // pos.y = lateral arc offset
+            const float theta = pos.x / mPlanetRadius;
+            const float lateralArc = pos.y;
+            const float phi = lateralArc / mPlanetRadius;
+            
+            const float sphereRadius = mSpheres[i].getRadius();
+            const float r = mPlanetRadius + sphereRadius;
+            
+            const float cosPhi = std::cos(phi);
+            const float sinPhi = std::sin(phi);
+            const float cosTheta = std::cos(theta);
+            const float sinTheta = std::sin(theta);
+            
+            // Calculate 3D position on planet surface
+            glm::vec3 newCenter = mPlanetCenter + glm::vec3(
+                r * cosPhi * cosTheta,
+                r * sinPhi,
+                r * cosPhi * sinTheta
+            );
+            
             mSpheres[i].setCenter(newCenter);
         }
     }
@@ -560,8 +580,10 @@ void World::createRunnerBounds() noexcept
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 0.0f;
 
-    b2Segment negZ = {{-RUNNER_BOUNDS_HALF_WIDTH, -mRunnerStrafeLimit}, {RUNNER_BOUNDS_HALF_WIDTH, -mRunnerStrafeLimit}};
-    b2Segment posZ = {{-RUNNER_BOUNDS_HALF_WIDTH, mRunnerStrafeLimit}, {RUNNER_BOUNDS_HALF_WIDTH, mRunnerStrafeLimit}};
+    // Allow free strafing - expand bounds much larger to accommodate continuous wrapping
+    const float expandedLimit = mRunnerStrafeLimit * 10.0f;
+    b2Segment negZ = {{-RUNNER_BOUNDS_HALF_WIDTH, -expandedLimit}, {RUNNER_BOUNDS_HALF_WIDTH, -expandedLimit}};
+    b2Segment posZ = {{-RUNNER_BOUNDS_HALF_WIDTH, expandedLimit}, {RUNNER_BOUNDS_HALF_WIDTH, expandedLimit}};
 
     mRunnerBoundNegZShapeId = b2CreateSegmentShape(mRunnerBoundsBodyId, &shapeDef, &negZ);
     mRunnerBoundPosZShapeId = b2CreateSegmentShape(mRunnerBoundsBodyId, &shapeDef, &posZ);
@@ -584,6 +606,31 @@ void World::updateRunnerSpheres(float dt) noexcept
         mRunnerSpawnTimer -= RUNNER_SPAWN_INTERVAL_SECONDS;
         spawnRunnerSphere();
     }
+    
+    // Apply spherical gravity - pull spheres back towards the surface normal
+    // In 2D theta-phi space, this means pulling towards the player's theta and zero phi
+    const float playerTheta2D = (mRunnerPlayerPosition.x - mPlanetCenter.x) / mPlanetRadius;
+    const float gravityStrength = 15.0f; // Adjust for desired gravity strength
+    const float gravityDamping = 0.8f;   // How quickly spheres are pulled
+    
+    for (size_t i = 0; i < mSphereBodyIds.size(); ++i)
+    {
+        b2BodyId bodyId = mSphereBodyIds[i];
+        if (!b2Body_IsValid(bodyId))
+        {
+            continue;
+        }
+        
+        b2Vec2 pos = b2Body_GetPosition(bodyId);
+        b2Vec2 vel = b2Body_GetLinearVelocity(bodyId);
+        
+        // Calculate radial force back towards the surface center (phi = 0)
+        // Phi axis: pull towards y = 0
+        b2Vec2 gravity = {0.0f, -pos.y * gravityDamping};
+        
+        // Apply gravity as a force
+        b2Body_ApplyForceToCenter(bodyId, gravity, true);
+    }
 }
 
 void World::spawnRunnerSphere() noexcept
@@ -595,9 +642,20 @@ void World::spawnRunnerSphere() noexcept
         return;
     }
 
+    // Spawn spheres on the planet surface ahead of player
+    // Use spherical coordinates: theta (angle around planet), phi (lateral angle)
+    const float playerTheta = (mRunnerPlayerPosition.x - mPlanetCenter.x) / mPlanetRadius;
+    const float playerPhi = std::asin(std::clamp((mRunnerPlayerPosition.y - mPlanetCenter.y) / mPlanetRadius, -1.0f, 1.0f));
+    
+    // Spawn ahead of player in theta direction
+    const float spawnThetaOffset = (mRunnerSpawnAheadDistance + randomFloat(-6.0f, 6.0f)) / mPlanetRadius;
+    const float spawnTheta = playerTheta + spawnThetaOffset;
+    
+    // Random lateral position within strafe limits
     const float zLimit = std::max(1.0f, mRunnerStrafeLimit - RUNNER_SPAWN_Z_MARGIN);
-    const float spawnZ = randomFloat(-zLimit, zLimit);
-    const float spawnX = mRunnerPlayerPosition.x + mRunnerSpawnAheadDistance + randomFloat(-6.0f, 6.0f);
+    const float lateralArcOffset = randomFloat(-zLimit, zLimit);
+    const float spawnPhi = (lateralArcOffset) / mPlanetRadius;
+    
     const float radius = randomFloat(0.9f, 2.2f);
 
     const float materialPick = randomFloat(0.0f, 1.0f);
@@ -621,12 +679,26 @@ void World::spawnRunnerSphere() noexcept
         density = 0.9f;
     }
 
-    glm::vec3 center(spawnX, radius, spawnZ);
+    // Calculate 3D position on planet surface (plus sphere radius offset)
+    const float r = mPlanetRadius + radius;
+    const float cosPhi = std::cos(spawnPhi);
+    const float sinPhi = std::sin(spawnPhi);
+    const float cosTheta = std::cos(spawnTheta);
+    const float sinTheta = std::sin(spawnTheta);
+    
+    glm::vec3 center = mPlanetCenter + glm::vec3(
+        r * cosPhi * cosTheta,
+        r * sinPhi,
+        r * cosPhi * sinTheta
+    );
+    
     mSpheres.emplace_back(center, radius, albedo, matType, fuzz, refractIdx);
 
+    // Use 2D physics in theta-phi space for deterministic simulation
+    // Map spherical coordinates to 2D: X = theta * radius, Y = lateralArc
     b2BodyDef bodyDef = b2DefaultBodyDef();
     bodyDef.type = b2_dynamicBody;
-    bodyDef.position = {center.x, center.z};
+    bodyDef.position = {spawnTheta * mPlanetRadius, lateralArcOffset};
     bodyDef.linearDamping = 0.05f;
     bodyDef.angularDamping = 0.12f;
     bodyDef.fixedRotation = false;
@@ -652,7 +724,11 @@ void World::spawnRunnerSphere() noexcept
     b2Body_SetUserData(bodyId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
     b2Shape_SetUserData(shapeId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
 
-    glm::vec2 towardPlayer = glm::vec2(mRunnerPlayerPosition.x - center.x, mRunnerPlayerPosition.z - center.z);
+    // Give spheres velocity toward player in 2D theta-phi space
+    const float playerTheta2D = playerTheta * mPlanetRadius;
+    const float sphereTheta2D = spawnTheta * mPlanetRadius;
+    glm::vec2 towardPlayer = glm::vec2(playerTheta2D - sphereTheta2D, -lateralArcOffset);
+    
     if (glm::length(towardPlayer) < 0.001f)
     {
         towardPlayer = glm::vec2(-1.0f, 0.0f);
@@ -731,6 +807,11 @@ void World::processRunnerContactEvents() noexcept
 
 void World::pruneRunnerSpheres() noexcept
 {
+    // Calculate player position in 2D theta-phi space for comparison
+    const glm::vec3 relPlayerPos = mRunnerPlayerPosition - mPlanetCenter;
+    const float playerTheta = std::atan2(relPlayerPos.z, relPlayerPos.x);
+    const float playerTheta2D = playerTheta * mPlanetRadius;
+    
     size_t idx = RUNNER_PERSISTENT_SPHERES;
     while (idx < mSpheres.size() && idx < mSphereBodyIds.size())
     {
@@ -753,7 +834,8 @@ void World::pruneRunnerSpheres() noexcept
         }
 
         const b2Vec2 pos = b2Body_GetPosition(bodyId);
-        const bool behindPlayer = pos.x < (mRunnerPlayerPosition.x - RUNNER_DESPAWN_BEHIND_DISTANCE);
+        // pos.x is in theta-space (theta * radius), pos.y is lateral arc offset
+        const bool behindPlayer = pos.x < (playerTheta2D - RUNNER_DESPAWN_BEHIND_DISTANCE);
         const bool outsideZBounds = std::fabs(pos.y) > (mRunnerStrafeLimit + 12.0f);
 
         if (behindPlayer || outsideZBounds)
@@ -1277,4 +1359,33 @@ const Texture *World::getCharacterSpriteSheet() const noexcept
     {
         return nullptr;
     }
+}
+
+glm::vec3 World::projectOntoSphere(glm::vec2 flatPos) const noexcept
+{
+    // flatPos.x: arc length along circumference
+    // flatPos.y: forward/back position perpendicular to X (becomes Z on sphere surface)
+    // Convert arc length to angle
+    float angle = flatPos.x / mPlanetRadius;
+    
+    // Position on sphere surface:
+    // X = center.x + radius * cos(angle), Z = center.z + radius * sin(angle)
+    // Y = center.y + forward offset clamped to sphere edges
+    // (simplified: Y stays roughly constant as we run forward/back around sphere)
+    float x = mPlanetCenter.x + mPlanetRadius * glm::cos(angle);
+    float z = mPlanetCenter.z + mPlanetRadius * glm::sin(angle);
+    float y = mPlanetCenter.y; // Keep at center height
+    
+    return glm::vec3(x, y, z);
+}
+
+glm::vec2 World::projectFromSphere(const glm::vec3 &spherePos) const noexcept
+{
+    // Extract angle from sphere position
+    glm::vec2 relPos = glm::vec2(spherePos.x - mPlanetCenter.x, spherePos.z - mPlanetCenter.z);
+    float angle = glm::atan(relPos.y, relPos.x);
+    float arcLength = angle * mPlanetRadius;
+    
+    // Keep Z component as-is (forward/back strafe dimension)
+    return glm::vec2(arcLength, spherePos.z);
 }

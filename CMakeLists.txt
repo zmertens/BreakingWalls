@@ -41,7 +41,7 @@ if (WIN32)
     )
 endif()
 
-install(FILES "${CMAKE_SOURCE_DIR}/deps/run-breakingwalls.bat" DESTINATION "${CMAKE_INSTALL_BINDIR}")   
+install(FILES "${CMAKE_SOURCE_DIR}/scripts/breakingwalls_run.bat" DESTINATION "${CMAKE_INSTALL_BINDIR}")   
 
 # Install assets
 install(DIRECTORY audio/ DESTINATION ${CMAKE_INSTALL_BINDIR}/audio)

@@ -1,6 +1,6 @@
 #version 430 core
 
-// Geometry shader to project billboard sprite shadows onto the ground plane.
+// Geometry shader to project billboard sprite shadows onto the spherical terrain.
 
 layout (points) in;
 layout (triangle_strip, max_vertices = 4) out;
@@ -9,7 +9,9 @@ layout (triangle_strip, max_vertices = 4) out;
 uniform vec3 uSpritePos;           // Billboard center position (world space)
 uniform float uSpriteHalfSize;     // Half-size used when rendering the billboard
 uniform vec3 uLightDir;            // Direction from sun toward the scene
-uniform float uGroundY;            // Ground plane height
+uniform float uGroundY;            // Ground plane height (legacy, kept for compatibility)
+uniform vec3 uSphereCenter;        // Sphere center (world space)
+uniform float uSphereRadius;       // Sphere radius
 uniform mat4 uViewMatrix;          // Camera view matrix
 uniform mat4 uProjectionMatrix;    // Camera projection matrix
 uniform vec2 uInvResolution;       // 1.0 / screen resolution
@@ -18,16 +20,57 @@ out vec2 vShadowCoord;
 
 const float EPSILON = 1e-3;
 
+// Project a world position onto the sphere surface along a ray direction
+vec3 projectToSphereSurface(vec3 rayOrigin, vec3 rayDir, vec3 sphereCenter, float sphereRadius)
+{
+    // Ray-sphere intersection: find closest intersection point
+    // Ray: P = rayOrigin + t * rayDir
+    // Sphere: |P - sphereCenter|^2 = sphereRadius^2
+    
+    vec3 oc = rayOrigin - sphereCenter;
+    float a = dot(rayDir, rayDir);
+    float b = 2.0 * dot(oc, rayDir);
+    float c = dot(oc, oc) - sphereRadius * sphereRadius;
+    
+    float discriminant = b * b - 4.0 * a * c;
+    
+    if (discriminant < 0.0)
+    {
+        // No intersection, fall back to ground plane projection
+        float dirY = rayDir.y;
+        if (abs(dirY) < EPSILON)
+        {
+            dirY = (dirY >= 0.0) ? EPSILON : -EPSILON;
+        }
+        float t = (uGroundY - rayOrigin.y) / dirY;
+        return rayOrigin + rayDir * t;
+    }
+    
+    // Use the closer intersection point (smaller t)
+    float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+    float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+    
+    float t = (t1 > EPSILON) ? t1 : t2;
+    
+    if (t < EPSILON)
+    {
+        // Fallback to ground plane if both intersections are behind the ray origin
+        float dirY = rayDir.y;
+        if (abs(dirY) < EPSILON)
+        {
+            dirY = (dirY >= 0.0) ? EPSILON : -EPSILON;
+        }
+        float tGround = (uGroundY - rayOrigin.y) / dirY;
+        return rayOrigin + rayDir * tGround;
+    }
+    
+    return rayOrigin + rayDir * t;
+}
+
 vec3 projectToGround(vec3 worldPos, vec3 lightDir, float groundY)
 {
-    float dirY = lightDir.y;
-    if (abs(dirY) < EPSILON)
-    {
-        dirY = (dirY >= 0.0) ? EPSILON : -EPSILON;
-    }
-
-    float t = (groundY - worldPos.y) / dirY;
-    return worldPos + lightDir * t;
+    // Use sphere projection instead of flat plane
+    return projectToSphereSurface(worldPos, lightDir, uSphereCenter, uSphereRadius);
 }
 
 void main()

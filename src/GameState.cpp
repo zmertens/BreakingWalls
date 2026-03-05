@@ -42,6 +42,7 @@ namespace
     constexpr float kCharacterRasterScale = 1.491f;
     constexpr float kCharacterPathTraceProxyScale = 1.491f;
     constexpr float kCharacterModelYOffset = 0.25f;
+    constexpr float kRunnerPlanetSurfaceOffset = 1.0f;
 
     glm::vec3 computeSunDirection(float /*timeSeconds*/) noexcept
     {
@@ -166,6 +167,28 @@ namespace
         outScreenPos.x = (ndc.x * 0.5f + 0.5f) * static_cast<float>(windowWidth);
         outScreenPos.y = (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(windowHeight);
         return true;
+    }
+
+    glm::vec3 computeRunnerPlanetPosition(float runDistance,
+                                          float lateralArc,
+                                          const glm::vec3 &center,
+                                          float radius) noexcept
+    {
+        const float safeRadius = std::max(1.0f, radius);
+        const float theta = runDistance / safeRadius;
+        // Allow phi to wrap continuously around the sphere without clamping
+        const float phi = lateralArc / safeRadius;
+
+        const float r = safeRadius + kRunnerPlanetSurfaceOffset;
+        const float cosPhi = std::cos(phi);
+        const float sinPhi = std::sin(phi);
+        const float cosTheta = std::cos(theta);
+        const float sinTheta = std::sin(theta);
+
+        return center + glm::vec3(
+            r * cosPhi * cosTheta,
+            r * sinPhi,
+            r * cosPhi * sinTheta);
     }
 }
 
@@ -440,8 +463,8 @@ void GameState::initializeGraphicsResources() noexcept
         // mVoronoiShaderOwned->linkProgram();
         // mVoronoiShader = mVoronoiShaderOwned.get();
 
-        // Initialize planet with moderate seed count
-        mVoronoiPlanet.initialize(1024, 128, 64);
+        // Initialize planet with spherical parameters: radius 50, center at origin
+        mVoronoiPlanet.initialize(50.0f, glm::vec3(0.0f), 1024, 128, 64);
         mVoronoiPlanet.uploadToGPU();
     }
     catch (const std::exception &e)
@@ -1137,12 +1160,15 @@ void GameState::renderCharacterShadow() const noexcept
     const glm::vec3 lightDir = computeSunDirection(timeSeconds);
     const float groundY = mWorld.getGroundPlane().getPoint().y;
 
-    // Render billboard shadows by projecting sprite footprint along light direction onto the ground plane
+    // Render billboard shadows by projecting sprite footprint along light direction onto the spherical terrain
     mShadowShader->bind();
     mShadowShader->setUniform("uViewMatrix", view);
     mShadowShader->setUniform("uProjectionMatrix", projection);
     mShadowShader->setUniform("uLightDir", lightDir);
     mShadowShader->setUniform("uGroundY", groundY);
+    // Set sphere parameters for shadow projection onto spherical terrain
+    mShadowShader->setUniform("uSphereCenter", glm::vec3(0.0f, 0.0f, 0.0f));
+    mShadowShader->setUniform("uSphereRadius", 50.0f);
 
     glBindVertexArray(mShadowVAO);
 
@@ -1175,6 +1201,12 @@ void GameState::renderCharacterShadow() const noexcept
 
             drawBillboardShadow(glm::vec3(x, kBillboardHeight, borderZ + stagger), 3.0f);
             drawBillboardShadow(glm::vec3(x, kBillboardHeight, -borderZ - stagger), 3.0f);
+        }
+
+        // Floating billboard shadows (sphere obstacles in arcade mode)
+        for (const auto& billboard : mFloatingBillboards)
+        {
+            drawBillboardShadow(billboard.position, 3.0f);
         }
     }
 
@@ -1324,10 +1356,12 @@ void GameState::renderWithComputeShaders() const noexcept
     const std::size_t totalSphereCount = renderSpheres.size();
     const std::size_t primarySphereCount = totalSphereCount;
 
-    // Safety check: ensure we have spheres to render
+    // Handle case with zero spheres gracefully (can happen during arcade mode when spheres spawn/despawn)
+    // The compute shader will simply render nothing, which is fine
     if (renderSpheres.empty())
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "No spheres to render");
+        // Return early - no spheres to process
+        // This is normal during gameplay as spheres spawn ahead and despawn behind the player
         return;
     }
 
@@ -1469,6 +1503,8 @@ void GameState::renderWithComputeShaders() const noexcept
         // Bind Voronoi cell color/seed/painted SSBOs used by the compute shader.
         // Keep cell count at zero unless all buffers exist for safe access.
         mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(0));
+        mComputeShader->setUniform("uPlanetRadius", mVoronoiPlanet.getRadius());
+        mComputeShader->setUniform("uPlanetCenter", mVoronoiPlanet.getCenter());
         mComputeShader->setUniform("uTriangleShadowTestBudget", adaptiveTriangleShadowBudget);
         if (mVoronoiCellColorSSBO != 0 && mVoronoiCellSeedSSBO != 0 && mVoronoiCellPaintedSSBO != 0) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, mVoronoiCellColorSSBO);
@@ -1829,16 +1865,41 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     syncRunnerSettingsFromOptions();
 
-    // Handle camera input through Player (A/D strafing remains useful in runner mode)
-    mPlayer.handleRealtimeInput(mCamera, dt);
+    // In arcade runner mode, disable free player movement (we control position explicitly)
+    if (!mArcadeModeEnabled)
+    {
+        mPlayer.handleRealtimeInput(mCamera, dt);
+    }
+    
+    // Handle keyboard strafing in arcade mode
+    if (mArcadeModeEnabled)
+    {
+        int numKeys = 0;
+        const auto *keyState = SDL_GetKeyboardState(&numKeys);
+        if (keyState)
+        {
+            float keyboardStrafe = 0.0f;
+            if (keyState[SDL_SCANCODE_A])
+            {
+                keyboardStrafe -= mJoystickStrafeSpeed * dt;
+            }
+            if (keyState[SDL_SCANCODE_D])
+            {
+                keyboardStrafe += mJoystickStrafeSpeed * dt;
+            }
+            // Clamp lateral arc to prevent reaching poles where spherical coordinates break down
+            mRunnerLateralArc = std::clamp(mRunnerLateralArc + keyboardStrafe, -mRunnerStrafeLimit, mRunnerStrafeLimit);
+        }
+    }
+    
     updateJoystickInput(dt);
 
     updateRunnerGameplay(dt);
 
-    // Keep chunks near player but biased forward for visible into-sun flow
-    glm::vec3 chunkAnchor = mPlayer.getPosition();
-    chunkAnchor.x += mRunnerPickupSpawnAhead;
-    mWorld.updateSphereChunks(chunkAnchor);
+    // Disabled chunk-based spawning for spherical planet gameplay
+    // glm::vec3 chunkAnchor = mPlayer.getPosition();
+    // chunkAnchor.x += mRunnerPickupSpawnAhead;
+    // mWorld.updateSphereChunks(chunkAnchor);
 
     // Paint ground-plane Voronoi cell under player
     if (dt > 0.0f)
@@ -1868,6 +1929,13 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     // Update player animation
     mPlayer.updateAnimation(dt);
+    
+    // In arcade mode, player always faces forward along the runner path
+    if (mArcadeModeEnabled)
+    {
+        // Player always faces forward (0°) - forward facing in the arcade runner
+        mPlayer.setFacingDirection(0.0f);
+    }
 
     if (dt > 0.0f)
     {
@@ -1985,10 +2053,19 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
             static constexpr float SENSITIVITY = 0.35f;
             if (mArcadeModeEnabled && mCamera.getMode() == CameraMode::THIRD_PERSON)
             {
+                // In arcade mode third-person, only allow pitch (vertical) camera rotation
                 mCamera.rotate(0.0f, -event.motion.yrel * SENSITIVITY);
+                mCamera.updateThirdPersonPosition();
+            }
+            else if (mCamera.getMode() == CameraMode::THIRD_PERSON)
+            {
+                // In regular third-person, allow both yaw and pitch
+                mCamera.rotate(event.motion.xrel * SENSITIVITY, -event.motion.yrel * SENSITIVITY);
+                mCamera.updateThirdPersonPosition();
             }
             else
             {
+                // First-person camera rotation
                 mCamera.rotate(event.motion.xrel * SENSITIVITY, -event.motion.yrel * SENSITIVITY);
             }
         }
@@ -2024,11 +2101,18 @@ void GameState::configureCursorLock(bool enabled) noexcept
 
     if (enabled)
     {
+        // Enable relative mouse mode first
+        SDL_SetWindowRelativeMouseMode(sdlWindow, true);
+        SDL_HideCursor();
+        
+        // Warp mouse to center (though not strictly necessary in relative mode)
         SDL_WarpMouseInWindow(sdlWindow,
                               static_cast<float>(mWindowWidth) * 0.5f,
                               static_cast<float>(mWindowHeight) * 0.5f);
-        SDL_SetWindowRelativeMouseMode(sdlWindow, true);
-        SDL_HideCursor();
+        
+        // Clear any accumulated relative motion state to prevent initial jump
+        float dummyX = 0.0f, dummyY = 0.0f;
+        SDL_GetRelativeMouseState(&dummyX, &dummyY);
     }
     else
     {
@@ -2107,13 +2191,22 @@ void GameState::updateJoystickInput(float dt) noexcept
     const float mag = (std::abs(axisNorm) - mJoystickDeadzone) / std::max(0.001f, 1.0f - mJoystickDeadzone);
     const float strafe = sign * std::clamp(mag, 0.0f, 1.0f) * mJoystickStrafeSpeed * dt;
 
-    glm::vec3 playerPos = mPlayer.getPosition();
-    playerPos.z += strafe;
-    mPlayer.setPosition(playerPos);
-    mCamera.setFollowTarget(playerPos);
-    if (mCamera.getMode() == CameraMode::THIRD_PERSON)
+    if (mArcadeModeEnabled)
     {
-        mCamera.updateThirdPersonPosition();
+        // Update lateral arc directly
+        mRunnerLateralArc = std::clamp(mRunnerLateralArc + strafe, -mRunnerStrafeLimit, mRunnerStrafeLimit);
+    }
+    else
+    {
+        // Non-arcade mode:直接移动玩家
+        glm::vec3 playerPos = mPlayer.getPosition();
+        playerPos.z += strafe;
+        mPlayer.setPosition(playerPos);
+        mCamera.setFollowTarget(playerPos);
+        if (mCamera.getMode() == CameraMode::THIRD_PERSON)
+        {
+            mCamera.updateThirdPersonPosition();
+        }
     }
 }
 
@@ -2202,9 +2295,49 @@ void GameState::renderPlayerCharacter() const noexcept
                         glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
                     }
 
+                    // Build model matrix with player oriented to planet surface
                     glm::mat4 modelMatrix(1.0f);
-                    modelMatrix = glm::translate(modelMatrix, mPlayer.getPosition() + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f));
-                    modelMatrix = glm::rotate(modelMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+                    const glm::vec3 playerPos = mPlayer.getPosition();
+                    modelMatrix = glm::translate(modelMatrix, playerPos);
+                    
+                    // Build local coordinate frame aligned with planet surface
+                    const glm::vec3 upAxis = mPlayer.getSurfaceNormal();
+                    glm::vec3 forwardDir = mPlayer.getForwardTangent();  // Forward along sphere surface
+                    
+                    // Apply yaw rotation around the surface normal
+                    const float playerYaw = glm::radians(mPlayer.getFacingDirection());
+                    
+                    // Calculate right vector (perpendicular to both forward and up)
+                    glm::vec3 rightDir = glm::normalize(glm::cross(forwardDir, upAxis));
+                    if (glm::length(rightDir) < 0.001f)
+                    {
+                        // Fallback if forward and up are parallel
+                        rightDir = glm::vec3(1.0f, 0.0f, 0.0f);
+                    }
+                    
+                    // Rotate forward and right by player yaw around surface normal
+                    const float cosYaw = std::cos(playerYaw);
+                    const float sinYaw = std::sin(playerYaw);
+                    forwardDir = forwardDir * cosYaw + rightDir * sinYaw;
+                    rightDir = rightDir * cosYaw - glm::normalize(mPlayer.getForwardTangent()) * sinYaw;
+                    
+                    // Correct any numerical drift and ensure orthogonality
+                    rightDir = glm::normalize(rightDir);
+                    forwardDir = glm::normalize(forwardDir);
+                    if (glm::length(glm::cross(rightDir, upAxis)) < 0.001f)
+                    {
+                        rightDir = glm::normalize(glm::cross(upAxis, forwardDir));
+                    }
+                    
+                    // Build rotation matrix from world axes to local axes
+                    glm::mat4 rotationMatrix = glm::mat4(
+                        glm::vec4(rightDir, 0.0f),
+                        glm::vec4(upAxis, 0.0f),
+                        glm::vec4(-forwardDir, 0.0f),
+                        glm::vec4(0.0f, 0.0f, 0.0f, 1.0f)
+                    );
+                    
+                    modelMatrix = modelMatrix * rotationMatrix;
                     modelMatrix = glm::scale(modelMatrix, glm::vec3(kCharacterRasterScale));
 
                     mSkinnedModelShader->bind();
@@ -2323,6 +2456,7 @@ void GameState::renderPlayerCharacter() const noexcept
         GLSDLHelper::setBillboardOITPass(false);
         renderRunnerBreakPlane();
         renderTracksideBillboards();
+        renderFloatingBillboards();
         drawRunnerScorePopups();
     }
 
@@ -2336,6 +2470,12 @@ void GameState::renderPlayerCharacter() const noexcept
 
 void GameState::renderTracksideBillboards() const noexcept
 {
+    // Disabled - replaced with floating billboards in space
+    if (true)
+    {
+        return;
+    }
+    
     if (!mArcadeModeEnabled || mCamera.getMode() != CameraMode::THIRD_PERSON)
     {
         return;
@@ -2413,6 +2553,38 @@ void GameState::renderTracksideBillboards() const noexcept
             sidelineSpriteRightAxisWS,
             sidelineSpriteUpAxisWS,
             true);
+    }
+}
+
+void GameState::renderFloatingBillboards() const noexcept
+{
+    if (!mArcadeModeEnabled || mCamera.getMode() != CameraMode::THIRD_PERSON)
+    {
+        return;
+    }
+    
+    if (mFloatingBillboards.empty())
+    {
+        return;
+    }
+    
+    const AnimationRect frame = mPlayer.getCurrentAnimationFrame();
+    const glm::vec3 rightAxisWS(1.0f, 0.0f, 0.0f);
+    const glm::vec3 upAxisWS(0.0f, 1.0f, 0.0f);
+    
+    // Render each floating billboard
+    for (const auto& billboard : mFloatingBillboards)
+    {
+        mWorld.renderCharacterFromState(
+            billboard.position,
+            billboard.animPhase * 360.0f, // Rotation based on anim phase
+            frame,
+            mCamera,
+            true,
+            rightAxisWS,
+            upAxisWS,
+            true
+        );
     }
 }
 
@@ -2551,16 +2723,91 @@ void GameState::updateRunnerGameplay(float dt) noexcept
     // Keep forward flow continuous; reset is optional when points drop below zero.
     mRunnerDistance += mRunnerSpeed * dt;
 
-    glm::vec3 playerPos = mPlayer.getPosition();
-    playerPos.z = std::clamp(playerPos.z, -mRunnerStrafeLimit, mRunnerStrafeLimit);
-    playerPos.y = std::max(playerPos.y, 1.0f);
-    playerPos.x = mRunnerDistance;
+    const glm::vec3 center = mVoronoiPlanet.getCenter();
+    const float radius = std::max(1.0f, mVoronoiPlanet.getRadius());
 
+    // Compute player position on sphere surface
+    glm::vec3 playerPos = computeRunnerPlanetPosition(mRunnerDistance, mRunnerLateralArc, center, radius);
+    
+    // Calculate player orientation - standing perpendicular to surface, facing forward along theta
+    const float theta = mRunnerDistance / radius;
+    const float phi = mRunnerLateralArc / radius;
+    const glm::vec3 surfaceNormal = glm::normalize(playerPos - center);
+    
+    // Tangent along theta direction (forward movement)
+    const float cosPhi = std::cos(phi);
+    const float sinPhi = std::sin(phi);
+    const float sinTheta = std::sin(theta);
+    const float cosTheta = std::cos(theta);
+    
+    glm::vec3 forwardTangent = glm::vec3(
+        -cosPhi * sinTheta,
+        0.0f,
+        cosPhi * cosTheta
+    );
+    
+    // Safety check: if tangent is near-zero (at poles), use a fallback direction
+    const float tangentLength = glm::length(forwardTangent);
+    if (tangentLength > 0.001f)
+    {
+        forwardTangent = forwardTangent / tangentLength;
+    }
+    else
+    {
+        // At poles, use perpendicular to surface normal as forward direction
+        forwardTangent = glm::normalize(glm::cross(surfaceNormal, glm::vec3(0.0f, 0.0f, 1.0f)));
+        if (glm::length(forwardTangent) < 0.001f)
+        {
+            forwardTangent = glm::normalize(glm::cross(surfaceNormal, glm::vec3(1.0f, 0.0f, 0.0f)));
+        }
+    }
+    
+    // Set player orientation to face forward along the sphere
+    const float forwardYaw = glm::degrees(std::atan2(forwardTangent.z, forwardTangent.x));
+    
     mPlayer.setPosition(playerPos);
+    mPlayer.setSurfaceNormal(surfaceNormal);  // Align player with planet surface
+    mPlayer.setForwardTangent(forwardTangent);  // Store forward direction along sphere
     mWorld.setRunnerPlayerPosition(playerPos);
-    mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
+    
+    // Position camera behind player along the backward tangent
+    const float cameraDistance = mCamera.getThirdPersonDistance();
+    const float cameraHeight = mCamera.getThirdPersonHeight();
+    
+    glm::vec3 backwardTangent = -forwardTangent;
+    glm::vec3 cameraPos = playerPos + backwardTangent * cameraDistance + surfaceNormal * cameraHeight;
+    
+    // Ensure camera stays outside planet surface
+    glm::vec3 cameraRadial = cameraPos - center;
+    const float cameraDistFromCenter = glm::length(cameraRadial);
+    const float minCameraDistance = radius + 2.0f;
+    
+    if (cameraDistFromCenter < minCameraDistance)
+    {
+        cameraRadial = glm::normalize(cameraRadial);
+        cameraPos = center + cameraRadial * minCameraDistance;
+    }
+    
+    // Set camera follow target for third-person mode
     mCamera.setFollowTarget(playerPos);
-    mCamera.updateThirdPersonPosition();
+    
+    // Set up vector to surface normal BEFORE setting yaw/pitch
+    // This ensures the custom up vector is preserved by updateVectors()
+    mCamera.setUp(surfaceNormal);
+    
+    // Calculate camera yaw to face forward along sphere surface
+    // Pitch should look slightly downward toward player
+    const glm::vec3 toPlayer = playerPos - cameraPos;
+    const float distToPlayer = glm::length(toPlayer);
+    const float pitchAngle = (distToPlayer > 0.001f) 
+        ? glm::degrees(std::asin(std::clamp(toPlayer.y / distToPlayer, -1.0f, 1.0f)))
+        : -15.0f;  // Default slight downward tilt
+    
+    // Set yaw/pitch - updateVectors() will preserve our custom up vector
+    mCamera.setYawPitch(forwardYaw, pitchAngle);
+    
+    // Finally set the computed camera position
+    mCamera.setPosition(cameraPos);
 
     updateRunnerBreakPlane(dt);
     processRunnerCollisions(dt);
@@ -2601,8 +2848,11 @@ void GameState::updateRunnerBreakPlane(float dt) noexcept
         shard.position += shard.velocity * dt;
     }
 
-    std::erase_if(mRunnerBreakPlaneShards, [](const RunnerBreakPlaneShard &shard)
-                  { return shard.age >= shard.lifetime; });
+    // Remove expired shards using erase-remove idiom (C++17 compatible)
+    mRunnerBreakPlaneShards.erase(
+        std::remove_if(mRunnerBreakPlaneShards.begin(), mRunnerBreakPlaneShards.end(),
+                      [](const RunnerBreakPlaneShard &shard) { return shard.age >= shard.lifetime; }),
+        mRunnerBreakPlaneShards.end());
 
     mRunnerBreakPlaneLastPlayerX = playerPos.x;
 }
@@ -2780,8 +3030,11 @@ void GameState::updateRunnerScorePopups(float dt) noexcept
         popup.age += dt;
     }
 
-    std::erase_if(mRunnerScorePopups, [](const RunnerScorePopup &popup)
-                  { return popup.age >= popup.lifetime; });
+    // Remove expired popups using erase-remove idiom (C++17 compatible)
+    mRunnerScorePopups.erase(
+        std::remove_if(mRunnerScorePopups.begin(), mRunnerScorePopups.end(),
+                      [](const RunnerScorePopup &popup) { return popup.age >= popup.lifetime; }),
+        mRunnerScorePopups.end());
 }
 
 void GameState::resetRunnerRun() noexcept
@@ -2789,18 +3042,19 @@ void GameState::resetRunnerRun() noexcept
     mPlayerPoints = mRunnerStartingPoints;
     // Start at positive X for grid shader visibility
     mRunnerDistance = 100.0f;
+    mRunnerLateralArc = 0.0f;
     mRunnerCollisionTimer = 0.0f;
     mRunnerPointEvents.clear();
     mRunnerScorePopups.clear();
     mRunnerBreakPlaneShards.clear();
     mRunLost = false;
 
-    glm::vec3 current = mPlayer.getPosition();
-    current.x = 100.0f;
-    current.y = 1.0f;
-    current.z = 0.0f;
+    const glm::vec3 center = mVoronoiPlanet.getCenter();
+    const float radius = std::max(1.0f, mVoronoiPlanet.getRadius());
+    glm::vec3 current = computeRunnerPlanetPosition(mRunnerDistance, mRunnerLateralArc, center, radius);
 
-    mRunnerNextPickupZ = current.z + mRunnerPickupSpacing;
+    mRunnerNextPickupZ = 0.0f + mRunnerPickupSpacing;
+    mPlayer.configureSphericalGravity(true, center, radius);
     mPlayer.setPosition(current);
     mWorld.setRunnerPlayerPosition(current);
     mWorld.consumeRunnerCollisionEvents();
@@ -2810,9 +3064,98 @@ void GameState::resetRunnerRun() noexcept
     mRunnerBreakPlaneRespawnTimer = 0.0f;
     mRunnerBreakPlaneLastPlayerX = current.x;
 
-    mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
+    // Calculate proper camera position behind player on sphere
+    const float theta = mRunnerDistance / radius;
+    const float phi = mRunnerLateralArc / radius;
+    const glm::vec3 surfaceNormal = glm::normalize(current - center);
+    
+    // Forward tangent along theta direction
+    const float cosPhi = std::cos(phi);
+    const float sinTheta = std::sin(theta);
+    const float cosTheta = std::cos(theta);
+    
+    glm::vec3 forwardTangent = glm::vec3(
+        -cosPhi * sinTheta,
+        0.0f,
+        cosPhi * cosTheta
+    );
+    
+    // Safety check: if tangent is near-zero (at poles), use a fallback direction
+    const float tangentLength = glm::length(forwardTangent);
+    if (tangentLength > 0.001f)
+    {
+        forwardTangent = forwardTangent / tangentLength;
+    }
+    else
+    {
+        // At poles, use perpendicular to surface normal as forward direction
+        forwardTangent = glm::normalize(glm::cross(surfaceNormal, glm::vec3(0.0f, 0.0f, 1.0f)));
+        if (glm::length(forwardTangent) < 0.001f)
+        {
+            forwardTangent = glm::normalize(glm::cross(surfaceNormal, glm::vec3(1.0f, 0.0f, 0.0f)));
+        }
+    }
+    
+    const float forwardYaw = glm::degrees(std::atan2(forwardTangent.z, forwardTangent.x));
+    
+    // Position camera behind player
+    const float cameraDistance = mCamera.getThirdPersonDistance();
+    const float cameraHeight = mCamera.getThirdPersonHeight();
+    glm::vec3 backwardTangent = -forwardTangent;
+    glm::vec3 cameraPos = current + backwardTangent * cameraDistance + surfaceNormal * cameraHeight;
+    
+    // Ensure camera stays outside planet surface
+    glm::vec3 cameraRadial = cameraPos - center;
+    const float cameraDistFromCenter = glm::length(cameraRadial);
+    const float minCameraDistance = radius + 2.0f;
+    
+    if (cameraDistFromCenter < minCameraDistance)
+    {
+        cameraRadial = glm::normalize(cameraRadial);
+        cameraPos = center + cameraRadial * minCameraDistance;
+    }
+    
+    mCamera.setPosition(cameraPos);
+    mCamera.setUp(surfaceNormal);
     mCamera.setFollowTarget(current);
-    mCamera.updateThirdPersonPosition();
+    
+    // Camera yaw faces forward (same as player), pitch tilts slightly downward toward player
+    const glm::vec3 toPlayer = current - cameraPos;
+    const float distToPlayer = glm::length(toPlayer);
+    const float pitchAngle = (distToPlayer > 0.001f) 
+        ? glm::degrees(std::asin(std::clamp(toPlayer.y / distToPlayer, -1.0f, 1.0f)))
+        : 0.0f;
+    
+    mCamera.setYawPitch(forwardYaw, pitchAngle);
+
+    // Initialize floating billboards in space around the planet
+    mFloatingBillboards.clear();
+    std::mt19937 rng(42); // Fixed seed for consistent placement
+    std::uniform_real_distribution<float> thetaDist(0.0f, glm::two_pi<float>());
+    std::uniform_real_distribution<float> phiDist(-glm::half_pi<float>(), glm::half_pi<float>());
+    std::uniform_real_distribution<float> altitudeDist(radius * 1.3f, radius * 2.5f);
+    std::uniform_real_distribution<float> animPhaseDist(0.0f, 1.0f);
+    std::uniform_real_distribution<float> rotSpeedDist(-0.3f, 0.3f);
+    
+    constexpr int kNumFloatingBillboards = 40;
+    for (int i = 0; i < kNumFloatingBillboards; ++i)
+    {
+        const float theta = thetaDist(rng);
+        const float phi = phiDist(rng);
+        const float altitude = altitudeDist(rng);
+        
+        glm::vec3 position = center + glm::vec3(
+            altitude * std::cos(phi) * std::cos(theta),
+            altitude * std::sin(phi),
+            altitude * std::cos(phi) * std::sin(theta)
+        );
+        
+        mFloatingBillboards.push_back({
+            position,
+            animPhaseDist(rng),
+            rotSpeedDist(rng)
+        });
+    }
 
     mLastAnnouncedPoints = mPlayerPoints;
     mCurrentBatch = 0;

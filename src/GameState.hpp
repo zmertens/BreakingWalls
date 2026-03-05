@@ -53,6 +53,8 @@ public:
     /// Get render scale relative to window size
     float getRenderScale() const noexcept;
 
+    [[nodiscard]] bool isVoronoiPlanetComplete() const noexcept { return mVoronoiPlanet.isPlanetComplete(); }
+
 private:
  /// Initialize GPU graphics resources for compute shader rendering
     void initializeGraphicsResources() noexcept;
@@ -95,6 +97,9 @@ private:
 
     /// Render decorative billboard sprites along runner lane borders
     void renderTracksideBillboards() const noexcept;
+    
+    /// Render floating billboard sprites in space around the planet
+    void renderFloatingBillboards() const noexcept;
 
     /// Ensure movement particle resources are initialized
     void initializeWalkParticles() noexcept;
@@ -289,8 +294,17 @@ private:
     glm::vec3 mStencilOutlineColor{0.38f, 0.94f, 1.0f};
     int mPlayerPoints{0};
     float mRunnerDistance{0.0f};
+    float mRunnerLateralArc{0.0f};
     float mRunnerSpeed{30.0f};
     float mRunnerStrafeLimit{35.0f};
+    
+    // Floating billboard sprites in space
+    struct FloatingBillboard {
+        glm::vec3 position;
+        float animPhase; // For animation cycling
+        float rotationSpeed;
+    };
+    std::vector<FloatingBillboard> mFloatingBillboards;
     float mRunnerPlayerRadius{1.0f};
     float mRunnerCollisionCooldown{0.40f};
     float mRunnerCollisionTimer{0.0f};

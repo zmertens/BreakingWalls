@@ -169,6 +169,8 @@ uniform uvec2 uTileOrigin;
 uniform uvec2 uTileSize;
 uniform vec3 uPlayerPos; // Player position in world space
 uniform uint uVoronoiCellCount;
+uniform float uPlanetRadius;      // Voronoi planet radius
+uniform vec3 uPlanetCenter;       // Voronoi planet center
 
 // Shadow casting uniforms
 uniform float uPlayerRadius;      // Player shadow radius
@@ -197,31 +199,109 @@ layout (std430, binding = 5) readonly buffer VoronoiPaintedBuffer {
 
 // ============================================================================
 // Intersection Functions
-// Plane intersection (Y=0 ground plane)
-bool planeIntersect(in Ray ray, out float t, out vec3 hitPoint, out vec3 normal) {
-    // Plane: y = 0
-    if (abs(ray.direction.y) < EPSILON) return false;
-    t = -ray.origin.y / ray.direction.y;
-    if (t < EPSILON) return false;
+// Sphere intersection for Voronoi planet
+bool planetSphereIntersect(in Ray ray, out float t, out vec3 hitPoint, out vec3 normal) {
+    vec3 oc = ray.origin - uPlanetCenter;
+    float a = dot(ray.direction, ray.direction);
+    float halfB = dot(oc, ray.direction);
+    float c = dot(oc, oc) - uPlanetRadius * uPlanetRadius;
+    
+    float discriminant = halfB * halfB - a * c;
+    if (discriminant < 0.0) return false;
+    
+    float sqrtD = sqrt(discriminant);
+    float root = (-halfB - sqrtD) / a;
+    if (root < EPSILON) {
+        root = (-halfB + sqrtD) / a;
+        if (root < EPSILON) return false;
+    }
+    
+    t = root;
     hitPoint = ray.origin + t * ray.direction;
-    normal = vec3(0.0, 1.0, 0.0);
+    normal = normalize(hitPoint - uPlanetCenter); // Outward normal
     return true;
 }
 
-// Voronoi coloring for ground plane
+// Voronoi coloring for sphere surface
 vec3 voronoiColorAt(vec3 p) {
-    // Project to XZ plane and wrap for infinite tiling
-    float tileSize = 100.0; // Should match seed generation range
-    vec2 pos = mod(p.xz + tileSize * 1000.0, tileSize); // Offset to avoid negative mod issues
     float minDist = 1e20;
+    float secondMinDist = 1e20;
     uint cellIdx = 0u;
     for (uint i = 0u; i < uVoronoiCellCount; ++i) {
-        vec2 seed = mod(bVoronoiSeeds[i].xz + tileSize * 1000.0, tileSize);
-        float d = distance(pos, seed);
-        if (d < minDist) { minDist = d; cellIdx = i; }
+        float d = distance(p, bVoronoiSeeds[i].xyz);
+        if (d < minDist) { 
+            secondMinDist = minDist;
+            minDist = d; 
+            cellIdx = i; 
+        } else if (d < secondMinDist) {
+            secondMinDist = d;
+        }
     }
-    return bVoronoiCellColors[cellIdx].rgb;
+    
+    vec3 baseColor = bVoronoiCellColors[cellIdx].rgb;
+    
+    // Draw Voronoi cell boundaries with dark lines
+    float edgeDistance = secondMinDist - minDist;
+    float edgeMask = clamp(1.0 - edgeDistance * 0.15, 0.0, 1.0);  // Prominent edges
+    vec3 edgeLineColor = vec3(0.1, 0.1, 0.12);
+    
+    vec3 cellColor = baseColor;
+    cellColor = mix(cellColor, edgeLineColor, edgeMask * 0.5);  // More visible edges
+    
+    // Enhance visibility: unpainted cells get darker, painted cells stay bright
+    if (bVoronoiPainted[cellIdx] == 0u) {
+        // Unpainted: darken to show contrast with painted white cells
+        return cellColor * 0.7;
+    }
+    
+    // Painted cells: return at full brightness (white)
+    return cellColor;
 }
+
+// Synthwave sky gradient
+vec3 synthwaveSky(vec3 direction) {
+    // Normalize direction for consistent sky
+    direction = normalize(direction);
+    
+    // Horizon bands using sin wave for synthwave aesthetic
+    float horizonDist = abs(direction.y);
+    float bandStrength = 0.3f;
+    float bands = sin(direction.y * 40.0f) * 0.5f + 0.5f;
+    bands = mix(1.0f, bands, bandStrength);
+    
+    // Base colors: purple top, pink/orange horizon, cyan bottom
+    vec3 topColor = vec3(0.1f, 0.05f, 0.2f);
+    vec3 horizonColor = vec3(1.0f, 0.3f, 0.6f);
+    vec3 bottomColor = vec3(0.0f, 0.8f, 1.0f);
+    
+    // Create gradient
+    vec3 skyColor;
+    if (direction.y > 0.0f) {
+        // Upper hemisphere: purple to pink
+        float blend = direction.y;
+        skyColor = mix(horizonColor, topColor, blend);
+    } else {
+        // Lower hemisphere: pink to cyan
+        float blend = -direction.y;
+        skyColor = mix(horizonColor, bottomColor, blend);
+    }
+    
+    // Apply horizontal grid lines (distant structure)
+    float gridX = sin(direction.x * 20.0f) * 0.5f + 0.5f;
+    float gridZ = sin(direction.z * 20.0f) * 0.5f + 0.5f;
+    float grid = (gridX + gridZ) * 0.1f;
+    
+    // Add sun glow if facing light direction
+    float sunDot = max(0.0f, dot(normalize(direction), uLightDir));
+    vec3 sunGlow = vec3(1.0f, 0.8f, 0.2f) * pow(sunDot, 8.0f) * 2.0f;
+    
+    skyColor = mix(skyColor, sunGlow, step(0.9f, sunDot));
+    skyColor += grid * 0.3f;
+    skyColor *= bands;
+    
+    return skyColor;
+}
+
 // ============================================================================
 
 bool sphereIntersect(in Sphere sphere, in Ray ray, float tMin, float tMax, out HitRecord hit) {
@@ -784,22 +864,22 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
         HitRecord hit;
         HitRecord sphereHit;
         HitRecord triangleHit;
-        float planeT;
-        vec3 planeHitPoint, planeNormal;
+        float planetT;
+        vec3 planetHitPoint, planetNormal;
         uint sphereCountForBounce = (bounce == 0u) ? uPrimaryRaySphereCount : uSphereCount;
         bool hasSphereHit = hitWorld(ray, EPSILON, uCamera.far, sphereCountForBounce, sphereHit);
         uint triangleCountForBounce = (bounce == 0u)
             ? uTriangleCount
             : ((bounce == 1u) ? min(uTriangleCount, 32u) : 0u);
         bool hasTriangleHit = hitTriangles(ray, EPSILON, uCamera.far, triangleCountForBounce, triangleHit);
-        bool hasPlaneHit = planeIntersect(ray, planeT, planeHitPoint, planeNormal);
+        bool hasPlanetHit = planetSphereIntersect(ray, planetT, planetHitPoint, planetNormal);
 
         // Find closest hit
         float closestT = uCamera.far;
-        int hitType = -1; // 0 = plane, 1 = sphere, 2 = triangle
+        int hitType = -1; // 0 = planet, 1 = sphere, 2 = triangle
 
-        if (hasPlaneHit && planeT < closestT) {
-            closestT = planeT;
+        if (hasPlanetHit && planetT < closestT) {
+            closestT = planetT;
             hitType = 0;
         }
         if (hasSphereHit && sphereHit.t < closestT) {
@@ -812,11 +892,11 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
         }
 
         if (hitType == 0) {
-            // Shade Voronoi ground plane, taking painted state into account
-            vec3 cellColor = sampleVoronoiGroundColor(planeHitPoint);
+            // Shade Voronoi planet surface, taking painted state into account
+            vec3 cellColor = voronoiColorAt(planetHitPoint);
             vec3 lightDir = normalize(-uLightDir);
-            float nDotL = max(dot(planeNormal, lightDir), 0.0);
-            float shadow = calculateShadow(planeHitPoint, planeNormal);
+            float nDotL = max(dot(planetNormal, lightDir), 0.0);
+            float shadow = calculateShadow(planetHitPoint, planetNormal);
             float ambient = 0.24;
             float diffuse = 0.80 * nDotL * shadow;
 
@@ -830,8 +910,8 @@ vec3 traceRay(Ray ray, uvec2 pixel, uint sampleIndex) {
         } else if (hitType == 2) {
             hit = triangleHit;
         } else {
-            // Hit sky
-            radiance += throughput * starfieldColor(ray.direction, pixel, sampleIndex);
+            // Hit synthwave sky
+            radiance += throughput * synthwaveSky(ray.direction);
             return clampByLuminance(radiance, SAMPLE_LUMA_CLAMP);
         }
 

@@ -18,6 +18,7 @@
 #include <MazeBuilder/configurator.h>
 
 class StateStack;
+class VoronoiPlanet;
 
 union SDL_Event;
 
@@ -41,6 +42,7 @@ public:
         [[nodiscard]] TextureManager *getTextureManager() const noexcept { return mTextures.value_or(nullptr); }
         [[nodiscard]] Player *getPlayer() const noexcept { return mPlayer.value_or(nullptr); }
         [[nodiscard]] HttpClient *getHttpClient() const noexcept { return mHttpClient.value_or(nullptr); }
+        [[nodiscard]] VoronoiPlanet *getVoronoiPlanet() const noexcept { return mVoronoiPlanet.value_or(nullptr); }
 
         Context &withRenderWindow(RenderWindow &window)
         {
@@ -114,6 +116,12 @@ public:
             return *this;
         }
 
+        Context &withVoronoiPlanet(VoronoiPlanet &planet)
+        {
+            mVoronoiPlanet = &planet;
+            return *this;
+        }
+
     private:
         std::optional<RenderWindow *> mWindow;
         std::optional<FontManager *> mFonts;
@@ -127,6 +135,7 @@ public:
         std::optional<TextureManager *> mTextures;
         std::optional<Player *> mPlayer;
         std::optional<HttpClient *> mHttpClient;
+        std::optional<VoronoiPlanet *> mVoronoiPlanet;
     }; // Context struct
 
     explicit State(StateStack &stack, Context context);

@@ -9,9 +9,12 @@
 #include "MusicPlayer.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
+#include "VoronoiPlanet.hpp"
+#include "StateStack.hpp"
+#include "GameState.hpp"
 
 PauseState::PauseState(StateStack &stack, Context context)
-    : State(stack, context), mMusic{}, mSelectedMenuItem(static_cast<unsigned int>(States::ID::PAUSE))
+    : State(stack, context), mMusic{}, mPlanetComplete(false), mSelectedMenuItem(static_cast<unsigned int>(States::ID::PAUSE))
 {
     if (auto *renderWindow = getContext().getRenderWindow(); renderWindow != nullptr)
     {
@@ -44,6 +47,11 @@ PauseState::PauseState(StateStack &stack, Context context)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Failed to load font: %s", e.what());
         mFont = nullptr;
+    }
+
+    if (auto *game = getStack().peekState<GameState *>(); game != nullptr)
+    {
+        mPlanetComplete = game->isVoronoiPlanetComplete();
     }
 }
 
@@ -116,7 +124,8 @@ void PauseState::draw() const noexcept
         ImGui::Spacing();
 
         ImGui::SetCursorPosX((contentWidth - buttonSize.x) * 0.5f);
-        if (ImGui::Button("Resume Game", buttonSize))
+        const char* resumeText = mPlanetComplete ? "New Game?" : "Resume Game";
+        if (ImGui::Button(resumeText, buttonSize))
         {
             mSelectedMenuItem = static_cast<unsigned int>(States::ID::GAME);
         }
@@ -147,6 +156,11 @@ void PauseState::draw() const noexcept
 
 bool PauseState::update(float dt, unsigned int subSteps) noexcept
 {
+    if (auto *game = getStack().peekState<GameState *>(); game != nullptr)
+    {
+        mPlanetComplete = game->isVoronoiPlanetComplete();
+    }
+
     switch (mSelectedMenuItem)
     {
     case static_cast<unsigned int>(States::ID::DONE):
@@ -155,7 +169,7 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
         requestStackPush(States::ID::SPLASH);
         break;
     case static_cast<unsigned int>(States::ID::GAME):
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Resuming game...");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Resuming/Starting game...");
         if (auto *renderWindow = getContext().getRenderWindow(); renderWindow != nullptr)
         {
             if (SDL_Window *window = renderWindow->getSDLWindow(); window != nullptr)
@@ -164,7 +178,19 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
             }
         }
         SDL_HideCursor();
-        requestStackPop();
+        if (mPlanetComplete)
+        {
+            // Start new game by popping pause state AND game state, then pushing a fresh game state
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Planet complete! Starting new game...");
+            requestStackPop();  // Pop PauseState
+            requestStackPop();  // Pop current GameState
+            requestStackPush(States::ID::GAME);  // Push fresh GameState
+        }
+        else
+        {
+            // Resume current game
+            requestStackPop();
+        }
         break;
     case static_cast<unsigned int>(States::ID::MENU):
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Menu selected, entering MenuState");

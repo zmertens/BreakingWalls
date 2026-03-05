@@ -18,6 +18,7 @@ public:
 private:
     Font *mFont;
     MusicPlayer *mMusic;
+    bool mPlanetComplete;
 
     mutable unsigned int mSelectedMenuItem;
 };

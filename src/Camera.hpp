@@ -55,6 +55,7 @@ public:
 
     [[nodiscard]] glm::vec3 getUp() const;
     void setUp(const glm::vec3 &up);
+    void clearCustomUp() noexcept { mUseCustomUpVector = false; updateVectors(); }
 
     [[nodiscard]] glm::vec3 getRight() const;
     void setRight(const glm::vec3 &right);
@@ -118,6 +119,7 @@ private:
     glm::vec3 mTarget; ///< Direction vector
     glm::vec3 mUp;
     glm::vec3 mRight;
+    bool mUseCustomUpVector{false};
     float mYaw;
     float mPitch;
     float mFieldOfView;

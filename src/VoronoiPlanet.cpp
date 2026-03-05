@@ -73,16 +73,54 @@ VoronoiPlanet::~VoronoiPlanet()
 
 void VoronoiPlanet::initialize(int seedCount, int lonSteps, int latSteps)
 {
+    m_radius = 50.0f;
+    m_center = glm::vec3(0.0f);
     generateSeeds(seedCount);
     generateUVSphere(lonSteps, latSteps);
-    // init per-cell colors to pastel
+    // init per-cell colors with better visibility - use more distinct colors
     m_cellColors.resize(m_seedPositions.size());
     m_paintedStates.resize(m_seedPositions.size(), 0);
-    std::mt19937 rng(12345);
-    std::uniform_real_distribution<float> d(0.5f, 1.0f);
+    
+    // Use seed position for deterministic vibrant colors
     for (size_t i = 0; i < m_cellColors.size(); ++i)
     {
-        m_cellColors[i] = glm::vec3(d(rng), d(rng), d(rng));
+        const glm::vec3 &seedPos = m_seedPositions[i];
+        
+        // Create vibrant pseudo-random colors using fract with different scaling for each channel
+        // This produces distinct, saturated colors across the spectrum
+        float h = glm::fract(seedPos.x * 12.9898f + seedPos.y * 78.233f + seedPos.z * 45.164f);
+        float g = glm::fract(seedPos.x * 94.673f + seedPos.y * 23.456f + seedPos.z * 67.345f);
+        float b = glm::fract(seedPos.x * 56.789f + seedPos.y * 89.012f + seedPos.z * 12.098f);
+        
+        // Ensure vibrant range: scale to [0.3, 1.0] to avoid dark colors while maintaining saturation
+        m_cellColors[i] = glm::vec3(h * 0.7f + 0.3f, g * 0.7f + 0.3f, b * 0.7f + 0.3f);
+    }
+    std::fill(m_paintedStates.begin(), m_paintedStates.end(), 0);
+}
+
+void VoronoiPlanet::initialize(float radius, const glm::vec3 &center, int seedCount, int lonSteps, int latSteps)
+{
+    m_radius = radius;
+    m_center = center;
+    generateSeeds(seedCount);
+    generateUVSphere(lonSteps, latSteps);
+    // init per-cell colors with better visibility - use more distinct colors
+    m_cellColors.resize(m_seedPositions.size());
+    m_paintedStates.resize(m_seedPositions.size(), 0);
+    
+    // Use seed position for deterministic vibrant colors
+    for (size_t i = 0; i < m_cellColors.size(); ++i)
+    {
+        const glm::vec3 &seedPos = m_seedPositions[i];
+        
+        // Create vibrant pseudo-random colors using fract with different scaling for each channel
+        // This produces distinct, saturated colors across the spectrum
+        float h = glm::fract(seedPos.x * 12.9898f + seedPos.y * 78.233f + seedPos.z * 45.164f);
+        float g = glm::fract(seedPos.x * 94.673f + seedPos.y * 23.456f + seedPos.z * 67.345f);
+        float b = glm::fract(seedPos.x * 56.789f + seedPos.y * 89.012f + seedPos.z * 12.098f);
+        
+        // Ensure vibrant range: scale to [0.3, 1.0] to avoid dark colors while maintaining saturation
+        m_cellColors[i] = glm::vec3(h * 0.7f + 0.3f, g * 0.7f + 0.3f, b * 0.7f + 0.3f);
     }
     std::fill(m_paintedStates.begin(), m_paintedStates.end(), 0);
 }
@@ -91,16 +129,33 @@ void VoronoiPlanet::generateSeeds(int count)
 {
     m_seedPositions.clear();
     m_seedPositions.reserve(count);
-    // 2D random distribution in XZ for ground plane
-    // Player runs in positive X starting from ~100, extended range for runner gameplay
-    std::mt19937 rng(static_cast<unsigned int>(SDL_GetTicks()));
-    std::uniform_real_distribution<float> distX(0.0f, 2000.0f);
-    std::uniform_real_distribution<float> distZ(-75.0f, 75.0f);
+    
+    // Use improved spherical distribution combining latitude stratification with golden angle
+    // This ensures uniform coverage across entire sphere including both poles
+    const float goldenRatio = (1.0f + glm::sqrt(5.0f)) / 2.0f;
+    const float angleIncrement = 2.0f * glm::pi<float>() / goldenRatio;
+    
     for (int i = 0; i < count; ++i)
     {
-        float x = distX(rng);
-        float z = distZ(rng);
-        m_seedPositions.emplace_back(x, 0.0f, z);
+        // Linearly distribute height from south pole to north pole
+        float h = -1.0f + (2.0f * i) / static_cast<float>(count - 1);  // Range: [-1, 1]
+        
+        // Use golden angle for azimuth to ensure even angular distribution
+        float phi = angleIncrement * i;
+        
+        // Convert spherical to Cartesian coordinates
+        float radius_at_h = glm::sqrt(1.0f - h * h);
+        float x = radius_at_h * glm::cos(phi);
+        float y = h;
+        float z = radius_at_h * glm::sin(phi);
+        
+        // Scale by planet radius and offset by center
+        glm::vec3 seedPos = m_center + glm::vec3(
+            x * m_radius,
+            y * m_radius,
+            z * m_radius
+        );
+        m_seedPositions.emplace_back(seedPos);
     }
 }
 
@@ -121,9 +176,13 @@ void VoronoiPlanet::generateUVSphere(int lonSteps, int latSteps)
             float x = sin(theta) * cos(phi);
             float y = cos(theta);
             float z = sin(theta) * sin(phi);
-            glm::vec3 pos = glm::normalize(glm::vec3(x, y, z));
+            
+            // Scale to planet radius and offset by center
+            glm::vec3 pos = m_center + glm::vec3(x, y, z) * m_radius;
+            glm::vec3 normal = glm::normalize(pos - m_center); // Normal points outward from center
+            
             m_vertices.push_back(pos);
-            m_normals.push_back(pos); // Normal is the position on a unit sphere
+            m_normals.push_back(normal);
             const int cid = findNearestSeed(pos);
             m_cellIds.push_back(static_cast<unsigned int>(cid));
         }
@@ -154,18 +213,16 @@ int VoronoiPlanet::findNearestSeed(const glm::vec3 &p) const
         return 0;
     }
     int best = 0;
-    const glm::vec2 pXZ(p.x, p.z);
-    const glm::vec2 bestSeedXZ(m_seedPositions[0].x, m_seedPositions[0].z);
-    float bestDist = glm::dot(pXZ - bestSeedXZ, pXZ - bestSeedXZ);
+    float bestDist = glm::distance(p, m_seedPositions[0]);
+    float bestDistSq = bestDist * bestDist;
 
     for (size_t i = 1; i < m_seedPositions.size(); ++i)
     {
-        const glm::vec2 seedXZ(m_seedPositions[i].x, m_seedPositions[i].z);
-        const glm::vec2 delta = pXZ - seedXZ;
-        const float d = glm::dot(delta, delta);
-        if (d < bestDist)
+        glm::vec3 delta = p - m_seedPositions[i];
+        float distSq = glm::dot(delta, delta);
+        if (distSq < bestDistSq)
         {
-            bestDist = d;
+            bestDistSq = distSq;
             best = static_cast<int>(i);
         }
     }
@@ -256,8 +313,23 @@ void VoronoiPlanet::draw() const
 
 void VoronoiPlanet::paintAtPosition(const glm::vec3 &worldPos, const glm::vec3 &color)
 {
-    const glm::vec3 planePos(worldPos.x, 0.0f, worldPos.z);
-    const int id = findNearestSeed(planePos);
+    // Project world position onto sphere surface
+    glm::vec3 fromCenter = worldPos - m_center;
+    float distFromCenter = glm::length(fromCenter);
+    
+    glm::vec3 surfacePos;
+    if (distFromCenter > 0.001f)
+    {
+        // Project onto sphere surface
+        surfacePos = m_center + glm::normalize(fromCenter) * m_radius;
+    }
+    else
+    {
+        // If at center, use a default direction
+        surfacePos = m_center + glm::vec3(m_radius, 0.0f, 0.0f);
+    }
+    
+    const int id = findNearestSeed(surfacePos);
     if (id < 0 || id >= static_cast<int>(m_cellColors.size()))
         return;
     m_cellColors[id] = color;
@@ -277,4 +349,16 @@ void VoronoiPlanet::paintAtPosition(const glm::vec3 &worldPos, const glm::vec3 &
             glBufferSubData(GL_SHADER_STORAGE_BUFFER, id * sizeof(uint32_t), sizeof(uint32_t), &painted);
         }
     }
+}
+
+size_t VoronoiPlanet::getPaintedCellCount() const
+{
+    return std::count(m_paintedStates.begin(), m_paintedStates.end(), 1u);
+}
+
+bool VoronoiPlanet::isPlanetComplete() const
+{
+    if (m_cellColors.empty())
+        return false;
+    return getPaintedCellCount() == m_cellColors.size();
 }
