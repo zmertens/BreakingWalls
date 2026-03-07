@@ -30,3 +30,8 @@ bool Level::load(const std::vector<mazes::configurator> &configs, bool appendRes
     }
     return mData.empty() ? false : true;
 }
+
+const std::string &Level::getData() const noexcept
+{
+    return mData;
+}

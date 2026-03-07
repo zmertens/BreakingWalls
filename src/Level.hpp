@@ -19,6 +19,9 @@ public:
     /// @return True if the level was loaded successfully, false otherwise
     bool load(const std::vector<mazes::configurator> &configs, bool appendResults = false) noexcept;
 
+    /// Access generated maze text for downstream world generation.
+    [[nodiscard]] const std::string &getData() const noexcept;
+
 private:
     std::string mData;
 };

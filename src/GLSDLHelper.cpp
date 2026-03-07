@@ -380,7 +380,6 @@ void GLSDLHelper::destroyAndQuit() noexcept
 
     if (SDL_WasInit(0) != 0)
     {
-        SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
         SDL_Log("SDLHelper::destroyAndQuit() - Shutdown diagnostics begin");
         SDL_Log("SDLHelper::destroyAndQuit() - SDL_WasInit(VIDEO)=%d AUDIO=%d JOYSTICK=%d GAMEPAD=%d HAPTIC=%d EVENTS=%d",
                 SDL_WasInit(SDL_INIT_VIDEO) != 0,

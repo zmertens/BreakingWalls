@@ -34,6 +34,10 @@ public:
     /// Compile and attach a shader from memory
     void compileAndAttachShader(ShaderType shaderType, const std::string &codeId, const GLchar *code);
 
+    /// Rebuild all attached shaders with preprocessor defines injected after #version.
+    /// Re-reads source from stored filenames, resolves includes, injects defines, recompiles, and relinks.
+    void recompileWithDefines(const std::string &defines);
+
     /// Link the shader program
     void linkProgram();
 
@@ -86,6 +90,7 @@ private:
     std::unordered_map<std::string, GLint> mGLSLLocations;
     std::unordered_map<ShaderType, std::string> mFileNames;
 
+    std::string resolveIncludes(const std::string &source, const std::string &directory);
     GLuint compile(ShaderType shaderType, const std::string &shaderCode);
     GLuint compile(ShaderType shaderType, const GLchar *shaderCode);
     void attach(GLuint shaderId);

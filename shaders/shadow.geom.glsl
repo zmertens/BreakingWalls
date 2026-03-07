@@ -73,6 +73,18 @@ vec3 projectToGround(vec3 worldPos, vec3 lightDir, float groundY)
     return projectToSphereSurface(worldPos, lightDir, uSphereCenter, uSphereRadius);
 }
 
+// Snap a point onto the sphere surface (with a small bias to avoid z-fighting)
+vec3 snapToSphere(vec3 pos, vec3 sphereCenter, float sphereRadius)
+{
+    vec3 dir = pos - sphereCenter;
+    float len = length(dir);
+    if (len < EPSILON)
+    {
+        return sphereCenter + vec3(0.0, sphereRadius, 0.0);
+    }
+    return sphereCenter + (dir / len) * (sphereRadius + 0.02);
+}
+
 void main()
 {
     // Get camera right/up axes in world space from inverse view matrix.
@@ -86,28 +98,24 @@ void main()
     vec3 lightDir = normalize(uLightDir);
     vec3 projectedCenter = projectToGround(feetPos, lightDir, uGroundY);
 
-    // Build a ground-plane basis: light direction projected onto XZ plus perpendicular.
-    vec2 lightXZ = lightDir.xz;
-    float lightXZLen = length(lightXZ);
-    vec2 lightForward = (lightXZLen > 1e-4) ? (lightXZ / lightXZLen) : vec2(1.0, 0.0);
-    vec2 lightSide = vec2(-lightForward.y, lightForward.x);
+    // Compute the sphere surface normal at the projected center
+    vec3 surfaceNormal = normalize(projectedCenter - uSphereCenter);
+
+    // Project the light direction onto the tangent plane of the sphere at the projected center
+    vec3 lightOnTangent = lightDir - dot(lightDir, surfaceNormal) * surfaceNormal;
+    float lightOnTangentLen = length(lightOnTangent);
+    vec3 tangentForward = (lightOnTangentLen > 1e-4) ? (lightOnTangent / lightOnTangentLen) : normalize(cross(surfaceNormal, vec3(0.0, 0.0, 1.0)));
+    vec3 tangentSide = normalize(cross(surfaceNormal, tangentForward));
 
     float invLightY = 1.0 / max(abs(lightDir.y), 0.08);
     float shadowWidth = uSpriteHalfSize * 0.55;
     float shadowLength = uSpriteHalfSize * (0.90 + 0.65 * invLightY);
 
-    vec3 topLeftWorld = projectedCenter + vec3(lightSide.x * shadowWidth + lightForward.x * shadowLength,
-                                                0.0,
-                                                lightSide.y * shadowWidth + lightForward.y * shadowLength);
-    vec3 topRightWorld = projectedCenter + vec3(-lightSide.x * shadowWidth + lightForward.x * shadowLength,
-                                                 0.0,
-                                                 -lightSide.y * shadowWidth + lightForward.y * shadowLength);
-    vec3 bottomLeftWorld = projectedCenter + vec3(lightSide.x * shadowWidth - lightForward.x * shadowLength,
-                                                   0.0,
-                                                   lightSide.y * shadowWidth - lightForward.y * shadowLength);
-    vec3 bottomRightWorld = projectedCenter + vec3(-lightSide.x * shadowWidth - lightForward.x * shadowLength,
-                                                    0.0,
-                                                    -lightSide.y * shadowWidth - lightForward.y * shadowLength);
+    // Offset corners in the sphere's tangent plane, then snap onto the sphere surface
+    vec3 topLeftWorld    = snapToSphere(projectedCenter + tangentSide * shadowWidth + tangentForward * shadowLength, uSphereCenter, uSphereRadius);
+    vec3 topRightWorld   = snapToSphere(projectedCenter - tangentSide * shadowWidth + tangentForward * shadowLength, uSphereCenter, uSphereRadius);
+    vec3 bottomLeftWorld = snapToSphere(projectedCenter + tangentSide * shadowWidth - tangentForward * shadowLength, uSphereCenter, uSphereRadius);
+    vec3 bottomRightWorld= snapToSphere(projectedCenter - tangentSide * shadowWidth - tangentForward * shadowLength, uSphereCenter, uSphereRadius);
 
     // Top-left
     gl_Position = uProjectionMatrix * uViewMatrix * vec4(topLeftWorld, 1.0);

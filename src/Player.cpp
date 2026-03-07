@@ -19,6 +19,8 @@ namespace
 
 Player::Player() : mIsActive(false), mIsOnGround(false)
 {
+    mKeyBinding[SDL_SCANCODE_W] = Action::MOVE_FORWARD;
+    mKeyBinding[SDL_SCANCODE_S] = Action::MOVE_BACKWARD;
     mKeyBinding[SDL_SCANCODE_A] = Action::MOVE_LEFT;
     mKeyBinding[SDL_SCANCODE_D] = Action::MOVE_RIGHT;
     mKeyBinding[SDL_SCANCODE_SPACE] = Action::JUMP;
@@ -127,16 +129,16 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
     
     if (!rightMouseHeld && std::abs(relMouseX) >= kMouseStrafeDeadzonePixels)
     {
+        // Project camera right onto the sphere surface tangent plane so mouse
+        // strafing stays on the sphere at every latitude (not just the equator).
+        glm::vec3 surfaceUp = mUseSphericalGravity
+            ? glm::normalize(mPosition - mPlanetCenter)
+            : glm::vec3(0.0f, 1.0f, 0.0f);
         glm::vec3 rightDir = camera.getRight();
-        glm::vec3 horizontalRight = glm::vec3(rightDir.x, 0.0f, rightDir.z);
-        if (glm::length(horizontalRight) > 0.01f)
-        {
-            horizontalRight = glm::normalize(horizontalRight);
-        }
-        else
-        {
-            horizontalRight = glm::vec3(1.0f, 0.0f, 0.0f);
-        }
+        glm::vec3 tangentRight = rightDir - glm::dot(rightDir, surfaceUp) * surfaceUp;
+        glm::vec3 horizontalRight = (glm::length(tangentRight) > 0.01f)
+            ? glm::normalize(tangentRight)
+            : glm::vec3(1.0f, 0.0f, 0.0f);
 
         const glm::vec3 movement = horizontalRight * (relMouseX * kMouseStrafeUnitsPerPixel);
         if (camera.getMode() == CameraMode::THIRD_PERSON)
@@ -194,6 +196,10 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
         }
 
         mPosition = mPlanetCenter + radialDir * (mPlanetRadius + altitude);
+
+        // Keep camera up aligned with the sphere surface so third-person positioning
+        // and movement tangents remain correct at every latitude.
+        camera.setUp(glm::normalize(mPosition - mPlanetCenter));
     }
     else
     {
@@ -288,6 +294,8 @@ bool Player::isRealtimeAction(Action action)
 {
     switch (action)
     {
+    case Action::MOVE_FORWARD:
+    case Action::MOVE_BACKWARD:
     case Action::MOVE_LEFT:
     case Action::MOVE_RIGHT:
     case Action::ROTATE_LEFT:
@@ -308,19 +316,19 @@ void Player::initializeActions()
     // Movement actions (continuous)
     mCameraActions[Action::MOVE_FORWARD] = [this](Camera &camera, float dt)
     {
-        // Project camera direction onto horizontal plane (orthogonal to ground plane)
-        glm::vec3 cameraDir = camera.getTarget();
-        glm::vec3 horizontalDir = glm::vec3(cameraDir.x, 0.0f, cameraDir.z);
-        if (glm::length(horizontalDir) > 0.01f) {
-            horizontalDir = glm::normalize(horizontalDir);
-        } else {
-            horizontalDir = glm::vec3(0.0f, 0.0f, 1.0f);  // Default forward if looking straight up/down
-        }
-        glm::vec3 movement = horizontalDir * cameraMoveSpeed * dt;
-        
+        glm::vec3 surfaceUp = mUseSphericalGravity
+            ? glm::normalize(mPosition - mPlanetCenter)
+            : glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 camFwd = camera.getTarget();
+        glm::vec3 tangentFwd = camFwd - glm::dot(camFwd, surfaceUp) * surfaceUp;
+        if (glm::length(tangentFwd) < 0.01f)
+            tangentFwd = glm::normalize(camera.getRight() - glm::dot(camera.getRight(), surfaceUp) * surfaceUp);
+        else
+            tangentFwd = glm::normalize(tangentFwd);
+        glm::vec3 movement = tangentFwd * cameraMoveSpeed * dt;
+
         if (camera.getMode() == CameraMode::THIRD_PERSON)
         {
-            // Move player, camera follows
             mPosition += movement;
             mAnimator.setPosition(mPosition);
             camera.setFollowTarget(mPosition);
@@ -328,23 +336,23 @@ void Player::initializeActions()
         }
         else
         {
-            glm::vec3 newPos = camera.getPosition() + movement;
-            camera.setPosition(newPos);
+            camera.setPosition(camera.getPosition() + movement);
         }
     };
 
     mCameraActions[Action::MOVE_BACKWARD] = [this](Camera &camera, float dt)
     {
-        // Project camera direction onto horizontal plane (orthogonal to ground plane)
-        glm::vec3 cameraDir = camera.getTarget();
-        glm::vec3 horizontalDir = glm::vec3(cameraDir.x, 0.0f, cameraDir.z);
-        if (glm::length(horizontalDir) > 0.01f) {
-            horizontalDir = glm::normalize(horizontalDir);
-        } else {
-            horizontalDir = glm::vec3(0.0f, 0.0f, 1.0f);  // Default forward if looking straight up/down
-        }
-        glm::vec3 movement = horizontalDir * cameraMoveSpeed * dt;
-        
+        glm::vec3 surfaceUp = mUseSphericalGravity
+            ? glm::normalize(mPosition - mPlanetCenter)
+            : glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 camFwd = camera.getTarget();
+        glm::vec3 tangentFwd = camFwd - glm::dot(camFwd, surfaceUp) * surfaceUp;
+        if (glm::length(tangentFwd) < 0.01f)
+            tangentFwd = glm::normalize(camera.getRight() - glm::dot(camera.getRight(), surfaceUp) * surfaceUp);
+        else
+            tangentFwd = glm::normalize(tangentFwd);
+        glm::vec3 movement = tangentFwd * cameraMoveSpeed * dt;
+
         if (camera.getMode() == CameraMode::THIRD_PERSON)
         {
             mPosition -= movement;
@@ -354,23 +362,23 @@ void Player::initializeActions()
         }
         else
         {
-            glm::vec3 newPos = camera.getPosition() - movement;
-            camera.setPosition(newPos);
+            camera.setPosition(camera.getPosition() - movement);
         }
     };
 
     mCameraActions[Action::MOVE_LEFT] = [this](Camera &camera, float dt)
     {
-        // Project right vector onto horizontal plane
-        glm::vec3 rightDir = camera.getRight();
-        glm::vec3 horizontalRight = glm::vec3(rightDir.x, 0.0f, rightDir.z);
-        if (glm::length(horizontalRight) > 0.01f) {
-            horizontalRight = glm::normalize(horizontalRight);
-        } else {
-            horizontalRight = glm::vec3(1.0f, 0.0f, 0.0f);  // Default right if needed
-        }
-        glm::vec3 movement = horizontalRight * cameraMoveSpeed * dt;
-        
+        glm::vec3 surfaceUp = mUseSphericalGravity
+            ? glm::normalize(mPosition - mPlanetCenter)
+            : glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 camRight = camera.getRight();
+        glm::vec3 tangentRight = camRight - glm::dot(camRight, surfaceUp) * surfaceUp;
+        if (glm::length(tangentRight) < 0.01f)
+            tangentRight = glm::vec3(1.0f, 0.0f, 0.0f);
+        else
+            tangentRight = glm::normalize(tangentRight);
+        glm::vec3 movement = tangentRight * cameraMoveSpeed * dt;
+
         if (camera.getMode() == CameraMode::THIRD_PERSON)
         {
             mPosition -= movement;
@@ -380,23 +388,23 @@ void Player::initializeActions()
         }
         else
         {
-            glm::vec3 newPos = camera.getPosition() - movement;
-            camera.setPosition(newPos);
+            camera.setPosition(camera.getPosition() - movement);
         }
     };
 
     mCameraActions[Action::MOVE_RIGHT] = [this](Camera &camera, float dt)
     {
-        // Project right vector onto horizontal plane
-        glm::vec3 rightDir = camera.getRight();
-        glm::vec3 horizontalRight = glm::vec3(rightDir.x, 0.0f, rightDir.z);
-        if (glm::length(horizontalRight) > 0.01f) {
-            horizontalRight = glm::normalize(horizontalRight);
-        } else {
-            horizontalRight = glm::vec3(1.0f, 0.0f, 0.0f);  // Default right if needed
-        }
-        glm::vec3 movement = horizontalRight * cameraMoveSpeed * dt;
-        
+        glm::vec3 surfaceUp = mUseSphericalGravity
+            ? glm::normalize(mPosition - mPlanetCenter)
+            : glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 camRight = camera.getRight();
+        glm::vec3 tangentRight = camRight - glm::dot(camRight, surfaceUp) * surfaceUp;
+        if (glm::length(tangentRight) < 0.01f)
+            tangentRight = glm::vec3(1.0f, 0.0f, 0.0f);
+        else
+            tangentRight = glm::normalize(tangentRight);
+        glm::vec3 movement = tangentRight * cameraMoveSpeed * dt;
+
         if (camera.getMode() == CameraMode::THIRD_PERSON)
         {
             mPosition += movement;
@@ -406,8 +414,7 @@ void Player::initializeActions()
         }
         else
         {
-            glm::vec3 newPos = camera.getPosition() + movement;
-            camera.setPosition(newPos);
+            camera.setPosition(camera.getPosition() + movement);
         }
     };
 
@@ -446,40 +453,47 @@ void Player::initializeActions()
     };
 
     // Rotation actions (continuous)
-    mCameraActions[Action::ROTATE_LEFT] = [](Camera &camera, float dt)
+    // In spherical gravity mode, rotate around the surface normal / camera-right so
+    // the heading stays surface-relative at every latitude.  Flat mode keeps the
+    // existing world-space yaw/pitch behaviour.
+    mCameraActions[Action::ROTATE_LEFT] = [this](Camera &camera, float dt)
     {
-        camera.rotate(-cameraRotateSpeed * dt, 0.0f);
+        if (mUseSphericalGravity && glm::length(mPosition - mPlanetCenter) > 0.01f)
+            camera.rotateAroundAxis(glm::normalize(mPosition - mPlanetCenter), -cameraRotateSpeed * dt);
+        else
+            camera.rotate(-cameraRotateSpeed * dt, 0.0f);
         if (camera.getMode() == CameraMode::THIRD_PERSON)
-        {
             camera.updateThirdPersonPosition();
-        }
     };
 
-    mCameraActions[Action::ROTATE_RIGHT] = [](Camera &camera, float dt)
+    mCameraActions[Action::ROTATE_RIGHT] = [this](Camera &camera, float dt)
     {
-        camera.rotate(cameraRotateSpeed * dt, 0.0f);
+        if (mUseSphericalGravity && glm::length(mPosition - mPlanetCenter) > 0.01f)
+            camera.rotateAroundAxis(glm::normalize(mPosition - mPlanetCenter), cameraRotateSpeed * dt);
+        else
+            camera.rotate(cameraRotateSpeed * dt, 0.0f);
         if (camera.getMode() == CameraMode::THIRD_PERSON)
-        {
             camera.updateThirdPersonPosition();
-        }
     };
 
-    mCameraActions[Action::ROTATE_UP] = [](Camera &camera, float dt)
+    mCameraActions[Action::ROTATE_UP] = [this](Camera &camera, float dt)
     {
-        camera.rotate(0.0f, cameraRotateSpeed * dt);
+        if (mUseSphericalGravity)
+            camera.rotateAroundAxis(camera.getRight(), cameraRotateSpeed * dt);
+        else
+            camera.rotate(0.0f, cameraRotateSpeed * dt);
         if (camera.getMode() == CameraMode::THIRD_PERSON)
-        {
             camera.updateThirdPersonPosition();
-        }
     };
 
-    mCameraActions[Action::ROTATE_DOWN] = [](Camera &camera, float dt)
+    mCameraActions[Action::ROTATE_DOWN] = [this](Camera &camera, float dt)
     {
-        camera.rotate(0.0f, -cameraRotateSpeed * dt);
+        if (mUseSphericalGravity)
+            camera.rotateAroundAxis(camera.getRight(), -cameraRotateSpeed * dt);
+        else
+            camera.rotate(0.0f, -cameraRotateSpeed * dt);
         if (camera.getMode() == CameraMode::THIRD_PERSON)
-        {
             camera.updateThirdPersonPosition();
-        }
     };
 
     // Special actions (discrete events)

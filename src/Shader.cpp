@@ -32,6 +32,13 @@ void Shader::compileAndAttachShader(ShaderType shaderType, const std::string &fi
         return;
     }
 
+    // Resolve #include directives relative to the shader file's directory
+    std::string directory;
+    size_t lastSlash = filename.find_last_of("/\\");
+    if (lastSlash != std::string::npos)
+        directory = filename.substr(0, lastSlash + 1);
+    shaderCode = resolveIncludes(shaderCode, directory);
+
     mFileNames.emplace(shaderType, filename);
     GLuint shaderId = compile(shaderType, shaderCode);
 
@@ -54,6 +61,70 @@ void Shader::compileAndAttachShader(ShaderType shaderType, const std::string &co
         attach(shaderId);
         deleteShader(shaderId);
     }
+}
+
+void Shader::recompileWithDefines(const std::string &defines)
+{
+    auto savedFiles = mFileNames;
+
+    // Tear down old program
+    if (mProgram)
+    {
+        glDeleteProgram(mProgram);
+        mProgram = 0;
+    }
+    mGLSLLocations.clear();
+    mFileNames.clear();
+
+    for (const auto &[type, filename] : savedFiles)
+    {
+        createProgram();
+
+        std::string shaderCode;
+        std::ifstream shaderFileStream;
+        shaderFileStream.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        try
+        {
+            shaderFileStream.open(filename);
+            std::stringstream ss;
+            ss << shaderFileStream.rdbuf();
+            shaderFileStream.close();
+            shaderCode = ss.str();
+        }
+        catch (const std::ifstream::failure &e)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ERROR::SHADER::RECOMPILE_READ: %s", filename.c_str());
+            continue;
+        }
+
+        // Resolve includes
+        std::string directory;
+        size_t lastSlash = filename.find_last_of("/\\");
+        if (lastSlash != std::string::npos)
+            directory = filename.substr(0, lastSlash + 1);
+        shaderCode = resolveIncludes(shaderCode, directory);
+
+        // Inject defines after the #version line
+        if (!defines.empty())
+        {
+            size_t idx = shaderCode.find("#version");
+            if (idx != std::string::npos)
+                idx = shaderCode.find("\n", idx);
+            else
+                idx = 0;
+            shaderCode.insert(idx + 1, defines);
+        }
+
+        mFileNames.emplace(type, filename);
+        GLuint shaderId = compile(type, shaderCode);
+        if (shaderId != 0)
+        {
+            attach(shaderId);
+            deleteShader(shaderId);
+        }
+    }
+
+    linkProgram();
 }
 
 void Shader::linkProgram()
@@ -292,6 +363,53 @@ std::unordered_map<std::string, GLint> Shader::getGLSLLocations() const
 std::unordered_map<ShaderType, std::string> Shader::getFileNames() const
 {
     return mFileNames;
+}
+
+std::string Shader::resolveIncludes(const std::string &source, const std::string &directory)
+{
+    std::string result;
+    std::istringstream stream(source);
+    std::string line;
+
+    while (std::getline(stream, line))
+    {
+        // Check for #include directive
+        const std::string includeToken = "#include ";
+        size_t pos = line.find(includeToken);
+        if (pos != std::string::npos)
+        {
+            std::string includePath = line.substr(pos + includeToken.size());
+            // Trim whitespace and quotes
+            while (!includePath.empty() && (includePath.front() == '"' || includePath.front() == '<' || includePath.front() == ' '))
+                includePath.erase(includePath.begin());
+            while (!includePath.empty() && (includePath.back() == '"' || includePath.back() == '>' || includePath.back() == ' ' || includePath.back() == '\r'))
+                includePath.pop_back();
+
+            std::string fullPath = directory + includePath;
+            std::ifstream includeFile(fullPath);
+            if (includeFile.is_open())
+            {
+                std::stringstream buf;
+                buf << includeFile.rdbuf();
+                includeFile.close();
+
+                // Resolve nested includes relative to the included file's directory
+                std::string includeDir;
+                size_t lastSlash = fullPath.find_last_of("/\\");
+                if (lastSlash != std::string::npos)
+                    includeDir = fullPath.substr(0, lastSlash + 1);
+                result += resolveIncludes(buf.str(), includeDir);
+            }
+            else
+            {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ERROR: Could not open include file: %s", fullPath.c_str());
+                result += line + '\n';
+            }
+            continue;
+        }
+        result += line + '\n';
+    }
+    return result;
 }
 
 GLuint Shader::compile(ShaderType shaderType, const std::string &shaderCode)

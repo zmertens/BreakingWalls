@@ -239,22 +239,19 @@ vec3 voronoiColorAt(vec3 p) {
     }
     
     vec3 baseColor = bVoronoiCellColors[cellIdx].rgb;
-    
+
     // Draw Voronoi cell boundaries with dark lines
     float edgeDistance = secondMinDist - minDist;
-    float edgeMask = clamp(1.0 - edgeDistance * 0.15, 0.0, 1.0);  // Prominent edges
+    float edgeMask = clamp(1.0 - edgeDistance * 0.15, 0.0, 1.0);
     vec3 edgeLineColor = vec3(0.1, 0.1, 0.12);
-    
-    vec3 cellColor = baseColor;
-    cellColor = mix(cellColor, edgeLineColor, edgeMask * 0.5);  // More visible edges
-    
-    // Enhance visibility: unpainted cells get darker, painted cells stay bright
+
+    vec3 cellColor = mix(baseColor, edgeLineColor, edgeMask * 0.5);
+
+    // Preserve painted/unpainted readability.
     if (bVoronoiPainted[cellIdx] == 0u) {
-        // Unpainted: darken to show contrast with painted white cells
         return cellColor * 0.7;
     }
-    
-    // Painted cells: return at full brightness (white)
+
     return cellColor;
 }
 
@@ -1006,10 +1003,8 @@ void main() {
 
     imageStore(uAccumTexture, ivec2(pixel), vec4(historyColor, 1.0));
 
-    // Gamma correction (gamma = 2.0)
-    vec3 averageColor = sqrt(historyColor);
-
-    imageStore(uDisplayTexture, ivec2(pixel), vec4(averageColor, 1.0));
+    // Keep output linear; tonemapping/gamma is handled in a dedicated post pass.
+    imageStore(uDisplayTexture, ivec2(pixel), vec4(historyColor, 1.0));
 }
 
 

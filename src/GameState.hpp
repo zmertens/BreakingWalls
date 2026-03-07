@@ -15,10 +15,19 @@
 #include <vector>
 
 class MusicPlayer;
+class PathTraceScene;
+class SceneRenderer;
 class Shader;
 class StateStack;
 class SoundPlayer;
 class Texture;
+
+/// Rendering mode selection
+enum class RenderMode : int
+{
+    COMPUTE = 0, // Existing compute-shader path tracer
+    FRAGMENT = 1 // Fragment-shader path tracer (GLSLPT-style)
+};
 
 union SDL_Event;
 struct SDL_Joystick;
@@ -86,6 +95,18 @@ private:
     /// Render using compute shaders (path tracing)
     void renderWithComputeShaders() const noexcept;
 
+    /// Render using fragment-shader path tracer (GLSLPT-style)
+    void renderWithFragmentShaders() const noexcept;
+
+    /// Synchronise BreakingWalls Camera → PTCamera each frame
+    void syncPathTraceCamera() noexcept;
+
+    /// Place gameplay camera at a stable Cornell framing for fragment mode.
+    void frameFragmentCornellCamera() noexcept;
+
+    /// Build a hardcoded test scene for the fragment path tracer
+    void buildPathTraceScene() noexcept;
+
     /// Composite billboard and path traced scene
     void renderCompositeScene() const noexcept;
 
@@ -94,12 +115,6 @@ private:
 
     /// Render player character (third-person mode only)
     void renderPlayerCharacter() const noexcept;
-
-    /// Render decorative billboard sprites along runner lane borders
-    void renderTracksideBillboards() const noexcept;
-    
-    /// Render floating billboard sprites in space around the planet
-    void renderFloatingBillboards() const noexcept;
 
     /// Ensure movement particle resources are initialized
     void initializeWalkParticles() noexcept;
@@ -110,50 +125,8 @@ private:
     /// Check if camera moved and reset accumulation if needed
     bool checkCameraMovement() const noexcept;
 
-    /// Compute score-based boost using configurable runner brackets
-    float getScoreBracketBoost() const noexcept;
-
     /// Update listener position and remove stopped sounds
     void updateSounds() noexcept;
-
-    /// Pull latest runner settings from OptionsManager
-    void syncRunnerSettingsFromOptions() noexcept;
-
-    /// Advance endless-runner gameplay and points
-    void updateRunnerGameplay(float dt) noexcept;
-
-    /// Spawn point events in front of the player
-    void spawnPointEvents() noexcept;
-
-    /// Resolve point pickups and obstacle penalties
-    void processRunnerCollisions(float dt) noexcept;
-
-    /// Advance and cull floating score popup labels
-    void updateRunnerScorePopups(float dt) noexcept;
-
-    /// Reset the active run after point loss
-    void resetRunnerRun() noexcept;
-
-    /// Draw lightweight arcade HUD
-    void drawRunnerHud() const noexcept;
-
-    /// Draw floating score labels above collision points
-    void drawRunnerScorePopups() const noexcept;
-
-    /// Create tiny texture/resources used by runner break plane billboard rendering
-    void initializeRunnerBreakPlaneResources() noexcept;
-
-    /// Update offscreen plane texture using particle compute + point render pass
-    void renderRunnerBreakPlaneTexture() const noexcept;
-
-    /// Update break-plane lifecycle and check pass-through shatter events
-    void updateRunnerBreakPlane(float dt) noexcept;
-
-    /// Trigger break-plane shatter effects and scoring
-    void shatterRunnerBreakPlane() noexcept;
-
-    /// Render active break-plane and flying shards in runner lane
-    void renderRunnerBreakPlane() const noexcept;
 
     /// Clean up OpenGL resources
     void cleanupResources() noexcept;
@@ -167,36 +140,11 @@ private:
     /// Release joystick resources.
     void cleanupJoystickAndHaptics() noexcept;
 
-    /// Apply joystick left-stick horizontal movement as runner strafe.
+    /// Apply joystick left-stick horizontal movement as strafe.
     void updateJoystickInput(float dt) noexcept;
 
     /// Trigger a short haptic rumble pulse (used for input testing).
     void triggerHapticTest(float strength, float seconds) noexcept;
-
-    struct RunnerPointEvent
-    {
-        glm::vec3 position{};
-        int value{0};
-        bool consumed{false};
-    };
-
-    struct RunnerScorePopup
-    {
-        glm::vec3 worldPosition{};
-        int value{0};
-        float age{0.0f};
-        float lifetime{1.05f};
-        float riseSpeed{3.2f};
-    };
-
-    struct RunnerBreakPlaneShard
-    {
-        glm::vec3 position{};
-        glm::vec3 velocity{};
-        glm::vec2 halfSize{0.35f, 0.35f};
-        float age{0.0f};
-        float lifetime{0.55f};
-    };
 
     World mWorld;    // Manages both 2D physics and 3D sphere scene
     Player &mPlayer; // Restored for camera input handling
@@ -212,6 +160,8 @@ private:
     // Shader references from context
     Shader *mDisplayShader{nullptr};
     Shader *mComputeShader{nullptr};
+    Shader *mPathTracerOutputShader{nullptr};
+    Shader *mPathTracerTonemapShader{nullptr};
     Shader *mCompositeShader{nullptr};
     Shader *mOITResolveShader{nullptr};
     Shader *mSkinnedModelShader{nullptr};
@@ -220,6 +170,11 @@ private:
     Shader *mWalkParticlesRenderShader{nullptr};
     Shader *mShadowShader{nullptr};  // Shadow volume + stencil rendering
     Shader *mVoronoiShader{nullptr}; // Voronoi planet shader
+
+    // Fragment-shader path tracer (GLSLPT-style)
+    std::unique_ptr<PathTraceScene> mPathTraceScene;
+    std::unique_ptr<SceneRenderer> mSceneRenderer;
+    RenderMode mRenderMode{RenderMode::COMPUTE};
     std::unique_ptr<Shader> mVoronoiShaderOwned;
     VoronoiPlanet mVoronoiPlanet;
     // SSBOs for Voronoi cell data (for compute shader)
@@ -228,7 +183,11 @@ private:
     GLuint mVoronoiCellPaintedSSBO{0};
 
     Texture *mAccumTex{nullptr};
+    Texture *mPathTraceOutputTex{nullptr};
+    Texture *mPathTraceStageTex{nullptr};
     Texture *mDisplayTex{nullptr};
+    Texture *mPreviewAccumTex{nullptr};
+    Texture *mPreviewOutputTex{nullptr};
     Texture *mNoiseTexture{nullptr};
     Texture *mTestAlbedoTexture{nullptr};
 
@@ -236,6 +195,7 @@ private:
     GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres
     GLuint mTriangleSSBO{0};
     GLuint mVAO{0};        // Vertex Array Object for fullscreen quad
+    GLuint mPathTracePostFBO{0};
     GLuint mBillboardFBO{0};
     Texture *mBillboardColorTex{nullptr};
     GLuint mBillboardDepthRbo{0};
@@ -264,7 +224,7 @@ private:
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
     mutable uint32_t mCurrentTileIndex{0};
-    uint32_t mSamplesPerBatch{4};
+    uint32_t mSamplesPerBatch{5};
     uint32_t mTotalBatches{250};
 
     // Camera movement tracking for accumulation reset
@@ -277,56 +237,22 @@ private:
     mutable int mWindowHeight{720};
     int mRenderWidth{1280};
     int mRenderHeight{720};
+    int mPreviewRenderWidth{640};
+    int mPreviewRenderHeight{360};
 
     mutable std::size_t mShapeSSBOCapacityBytes{0};
     mutable std::size_t mTriangleSSBOCapacityBytes{0};
 
     static constexpr std::size_t kTargetRenderPixels = 1600ull * 900ull;
-    static constexpr float kMinRenderScale = 0.60f;
+    static constexpr float kMinRenderScale = 0.82f;
 
-    // Single-player endless runner arcade state
-    bool mArcadeModeEnabled{false};
     bool mStencilOutlineEnabled{true};
     bool mStencilOutlinePulseEnabled{false};
     float mStencilOutlineWidth{0.05f};
     float mStencilOutlinePulseSpeed{2.4f};
     float mStencilOutlinePulseAmount{0.28f};
     glm::vec3 mStencilOutlineColor{0.38f, 0.94f, 1.0f};
-    int mPlayerPoints{0};
-    float mRunnerDistance{0.0f};
-    float mRunnerLateralArc{0.0f};
-    float mRunnerSpeed{30.0f};
-    float mRunnerStrafeLimit{35.0f};
-    
-    // Floating billboard sprites in space
-    struct FloatingBillboard {
-        glm::vec3 position;
-        float animPhase; // For animation cycling
-        float rotationSpeed;
-    };
-    std::vector<FloatingBillboard> mFloatingBillboards;
-    float mRunnerPlayerRadius{1.0f};
-    float mRunnerCollisionCooldown{0.40f};
-    float mRunnerCollisionTimer{0.0f};
-    float mRunnerPickupSpacing{18.0f};
-    float mRunnerNextPickupZ{0.0f};
-    float mRunnerPickupSpawnAhead{120.0f};
-    float mRunnerPickupCaptureRadius{3.2f};
-    int mRunnerPickupMinValue{-25};
-    int mRunnerPickupMaxValue{40};
-    int mRunnerObstaclePenalty{25};
-    int mRunnerStartingPoints{100};
-    int mMotionBlurBracket1Points{300};
-    int mMotionBlurBracket2Points{500};
-    int mMotionBlurBracket3Points{800};
-    int mMotionBlurBracket4Points{1200};
-    float mMotionBlurBracket1Boost{0.10f};
-    float mMotionBlurBracket2Boost{0.18f};
-    float mMotionBlurBracket3Boost{0.28f};
-    float mMotionBlurBracket4Boost{0.38f};
-    bool mRunLost{false};
-    mutable int mLastAnnouncedPoints{0};
-    mutable float mHudUpdateTimer{0.0f};
+
     mutable float mModelAnimTimeSeconds{0.0f};
     mutable float mWalkParticlesTime{0.0f};
     mutable bool mWalkParticlesInitialized{false};
@@ -334,27 +260,6 @@ private:
     mutable glm::vec3 mLastFxPlayerPosition{0.0f};
     mutable float mPlayerPlanarSpeedForFx{0.0f};
     mutable GLuint mWalkParticleCount{1600};
-    mutable Texture *mRunnerBreakPlaneTexture{nullptr};
-    mutable GLuint mRunnerBreakPlaneFBO{0};
-    mutable GLuint mRunnerBreakPlaneVAO{0};
-    mutable GLuint mRunnerBreakPlanePosSSBO{0};
-    mutable GLuint mRunnerBreakPlaneVelSSBO{0};
-    mutable GLuint mRunnerBreakPlaneParticleCount{4096};
-    mutable float mRunnerBreakPlaneFxTime{0.0f};
-    int mRunnerBreakPlaneTextureWidth{512};
-    int mRunnerBreakPlaneTextureHeight{512};
-    bool mRunnerBreakPlaneActive{true};
-    float mRunnerBreakPlaneX{0.0f};
-    float mRunnerBreakPlaneRespawnTimer{0.0f};
-    float mRunnerBreakPlaneRespawnDelay{0.60f};
-    float mRunnerBreakPlaneSpacing{170.0f};
-    float mRunnerBreakPlaneHeight{8.5f};
-    int mRunnerBreakPlanePoints{100};
-    float mRunnerBreakPlaneLastPlayerX{0.0f};
-    std::vector<RunnerBreakPlaneShard> mRunnerBreakPlaneShards;
-    std::vector<RunnerPointEvent> mRunnerPointEvents;
-    std::vector<RunnerScorePopup> mRunnerScorePopups;
-    std::mt19937 mRunnerRng{1337u};
 
     SDL_Joystick *mJoystick{nullptr};
     bool mJoystickRumbleSupported{false};

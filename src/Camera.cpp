@@ -121,7 +121,15 @@ void Camera::setUp(const glm::vec3 &up)
     {
         mUp = glm::normalize(up);
         mUseCustomUpVector = true;
-        updateVectors();
+        // Only recompute right from the existing mTarget + new up.
+        // Do NOT call updateVectors() here: that would rebuild mTarget from
+        // mYaw/mPitch (which are world-space Euler angles with tight clamps)
+        // and would clobber whatever axis-angle rotation was applied via
+        // rotateAroundAxis(), restricting movement past certain latitudes.
+        glm::vec3 newRight = glm::cross(mTarget, mUp);
+        if (glm::length(newRight) > 0.0001f)
+            mRight = glm::normalize(newRight);
+        // else keep the previous mRight (avoids zero vector at poles)
     }
 }
 
@@ -187,6 +195,32 @@ void Camera::setYawPitch(float yaw, float pitch, bool clampPitch, bool wrapYaw)
     }
 
     updateVectors();
+}
+
+void Camera::rotateAroundAxis(const glm::vec3 &axis, float degrees)
+{
+    const float radians = glm::radians(degrees * sSensitivity);
+    const glm::mat4 rot = glm::rotate(glm::mat4(1.0f), radians, glm::normalize(axis));
+    mTarget = glm::normalize(glm::vec3(rot * glm::vec4(mTarget, 0.0f)));
+
+    // Do NOT sync mYaw/mPitch here.  Those are world-space Euler angles subject
+    // to scMaxYawValue / scMaxPitchValue clamps.  Syncing them and then letting
+    // updateVectors() rebuild mTarget from them would restrict the camera to a
+    // subset of directions, blocking movement at certain sphere latitudes.
+    // Instead, update right/up purely from the rotated mTarget.
+    static const glm::vec3 yAxis{0.0f, 1.0f, 0.0f};
+    const glm::vec3 referenceUp = mUseCustomUpVector ? mUp : yAxis;
+    glm::vec3 newRight = glm::cross(mTarget, referenceUp);
+    if (glm::length(newRight) > 0.0001f)
+        mRight = glm::normalize(newRight);
+    else
+    {
+        newRight = glm::cross(mTarget, yAxis);
+        if (glm::length(newRight) > 0.0001f)
+            mRight = glm::normalize(newRight);
+    }
+    if (!mUseCustomUpVector)
+        mUp = glm::normalize(glm::cross(mRight, mTarget));
 }
 
 void Camera::updateVectors()

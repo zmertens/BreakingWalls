@@ -72,7 +72,13 @@ namespace Shaders
         GLSL_PARTICLES_COMPUTE = 7,
         GLSL_SHADOW_VOLUME = 8,
         GLSL_OIT_RESOLVE = 9,
-        GLSL_TOTAL_SHADERS = 10
+        GLSL_PATH_TRACER_OUTPUT = 10,
+        GLSL_PATH_TRACER_TONEMAP = 11,
+        GLSL_OUTPUT_TEST = 12,
+        GLSL_TONE_TEST = 13,
+        GLSL_PREVIEW_TEST = 14,
+        GLSL_TILE_TEST = 15,
+        GLSL_TOTAL_SHADERS = 16
     };
 }
 
@@ -102,19 +108,23 @@ namespace Textures
         LEVEL_SIX = 8,
         NOISE2D = 9,
         PATH_TRACER_ACCUM = 10,
-        PATH_TRACER_DISPLAY = 11,
-        SDL_LOGO = 12,
-        SFML_LOGO = 13,
-        SPLASH_TITLE_IMAGE = 14,
-        WALL_HORIZONTAL = 15,
-        WINDOW_ICON = 16,
-        BILLBOARD_COLOR = 17,
-        OIT_ACCUM = 18,
-        OIT_REVEAL = 19,
-        SHADOW_MAP = 20,
-        REFLECTION_COLOR = 21,
-        RUNNER_BREAK_PLANE = 22,
-        TOTAL_IDS = 23
+        PATH_TRACER_OUTPUT = 11,
+        PATH_TRACER_STAGE = 12,
+        PATH_TRACER_DISPLAY = 13,
+        PATH_TRACER_PREVIEW_ACCUM = 14,
+        PATH_TRACER_PREVIEW_OUTPUT = 15,
+        SDL_LOGO = 16,
+        SFML_LOGO = 17,
+        SPLASH_TITLE_IMAGE = 18,
+        WALL_HORIZONTAL = 19,
+        WINDOW_ICON = 20,
+        BILLBOARD_COLOR = 21,
+        OIT_ACCUM = 22,
+        OIT_REVEAL = 23,
+        SHADOW_MAP = 24,
+        REFLECTION_COLOR = 25,
+        RUNNER_BREAK_PLANE = 26,
+        TOTAL_IDS = 27
     };
 }
 

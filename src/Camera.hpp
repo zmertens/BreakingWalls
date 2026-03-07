@@ -32,6 +32,10 @@ public:
     /// Rotate camera using yaw and pitch
     void rotate(float yaw, float pitch, bool holdPitch = true, bool holdYaw = true);
 
+    /// Rotate camera target around an arbitrary world-space axis by degrees (applies sSensitivity)
+    /// Also syncs mYaw/mPitch so subsequent updateVectors() calls remain consistent.
+    void rotateAroundAxis(const glm::vec3 &axis, float degrees);
+
     /// Get the look-at matrix
     [[nodiscard]] glm::mat4 getLookAt() const;
 

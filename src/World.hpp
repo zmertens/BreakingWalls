@@ -35,14 +35,7 @@ class World final
     friend class Player;
 
 public:
-    struct RunnerCollisionEvent
-    {
-        Material::MaterialType materialType{Material::MaterialType::LAMBERTIAN};
-        float impactSpeed{0.0f};
-        glm::vec3 worldPosition{0.0f};
-    };
-
-    explicit World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders);
+    explicit World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders, LevelsManager &levels);
     ~World(); // Defined in .cpp to avoid incomplete type issues
 
     void init() noexcept;
@@ -54,10 +47,6 @@ public:
     const std::vector<Sphere> &getSpheres() const noexcept { return mSpheres; }
     std::vector<Sphere> &getSpheres() noexcept { return mSpheres; }
     const Plane &getGroundPlane() const noexcept { return mGroundPlane; }
-    void setRunnerPlayerPosition(const glm::vec3 &playerPosition) noexcept;
-    void setRunnerTuning(float strafeLimit, float spawnAheadDistance, float sphereSpeed) noexcept;
-    std::vector<RunnerCollisionEvent> consumeRunnerCollisionEvents() noexcept;
-
     void updateSphereChunks(const glm::vec3 &cameraPosition) noexcept;
     glm::vec3 getMazeSpawnPosition() const noexcept { return mPlayerSpawnPosition; }
 
@@ -83,7 +72,7 @@ public:
                                   const glm::vec3 &upAxisWS = glm::vec3(0.0f, 1.0f, 0.0f),
                                   bool doubleSided = false) const noexcept;
 
-    /// Render a textured billboard quad from a full texture (for runner track props)
+    /// Render a textured billboard quad from a full texture
     /// @param position World position of billboard center
     /// @param halfSize Billboard half-size fallback used by shader path
     /// @param halfSizeXY Explicit half-width/half-height override (0 uses halfSize)
@@ -109,11 +98,7 @@ private:
     glm::vec3 projectOntoSphere(glm::vec2 flatPos) const noexcept;
     glm::vec2 projectFromSphere(const glm::vec3 &spherePos) const noexcept;
     void syncPhysicsToSpheres() noexcept;
-    void createRunnerBounds() noexcept;
-    void updateRunnerSpheres(float dt) noexcept;
-    void spawnRunnerSphere() noexcept;
-    void processRunnerContactEvents() noexcept;
-    void pruneRunnerSpheres() noexcept;
+    void breakQueuedWalls() noexcept;
 
     struct ChunkCoord
     {
@@ -138,6 +123,10 @@ private:
         int row, col;
         int distance;
         float worldX, worldZ;
+        bool wallNorth{false};
+        bool wallSouth{false};
+        bool wallEast{false};
+        bool wallWest{false};
     };
 
     struct ChunkWorkItem
@@ -164,6 +153,7 @@ private:
     std::string generateMazeForChunk(const ChunkCoord &coord) const noexcept;
     std::vector<MazeCell> parseMazeCells(const std::string &mazeStr, const ChunkCoord &coord,
                                          glm::vec3 &outSpawnPosition, bool &outHasSpawn) const noexcept;
+    void buildMazeWallSpheres(const std::vector<MazeCell> &cells, std::vector<Sphere> &outSpheres) const noexcept;
     Material::MaterialType getMaterialForDistance(int distance) const noexcept;
 
     static constexpr auto FORCE_DUE_TO_GRAVITY = 9.8f;
@@ -172,20 +162,16 @@ private:
     FontManager &mFonts;
     TextureManager &mTextures;
     ShaderManager &mShaders; // Added for billboard shader access
+    LevelsManager &mLevels;
 
     b2WorldId mWorldId;
     b2BodyId mMazeWallsBodyId;
-    b2BodyId mRunnerBoundsBodyId;
-    b2BodyId mRunnerPlayerBodyId;
-    b2ShapeId mRunnerBoundNegZShapeId;
-    b2ShapeId mRunnerBoundPosZShapeId;
-
     bool mIsPanning;
     SDL_FPoint mLastMousePosition;
 
     std::vector<Sphere> mSpheres;
     std::vector<b2BodyId> mSphereBodyIds;
-    std::vector<RunnerCollisionEvent> mRunnerCollisionEvents;
+    std::vector<b2BodyId> mWallBreakQueue;
     Plane mGroundPlane;
 
     // Modern C++ worker pool
@@ -217,24 +203,14 @@ private:
 
     glm::vec3 mLastChunkUpdatePosition;
     glm::vec3 mPlayerSpawnPosition;
-    glm::vec3 mRunnerPlayerPosition;
-    float mRunnerSpawnTimer{0.0f};
-    float mRunnerStrafeLimit{35.0f};
-    float mRunnerSpawnAheadDistance{140.0f};
-    float mRunnerSphereSpeed{40.0f};
+    size_t mPersistentSphereCount{0};
 
     static constexpr int TOTAL_SPHERES = 200;
-    static constexpr size_t RUNNER_PERSISTENT_SPHERES = 0;
     
-        // Voronoi sphere planet parameters
-        static constexpr float PLANET_RADIUS = 50.0f;
-        float mPlanetRadius{PLANET_RADIUS};
-        glm::vec3 mPlanetCenter{glm::vec3(0.0f)};
-    static constexpr float RUNNER_SPAWN_INTERVAL_SECONDS = 0.22f;
-    static constexpr float RUNNER_DESPAWN_BEHIND_DISTANCE = 45.0f;
-    static constexpr float RUNNER_SPAWN_Z_MARGIN = 2.0f;
-    static constexpr float RUNNER_BOUNDS_HALF_WIDTH = 9000.0f;
-    static constexpr float RUNNER_PLAYER_RADIUS = 1.05f;
+    // Voronoi sphere planet parameters
+    static constexpr float PLANET_RADIUS = 50.0f;
+    float mPlanetRadius{PLANET_RADIUS};
+    glm::vec3 mPlanetCenter{glm::vec3(0.0f)};
 
     // Character sprite sheet dimensions (for animation rendering)
     static constexpr int CHARACTER_TILE_SIZE = 128;

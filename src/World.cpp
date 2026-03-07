@@ -1,8 +1,9 @@
-#include "World.hpp"
+﻿#include "World.hpp"
 
 #include "Animation.hpp"
 #include "Camera.hpp"
 #include "JSONUtils.hpp"
+#include "Level.hpp"
 #include "Material.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceManager.hpp"
@@ -27,12 +28,12 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <array>
 
 namespace
 {
     constexpr std::uintptr_t kBodyTagSphereBase = 10;
-    constexpr std::uintptr_t kBodyTagRunnerPlayer = 2;
-    constexpr std::uintptr_t kBodyTagRunnerBounds = 3;
+    constexpr std::uintptr_t kBodyTagMazeWall = 4;
 
     float randomFloat(float low, float high)
     {
@@ -42,17 +43,14 @@ namespace
     }
 }
 
-World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders)
+World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders, LevelsManager &levels)
     : mWindow{window},
       mFonts{fonts},
       mTextures{textures},
       mShaders{shaders},
+      mLevels{levels},
       mWorldId{b2_nullWorldId},
       mMazeWallsBodyId{b2_nullBodyId},
-      mRunnerBoundsBodyId{b2_nullBodyId},
-      mRunnerPlayerBodyId{b2_nullBodyId},
-      mRunnerBoundNegZShapeId{b2_nullShapeId},
-      mRunnerBoundPosZShapeId{b2_nullShapeId},
       mIsPanning{false},
       mLastMousePosition{0.f, 0.f},
       mGroundPlane{
@@ -60,8 +58,7 @@ World::World(RenderWindow &window, FontManager &fonts, TextureManager &textures,
           glm::vec3(0.0f, 1.0f, 0.0f),
           Material(glm::vec3(0.0f, 0.0f, 0.0f), Material::MaterialType::LAMBERTIAN, 0.0f, 1.0f)}, // Transparent/black ground to reveal pathtraced planet
       mLastChunkUpdatePosition{},
-      mPlayerSpawnPosition{},
-      mRunnerPlayerPosition{}
+      mPlayerSpawnPosition{}
 {
 }
 
@@ -84,10 +81,9 @@ void World::init() noexcept
 
     mSpheres.reserve(TOTAL_SPHERES * 4);
     mSphereBodyIds.reserve(TOTAL_SPHERES * 4);
-    mRunnerCollisionEvents.reserve(32);
+    mWallBreakQueue.reserve(16);
 
     mLastChunkUpdatePosition = glm::vec3(std::numeric_limits<float>::max());
-    mRunnerSpawnTimer = 0.0f;
 
     // Initialize modern worker pool
     initWorkerPool();
@@ -240,8 +236,7 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord &coord) const no
         // Parse maze cells - now returns spawn position in work item
         result.cells = parseMazeCells(mazeStr, coord, result.spawnPosition, result.hasSpawnPosition);
 
-        // Runner mode now owns sphere spawning and movement directly in Box2D.
-        // Chunk generation still provides maze cells/spawn metadata, but no static chunk spheres.
+        buildMazeWallSpheres(result.cells, result.spheres);
     }
     catch (const std::exception &e)
     {
@@ -278,7 +273,7 @@ void World::processCompletedChunks() noexcept
 
                 std::vector<size_t> sphereIndices;
 
-                // Create physics bodies for all spheres
+                // Create physics bodies for chunk-generated maze walls
                 for (const auto &sphere : workItem.spheres)
                 {
                     size_t sphereIndex = mSpheres.size();
@@ -289,37 +284,32 @@ void World::processCompletedChunks() noexcept
                     if (b2World_IsValid(mWorldId))
                     {
                         b2BodyDef bodyDef = b2DefaultBodyDef();
-                        bodyDef.type = b2_dynamicBody;
+                        bodyDef.type = b2_staticBody;
                         bodyDef.position = {sphere.getCenter().x, sphere.getCenter().z};
-                        bodyDef.linearDamping = 0.2f;
-                        bodyDef.angularDamping = 0.3f;
-                        bodyDef.isBullet = sphere.getRadius() < 4.0f;
 
                         b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
 
                         if (b2Body_IsValid(bodyId))
                         {
                             b2ShapeDef shapeDef = b2DefaultShapeDef();
-                            shapeDef.density = sphere.getMaterialType() == MaterialType::METAL ? 2.5f : (sphere.getMaterialType() == MaterialType::DIELECTRIC ? 0.8f : 1.0f);
+                            shapeDef.density = 0.0f;
                             shapeDef.enableContactEvents = true;
-                            shapeDef.enableHitEvents = true;
+                            shapeDef.enableHitEvents = false;
 
                             b2Circle circle = {{0.0f, 0.0f}, sphere.getRadius()};
                             b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
 
-                            float friction = sphere.getMaterialType() == MaterialType::METAL ? 0.2f : 0.4f;
-                            float restitution = sphere.getMaterialType() == MaterialType::DIELECTRIC ? 0.6f : 0.3f;
-                            b2Shape_SetFriction(shapeId, friction);
-                            b2Shape_SetRestitution(shapeId, restitution);
-                            b2Body_SetAwake(bodyId, true);
+                            b2Shape_SetFriction(shapeId, 0.9f);
+                            b2Shape_SetRestitution(shapeId, 0.0f);
+                            b2Body_SetAwake(bodyId, false);
 
                             b2Filter filter = b2Shape_GetFilter(shapeId);
                             filter.categoryBits = 0x0004;
                             filter.maskBits = 0xFFFF;
                             b2Shape_SetFilter(shapeId, filter);
 
-                            b2Body_SetUserData(bodyId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
-                            b2Shape_SetUserData(shapeId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
+                            b2Body_SetUserData(bodyId, reinterpret_cast<void *>(kBodyTagMazeWall));
+                            b2Shape_SetUserData(shapeId, reinterpret_cast<void *>(kBodyTagMazeWall));
                         }
 
                         mSphereBodyIds.push_back(bodyId);
@@ -334,6 +324,7 @@ void World::processCompletedChunks() noexcept
                 // This prevents race condition where unloadChunk is called before we're done
                 mLoadedChunks.insert(coord);
                 mChunkSphereIndices[coord] = sphereIndices;
+                mPersistentSphereCount += sphereIndices.size();
             }
             catch (const std::exception &e)
             {
@@ -358,23 +349,8 @@ void World::update(float dt)
 
     if (b2World_IsValid(mWorldId))
     {
-        if (b2Body_IsValid(mRunnerPlayerBodyId))
-        {
-            // Convert player 3D position to 2D theta-phi coordinates for physics
-            const glm::vec3 relPos = mRunnerPlayerPosition - mPlanetCenter;
-            const float theta = std::atan2(relPos.z, relPos.x);
-            const float lateralArc = relPos.y; // Simplified: use Y as lateral offset
-            
-            // Update physics body in 2D theta-phi space
-            b2Body_SetTransform(mRunnerPlayerBodyId, {theta * mPlanetRadius, lateralArc}, b2MakeRot(0.0f));
-            b2Body_SetLinearVelocity(mRunnerPlayerBodyId, {0.0f, 0.0f});
-            b2Body_SetAwake(mRunnerPlayerBodyId, true);
-        }
-
-        updateRunnerSpheres(dt);
         b2World_Step(mWorldId, dt, 4);
-        processRunnerContactEvents();
-        pruneRunnerSpheres();
+        breakQueuedWalls();
 
         // Sync physics body positions to 3D sphere positions for path tracer
         syncPhysicsToSpheres();
@@ -440,51 +416,23 @@ void World::destroyWorld()
     mSpheres.clear();
     mChunkSphereIndices.clear();
     mLoadedChunks.clear();
-    mRunnerCollisionEvents.clear();
-    mRunnerBoundsBodyId = b2_nullBodyId;
-    mRunnerPlayerBodyId = b2_nullBodyId;
-    mRunnerBoundNegZShapeId = b2_nullShapeId;
-    mRunnerBoundPosZShapeId = b2_nullShapeId;
+    mWallBreakQueue.clear();
+    mPersistentSphereCount = 0;
 }
 
 void World::initPathTracerScene() noexcept
 {
     mSpheres.clear();
     mSphereBodyIds.clear();
-    mRunnerCollisionEvents.clear();
+    mWallBreakQueue.clear();
     mLoadedChunks.clear();
     mChunkSphereIndices.clear();
+    mPersistentSphereCount = 0;
 
     if (!b2World_IsValid(mWorldId))
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Cannot init path tracer - physics world invalid");
         return;
-    }
-
-    createRunnerBounds();
-
-    b2BodyDef playerBodyDef = b2DefaultBodyDef();
-    playerBodyDef.type = b2_kinematicBody;
-    playerBodyDef.position = {mRunnerPlayerPosition.x, mRunnerPlayerPosition.z};
-    playerBodyDef.fixedRotation = true;
-    mRunnerPlayerBodyId = b2CreateBody(mWorldId, &playerBodyDef);
-
-    b2ShapeDef playerShapeDef = b2DefaultShapeDef();
-    playerShapeDef.density = 1.0f;
-    playerShapeDef.enableContactEvents = true;
-
-    b2Circle playerCircle = {{0.0f, 0.0f}, RUNNER_PLAYER_RADIUS};
-    b2ShapeId playerShapeId = b2CreateCircleShape(mRunnerPlayerBodyId, &playerShapeDef, &playerCircle);
-    b2Shape_SetFriction(playerShapeId, 0.0f);
-    b2Shape_SetRestitution(playerShapeId, 0.0f);
-    b2Shape_SetUserData(playerShapeId, reinterpret_cast<void *>(kBodyTagRunnerPlayer));
-    b2Body_SetUserData(mRunnerPlayerBodyId, reinterpret_cast<void *>(kBodyTagRunnerPlayer));
-
-    mRunnerSpawnTimer = 0.0f;
-    constexpr int kInitialRunnerSphereCount = 10;
-    for (int i = 0; i < kInitialRunnerSphereCount; ++i)
-    {
-        spawnRunnerSphere();
     }
 }
 
@@ -524,342 +472,58 @@ void World::syncPhysicsToSpheres() noexcept
     }
 }
 
-void World::setRunnerPlayerPosition(const glm::vec3 &playerPosition) noexcept
+void World::breakQueuedWalls() noexcept
 {
-    mRunnerPlayerPosition = playerPosition;
-}
-
-void World::setRunnerTuning(float strafeLimit, float spawnAheadDistance, float sphereSpeed) noexcept
-{
-    mRunnerStrafeLimit = std::max(4.0f, strafeLimit);
-    mRunnerSpawnAheadDistance = std::max(30.0f, spawnAheadDistance);
-    mRunnerSphereSpeed = std::max(8.0f, sphereSpeed);
-
-    createRunnerBounds();
-}
-
-std::vector<World::RunnerCollisionEvent> World::consumeRunnerCollisionEvents() noexcept
-{
-    std::vector<RunnerCollisionEvent> events;
-    events.swap(mRunnerCollisionEvents);
-    return events;
-}
-
-void World::createRunnerBounds() noexcept
-{
-    if (!b2World_IsValid(mWorldId))
+    for (const b2BodyId &bodyToRemove : mWallBreakQueue)
     {
-        return;
-    }
-
-    if (!b2Body_IsValid(mRunnerBoundsBodyId))
-    {
-        b2BodyDef boundsBodyDef = b2DefaultBodyDef();
-        boundsBodyDef.type = b2_staticBody;
-        boundsBodyDef.position = {0.0f, 0.0f};
-        mRunnerBoundsBodyId = b2CreateBody(mWorldId, &boundsBodyDef);
-        b2Body_SetUserData(mRunnerBoundsBodyId, reinterpret_cast<void *>(kBodyTagRunnerBounds));
-    }
-
-    if (!b2Body_IsValid(mRunnerBoundsBodyId))
-    {
-        return;
-    }
-
-    if (b2Shape_IsValid(mRunnerBoundNegZShapeId))
-    {
-        b2DestroyShape(mRunnerBoundNegZShapeId, false);
-        mRunnerBoundNegZShapeId = b2_nullShapeId;
-    }
-    if (b2Shape_IsValid(mRunnerBoundPosZShapeId))
-    {
-        b2DestroyShape(mRunnerBoundPosZShapeId, false);
-        mRunnerBoundPosZShapeId = b2_nullShapeId;
-    }
-
-    b2ShapeDef shapeDef = b2DefaultShapeDef();
-    shapeDef.density = 0.0f;
-
-    // Allow free strafing - expand bounds much larger to accommodate continuous wrapping
-    const float expandedLimit = mRunnerStrafeLimit * 10.0f;
-    b2Segment negZ = {{-RUNNER_BOUNDS_HALF_WIDTH, -expandedLimit}, {RUNNER_BOUNDS_HALF_WIDTH, -expandedLimit}};
-    b2Segment posZ = {{-RUNNER_BOUNDS_HALF_WIDTH, expandedLimit}, {RUNNER_BOUNDS_HALF_WIDTH, expandedLimit}};
-
-    mRunnerBoundNegZShapeId = b2CreateSegmentShape(mRunnerBoundsBodyId, &shapeDef, &negZ);
-    mRunnerBoundPosZShapeId = b2CreateSegmentShape(mRunnerBoundsBodyId, &shapeDef, &posZ);
-    b2Shape_SetFriction(mRunnerBoundNegZShapeId, 0.9f);
-    b2Shape_SetRestitution(mRunnerBoundNegZShapeId, 0.2f);
-    b2Shape_SetFriction(mRunnerBoundPosZShapeId, 0.9f);
-    b2Shape_SetRestitution(mRunnerBoundPosZShapeId, 0.2f);
-}
-
-void World::updateRunnerSpheres(float dt) noexcept
-{
-    if (dt <= 0.0f)
-    {
-        return;
-    }
-
-    mRunnerSpawnTimer += dt;
-    while (mRunnerSpawnTimer >= RUNNER_SPAWN_INTERVAL_SECONDS)
-    {
-        mRunnerSpawnTimer -= RUNNER_SPAWN_INTERVAL_SECONDS;
-        spawnRunnerSphere();
-    }
-    
-    // Apply spherical gravity - pull spheres back towards the surface normal
-    // In 2D theta-phi space, this means pulling towards the player's theta and zero phi
-    const float playerTheta2D = (mRunnerPlayerPosition.x - mPlanetCenter.x) / mPlanetRadius;
-    const float gravityStrength = 15.0f; // Adjust for desired gravity strength
-    const float gravityDamping = 0.8f;   // How quickly spheres are pulled
-    
-    for (size_t i = 0; i < mSphereBodyIds.size(); ++i)
-    {
-        b2BodyId bodyId = mSphereBodyIds[i];
-        if (!b2Body_IsValid(bodyId))
+        // Find this body in the persistent wall zone [0, mPersistentSphereCount)
+        size_t wallIdx = SIZE_MAX;
+        for (size_t i = 0; i < mPersistentSphereCount; ++i)
         {
-            continue;
-        }
-        
-        b2Vec2 pos = b2Body_GetPosition(bodyId);
-        b2Vec2 vel = b2Body_GetLinearVelocity(bodyId);
-        
-        // Calculate radial force back towards the surface center (phi = 0)
-        // Phi axis: pull towards y = 0
-        b2Vec2 gravity = {0.0f, -pos.y * gravityDamping};
-        
-        // Apply gravity as a force
-        b2Body_ApplyForceToCenter(bodyId, gravity, true);
-    }
-}
-
-void World::spawnRunnerSphere() noexcept
-{
-    using MaterialType = Material::MaterialType;
-
-    if (!b2World_IsValid(mWorldId))
-    {
-        return;
-    }
-
-    // Spawn spheres on the planet surface ahead of player
-    // Use spherical coordinates: theta (angle around planet), phi (lateral angle)
-    const float playerTheta = (mRunnerPlayerPosition.x - mPlanetCenter.x) / mPlanetRadius;
-    const float playerPhi = std::asin(std::clamp((mRunnerPlayerPosition.y - mPlanetCenter.y) / mPlanetRadius, -1.0f, 1.0f));
-    
-    // Spawn ahead of player in theta direction
-    const float spawnThetaOffset = (mRunnerSpawnAheadDistance + randomFloat(-6.0f, 6.0f)) / mPlanetRadius;
-    const float spawnTheta = playerTheta + spawnThetaOffset;
-    
-    // Random lateral position within strafe limits
-    const float zLimit = std::max(1.0f, mRunnerStrafeLimit - RUNNER_SPAWN_Z_MARGIN);
-    const float lateralArcOffset = randomFloat(-zLimit, zLimit);
-    const float spawnPhi = (lateralArcOffset) / mPlanetRadius;
-    
-    const float radius = randomFloat(0.9f, 2.2f);
-
-    const float materialPick = randomFloat(0.0f, 1.0f);
-    MaterialType matType = MaterialType::LAMBERTIAN;
-    glm::vec3 albedo = glm::vec3(0.55f, 0.55f, 0.55f);
-    float fuzz = 0.0f;
-    float refractIdx = 1.5f;
-    float density = 1.0f;
-
-    if (materialPick < 0.25f)
-    {
-        matType = MaterialType::METAL;
-        albedo = glm::vec3(0.8f, 0.78f, 0.72f);
-        fuzz = 0.08f;
-        density = 2.2f;
-    }
-    else if (materialPick > 0.78f)
-    {
-        matType = MaterialType::DIELECTRIC;
-        albedo = glm::vec3(1.0f);
-        density = 0.9f;
-    }
-
-    // Calculate 3D position on planet surface (plus sphere radius offset)
-    const float r = mPlanetRadius + radius;
-    const float cosPhi = std::cos(spawnPhi);
-    const float sinPhi = std::sin(spawnPhi);
-    const float cosTheta = std::cos(spawnTheta);
-    const float sinTheta = std::sin(spawnTheta);
-    
-    glm::vec3 center = mPlanetCenter + glm::vec3(
-        r * cosPhi * cosTheta,
-        r * sinPhi,
-        r * cosPhi * sinTheta
-    );
-    
-    mSpheres.emplace_back(center, radius, albedo, matType, fuzz, refractIdx);
-
-    // Use 2D physics in theta-phi space for deterministic simulation
-    // Map spherical coordinates to 2D: X = theta * radius, Y = lateralArc
-    b2BodyDef bodyDef = b2DefaultBodyDef();
-    bodyDef.type = b2_dynamicBody;
-    bodyDef.position = {spawnTheta * mPlanetRadius, lateralArcOffset};
-    bodyDef.linearDamping = 0.05f;
-    bodyDef.angularDamping = 0.12f;
-    bodyDef.fixedRotation = false;
-
-    b2BodyId bodyId = b2CreateBody(mWorldId, &bodyDef);
-    if (!b2Body_IsValid(bodyId))
-    {
-        mSpheres.pop_back();
-        return;
-    }
-
-    b2ShapeDef shapeDef = b2DefaultShapeDef();
-    shapeDef.density = density;
-    shapeDef.enableContactEvents = true;
-    shapeDef.enableHitEvents = true;
-
-    b2Circle circle = {{0.0f, 0.0f}, radius};
-    b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
-    b2Shape_SetFriction(shapeId, 0.6f);
-    b2Shape_SetRestitution(shapeId, matType == MaterialType::DIELECTRIC ? 0.45f : 0.18f);
-
-    const size_t sphereIndex = mSpheres.size() - 1;
-    b2Body_SetUserData(bodyId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
-    b2Shape_SetUserData(shapeId, reinterpret_cast<void *>(kBodyTagSphereBase + sphereIndex));
-
-    // Give spheres velocity toward player in 2D theta-phi space
-    const float playerTheta2D = playerTheta * mPlanetRadius;
-    const float sphereTheta2D = spawnTheta * mPlanetRadius;
-    glm::vec2 towardPlayer = glm::vec2(playerTheta2D - sphereTheta2D, -lateralArcOffset);
-    
-    if (glm::length(towardPlayer) < 0.001f)
-    {
-        towardPlayer = glm::vec2(-1.0f, 0.0f);
-    }
-    else
-    {
-        towardPlayer = glm::normalize(towardPlayer);
-    }
-
-    const float speed = mRunnerSphereSpeed + randomFloat(-5.0f, 7.0f);
-    b2Body_SetLinearVelocity(bodyId, {towardPlayer.x * speed, towardPlayer.y * speed});
-    b2Body_SetAwake(bodyId, true);
-
-    mSphereBodyIds.push_back(bodyId);
-}
-
-void World::processRunnerContactEvents() noexcept
-{
-    if (!b2World_IsValid(mWorldId))
-    {
-        return;
-    }
-
-    const b2ContactEvents contactEvents = b2World_GetContactEvents(mWorldId);
-
-    auto isPlayerBody = [](std::uintptr_t tag) noexcept
-    {
-        return tag == kBodyTagRunnerPlayer;
-    };
-
-    auto sphereIndexFromTag = [](std::uintptr_t tag) noexcept -> size_t
-    {
-        return static_cast<size_t>(tag - kBodyTagSphereBase);
-    };
-
-    for (int i = 0; i < contactEvents.beginCount; ++i)
-    {
-        const b2ContactBeginTouchEvent &event = contactEvents.beginEvents[i];
-
-        if (!b2Shape_IsValid(event.shapeIdA) || !b2Shape_IsValid(event.shapeIdB))
-        {
-            continue;
-        }
-
-        const b2BodyId bodyA = b2Shape_GetBody(event.shapeIdA);
-        const b2BodyId bodyB = b2Shape_GetBody(event.shapeIdB);
-        const std::uintptr_t tagA = reinterpret_cast<std::uintptr_t>(b2Body_GetUserData(bodyA));
-        const std::uintptr_t tagB = reinterpret_cast<std::uintptr_t>(b2Body_GetUserData(bodyB));
-
-        bool playerA = isPlayerBody(tagA);
-        bool playerB = isPlayerBody(tagB);
-        if (playerA == playerB)
-        {
-            continue;
-        }
-
-        const std::uintptr_t sphereTag = playerA ? tagB : tagA;
-        if (sphereTag < kBodyTagSphereBase)
-        {
-            continue;
-        }
-
-        const size_t sphereIndex = sphereIndexFromTag(sphereTag);
-        if (sphereIndex >= mSpheres.size())
-        {
-            continue;
-        }
-
-        RunnerCollisionEvent runnerEvent;
-        runnerEvent.materialType = mSpheres[sphereIndex].getMaterialType();
-        runnerEvent.impactSpeed = event.manifold.pointCount > 0 ? event.manifold.points[0].normalVelocity : 0.0f;
-        runnerEvent.worldPosition = mSpheres[sphereIndex].getCenter();
-        mRunnerCollisionEvents.push_back(runnerEvent);
-    }
-}
-
-void World::pruneRunnerSpheres() noexcept
-{
-    // Calculate player position in 2D theta-phi space for comparison
-    const glm::vec3 relPlayerPos = mRunnerPlayerPosition - mPlanetCenter;
-    const float playerTheta = std::atan2(relPlayerPos.z, relPlayerPos.x);
-    const float playerTheta2D = playerTheta * mPlanetRadius;
-    
-    size_t idx = RUNNER_PERSISTENT_SPHERES;
-    while (idx < mSpheres.size() && idx < mSphereBodyIds.size())
-    {
-        b2BodyId bodyId = mSphereBodyIds[idx];
-        if (!b2Body_IsValid(bodyId))
-        {
-            const size_t lastIdx = mSpheres.size() - 1;
-            if (idx != lastIdx)
+            if (B2_ID_EQUALS(mSphereBodyIds[i], bodyToRemove))
             {
-                mSpheres[idx] = mSpheres[lastIdx];
-                mSphereBodyIds[idx] = mSphereBodyIds[lastIdx];
-                if (b2Body_IsValid(mSphereBodyIds[idx]))
-                {
-                    b2Body_SetUserData(mSphereBodyIds[idx], reinterpret_cast<void *>(kBodyTagSphereBase + idx));
-                }
+                wallIdx = i;
+                break;
             }
-            mSpheres.pop_back();
-            mSphereBodyIds.pop_back();
-            continue;
         }
+        if (wallIdx == SIZE_MAX || mPersistentSphereCount == 0)
+            continue;
 
-        const b2Vec2 pos = b2Body_GetPosition(bodyId);
-        // pos.x is in theta-space (theta * radius), pos.y is lateral arc offset
-        const bool behindPlayer = pos.x < (playerTheta2D - RUNNER_DESPAWN_BEHIND_DISTANCE);
-        const bool outsideZBounds = std::fabs(pos.y) > (mRunnerStrafeLimit + 12.0f);
+        // Destroy the physics body
+        if (b2Body_IsValid(mSphereBodyIds[wallIdx]))
+            b2DestroyBody(mSphereBodyIds[wallIdx]);
 
-        if (behindPlayer || outsideZBounds)
+        const size_t lastPersistent = mPersistentSphereCount - 1;
+
+        // Swap the hit wall with the last persistent (wall) sphere so the dead
+        // body ends up at index lastPersistent, just past the new boundary.
+        if (wallIdx != lastPersistent)
         {
-            b2DestroyBody(bodyId);
-
-            const size_t lastIdx = mSpheres.size() - 1;
-            if (idx != lastIdx)
-            {
-                mSpheres[idx] = mSpheres[lastIdx];
-                mSphereBodyIds[idx] = mSphereBodyIds[lastIdx];
-                if (b2Body_IsValid(mSphereBodyIds[idx]))
-                {
-                    b2Body_SetUserData(mSphereBodyIds[idx], reinterpret_cast<void *>(kBodyTagSphereBase + idx));
-                }
-            }
-
-            mSpheres.pop_back();
-            mSphereBodyIds.pop_back();
-            continue;
+            std::swap(mSpheres[wallIdx], mSpheres[lastPersistent]);
+            std::swap(mSphereBodyIds[wallIdx], mSphereBodyIds[lastPersistent]);
         }
 
-        ++idx;
+        // Update chunk sphere index lists:
+        //   - remove wallIdx (broken wall leaves the chunk)
+        //   - remap lastPersistent â†’ wallIdx (the wall that moved to fill the gap)
+        for (auto &[coord, indices] : mChunkSphereIndices)
+        {
+            for (size_t &sidx : indices)
+            {
+                if (sidx == wallIdx)
+                    sidx = SIZE_MAX; // mark for erasure
+                else if (sidx == lastPersistent && wallIdx != lastPersistent)
+                    sidx = wallIdx;  // sphere moved here
+            }
+            auto eraseIt = std::remove(indices.begin(), indices.end(), SIZE_MAX);
+            indices.erase(eraseIt, indices.end());
+        }
+
+        // Shrink persistent zone; dead body at lastPersistent will be cleaned
+        // up by a subsequent cleanup pass (invalid body check).
+        --mPersistentSphereCount;
     }
+    mWallBreakQueue.clear();
 }
 
 World::ChunkCoord World::getChunkCoord(const glm::vec3 &position) const noexcept
@@ -965,12 +629,16 @@ void World::unloadChunk(const ChunkCoord &coord) noexcept
     // Sort in reverse to remove from back to front
     std::sort(indicesToRemove.rbegin(), indicesToRemove.rend());
 
+    size_t removedCount = 0;
+
     for (size_t idx : indicesToRemove)
     {
         if (idx >= mSpheres.size() || idx >= mSphereBodyIds.size())
         {
             continue;
         }
+
+        ++removedCount;
 
         // Destroy physics body if valid
         b2BodyId bodyId = mSphereBodyIds[idx];
@@ -991,7 +659,11 @@ void World::unloadChunk(const ChunkCoord &coord) noexcept
 
             if (b2Body_IsValid(mSphereBodyIds[idx]))
             {
-                b2Body_SetUserData(mSphereBodyIds[idx], reinterpret_cast<void *>(kBodyTagSphereBase + idx));
+                const std::uintptr_t prevTag = reinterpret_cast<std::uintptr_t>(b2Body_GetUserData(mSphereBodyIds[idx]));
+                if (prevTag != kBodyTagMazeWall)
+                {
+                    b2Body_SetUserData(mSphereBodyIds[idx], reinterpret_cast<void *>(kBodyTagSphereBase + idx));
+                }
             }
         }
 
@@ -1022,6 +694,7 @@ void World::unloadChunk(const ChunkCoord &coord) noexcept
     // Remove this chunk's entry
     mChunkSphereIndices.erase(it);
     mLoadedChunks.erase(coord);
+    mPersistentSphereCount = (removedCount >= mPersistentSphereCount) ? 0 : (mPersistentSphereCount - removedCount);
 }
 
 std::string World::generateMazeForChunk(const ChunkCoord &coord) const noexcept
@@ -1038,14 +711,34 @@ std::string World::generateMazeForChunk(const ChunkCoord &coord) const noexcept
             }
         }
 
-        unsigned int seed = static_cast<unsigned int>(coord.x * 73856093 ^ coord.z * 19349663);
+        std::size_t baseSeed = 0x9E3779B97F4A7C15ull;
+        std::string levelData;
+        try
+        {
+            levelData = mLevels.get(Levels::ID::LEVEL_ONE).getData();
+            if (!levelData.empty())
+            {
+                baseSeed ^= std::hash<std::string>{}(levelData);
+            }
+        }
+        catch (const std::exception &)
+        {
+            // Fall back to generated maze text when level resources are unavailable.
+        }
 
-        auto mazeStr = mazes::create(
-            mazes::configurator()
-                .rows(MAZE_ROWS)
-                .columns(MAZE_COLS)
-                .distances(false)
-                .seed(seed));
+        const std::size_t chunkHash =
+            (static_cast<std::size_t>(coord.x) * 73856093u) ^
+            (static_cast<std::size_t>(coord.z) * 19349663u);
+        const unsigned int seed = static_cast<unsigned int>(baseSeed ^ chunkHash);
+
+        auto mazeStr = (coord.x == 0 && coord.z == 0 && !levelData.empty())
+            ? levelData
+            : mazes::create(
+                  mazes::configurator()
+                      .rows(MAZE_ROWS)
+                      .columns(MAZE_COLS)
+                      .distances(false)
+                      .seed(seed));
 
         // Cache the result (thread-safe)
         {
@@ -1077,6 +770,126 @@ std::vector<World::MazeCell> World::parseMazeCells(const std::string &mazeStr, c
     float chunkWorldX = coord.x * CHUNK_SIZE;
     float chunkWorldZ = coord.z * CHUNK_SIZE;
 
+    const int cellCount = MAZE_ROWS * MAZE_COLS;
+    std::vector<bool> visited(static_cast<std::size_t>(cellCount), false);
+    std::vector<bool> wallNorth(static_cast<std::size_t>(cellCount), true);
+    std::vector<bool> wallSouth(static_cast<std::size_t>(cellCount), true);
+    std::vector<bool> wallEast(static_cast<std::size_t>(cellCount), true);
+    std::vector<bool> wallWest(static_cast<std::size_t>(cellCount), true);
+
+    auto cellIndex = [](int row, int col) noexcept
+    {
+        return row * MAZE_COLS + col;
+    };
+
+    const std::size_t coordHash =
+        (static_cast<std::size_t>(coord.x) * 73856093u) ^
+        (static_cast<std::size_t>(coord.z) * 19349663u);
+    const std::size_t mazeHash = std::hash<std::string>{}(mazeStr);
+    std::mt19937 rng(static_cast<uint32_t>(mazeHash ^ coordHash));
+
+    std::vector<int> stack;
+    stack.reserve(static_cast<std::size_t>(cellCount));
+    const int start = static_cast<int>((mazeHash ^ coordHash) % static_cast<std::size_t>(cellCount));
+    stack.push_back(start);
+    visited[static_cast<std::size_t>(start)] = true;
+
+    while (!stack.empty())
+    {
+        const int current = stack.back();
+        const int row = current / MAZE_COLS;
+        const int col = current % MAZE_COLS;
+
+        std::array<int, 4> dirs{-1, -1, -1, -1};
+        int count = 0;
+
+        if (row > 0)
+        {
+            const int idx = cellIndex(row - 1, col);
+            if (!visited[static_cast<std::size_t>(idx)])
+            {
+                dirs[count++] = 0; // north
+            }
+        }
+        if (row < MAZE_ROWS - 1)
+        {
+            const int idx = cellIndex(row + 1, col);
+            if (!visited[static_cast<std::size_t>(idx)])
+            {
+                dirs[count++] = 1; // south
+            }
+        }
+        if (col < MAZE_COLS - 1)
+        {
+            const int idx = cellIndex(row, col + 1);
+            if (!visited[static_cast<std::size_t>(idx)])
+            {
+                dirs[count++] = 2; // east
+            }
+        }
+        if (col > 0)
+        {
+            const int idx = cellIndex(row, col - 1);
+            if (!visited[static_cast<std::size_t>(idx)])
+            {
+                dirs[count++] = 3; // west
+            }
+        }
+
+        if (count == 0)
+        {
+            stack.pop_back();
+            continue;
+        }
+
+        std::uniform_int_distribution<int> pick(0, count - 1);
+        const int dir = dirs[pick(rng)];
+
+        int nextRow = row;
+        int nextCol = col;
+        if (dir == 0)
+        {
+            nextRow -= 1;
+        }
+        else if (dir == 1)
+        {
+            nextRow += 1;
+        }
+        else if (dir == 2)
+        {
+            nextCol += 1;
+        }
+        else
+        {
+            nextCol -= 1;
+        }
+
+        const int next = cellIndex(nextRow, nextCol);
+        if (dir == 0)
+        {
+            wallNorth[static_cast<std::size_t>(current)] = false;
+            wallSouth[static_cast<std::size_t>(next)] = false;
+        }
+        else if (dir == 1)
+        {
+            wallSouth[static_cast<std::size_t>(current)] = false;
+            wallNorth[static_cast<std::size_t>(next)] = false;
+        }
+        else if (dir == 2)
+        {
+            wallEast[static_cast<std::size_t>(current)] = false;
+            wallWest[static_cast<std::size_t>(next)] = false;
+        }
+        else
+        {
+            wallWest[static_cast<std::size_t>(current)] = false;
+            wallEast[static_cast<std::size_t>(next)] = false;
+        }
+
+        visited[static_cast<std::size_t>(next)] = true;
+        stack.push_back(next);
+    }
+
     for (int row = 0; row < MAZE_ROWS; ++row)
     {
         for (int col = 0; col < MAZE_COLS; ++col)
@@ -1084,11 +897,16 @@ std::vector<World::MazeCell> World::parseMazeCells(const std::string &mazeStr, c
             int centerRow = MAZE_ROWS / 2;
             int centerCol = MAZE_COLS / 2;
             int distance = std::abs(row - centerRow) + std::abs(col - centerCol);
+            const int idx = cellIndex(row, col);
 
             float worldX = chunkWorldX + (col * CELL_SIZE) + (CELL_SIZE * 0.5f);
             float worldZ = chunkWorldZ + (row * CELL_SIZE) + (CELL_SIZE * 0.5f);
 
-            cells.push_back(MazeCell{row, col, distance, worldX, worldZ});
+            cells.push_back(MazeCell{row, col, distance, worldX, worldZ,
+                                     wallNorth[static_cast<std::size_t>(idx)],
+                                     wallSouth[static_cast<std::size_t>(idx)],
+                                     wallEast[static_cast<std::size_t>(idx)],
+                                     wallWest[static_cast<std::size_t>(idx)]});
 
             // Track spawn in work item instead of const_cast
             if (row == centerRow && col == centerCol && coord.x == 0 && coord.z == 0)
@@ -1100,6 +918,102 @@ std::vector<World::MazeCell> World::parseMazeCells(const std::string &mazeStr, c
     }
 
     return cells;
+}
+
+void World::buildMazeWallSpheres(const std::vector<MazeCell> &cells, std::vector<Sphere> &outSpheres) const noexcept
+{
+    using MaterialType = Material::MaterialType;
+
+    if (cells.empty())
+    {
+        return;
+    }
+
+    constexpr std::size_t kMaxMazeWallSpheres = 260;
+    constexpr float kWallRadius = 1.45f;
+    constexpr float kWallSpacing = 2.2f;
+
+    auto appendSegment = [&](float x0, float z0, float x1, float z1, const glm::vec3 &baseColor)
+    {
+        auto toRunnerArc = [this](float x, float z) noexcept -> glm::vec2
+        {
+            const float forwardArc = x + 60.0f;
+            const float centeredZ = z - (CHUNK_SIZE * 0.5f);
+            const float lateralScale = (2.0f * std::max(8.0f, 35.0f)) / CHUNK_SIZE;
+            const float lateralArc = centeredZ * lateralScale;
+            return glm::vec2(forwardArc, lateralArc);
+        };
+
+        const glm::vec2 arc0 = toRunnerArc(x0, z0);
+        const glm::vec2 arc1 = toRunnerArc(x1, z1);
+
+        const float dx = arc1.x - arc0.x;
+        const float dz = arc1.y - arc0.y;
+        const float length = std::sqrt(dx * dx + dz * dz);
+        const int steps = std::max(1, static_cast<int>(std::ceil(length / kWallSpacing)));
+
+        for (int step = 0; step <= steps; ++step)
+        {
+            if (outSpheres.size() >= kMaxMazeWallSpheres)
+            {
+                return;
+            }
+
+            const float t = static_cast<float>(step) / static_cast<float>(steps);
+            const float x = arc0.x + dx * t;
+            const float z = arc0.y + dz * t;
+            outSpheres.emplace_back(
+                glm::vec3(x, 0.0f, z),
+                kWallRadius,
+                baseColor,
+                MaterialType::LAMBERTIAN,
+                0.0f,
+                1.5f);
+            outSpheres.back().setTextureBlend(0.0f);
+        }
+    };
+
+    for (const MazeCell &cell : cells)
+    {
+        if (outSpheres.size() >= kMaxMazeWallSpheres)
+        {
+            break;
+        }
+
+        const float halfCell = CELL_SIZE * 0.5f;
+        const bool checkerCell = ((cell.row + cell.col) % 2 == 0);
+        const glm::vec3 wallColor = checkerCell
+            ? glm::vec3(0.14f, 0.16f, 0.20f)
+            : glm::vec3(0.23f, 0.25f, 0.30f);
+
+        if (cell.wallNorth)
+        {
+            appendSegment(cell.worldX - halfCell, cell.worldZ - halfCell,
+                          cell.worldX + halfCell, cell.worldZ - halfCell,
+                          wallColor);
+        }
+
+        if (cell.wallWest)
+        {
+            appendSegment(cell.worldX - halfCell, cell.worldZ - halfCell,
+                          cell.worldX - halfCell, cell.worldZ + halfCell,
+                          wallColor);
+        }
+
+        if (cell.col == (MAZE_COLS - 1) && cell.wallEast)
+        {
+            appendSegment(cell.worldX + halfCell, cell.worldZ - halfCell,
+                          cell.worldX + halfCell, cell.worldZ + halfCell,
+                          wallColor);
+        }
+
+        if (cell.row == (MAZE_ROWS - 1) && cell.wallSouth)
+        {
+            appendSegment(cell.worldX - halfCell, cell.worldZ + halfCell,
+                          cell.worldX + halfCell, cell.worldZ + halfCell,
+                          wallColor);
+        }
+    }
 }
 
 Material::MaterialType World::getMaterialForDistance(int distance) const noexcept

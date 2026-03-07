@@ -1,4 +1,4 @@
-#include "GameState.hpp"
+﻿#include "GameState.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -20,8 +20,10 @@
 #include "GLTFModel.hpp"
 #include "MusicPlayer.hpp"
 #include "Options.hpp"
+#include "PathTraceScene.hpp"
 #include "Player.hpp"
 #include "ResourceManager.hpp"
+#include "SceneRenderer.hpp"
 #include "Shader.hpp"
 #include "SoundPlayer.hpp"
 #include "Sphere.hpp"
@@ -31,9 +33,6 @@
 namespace
 {
     constexpr GLint kTestAlbedoTextureUnit = 3;
-    constexpr float kRunnerLockedSunYawDeg = 0.0f; // +X heading (toward sunset)
-    constexpr float kTracksideBillboardBorderMargin = 7.5f;
-    constexpr float kTracksideGuardRailBorderMargin = 4.8f;
     constexpr std::size_t kMaxPathTracerSpheres = 200;
     constexpr std::size_t kMaxPathTracerTriangles = 192;
     constexpr bool kEnableTrianglePathTraceProxy = true;
@@ -42,7 +41,10 @@ namespace
     constexpr float kCharacterRasterScale = 1.491f;
     constexpr float kCharacterPathTraceProxyScale = 1.491f;
     constexpr float kCharacterModelYOffset = 0.25f;
-    constexpr float kRunnerPlanetSurfaceOffset = 1.0f;
+    constexpr float kFragmentRenderScale = 0.75f;
+    constexpr int kFragmentTileWidth = 320;
+    constexpr int kFragmentTileHeight = 180;
+    constexpr int kFragmentPassesPerFrame = 6;
 
     glm::vec3 computeSunDirection(float /*timeSeconds*/) noexcept
     {
@@ -105,17 +107,17 @@ namespace
 
         if (renderPixels > 1800ull * 1000ull)
         {
-            return 28u;
+            return 40u;
         }
         if (renderPixels > 1400ull * 1000ull)
         {
-            return 40u;
+            return 48u;
         }
         if (renderPixels > 1000ull * 1000ull)
         {
             return 56u;
         }
-        return 72u;
+        return 64u;
     }
 
     uint32_t computeAdaptivePathTraceTileEdge(int renderWidth, int renderHeight) noexcept
@@ -168,32 +170,10 @@ namespace
         outScreenPos.y = (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(windowHeight);
         return true;
     }
-
-    glm::vec3 computeRunnerPlanetPosition(float runDistance,
-                                          float lateralArc,
-                                          const glm::vec3 &center,
-                                          float radius) noexcept
-    {
-        const float safeRadius = std::max(1.0f, radius);
-        const float theta = runDistance / safeRadius;
-        // Allow phi to wrap continuously around the sphere without clamping
-        const float phi = lateralArc / safeRadius;
-
-        const float r = safeRadius + kRunnerPlanetSurfaceOffset;
-        const float cosPhi = std::cos(phi);
-        const float sinPhi = std::sin(phi);
-        const float cosTheta = std::cos(theta);
-        const float sinTheta = std::sin(theta);
-
-        return center + glm::vec3(
-            r * cosPhi * cosTheta,
-            r * sinPhi,
-            r * cosPhi * sinTheta);
-    }
 }
 
 GameState::GameState(StateStack &stack, Context context)
-    : State{stack, context}, mWorld{*context.getRenderWindow(), *context.getFontManager(), *context.getTextureManager(), *context.getShaderManager()}, mPlayer{*context.getPlayer()}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mCompositeShader{nullptr}, mOITResolveShader{nullptr}, mSkinnedModelShader{nullptr}, mGameIsPaused{false}
+    : State{stack, context}, mWorld{*context.getRenderWindow(), *context.getFontManager(), *context.getTextureManager(), *context.getShaderManager(), *context.getLevelsManager()}, mPlayer{*context.getPlayer()}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mPathTracerOutputShader{nullptr}, mPathTracerTonemapShader{nullptr}, mCompositeShader{nullptr}, mOITResolveShader{nullptr}, mSkinnedModelShader{nullptr}, mGameIsPaused{false}
       // Initialize camera at maze spawn position (will be updated after first chunk loads)
       ,
       mCamera{}
@@ -210,6 +190,8 @@ GameState::GameState(StateStack &stack, Context context)
     {
         mDisplayShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD);
         mComputeShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_COMPUTE);
+        mPathTracerOutputShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_OUTPUT);
+        mPathTracerTonemapShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_TONEMAP);
         mCompositeShader = &shaders.get(Shaders::ID::GLSL_COMPOSITE_SCENE);
         mOITResolveShader = &shaders.get(Shaders::ID::GLSL_OIT_RESOLVE);
         mSkinnedModelShader = &shaders.get(Shaders::ID::GLSL_MODEL_WITH_SKINNING);
@@ -240,7 +222,11 @@ GameState::GameState(StateStack &stack, Context context)
     try
     {
         mAccumTex = &textures.get(Textures::ID::PATH_TRACER_ACCUM);
+        mPathTraceOutputTex = &textures.get(Textures::ID::PATH_TRACER_OUTPUT);
+        mPathTraceStageTex = &textures.get(Textures::ID::PATH_TRACER_STAGE);
         mDisplayTex = &textures.get(Textures::ID::PATH_TRACER_DISPLAY);
+        mPreviewAccumTex = &textures.get(Textures::ID::PATH_TRACER_PREVIEW_ACCUM);
+        mPreviewOutputTex = &textures.get(Textures::ID::PATH_TRACER_PREVIEW_OUTPUT);
         mNoiseTexture = &textures.get(Textures::ID::NOISE2D);
         mTestAlbedoTexture = &textures.get(Textures::ID::SDL_LOGO);
         mBillboardColorTex = &textures.get(Textures::ID::BILLBOARD_COLOR);
@@ -248,7 +234,6 @@ GameState::GameState(StateStack &stack, Context context)
         mOITRevealTex = &textures.get(Textures::ID::OIT_REVEAL);
         mShadowTexture = &textures.get(Textures::ID::SHADOW_MAP);
         mReflectionColorTex = &textures.get(Textures::ID::REFLECTION_COLOR);
-        mRunnerBreakPlaneTexture = &textures.get(Textures::ID::RUNNER_BREAK_PLANE);
         if (mTestAlbedoTexture)
         {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -262,7 +247,11 @@ GameState::GameState(StateStack &stack, Context context)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get texture resources: %s", e.what());
         mAccumTex = nullptr;
+        mPathTraceOutputTex = nullptr;
+        mPathTraceStageTex = nullptr;
         mDisplayTex = nullptr;
+        mPreviewAccumTex = nullptr;
+        mPreviewOutputTex = nullptr;
         mNoiseTexture = nullptr;
         mTestAlbedoTexture = nullptr;
         mBillboardColorTex = nullptr;
@@ -270,7 +259,6 @@ GameState::GameState(StateStack &stack, Context context)
         mOITRevealTex = nullptr;
         mShadowTexture = nullptr;
         mReflectionColorTex = nullptr;
-        mRunnerBreakPlaneTexture = nullptr;
     }
 
     // Get and play game music from context
@@ -312,7 +300,7 @@ GameState::GameState(StateStack &stack, Context context)
 
     // Default to third-person for arcade runner readability
     mCamera.setMode(CameraMode::THIRD_PERSON);
-    mCamera.setYawPitch(kRunnerLockedSunYawDeg, mCamera.getPitch());
+    mCamera.setYawPitch(0.0f, mCamera.getPitch());
     mCamera.setFollowTarget(spawnPos);
     mCamera.setThirdPersonDistance(15.0f);
     mCamera.setThirdPersonHeight(8.0f);
@@ -328,9 +316,6 @@ GameState::GameState(StateStack &stack, Context context)
     mLastCameraYaw = mCamera.getYaw();
     mLastCameraPitch = mCamera.getPitch();
 
-    mRunnerRng.seed(static_cast<unsigned int>(std::abs(spawnPos.x) + std::abs(spawnPos.z) + 1337.0f));
-    syncRunnerSettingsFromOptions();
-    resetRunnerRun();
     mWorld.updateSphereChunks(mPlayer.getPosition());
 
     // Initialize GPU graphics pipeline following Compute.cpp approach
@@ -338,10 +323,44 @@ GameState::GameState(StateStack &stack, Context context)
     {
         initializeGraphicsResources();
         initializeWalkParticles();
-        initializeRunnerBreakPlaneResources();
 
         // Initialize billboard rendering for character sprites
         GLSDLHelper::initializeBillboardRendering();
+
+        // â”€â”€ Fragment-shader path tracer (GLSLPT-style) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        try
+        {
+            auto &shaders = *context.getShaderManager();
+            Shader *tileShader    = &shaders.get(Shaders::ID::GLSL_TILE_TEST);
+            Shader *previewShader = &shaders.get(Shaders::ID::GLSL_PREVIEW_TEST);
+            Shader *outputShader  = &shaders.get(Shaders::ID::GLSL_OUTPUT_TEST);
+            Shader *tonemapShader = &shaders.get(Shaders::ID::GLSL_TONE_TEST);
+
+            mPathTraceScene = std::make_unique<PathTraceScene>();
+            buildPathTraceScene();
+
+            auto &opts = mPathTraceScene->getRenderOptions();
+            const int fragmentRenderWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(mRenderWidth) * kFragmentRenderScale)));
+            const int fragmentRenderHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(mRenderHeight) * kFragmentRenderScale)));
+            opts.renderResolution = {fragmentRenderWidth, fragmentRenderHeight};
+            opts.windowResolution = {mWindowWidth, mWindowHeight};
+            opts.tileWidth = kFragmentTileWidth;
+            opts.tileHeight = kFragmentTileHeight;
+
+            mSceneRenderer = std::make_unique<SceneRenderer>(mPathTraceScene.get());
+            mSceneRenderer->setShaders(tileShader, previewShader, outputShader, tonemapShader);
+            mSceneRenderer->rebuildShadersWithDefines();
+            mSceneRenderer->initShaderUniforms();
+
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Fragment path tracer ready");
+        }
+        catch (const std::exception &e)
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "GameState: Fragment path tracer init failed: %s", e.what());
+            mSceneRenderer.reset();
+            mPathTraceScene.reset();
+        }
     }
 }
 
@@ -363,33 +382,65 @@ void GameState::draw() const noexcept
 {
     if (mShadersInitialized)
     {
-        // Use compute shader rendering pipeline (path tracing)
-        renderWithComputeShaders();
-
-        // Animate break-plane texture in an offscreen pass.
-        renderRunnerBreakPlaneTexture();
-
-        // Keep rasterized character overlay for readability even when triangle proxy is enabled.
-        renderPlayerCharacter();
-
-        // Render character shadow to shadow texture
-        renderCharacterShadow();
-
-        // Render player reflection on ground plane
-        renderPlayerReflection();
-
-        // Note: Voronoi planet is rendered into the billboard FBO in renderPlayerCharacter()
-
-        // Reset viewport to main window before compositing
-        glViewport(0, 0, mWindowWidth, mWindowHeight);
-
-        if (mCompositeShader && mBillboardFBO != 0 && mBillboardColorTex)
+        if (mRenderMode == RenderMode::FRAGMENT && mSceneRenderer && mSceneRenderer->isInitialized())
         {
-            renderCompositeScene();
+            renderWithFragmentShaders();
+        }
+        else
+        {
+            // Use compute shader rendering pipeline (path tracing)
+            renderWithComputeShaders();
+
+
+            // Keep rasterized character overlay for readability even when triangle proxy is enabled.
+            renderPlayerCharacter();
+
+            // Render character shadow to shadow texture
+            renderCharacterShadow();
+
+            // Render player reflection on ground plane
+            renderPlayerReflection();
+
+            // Note: Voronoi planet is rendered into the billboard FBO in renderPlayerCharacter()
+
+            // Reset viewport to main window before compositing
+            glViewport(0, 0, mWindowWidth, mWindowHeight);
+
+            if (mCompositeShader && mBillboardFBO != 0 && mBillboardColorTex)
+            {
+                renderCompositeScene();
+            }
         }
     }
 
-    drawRunnerHud();
+    // â”€â”€ Render mode toggle (ImGui) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    {
+        ImGui::SetNextWindowPos(ImVec2(static_cast<float>(mWindowWidth) - 260.0f, 16.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowBgAlpha(0.7f);
+        if (ImGui::Begin("Renderer", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            int mode = static_cast<int>(mRenderMode);
+            ImGui::RadioButton("Compute", &mode, 0);
+            ImGui::SameLine();
+            ImGui::RadioButton("Fragment (GLSLPT)", &mode, 1);
+            if (static_cast<int>(mRenderMode) != mode)
+            {
+                // const_cast is safe here â€“ mRenderMode is mutable UI state
+                const_cast<GameState *>(this)->mRenderMode = static_cast<RenderMode>(mode);
+                if (const_cast<GameState *>(this)->mRenderMode == RenderMode::FRAGMENT)
+                {
+                    const_cast<GameState *>(this)->frameFragmentCornellCamera();
+                }
+                if (mSceneRenderer)
+                    mSceneRenderer->markDirty();
+            }
+            if (mRenderMode == RenderMode::FRAGMENT && mSceneRenderer)
+            {
+                ImGui::Text("Samples: %d", mSceneRenderer->getSampleCount());
+            }
+        }
+        ImGui::End();
+    }
 }
 
 void GameState::initializeGraphicsResources() noexcept
@@ -425,6 +476,10 @@ void GameState::initializeGraphicsResources() noexcept
 
     // Create textures for path tracing
     createPathTracerTextures();
+    if (mPathTracePostFBO == 0)
+    {
+        glGenFramebuffers(1, &mPathTracePostFBO);
+    }
     createCompositeTargets();
     initializeShadowResources();     // Initialize shadow rendering
     initializeReflectionResources(); // Initialize reflection rendering
@@ -473,190 +528,6 @@ void GameState::initializeGraphicsResources() noexcept
     }
 }
 
-void GameState::initializeRunnerBreakPlaneResources() noexcept
-{
-    if (mRunnerBreakPlaneTexture && mRunnerBreakPlaneTexture->get() != 0 && mRunnerBreakPlaneFBO != 0)
-    {
-        return;
-    }
-
-    if (!mRunnerBreakPlaneTexture)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "GameState: Runner break-plane texture not initialized in manager");
-        return;
-    }
-
-    if (!mRunnerBreakPlaneTexture->loadRenderTarget(
-            mRunnerBreakPlaneTextureWidth,
-            mRunnerBreakPlaneTextureHeight,
-            Texture::RenderTargetFormat::RGBA16F,
-            0))
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "GameState: Failed to allocate runner break-plane texture");
-        return;
-    }
-
-    if (mRunnerBreakPlaneFBO == 0)
-    {
-        glGenFramebuffers(1, &mRunnerBreakPlaneFBO);
-    }
-    glBindFramebuffer(GL_FRAMEBUFFER, mRunnerBreakPlaneFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mRunnerBreakPlaneTexture->get(), 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
-    glReadBuffer(GL_COLOR_ATTACHMENT0);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "GameState: Break-plane texture framebuffer incomplete");
-    }
-
-    if (mRunnerBreakPlanePosSSBO == 0 || mRunnerBreakPlaneVelSSBO == 0 || mRunnerBreakPlaneVAO == 0)
-    {
-        constexpr int gridX = 32;
-        constexpr int gridY = 16;
-        constexpr int gridZ = 8;
-        mRunnerBreakPlaneParticleCount = static_cast<GLuint>(gridX * gridY * gridZ);
-
-        std::vector<GLfloat> initPos;
-        initPos.reserve(static_cast<std::size_t>(mRunnerBreakPlaneParticleCount) * 4u);
-        std::vector<GLfloat> initVel(static_cast<std::size_t>(mRunnerBreakPlaneParticleCount) * 4u, 0.0f);
-
-        const GLfloat dx = 4.0f / static_cast<GLfloat>(gridX - 1);
-        const GLfloat dy = 4.0f / static_cast<GLfloat>(gridY - 1);
-        const GLfloat dz = 3.0f / static_cast<GLfloat>(gridZ - 1);
-
-        for (int i = 0; i < gridX; ++i)
-        {
-            for (int j = 0; j < gridY; ++j)
-            {
-                for (int k = 0; k < gridZ; ++k)
-                {
-                    initPos.push_back(-2.0f + dx * static_cast<GLfloat>(i));
-                    initPos.push_back(-2.0f + dy * static_cast<GLfloat>(j));
-                    initPos.push_back(-1.5f + dz * static_cast<GLfloat>(k));
-                    initPos.push_back(1.0f);
-                }
-            }
-        }
-
-        const GLsizeiptr bufferSize = static_cast<GLsizeiptr>(static_cast<std::size_t>(mRunnerBreakPlaneParticleCount) * 4u * sizeof(GLfloat));
-
-        if (mRunnerBreakPlanePosSSBO == 0)
-        {
-            glGenBuffers(1, &mRunnerBreakPlanePosSSBO);
-        }
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRunnerBreakPlanePosSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, initPos.data(), GL_DYNAMIC_DRAW);
-
-        if (mRunnerBreakPlaneVelSSBO == 0)
-        {
-            glGenBuffers(1, &mRunnerBreakPlaneVelSSBO);
-        }
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRunnerBreakPlaneVelSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, initVel.data(), GL_DYNAMIC_DRAW);
-
-        if (mRunnerBreakPlaneVAO == 0)
-        {
-            glGenVertexArrays(1, &mRunnerBreakPlaneVAO);
-        }
-        glBindVertexArray(mRunnerBreakPlaneVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, mRunnerBreakPlanePosSSBO);
-        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
-        glEnableVertexAttribArray(0);
-        glBindVertexArray(0);
-    }
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK);
-    glReadBuffer(GL_BACK);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-void GameState::renderRunnerBreakPlaneTexture() const noexcept
-{
-    if (!mRunnerBreakPlaneTexture || mRunnerBreakPlaneTexture->get() == 0 || mRunnerBreakPlaneFBO == 0 || mRunnerBreakPlaneVAO == 0)
-    {
-        return;
-    }
-
-    if (!mWalkParticlesComputeShader || !mWalkParticlesRenderShader || mRunnerBreakPlaneParticleCount == 0)
-    {
-        return;
-    }
-
-    if (!mWalkParticlesComputeShader->isLinked())
-    {
-        return;
-    }
-
-    const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
-    const float dt = (mRunnerBreakPlaneFxTime <= 0.0f) ? 0.0f : std::min(0.03f, now - mRunnerBreakPlaneFxTime);
-    mRunnerBreakPlaneFxTime = now;
-
-    const float phase = now * 0.85f;
-    const glm::vec3 attractor1(1.7f * std::cos(phase), 1.2f * std::sin(phase * 1.9f), 0.0f);
-    const glm::vec3 attractor2(-1.7f * std::cos(phase * 1.12f), -1.1f * std::sin(phase * 1.4f), 0.0f);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mRunnerBreakPlanePosSSBO);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mRunnerBreakPlaneVelSSBO);
-
-    mWalkParticlesComputeShader->bind();
-    mWalkParticlesComputeShader->setUniform("BlackHolePos1", attractor1);
-    mWalkParticlesComputeShader->setUniform("BlackHolePos2", attractor2);
-    mWalkParticlesComputeShader->setUniform("Gravity1", 185.0f);
-    mWalkParticlesComputeShader->setUniform("Gravity2", 195.0f);
-    mWalkParticlesComputeShader->setUniform("ParticleInvMass", 1.0f / 0.12f);
-    mWalkParticlesComputeShader->setUniform("DeltaT", std::max(0.0001f, dt * 0.45f));
-    mWalkParticlesComputeShader->setUniform("MaxDist", 5.1f);
-    mWalkParticlesComputeShader->setUniform("ParticleCount", mRunnerBreakPlaneParticleCount);
-
-    const GLuint groupsX = (mRunnerBreakPlaneParticleCount + 999u) / 1000u;
-    glDispatchCompute(groupsX, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, mRunnerBreakPlaneFBO);
-    glViewport(0, 0, mRunnerBreakPlaneTextureWidth, mRunnerBreakPlaneTextureHeight);
-    glClearColor(0.18f, 0.28f, 0.40f, 0.58f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glDisable(GL_DEPTH_TEST);
-
-    GLboolean blendEnabled = GL_FALSE;
-    glGetBooleanv(GL_BLEND, &blendEnabled);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    const float safeHeight = static_cast<float>(std::max(1, mRunnerBreakPlaneTextureHeight));
-    const float aspect = static_cast<float>(mRunnerBreakPlaneTextureWidth) / safeHeight;
-    const glm::mat4 projection = glm::perspective(glm::radians(48.0f), aspect, 0.1f, 60.0f);
-    const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 11.0f),
-                                       glm::vec3(0.0f, 0.0f, 0.0f),
-                                       glm::vec3(0.0f, 1.0f, 0.0f));
-    const glm::mat4 mvp = projection * view;
-
-    mWalkParticlesRenderShader->bind();
-    mWalkParticlesRenderShader->setUniform("MVP", mvp);
-    mWalkParticlesRenderShader->setUniform("Color", glm::vec4(0.86f, 0.94f, 1.0f, 0.55f));
-
-    glPointSize(2.6f);
-    glBindVertexArray(mRunnerBreakPlaneVAO);
-    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(mRunnerBreakPlaneParticleCount));
-
-    glBindVertexArray(0);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK);
-    glReadBuffer(GL_BACK);
-    glViewport(0, 0, mWindowWidth, mWindowHeight);
-
-    if (!blendEnabled)
-    {
-        glDisable(GL_BLEND);
-    }
-}
-
 void GameState::updateRenderResolution() noexcept
 {
     const auto [newRenderWidth, newRenderHeight] =
@@ -670,13 +541,26 @@ void GameState::createPathTracerTextures() noexcept
 {
     // Update existing textures to new resolution
     // (They were initially created at 512x512 in LoadingState)
-    if (!mAccumTex || !mDisplayTex)
+    if (!mAccumTex || !mPathTraceOutputTex || !mPathTraceStageTex || !mDisplayTex || !mPreviewAccumTex || !mPreviewOutputTex)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Path tracer textures not initialized!");
         return;
     }
 
+    mPreviewRenderWidth = std::max(1, mRenderWidth / 3);
+    mPreviewRenderHeight = std::max(1, mRenderHeight / 3);
+
     bool accumSuccess = mAccumTex->loadRGBA32F(
+        static_cast<int>(mRenderWidth),
+        static_cast<int>(mRenderHeight),
+        0);
+
+    bool outputSuccess = mPathTraceOutputTex->loadRGBA32F(
+        static_cast<int>(mRenderWidth),
+        static_cast<int>(mRenderHeight),
+        0);
+
+    bool stageSuccess = mPathTraceStageTex->loadRGBA32F(
         static_cast<int>(mRenderWidth),
         static_cast<int>(mRenderHeight),
         0);
@@ -686,17 +570,27 @@ void GameState::createPathTracerTextures() noexcept
         static_cast<int>(mRenderHeight),
         0);
 
-    if (!accumSuccess || !displaySuccess)
+    bool previewAccumSuccess = mPreviewAccumTex->loadRGBA32F(
+        static_cast<int>(mPreviewRenderWidth),
+        static_cast<int>(mPreviewRenderHeight),
+        0);
+
+    bool previewOutputSuccess = mPreviewOutputTex->loadRGBA32F(
+        static_cast<int>(mPreviewRenderWidth),
+        static_cast<int>(mPreviewRenderHeight),
+        0);
+
+    if (!accumSuccess || !outputSuccess || !stageSuccess || !displaySuccess || !previewAccumSuccess || !previewOutputSuccess)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                     "GameState: Failed to resize path tracer textures (accum: %d, display: %d)",
-                     accumSuccess, displaySuccess);
+                     "GameState: Failed to resize path tracer textures (accum:%d output:%d stage:%d display:%d pAccum:%d pOutput:%d)",
+                     accumSuccess, outputSuccess, stageSuccess, displaySuccess, previewAccumSuccess, previewOutputSuccess);
         return;
     }
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Path tracer textures recreated (window/internal):\t%dx%d / %dx%d (IDs: %u, %u)",
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Path tracer textures recreated (window/internal/preview):\t%dx%d / %dx%d / %dx%d",
         mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight,
-        mAccumTex->get(), mDisplayTex->get());
+        mPreviewRenderWidth, mPreviewRenderHeight);
 }
 
 void GameState::handleWindowResize() noexcept
@@ -1033,13 +927,11 @@ void GameState::renderWalkParticles() const noexcept
     const glm::vec3 footCenter = playerPos + glm::vec3(0.0f, 1.0f, 0.0f);
     const glm::vec3 attractor1 = footCenter + glm::vec3(-0.65f, 0.1f, 0.0f);
     const glm::vec3 attractor2 = footCenter + glm::vec3(0.65f, 0.1f, 0.0f);
-    const float scoreBoost = getScoreBracketBoost();
 
-    // Higher score tiers intensify particle presence.
-    const float particleMass = 0.35f + scoreBoost * 1.15f;
-    const float gravityScale = 1.0f + scoreBoost * 1.10f;
-    const float pointSize = 2.6f + scoreBoost * 2.2f;
-    const float particleAlpha = 0.22f + scoreBoost * 0.22f;
+    const float particleMass = 0.35f;
+    const float gravityScale = 1.0f;
+    const float pointSize = 2.6f;
+    const float particleAlpha = 0.22f;
 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mWalkParticlesPosSSBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mWalkParticlesVelSSBO);
@@ -1109,27 +1001,6 @@ bool GameState::checkCameraMovement() const noexcept
     return false;
 }
 
-float GameState::getScoreBracketBoost() const noexcept
-{
-    if (mPlayerPoints >= mMotionBlurBracket4Points)
-    {
-        return mMotionBlurBracket4Boost;
-    }
-    if (mPlayerPoints >= mMotionBlurBracket3Points)
-    {
-        return mMotionBlurBracket3Boost;
-    }
-    if (mPlayerPoints >= mMotionBlurBracket2Points)
-    {
-        return mMotionBlurBracket2Boost;
-    }
-    if (mPlayerPoints >= mMotionBlurBracket1Points)
-    {
-        return mMotionBlurBracket1Boost;
-    }
-    return 0.0f;
-}
-
 void GameState::renderCharacterShadow() const noexcept
 {
     if (!mShadowsInitialized || !mShadowShader || mShadowFBO == 0 || !mShadowTexture || mShadowTexture->get() == 0)
@@ -1181,34 +1052,6 @@ void GameState::renderCharacterShadow() const noexcept
 
     // Local character billboard shadow
     drawBillboardShadow(mPlayer.getPosition() + glm::vec3(0.0f, kPlayerShadowCenterYOffset, 0.0f), 3.0f);
-
-    // Decorative trackside sprite shadows (same layout as renderTracksideBillboards)
-    if (mArcadeModeEnabled)
-    {
-        const glm::vec3 playerPos = mPlayer.getPosition();
-        constexpr int kBillboardsAhead = 9;
-        constexpr int kBillboardsBehind = 4;
-        constexpr float kBillboardSpacing = 28.0f;
-        constexpr float kBillboardHeight = 2.9f;
-        constexpr float kBorderMargin = 7.5f;
-
-        const float borderZ = mRunnerStrafeLimit + kBorderMargin;
-
-        for (int i = -kBillboardsBehind; i <= kBillboardsAhead; ++i)
-        {
-            const float x = playerPos.x + static_cast<float>(i) * kBillboardSpacing;
-            const float stagger = (i & 1) == 0 ? 0.0f : 2.0f;
-
-            drawBillboardShadow(glm::vec3(x, kBillboardHeight, borderZ + stagger), 3.0f);
-            drawBillboardShadow(glm::vec3(x, kBillboardHeight, -borderZ - stagger), 3.0f);
-        }
-
-        // Floating billboard shadows (sphere obstacles in arcade mode)
-        for (const auto& billboard : mFloatingBillboards)
-        {
-            drawBillboardShadow(billboard.position, 3.0f);
-        }
-    }
 
     glBindVertexArray(0);
 
@@ -1320,7 +1163,7 @@ void GameState::renderPlayerReflection() const noexcept
 
 void GameState::renderWithComputeShaders() const noexcept
 {
-    if (!mComputeShader || !mDisplayShader)
+    if (!mComputeShader || !mPathTracerOutputShader || !mPathTracerTonemapShader)
     {
         return;
     }
@@ -1439,25 +1282,38 @@ void GameState::renderWithComputeShaders() const noexcept
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
     }
 
-    // Dynamic motion: keep a short rolling accumulation window to get temporal motion blur
-    // without indefinitely smearing stale history.
+    // Balanced profile: preserve clarity while avoiding full-frame compute every frame.
+    constexpr bool kEnablePreviewDuringMotion = true;
+    constexpr bool kQualityFirstDispatch = false;
+
+    // Dynamic motion history blending.
     constexpr float kMotionBlurMinSpeed = 0.60f;
     constexpr float kMotionBlurFullSpeed = 9.0f;
-    constexpr float kStaticHistoryBlend = 0.92f;
-    constexpr float kMovingHistoryBlend = 0.78f;
+    constexpr float kStaticHistoryBlend = 0.95f;
+    constexpr float kMovingHistoryBlend = 0.86f;
+    constexpr float kPreviewTriggerBlur = 0.30f;
 
     const float speed = mPlayerPlanarSpeedForFx;
     const float denom = std::max(0.001f, kMotionBlurFullSpeed - kMotionBlurMinSpeed);
     const float blurFactor = std::clamp((speed - kMotionBlurMinSpeed) / denom, 0.0f, 1.0f);
 
-    // Score brackets: increase temporal blur as player points rise so movement feels faster.
-    const float scoreBlurBoost = getScoreBracketBoost();
-
-    const float effectiveBlurFactor = std::clamp(blurFactor + scoreBlurBoost, 0.0f, 1.0f);
+    const float effectiveBlurFactor = std::clamp(blurFactor, 0.0f, 1.0f);
     const float historyBlend = kStaticHistoryBlend + (kMovingHistoryBlend - kStaticHistoryBlend) * effectiveBlurFactor;
 
-    constexpr uint32_t kStaticTilesPerFrame = 4u;
-    const bool preferFullFrameDispatch = cameraMoved || effectiveBlurFactor > 0.12f;
+    constexpr uint32_t kStaticTilesPerFrame = 6u;
+    constexpr uint32_t kMovingTilesPerFrame = 12u;
+    const bool usePreviewMode = kEnablePreviewDuringMotion && (cameraMoved || effectiveBlurFactor > kPreviewTriggerBlur);
+    const bool preferFullFrameDispatch = kQualityFirstDispatch || cameraMoved;
+
+    Texture *targetAccumTex = usePreviewMode ? mPreviewAccumTex : mAccumTex;
+    Texture *targetOutputTex = usePreviewMode ? mPreviewOutputTex : mPathTraceOutputTex;
+    const int targetWidth = usePreviewMode ? mPreviewRenderWidth : mRenderWidth;
+    const int targetHeight = usePreviewMode ? mPreviewRenderHeight : mRenderHeight;
+
+    if (!targetAccumTex || !targetOutputTex || !mPathTraceStageTex || !mDisplayTex || mPathTracePostFBO == 0)
+    {
+        return;
+    }
 
     // Always compute each frame; temporal history blending controls persistence.
     if (mTotalBatches > 0u)
@@ -1465,7 +1321,7 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->bind();
 
         // Calculate aspect ratio
-        float ar = static_cast<float>(mRenderWidth) / static_cast<float>(mRenderHeight);
+        float ar = static_cast<float>(targetWidth) / static_cast<float>(targetHeight);
 
         // Set camera uniforms (following Compute.cpp renderPathTracer)
         mComputeShader->setUniform("uCamera.eye", mCamera.getActualPosition());
@@ -1475,7 +1331,9 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uCamera.ray10", mCamera.getFrustumEyeRay(ar, 1, -1));
         mComputeShader->setUniform("uCamera.ray11", mCamera.getFrustumEyeRay(ar, 1, 1));
 
-        const uint32_t samplesPerBatch = kEnableTrianglePathTraceProxy ? 1u : mSamplesPerBatch;
+        const uint32_t samplesPerBatch = usePreviewMode
+            ? std::max(2u, mSamplesPerBatch / 2u)
+            : mSamplesPerBatch;
 
 
         // Set batch uniforms for progressive rendering
@@ -1492,14 +1350,6 @@ void GameState::renderWithComputeShaders() const noexcept
         const uint32_t adaptiveTileEdge = computeAdaptivePathTraceTileEdge(
             mRenderWidth,
             mRenderHeight);
-        const uint32_t tilesX = std::max(1u, (static_cast<uint32_t>(mRenderWidth) + adaptiveTileEdge - 1u) / adaptiveTileEdge);
-        const uint32_t tilesY = std::max(1u, (static_cast<uint32_t>(mRenderHeight) + adaptiveTileEdge - 1u) / adaptiveTileEdge);
-        const uint32_t totalTiles = std::max(1u, tilesX * tilesY);
-
-        const uint32_t dispatchTileCount = preferFullFrameDispatch
-            ? totalTiles
-            : std::min(totalTiles, kStaticTilesPerFrame);
-
         // Bind Voronoi cell color/seed/painted SSBOs used by the compute shader.
         // Keep cell count at zero unless all buffers exist for safe access.
         mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(0));
@@ -1534,8 +1384,8 @@ void GameState::renderWithComputeShaders() const noexcept
         mComputeShader->setUniform("uLightDir", computeSunDirection(timeSeconds));
 
         // Bind both textures as images for compute shader
-        glBindImageTexture(0, mAccumTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
-        glBindImageTexture(1, mDisplayTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+        glBindImageTexture(0, targetAccumTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+        glBindImageTexture(1, targetOutputTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
         // Bind starfield noise texture sampler to texture unit 2
         glActiveTexture(GL_TEXTURE0 + NOISE_TEXTURE_UNIT);
@@ -1546,16 +1396,24 @@ void GameState::renderWithComputeShaders() const noexcept
 
         // Dispatch one or more adaptive tiles this frame.
         // Movement/camera changes force full-frame updates to avoid patchy temporal lag.
-        for (uint32_t tileOffset = 0u; tileOffset < dispatchTileCount; ++tileOffset)
+        const uint32_t targetTilesX = std::max(1u, (static_cast<uint32_t>(targetWidth) + adaptiveTileEdge - 1u) / adaptiveTileEdge);
+        const uint32_t targetTilesY = std::max(1u, (static_cast<uint32_t>(targetHeight) + adaptiveTileEdge - 1u) / adaptiveTileEdge);
+        const uint32_t targetTotalTiles = std::max(1u, targetTilesX * targetTilesY);
+        const uint32_t desiredTilesPerFrame = usePreviewMode ? kMovingTilesPerFrame : kStaticTilesPerFrame;
+        const uint32_t targetDispatchTileCount = preferFullFrameDispatch
+            ? targetTotalTiles
+            : std::min(targetTotalTiles, desiredTilesPerFrame);
+
+        for (uint32_t tileOffset = 0u; tileOffset < targetDispatchTileCount; ++tileOffset)
         {
-            const uint32_t tileIndex = (mCurrentTileIndex + tileOffset) % totalTiles;
-            const uint32_t tileX = tileIndex % tilesX;
-            const uint32_t tileY = tileIndex / tilesX;
+            const uint32_t tileIndex = (mCurrentTileIndex + tileOffset) % targetTotalTiles;
+            const uint32_t tileX = tileIndex % targetTilesX;
+            const uint32_t tileY = tileIndex / targetTilesX;
 
             const uint32_t tileOriginX = tileX * adaptiveTileEdge;
             const uint32_t tileOriginY = tileY * adaptiveTileEdge;
-            const uint32_t tileWidth = std::max(1u, std::min(adaptiveTileEdge, static_cast<uint32_t>(mRenderWidth) - tileOriginX));
-            const uint32_t tileHeight = std::max(1u, std::min(adaptiveTileEdge, static_cast<uint32_t>(mRenderHeight) - tileOriginY));
+            const uint32_t tileWidth = std::max(1u, std::min(adaptiveTileEdge, static_cast<uint32_t>(targetWidth) - tileOriginX));
+            const uint32_t tileHeight = std::max(1u, std::min(adaptiveTileEdge, static_cast<uint32_t>(targetHeight) - tileOriginY));
 
             mComputeShader->setUniform("uTileOrigin", glm::uvec2(tileOriginX, tileOriginY));
             mComputeShader->setUniform("uTileSize", glm::uvec2(tileWidth, tileHeight));
@@ -1568,9 +1426,9 @@ void GameState::renderWithComputeShaders() const noexcept
         // Memory barrier to ensure compute shader writes are visible
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-        const uint32_t advancedTiles = dispatchTileCount;
-        const uint32_t nextTile = (mCurrentTileIndex + advancedTiles) % totalTiles;
-        const uint32_t wraps = (mCurrentTileIndex + advancedTiles) / totalTiles;
+        const uint32_t advancedTiles = targetDispatchTileCount;
+        const uint32_t nextTile = (mCurrentTileIndex + advancedTiles) % targetTotalTiles;
+        const uint32_t wraps = (mCurrentTileIndex + advancedTiles) / targetTotalTiles;
         mCurrentTileIndex = nextTile;
         for (uint32_t i = 0u; i < wraps; ++i)
         {
@@ -1585,29 +1443,262 @@ void GameState::renderWithComputeShaders() const noexcept
         }
     }
 
-    // Display the current result
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, mWindowWidth, mWindowHeight);
+    // GLSLPT-style output workflow:
+    // 1) Copy current tracing result into an intermediate full-resolution stage
+    // 2) Tonemap stage into the display texture used by final scene compositing
+    glBindFramebuffer(GL_FRAMEBUFFER, mPathTracePostFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mPathTraceStageTex->get(), 0);
+    glViewport(0, 0, mRenderWidth, mRenderHeight);
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
 
-    mDisplayShader->bind();
-    mDisplayShader->setUniform("uTexture2D", 0);
-
-    // DEBUG: show billboard target directly on-screen to verify Voronoi draw
+    mPathTracerOutputShader->bind();
+    mPathTracerOutputShader->setUniform("uInputTex", 0);
     glActiveTexture(GL_TEXTURE0);
-    if (mBillboardColorTex && mBillboardColorTex->get() != 0)
-    {
-        glBindTexture(GL_TEXTURE_2D, mBillboardColorTex->get());
-    }
-    else
-    {
-        glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
-    }
+    glBindTexture(GL_TEXTURE_2D, targetOutputTex->get());
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mDisplayTex->get(), 0);
+    glViewport(0, 0, mRenderWidth, mRenderHeight);
+    mPathTracerTonemapShader->bind();
+    mPathTracerTonemapShader->setUniform("uInputTex", 0);
+    mPathTracerTonemapShader->setUniform("uExposure", 1.0f);
+    mPathTracerTonemapShader->setUniform("uEnableTonemap", static_cast<GLint>(1));
+    mPathTracerTonemapShader->setUniform("uPreviewMode", static_cast<GLint>(usePreviewMode ? 1 : 0));
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, mPathTraceStageTex->get());
+    glBindVertexArray(mVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, mWindowWidth, mWindowHeight);
+
     glDepthMask(GL_TRUE);
+}
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Fragment-shader path tracing (GLSLPT-style)
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+void GameState::renderWithFragmentShaders() const noexcept
+{
+    if (!mSceneRenderer || !mSceneRenderer->isInitialized())
+        return;
+
+    const bool isDirty = (mPathTraceScene && mPathTraceScene->dirty);
+    const int passesThisFrame = isDirty ? 1 : kFragmentPassesPerFrame;
+
+    for (int i = 0; i < passesThisFrame; ++i)
+    {
+        mSceneRenderer->update(0.0f);
+        mSceneRenderer->render();
+    }
+
+    mSceneRenderer->present();
+}
+
+void GameState::syncPathTraceCamera() noexcept
+{
+    if (!mPathTraceScene)
+        return;
+
+    auto &ptCam = mPathTraceScene->getCamera();
+
+    ptCam.position = mCamera.getActualPosition();
+
+    const glm::vec3 fwd = glm::normalize(mCamera.getTarget());
+    const glm::vec3 worldUp{0.0f, 1.0f, 0.0f};
+    const glm::vec3 right = glm::normalize(glm::cross(fwd, worldUp));
+    const glm::vec3 up = glm::normalize(glm::cross(right, fwd));
+
+    ptCam.forward = fwd;
+    ptCam.right = right;
+    ptCam.up = up;
+
+    ptCam.fov = glm::radians(45.0f);
+
+    // Mark scene dirty when camera moves so accumulation resets
+    const glm::vec3 actualCameraPos = mCamera.getActualPosition();
+
+    const bool cameraMoved =
+        (glm::distance(mLastCameraPosition, actualCameraPos) > 0.001f) ||
+        (std::abs(mLastCameraYaw - mCamera.getYaw()) > 0.01f) ||
+        (std::abs(mLastCameraPitch - mCamera.getPitch()) > 0.01f);
+
+    if (cameraMoved)
+        mPathTraceScene->dirty = true;
+
+    // Update movement baseline every frame so we only reset accumulation on actual deltas.
+    mLastCameraPosition = actualCameraPos;
+    mLastCameraYaw = mCamera.getYaw();
+    mLastCameraPitch = mCamera.getPitch();
+}
+
+void GameState::frameFragmentCornellCamera() noexcept
+{
+    // Cornell scene is centered near origin and open toward +Z.
+    mCamera.setMode(CameraMode::FIRST_PERSON);
+    mCamera.setPosition(glm::vec3(0.0f, 0.0f, 12.0f));
+    mCamera.setYawPitch(-90.0f, 0.0f);
+
+    mLastCameraPosition = mCamera.getActualPosition();
+    mLastCameraYaw = mCamera.getYaw();
+    mLastCameraPitch = mCamera.getPitch();
+
+    if (mPathTraceScene)
+    {
+        mPathTraceScene->dirty = true;
+    }
+    if (mSceneRenderer)
+    {
+        mSceneRenderer->markDirty();
+    }
+}
+
+void GameState::buildPathTraceScene() noexcept
+{
+    if (!mPathTraceScene)
+        return;
+
+    // â”€â”€ Cornell Box â€“ classic test scene â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Box dimensions: 10Ã—10Ã—10, centered at origin
+
+    // Meshes: each wall is two triangles (a quad)
+    auto makeQuad = [](const glm::vec3 &v0, const glm::vec3 &v1,
+                       const glm::vec3 &v2, const glm::vec3 &v3,
+                       const glm::vec3 &normal) -> PTMesh
+    {
+        PTMesh mesh;
+        // Triangle 1: v0, v1, v2
+        mesh.verticesUVX.push_back(glm::vec4(v0, 0.0f));
+        mesh.verticesUVX.push_back(glm::vec4(v1, 1.0f));
+        mesh.verticesUVX.push_back(glm::vec4(v2, 1.0f));
+        mesh.normalsUVY.push_back(glm::vec4(normal, 0.0f));
+        mesh.normalsUVY.push_back(glm::vec4(normal, 0.0f));
+        mesh.normalsUVY.push_back(glm::vec4(normal, 1.0f));
+        // Triangle 2: v0, v2, v3
+        mesh.verticesUVX.push_back(glm::vec4(v0, 0.0f));
+        mesh.verticesUVX.push_back(glm::vec4(v2, 1.0f));
+        mesh.verticesUVX.push_back(glm::vec4(v3, 0.0f));
+        mesh.normalsUVY.push_back(glm::vec4(normal, 0.0f));
+        mesh.normalsUVY.push_back(glm::vec4(normal, 1.0f));
+        mesh.normalsUVY.push_back(glm::vec4(normal, 1.0f));
+        return mesh;
+    };
+
+    const float H = 5.0f; // half-extent
+
+    // â”€â”€ Materials â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    PTMaterial whiteMat;
+    whiteMat.baseColor = glm::vec3(0.73f);
+    whiteMat.roughness = 1.0f;
+    int whiteID = mPathTraceScene->addMaterial(whiteMat);
+
+    PTMaterial redMat;
+    redMat.baseColor = glm::vec3(0.65f, 0.05f, 0.05f);
+    redMat.roughness = 1.0f;
+    int redID = mPathTraceScene->addMaterial(redMat);
+
+    PTMaterial greenMat;
+    greenMat.baseColor = glm::vec3(0.12f, 0.45f, 0.15f);
+    greenMat.roughness = 1.0f;
+    int greenID = mPathTraceScene->addMaterial(greenMat);
+
+    PTMaterial lightMat;
+    lightMat.baseColor = glm::vec3(0.0f);
+    // Use neutral white emitter to avoid warm/yellow scene bias.
+    lightMat.emission = glm::vec3(15.0f);
+    int lightID = mPathTraceScene->addMaterial(lightMat);
+
+    // â”€â”€ Walls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Floor (white)
+    PTMesh floor = makeQuad(
+        {-H, -H, -H}, {H, -H, -H}, {H, -H, H}, {-H, -H, H},
+        {0, 1, 0});
+    floor.name = "floor";
+    int floorMeshID = mPathTraceScene->addMesh(std::move(floor));
+    mPathTraceScene->addMeshInstance({"floor", floorMeshID, whiteID, glm::mat4(1.0f)});
+
+    // Ceiling (white)
+    PTMesh ceiling = makeQuad(
+        {-H, H, H}, {H, H, H}, {H, H, -H}, {-H, H, -H},
+        {0, -1, 0});
+    ceiling.name = "ceiling";
+    int ceilingMeshID = mPathTraceScene->addMesh(std::move(ceiling));
+    mPathTraceScene->addMeshInstance({"ceiling", ceilingMeshID, whiteID, glm::mat4(1.0f)});
+
+    // Back wall (white)
+    PTMesh backWall = makeQuad(
+        {-H, -H, -H}, {-H, H, -H}, {H, H, -H}, {H, -H, -H},
+        {0, 0, 1});
+    backWall.name = "back";
+    int backMeshID = mPathTraceScene->addMesh(std::move(backWall));
+    mPathTraceScene->addMeshInstance({"back", backMeshID, whiteID, glm::mat4(1.0f)});
+
+    // Left wall (red)
+    PTMesh leftWall = makeQuad(
+        {-H, -H, H}, {-H, H, H}, {-H, H, -H}, {-H, -H, -H},
+        {1, 0, 0});
+    leftWall.name = "left";
+    int leftMeshID = mPathTraceScene->addMesh(std::move(leftWall));
+    mPathTraceScene->addMeshInstance({"left", leftMeshID, redID, glm::mat4(1.0f)});
+
+    // Right wall (green)
+    PTMesh rightWall = makeQuad(
+        {H, -H, -H}, {H, H, -H}, {H, H, H}, {H, -H, H},
+        {-1, 0, 0});
+    rightWall.name = "right";
+    int rightMeshID = mPathTraceScene->addMesh(std::move(rightWall));
+    mPathTraceScene->addMeshInstance({"right", rightMeshID, greenID, glm::mat4(1.0f)});
+
+    // â”€â”€ Light (small quad on ceiling) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const float L = 1.3f; // light half-size
+    PTMesh lightQuad = makeQuad(
+        {-L, H - 0.01f, -L}, {L, H - 0.01f, -L},
+        {L, H - 0.01f, L}, {-L, H - 0.01f, L},
+        {0, -1, 0});
+    lightQuad.name = "light";
+    int lightMeshID = mPathTraceScene->addMesh(std::move(lightQuad));
+    mPathTraceScene->addMeshInstance({"light", lightMeshID, lightID, glm::mat4(1.0f)});
+
+    // Add area light descriptor for shader sampling
+    PTLight areaLight;
+    areaLight.position = glm::vec3(0.0f, H - 0.01f, 0.0f);
+    areaLight.emission = glm::vec3(15.0f);
+    areaLight.u = glm::vec3(L * 2.0f, 0.0f, 0.0f);
+    areaLight.v = glm::vec3(0.0f, 0.0f, L * 2.0f);
+    areaLight.area = (L * 2.0f) * (L * 2.0f);
+    areaLight.type = 0.0f; // quad light
+    mPathTraceScene->addLight(areaLight);
+
+    // â”€â”€ Camera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    PTCamera cam;
+    cam.position = glm::vec3(0.0f, 0.0f, 3.0f);
+    cam.forward = glm::vec3(0.0f, 0.0f, -1.0f);
+    cam.up = glm::vec3(0.0f, 1.0f, 0.0f);
+    cam.right = glm::vec3(1.0f, 0.0f, 0.0f);
+    cam.fov = glm::radians(45.0f);
+    cam.focalDist = 8.0f;
+    cam.aperture = 0.0f;
+    mPathTraceScene->setCamera(cam);
+
+    // â”€â”€ Render options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    auto &opts = mPathTraceScene->getRenderOptions();
+    opts.maxDepth = 4;
+    opts.enableUniformLight = false;
+    opts.uniformLightCol = glm::vec3(0.3f);
+    opts.enableEnvMap = false;
+    opts.enableBackground = false;
+    opts.backgroundCol = glm::vec3(0.0f);
+
+    mPathTraceScene->processScene();
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "GameState: Cornell Box scene built  meshes=%d tris=%zu lights=%zu",
+                static_cast<int>(mPathTraceScene->getMeshInstances().size()),
+                mPathTraceScene->getVertIndices().size(),
+                mPathTraceScene->getLights().size());
 }
 
 void GameState::renderCompositeScene() const noexcept
@@ -1702,6 +1793,20 @@ void GameState::resolveOITToBillboardTarget() const noexcept
 
 void GameState::cleanupResources() noexcept
 {
+    // Clean up fragment path tracer resources
+    if (mSceneRenderer)
+    {
+        mSceneRenderer->cleanup();
+        mSceneRenderer.reset();
+    }
+    mPathTraceScene.reset();
+
+        if (mPathTracePostFBO != 0)
+        {
+            glDeleteFramebuffers(1, &mPathTracePostFBO);
+            mPathTracePostFBO = 0;
+        }
+
     GLSDLHelper::deleteVAO(mVAO);
     GLSDLHelper::deleteBuffer(mShapeSSBO);
     GLSDLHelper::deleteBuffer(mTriangleSSBO);
@@ -1774,39 +1879,24 @@ void GameState::cleanupResources() noexcept
         glDeleteBuffers(1, &mWalkParticlesVelSSBO);
         mWalkParticlesVelSSBO = 0;
     }
-    if (mRunnerBreakPlaneVAO != 0)
-    {
-        glDeleteVertexArrays(1, &mRunnerBreakPlaneVAO);
-        mRunnerBreakPlaneVAO = 0;
-    }
-    if (mRunnerBreakPlanePosSSBO != 0)
-    {
-        glDeleteBuffers(1, &mRunnerBreakPlanePosSSBO);
-        mRunnerBreakPlanePosSSBO = 0;
-    }
-    if (mRunnerBreakPlaneVelSSBO != 0)
-    {
-        glDeleteBuffers(1, &mRunnerBreakPlaneVelSSBO);
-        mRunnerBreakPlaneVelSSBO = 0;
-    }
-    if (mRunnerBreakPlaneFBO != 0)
-    {
-        glDeleteFramebuffers(1, &mRunnerBreakPlaneFBO);
-        mRunnerBreakPlaneFBO = 0;
-    }
-    mRunnerBreakPlaneTexture = nullptr;
     mWalkParticlesInitialized = false;
     mWalkParticlesComputeShader = nullptr;
     mWalkParticlesRenderShader = nullptr;
     mShadowShader = nullptr;
 
     mAccumTex = nullptr;
+    mPathTraceOutputTex = nullptr;
+    mPathTraceStageTex = nullptr;
     mDisplayTex = nullptr;
+    mPreviewAccumTex = nullptr;
+    mPreviewOutputTex = nullptr;
     mNoiseTexture = nullptr;
 
     // Shaders are now managed by ShaderManager - don't delete them here
     mDisplayShader = nullptr;
     mComputeShader = nullptr;
+    mPathTracerOutputShader = nullptr;
+    mPathTracerTonemapShader = nullptr;
     mCompositeShader = nullptr;
     mOITResolveShader = nullptr;
     mStencilOutlineShader = nullptr;
@@ -1863,43 +1953,12 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     mWorld.update(dt);
 
-    syncRunnerSettingsFromOptions();
-
-    // In arcade runner mode, disable free player movement (we control position explicitly)
-    if (!mArcadeModeEnabled)
-    {
-        mPlayer.handleRealtimeInput(mCamera, dt);
-    }
-    
-    // Handle keyboard strafing in arcade mode
-    if (mArcadeModeEnabled)
-    {
-        int numKeys = 0;
-        const auto *keyState = SDL_GetKeyboardState(&numKeys);
-        if (keyState)
-        {
-            float keyboardStrafe = 0.0f;
-            if (keyState[SDL_SCANCODE_A])
-            {
-                keyboardStrafe -= mJoystickStrafeSpeed * dt;
-            }
-            if (keyState[SDL_SCANCODE_D])
-            {
-                keyboardStrafe += mJoystickStrafeSpeed * dt;
-            }
-            // Clamp lateral arc to prevent reaching poles where spherical coordinates break down
-            mRunnerLateralArc = std::clamp(mRunnerLateralArc + keyboardStrafe, -mRunnerStrafeLimit, mRunnerStrafeLimit);
-        }
-    }
+    mPlayer.handleRealtimeInput(mCamera, dt);
     
     updateJoystickInput(dt);
 
-    updateRunnerGameplay(dt);
-
-    // Disabled chunk-based spawning for spherical planet gameplay
-    // glm::vec3 chunkAnchor = mPlayer.getPosition();
-    // chunkAnchor.x += mRunnerPickupSpawnAhead;
-    // mWorld.updateSphereChunks(chunkAnchor);
+    glm::vec3 chunkAnchor = mPlayer.getPosition();
+    mWorld.updateSphereChunks(chunkAnchor);
 
     // Paint ground-plane Voronoi cell under player
     if (dt > 0.0f)
@@ -1930,13 +1989,6 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     // Update player animation
     mPlayer.updateAnimation(dt);
     
-    // In arcade mode, player always faces forward along the runner path
-    if (mArcadeModeEnabled)
-    {
-        // Player always faces forward (0°) - forward facing in the arcade runner
-        mPlayer.setFacingDirection(0.0f);
-    }
-
     if (dt > 0.0f)
     {
         const glm::vec3 playerPosNow = mPlayer.getPosition();
@@ -1955,6 +2007,12 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
         }
 
         mLastFxPlayerPosition = playerPosNow;
+    }
+
+    // Update fragment path tracer camera (render() advances tile/sample state)
+    if (mRenderMode == RenderMode::FRAGMENT && mSceneRenderer && mPathTraceScene)
+    {
+        syncPathTraceCamera();
     }
 
     return true;
@@ -1982,6 +2040,21 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
                     glViewport(0, 0, mWindowWidth, mWindowHeight);
                     // Update internal rendering resolution for path tracer
                     updateRenderResolution();
+
+                    if (mPathTraceScene && mSceneRenderer)
+                    {
+                        auto &opts = mPathTraceScene->getRenderOptions();
+                        const int fragmentRenderWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(mRenderWidth) * kFragmentRenderScale)));
+                        const int fragmentRenderHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(mRenderHeight) * kFragmentRenderScale)));
+                        opts.renderResolution = {fragmentRenderWidth, fragmentRenderHeight};
+                        opts.windowResolution = {mWindowWidth, mWindowHeight};
+                        opts.tileWidth = kFragmentTileWidth;
+                        opts.tileHeight = kFragmentTileHeight;
+                        mSceneRenderer->initFBOs();
+                        mSceneRenderer->initShaderUniforms();
+                        mSceneRenderer->markDirty();
+                    }
+
                     // Recreate path tracer textures
                     createPathTracerTextures();
                     createCompositeTargets();
@@ -2005,12 +2078,6 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
 
     if (event.type == SDL_EVENT_KEY_DOWN)
     {
-        if (event.key.scancode == SDL_SCANCODE_RETURN && mRunLost)
-        {
-            resetRunnerRun();
-            return true;
-        }
-
         if (event.key.scancode == SDL_SCANCODE_ESCAPE)
         {
             mGameIsPaused = true;
@@ -2042,6 +2109,22 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
         {
             triggerHapticTest(0.65f, 0.08f);
         }
+
+        // Toggle render mode with F5
+        if (event.key.scancode == SDL_SCANCODE_F5)
+        {
+            mRenderMode = (mRenderMode == RenderMode::COMPUTE)
+                              ? RenderMode::FRAGMENT
+                              : RenderMode::COMPUTE;
+            if (mRenderMode == RenderMode::FRAGMENT)
+            {
+                frameFragmentCornellCamera();
+            }
+            if (mSceneRenderer)
+                mSceneRenderer->markDirty();
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Render mode â†’ %s",
+                        mRenderMode == RenderMode::COMPUTE ? "Compute" : "Fragment");
+        }
     }
 
     // Handle mouse motion for camera rotation (right mouse button)
@@ -2051,15 +2134,8 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
         if (mouseState & SDL_BUTTON_RMASK)
         {
             static constexpr float SENSITIVITY = 0.35f;
-            if (mArcadeModeEnabled && mCamera.getMode() == CameraMode::THIRD_PERSON)
+            if (mCamera.getMode() == CameraMode::THIRD_PERSON)
             {
-                // In arcade mode third-person, only allow pitch (vertical) camera rotation
-                mCamera.rotate(0.0f, -event.motion.yrel * SENSITIVITY);
-                mCamera.updateThirdPersonPosition();
-            }
-            else if (mCamera.getMode() == CameraMode::THIRD_PERSON)
-            {
-                // In regular third-person, allow both yaw and pitch
                 mCamera.rotate(event.motion.xrel * SENSITIVITY, -event.motion.yrel * SENSITIVITY);
                 mCamera.updateThirdPersonPosition();
             }
@@ -2191,22 +2267,13 @@ void GameState::updateJoystickInput(float dt) noexcept
     const float mag = (std::abs(axisNorm) - mJoystickDeadzone) / std::max(0.001f, 1.0f - mJoystickDeadzone);
     const float strafe = sign * std::clamp(mag, 0.0f, 1.0f) * mJoystickStrafeSpeed * dt;
 
-    if (mArcadeModeEnabled)
+    glm::vec3 playerPos = mPlayer.getPosition();
+    playerPos.z += strafe;
+    mPlayer.setPosition(playerPos);
+    mCamera.setFollowTarget(playerPos);
+    if (mCamera.getMode() == CameraMode::THIRD_PERSON)
     {
-        // Update lateral arc directly
-        mRunnerLateralArc = std::clamp(mRunnerLateralArc + strafe, -mRunnerStrafeLimit, mRunnerStrafeLimit);
-    }
-    else
-    {
-        // Non-arcade mode:直接移动玩家
-        glm::vec3 playerPos = mPlayer.getPosition();
-        playerPos.z += strafe;
-        mPlayer.setPosition(playerPos);
-        mCamera.setFollowTarget(playerPos);
-        if (mCamera.getMode() == CameraMode::THIRD_PERSON)
-        {
-            mCamera.updateThirdPersonPosition();
-        }
+        mCamera.updateThirdPersonPosition();
     }
 }
 
@@ -2441,9 +2508,6 @@ void GameState::renderPlayerCharacter() const noexcept
         glBlendFunci(1, GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
 
         GLSDLHelper::setBillboardOITPass(true);
-        renderRunnerBreakPlane();
-        renderTracksideBillboards();
-        drawRunnerScorePopups();
         GLSDLHelper::setBillboardOITPass(false);
 
         glDepthMask(GL_TRUE);
@@ -2454,10 +2518,6 @@ void GameState::renderPlayerCharacter() const noexcept
     else
     {
         GLSDLHelper::setBillboardOITPass(false);
-        renderRunnerBreakPlane();
-        renderTracksideBillboards();
-        renderFloatingBillboards();
-        drawRunnerScorePopups();
     }
 
     if (mCompositeShader && mBillboardFBO != 0)
@@ -2465,888 +2525,6 @@ void GameState::renderPlayerCharacter() const noexcept
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
         glReadBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
-    }
-}
-
-void GameState::renderTracksideBillboards() const noexcept
-{
-    // Disabled - replaced with floating billboards in space
-    if (true)
-    {
-        return;
-    }
-    
-    if (!mArcadeModeEnabled || mCamera.getMode() != CameraMode::THIRD_PERSON)
-    {
-        return;
-    }
-
-    const AnimationRect frame = mPlayer.getCurrentAnimationFrame();
-    const glm::vec3 playerPos = mPlayer.getPosition();
-
-    constexpr int kBillboardsAhead = 9;
-    constexpr int kBillboardsBehind = 4;
-    constexpr float kBillboardSpacing = 28.0f;
-    constexpr float kBillboardHeight = 2.9f;
-    constexpr int kGuardRailSegmentsAhead = 22;
-    constexpr int kGuardRailSegmentsBehind = 8;
-    constexpr float kGuardRailSpacing = 12.0f;
-    constexpr float kGuardRailHeight = 2.4f;
-    constexpr float kGuardRailHalfSize = 1.0f;
-    const glm::vec2 guardRailHalfSizeXY(6.4f, 1.4f);
-    const glm::vec3 guardRailRightAxisWS(1.0f, 0.0f, 0.0f);
-    const glm::vec3 guardRailUpAxisWS(0.0f, 1.0f, 0.0f);
-    const glm::vec3 sidelineSpriteRightAxisWS(1.0f, 0.0f, 0.0f);
-    const glm::vec3 sidelineSpriteUpAxisWS(0.0f, 1.0f, 0.0f);
-
-    const float borderZ = mRunnerStrafeLimit + kTracksideBillboardBorderMargin;
-    const float guardRailZ = mRunnerStrafeLimit + kTracksideGuardRailBorderMargin;
-
-    for (int i = -kGuardRailSegmentsBehind; i <= kGuardRailSegmentsAhead; ++i)
-    {
-        const float x = playerPos.x + static_cast<float>(i) * kGuardRailSpacing;
-
-        mWorld.renderTexturedBillboard(
-            glm::vec3(x, kGuardRailHeight, guardRailZ),
-            kGuardRailHalfSize,
-            guardRailHalfSizeXY,
-            Textures::ID::WALL_HORIZONTAL,
-            true,
-            guardRailRightAxisWS,
-            guardRailUpAxisWS,
-            true,
-            mCamera);
-
-        mWorld.renderTexturedBillboard(
-            glm::vec3(x, kGuardRailHeight, -guardRailZ),
-            kGuardRailHalfSize,
-            guardRailHalfSizeXY,
-            Textures::ID::WALL_HORIZONTAL,
-            true,
-            guardRailRightAxisWS,
-            guardRailUpAxisWS,
-            true,
-            mCamera);
-    }
-
-    for (int i = -kBillboardsBehind; i <= kBillboardsAhead; ++i)
-    {
-        const float x = playerPos.x + static_cast<float>(i) * kBillboardSpacing;
-        const float stagger = (i & 1) == 0 ? 0.0f : 2.0f;
-
-        mWorld.renderCharacterFromState(
-            glm::vec3(x, kBillboardHeight, borderZ + stagger),
-            180.0f,
-            frame,
-            mCamera,
-            true,
-            sidelineSpriteRightAxisWS,
-            sidelineSpriteUpAxisWS,
-            true);
-
-        mWorld.renderCharacterFromState(
-            glm::vec3(x, kBillboardHeight, -borderZ - stagger),
-            0.0f,
-            frame,
-            mCamera,
-            true,
-            sidelineSpriteRightAxisWS,
-            sidelineSpriteUpAxisWS,
-            true);
-    }
-}
-
-void GameState::renderFloatingBillboards() const noexcept
-{
-    if (!mArcadeModeEnabled || mCamera.getMode() != CameraMode::THIRD_PERSON)
-    {
-        return;
-    }
-    
-    if (mFloatingBillboards.empty())
-    {
-        return;
-    }
-    
-    const AnimationRect frame = mPlayer.getCurrentAnimationFrame();
-    const glm::vec3 rightAxisWS(1.0f, 0.0f, 0.0f);
-    const glm::vec3 upAxisWS(0.0f, 1.0f, 0.0f);
-    
-    // Render each floating billboard
-    for (const auto& billboard : mFloatingBillboards)
-    {
-        mWorld.renderCharacterFromState(
-            billboard.position,
-            billboard.animPhase * 360.0f, // Rotation based on anim phase
-            frame,
-            mCamera,
-            true,
-            rightAxisWS,
-            upAxisWS,
-            true
-        );
-    }
-}
-
-void GameState::renderRunnerBreakPlane() const noexcept
-{
-    if (!mArcadeModeEnabled || mCamera.getMode() != CameraMode::THIRD_PERSON || !mRunnerBreakPlaneTexture || mRunnerBreakPlaneTexture->get() == 0)
-    {
-        return;
-    }
-
-    Shader *billboardShader = nullptr;
-    try
-    {
-        billboardShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
-    }
-    catch (const std::exception &)
-    {
-        billboardShader = nullptr;
-    }
-
-    if (!billboardShader)
-    {
-        return;
-    }
-
-    const int safeHeight = std::max(1, mWindowHeight);
-    const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
-    const glm::mat4 view = mCamera.getLookAt();
-    const glm::mat4 projection = mCamera.getPerspective(aspectRatio);
-    const glm::vec4 uvRect(0.0f, 0.0f, 1.0f, 1.0f);
-
-    if (mRunnerBreakPlaneActive)
-    {
-        const float borderZ = mRunnerStrafeLimit + kTracksideBillboardBorderMargin;
-        const glm::vec3 planeCenter(mRunnerBreakPlaneX, 4.4f, 0.0f);
-        const glm::vec4 tint(0.78f, 0.95f, 1.0f, 0.85f);
-        const glm::vec2 halfSizeXY(borderZ, 0.5f * mRunnerBreakPlaneHeight);
-
-        GLSDLHelper::renderBillboardSpriteUV(
-            *billboardShader,
-            mRunnerBreakPlaneTexture->get(),
-            uvRect,
-            planeCenter,
-            1.0f,
-            view,
-            projection,
-            tint,
-            false,
-            false,
-            false,
-            halfSizeXY);
-    }
-
-    for (const auto &shard : mRunnerBreakPlaneShards)
-    {
-        const float t = std::clamp(shard.age / std::max(0.001f, shard.lifetime), 0.0f, 1.0f);
-        const float alpha = (1.0f - t) * 0.75f;
-        if (alpha <= 0.01f)
-        {
-            continue;
-        }
-
-        GLSDLHelper::renderBillboardSpriteUV(
-            *billboardShader,
-            mRunnerBreakPlaneTexture->get(),
-            uvRect,
-            shard.position,
-            1.0f,
-            view,
-            projection,
-            glm::vec4(0.76f, 0.95f, 1.0f, alpha),
-            false,
-            false,
-            false,
-            shard.halfSize);
-    }
-}
-
-void GameState::syncRunnerSettingsFromOptions() noexcept
-{
-    auto *optionsManager = getContext().getOptionsManager();
-    if (!optionsManager)
-    {
-        return;
-    }
-
-    try
-    {
-        const auto &opts = optionsManager->get(GUIOptions::ID::DE_FACTO);
-        mArcadeModeEnabled = opts.getArcadeModeEnabled();
-        mRunnerSpeed = std::max(5.0f, opts.getRunnerSpeed());
-        mRunnerStrafeLimit = std::max(5.0f, opts.getRunnerStrafeLimit());
-        mRunnerStartingPoints = std::max(1, opts.getRunnerStartingPoints());
-        mRunnerPickupMinValue = std::min(opts.getRunnerPickupMinValue(), opts.getRunnerPickupMaxValue());
-        mRunnerPickupMaxValue = std::max(opts.getRunnerPickupMinValue(), opts.getRunnerPickupMaxValue());
-        mRunnerPickupSpacing = std::max(4.0f, opts.getRunnerPickupSpacing());
-        mRunnerObstaclePenalty = std::max(1, opts.getRunnerObstaclePenalty());
-        mRunnerCollisionCooldown = std::max(0.05f, opts.getRunnerCollisionCooldown());
-
-        mStencilOutlineEnabled = opts.getStencilOutlineEnabled();
-        mStencilOutlinePulseEnabled = opts.getStencilOutlinePulseEnabled();
-        mStencilOutlineWidth = std::clamp(opts.getStencilOutlineWidth(), 0.0f, 0.20f);
-        mStencilOutlinePulseSpeed = std::clamp(opts.getStencilOutlinePulseSpeed(), 0.2f, 10.0f);
-        mStencilOutlinePulseAmount = std::clamp(opts.getStencilOutlinePulseAmount(), 0.0f, 0.8f);
-        mStencilOutlineColor = glm::vec3(
-            std::clamp(opts.getStencilOutlineColorR(), 0.0f, 1.0f),
-            std::clamp(opts.getStencilOutlineColorG(), 0.0f, 1.0f),
-            std::clamp(opts.getStencilOutlineColorB(), 0.0f, 1.0f));
-
-        mMotionBlurBracket1Points = std::max(0, opts.getMotionBlurBracket1Points());
-        mMotionBlurBracket2Points = std::max(mMotionBlurBracket1Points, opts.getMotionBlurBracket2Points());
-        mMotionBlurBracket3Points = std::max(mMotionBlurBracket2Points, opts.getMotionBlurBracket3Points());
-        mMotionBlurBracket4Points = std::max(mMotionBlurBracket3Points, opts.getMotionBlurBracket4Points());
-
-        mMotionBlurBracket1Boost = std::clamp(opts.getMotionBlurBracket1Boost(), 0.0f, 1.0f);
-        mMotionBlurBracket2Boost = std::clamp(opts.getMotionBlurBracket2Boost(), mMotionBlurBracket1Boost, 1.0f);
-        mMotionBlurBracket3Boost = std::clamp(opts.getMotionBlurBracket3Boost(), mMotionBlurBracket2Boost, 1.0f);
-        mMotionBlurBracket4Boost = std::clamp(opts.getMotionBlurBracket4Boost(), mMotionBlurBracket3Boost, 1.0f);
-
-        mWorld.setRunnerTuning(mRunnerStrafeLimit, mRunnerPickupSpawnAhead, mRunnerSpeed + 8.0f);
-    }
-    catch (const std::exception &)
-    {
-    }
-
-    mWorld.setRunnerTuning(mRunnerStrafeLimit, mRunnerPickupSpawnAhead, mRunnerSpeed + 8.0f);
-}
-
-void GameState::updateRunnerGameplay(float dt) noexcept
-{
-    if (!mArcadeModeEnabled || dt <= 0.0f)
-    {
-        return;
-    }
-
-    // Keep forward flow continuous; reset is optional when points drop below zero.
-    mRunnerDistance += mRunnerSpeed * dt;
-
-    const glm::vec3 center = mVoronoiPlanet.getCenter();
-    const float radius = std::max(1.0f, mVoronoiPlanet.getRadius());
-
-    // Compute player position on sphere surface
-    glm::vec3 playerPos = computeRunnerPlanetPosition(mRunnerDistance, mRunnerLateralArc, center, radius);
-    
-    // Calculate player orientation - standing perpendicular to surface, facing forward along theta
-    const float theta = mRunnerDistance / radius;
-    const float phi = mRunnerLateralArc / radius;
-    const glm::vec3 surfaceNormal = glm::normalize(playerPos - center);
-    
-    // Tangent along theta direction (forward movement)
-    const float cosPhi = std::cos(phi);
-    const float sinPhi = std::sin(phi);
-    const float sinTheta = std::sin(theta);
-    const float cosTheta = std::cos(theta);
-    
-    glm::vec3 forwardTangent = glm::vec3(
-        -cosPhi * sinTheta,
-        0.0f,
-        cosPhi * cosTheta
-    );
-    
-    // Safety check: if tangent is near-zero (at poles), use a fallback direction
-    const float tangentLength = glm::length(forwardTangent);
-    if (tangentLength > 0.001f)
-    {
-        forwardTangent = forwardTangent / tangentLength;
-    }
-    else
-    {
-        // At poles, use perpendicular to surface normal as forward direction
-        forwardTangent = glm::normalize(glm::cross(surfaceNormal, glm::vec3(0.0f, 0.0f, 1.0f)));
-        if (glm::length(forwardTangent) < 0.001f)
-        {
-            forwardTangent = glm::normalize(glm::cross(surfaceNormal, glm::vec3(1.0f, 0.0f, 0.0f)));
-        }
-    }
-    
-    // Set player orientation to face forward along the sphere
-    const float forwardYaw = glm::degrees(std::atan2(forwardTangent.z, forwardTangent.x));
-    
-    mPlayer.setPosition(playerPos);
-    mPlayer.setSurfaceNormal(surfaceNormal);  // Align player with planet surface
-    mPlayer.setForwardTangent(forwardTangent);  // Store forward direction along sphere
-    mWorld.setRunnerPlayerPosition(playerPos);
-    
-    // Position camera behind player along the backward tangent
-    const float cameraDistance = mCamera.getThirdPersonDistance();
-    const float cameraHeight = mCamera.getThirdPersonHeight();
-    
-    glm::vec3 backwardTangent = -forwardTangent;
-    glm::vec3 cameraPos = playerPos + backwardTangent * cameraDistance + surfaceNormal * cameraHeight;
-    
-    // Ensure camera stays outside planet surface
-    glm::vec3 cameraRadial = cameraPos - center;
-    const float cameraDistFromCenter = glm::length(cameraRadial);
-    const float minCameraDistance = radius + 2.0f;
-    
-    if (cameraDistFromCenter < minCameraDistance)
-    {
-        cameraRadial = glm::normalize(cameraRadial);
-        cameraPos = center + cameraRadial * minCameraDistance;
-    }
-    
-    // Set camera follow target for third-person mode
-    mCamera.setFollowTarget(playerPos);
-    
-    // Set up vector to surface normal BEFORE setting yaw/pitch
-    // This ensures the custom up vector is preserved by updateVectors()
-    mCamera.setUp(surfaceNormal);
-    
-    // Calculate camera yaw to face forward along sphere surface
-    // Pitch should look slightly downward toward player
-    const glm::vec3 toPlayer = playerPos - cameraPos;
-    const float distToPlayer = glm::length(toPlayer);
-    const float pitchAngle = (distToPlayer > 0.001f) 
-        ? glm::degrees(std::asin(std::clamp(toPlayer.y / distToPlayer, -1.0f, 1.0f)))
-        : -15.0f;  // Default slight downward tilt
-    
-    // Set yaw/pitch - updateVectors() will preserve our custom up vector
-    mCamera.setYawPitch(forwardYaw, pitchAngle);
-    
-    // Finally set the computed camera position
-    mCamera.setPosition(cameraPos);
-
-    updateRunnerBreakPlane(dt);
-    processRunnerCollisions(dt);
-    updateRunnerScorePopups(dt);
-}
-
-void GameState::updateRunnerBreakPlane(float dt) noexcept
-{
-    if (!mArcadeModeEnabled)
-    {
-        mRunnerBreakPlaneShards.clear();
-        return;
-    }
-
-    const glm::vec3 playerPos = mPlayer.getPosition();
-
-    if (!mRunnerBreakPlaneActive)
-    {
-        mRunnerBreakPlaneRespawnTimer = std::max(0.0f, mRunnerBreakPlaneRespawnTimer - dt);
-        if (mRunnerBreakPlaneRespawnTimer <= 0.0f)
-        {
-            const float minAhead = playerPos.x + 55.0f;
-            const float bySpacing = mRunnerBreakPlaneX + mRunnerBreakPlaneSpacing;
-            mRunnerBreakPlaneX = std::max(minAhead, bySpacing);
-            mRunnerBreakPlaneActive = true;
-        }
-    }
-
-    if (mRunnerBreakPlaneActive && mRunnerBreakPlaneLastPlayerX < mRunnerBreakPlaneX && playerPos.x >= mRunnerBreakPlaneX)
-    {
-        shatterRunnerBreakPlane();
-    }
-
-    for (auto &shard : mRunnerBreakPlaneShards)
-    {
-        shard.age += dt;
-        shard.velocity.y -= 17.5f * dt;
-        shard.position += shard.velocity * dt;
-    }
-
-    // Remove expired shards using erase-remove idiom (C++17 compatible)
-    mRunnerBreakPlaneShards.erase(
-        std::remove_if(mRunnerBreakPlaneShards.begin(), mRunnerBreakPlaneShards.end(),
-                      [](const RunnerBreakPlaneShard &shard) { return shard.age >= shard.lifetime; }),
-        mRunnerBreakPlaneShards.end());
-
-    mRunnerBreakPlaneLastPlayerX = playerPos.x;
-}
-
-void GameState::shatterRunnerBreakPlane() noexcept
-{
-    mRunnerBreakPlaneActive = false;
-    mRunnerBreakPlaneRespawnTimer = mRunnerBreakPlaneRespawnDelay;
-    mPlayerPoints += mRunnerBreakPlanePoints;
-
-    if (auto *models = getContext().getModelsManager(); models)
-    {
-        try
-        {
-            GLTFModel &characterModel = models->get(Models::ID::STYLIZED_CHARACTER);
-            const std::size_t animationCount = characterModel.getAnimationCount();
-            if (animationCount >= 2)
-            {
-                const std::vector<std::string> names = characterModel.getAnimationNames();
-                const std::string activeName = characterModel.getActiveAnimationName();
-
-                int currentIndex = 0;
-                if (!activeName.empty() && !names.empty())
-                {
-                    auto found = std::find(names.begin(), names.end(), activeName);
-                    if (found != names.end())
-                    {
-                        currentIndex = static_cast<int>(std::distance(names.begin(), found));
-                    }
-                }
-
-                const int toggledIndex = (currentIndex == 0) ? 1 : 0;
-                if (characterModel.setPreferredAnimationIndex(toggledIndex))
-                {
-                    mModelAnimTimeSeconds = 0.0f;
-                }
-            }
-        }
-        catch (const std::exception &)
-        {
-        }
-    }
-
-    RunnerScorePopup popup;
-    popup.worldPosition = glm::vec3(mRunnerBreakPlaneX, 5.4f, 0.0f);
-    popup.value = mRunnerBreakPlanePoints;
-    mRunnerScorePopups.push_back(popup);
-
-    mPlayer.triggerCollisionAnimation(true);
-
-    if (mSoundPlayer && !mGameIsPaused)
-    {
-        //const glm::vec3 playerPos = mPlayer.getPosition();
-        //mSoundPlayer->play(SoundEffect::ID::GENERATE, sf::Vector2f{playerPos.x, playerPos.z});
-    }
-
-    std::uniform_real_distribution<float> randomZ(-mRunnerStrafeLimit * 0.85f, mRunnerStrafeLimit * 0.85f);
-    std::uniform_real_distribution<float> randomY(2.6f, 7.4f);
-    std::uniform_real_distribution<float> randomVX(-4.0f, 4.0f);
-    std::uniform_real_distribution<float> randomVY(3.5f, 12.5f);
-    std::uniform_real_distribution<float> randomVZ(-10.0f, 10.0f);
-    std::uniform_real_distribution<float> randomSize(0.14f, 0.55f);
-    std::uniform_real_distribution<float> randomLifetime(0.35f, 0.75f);
-
-    constexpr int kShardCount = 18;
-    mRunnerBreakPlaneShards.reserve(mRunnerBreakPlaneShards.size() + kShardCount);
-    for (int i = 0; i < kShardCount; ++i)
-    {
-        RunnerBreakPlaneShard shard;
-        shard.position = glm::vec3(mRunnerBreakPlaneX, randomY(mRunnerRng), randomZ(mRunnerRng));
-        shard.velocity = glm::vec3(randomVX(mRunnerRng), randomVY(mRunnerRng), randomVZ(mRunnerRng));
-        const float size = randomSize(mRunnerRng);
-        shard.halfSize = glm::vec2(size, size);
-        shard.lifetime = randomLifetime(mRunnerRng);
-        mRunnerBreakPlaneShards.push_back(shard);
-    }
-}
-
-void GameState::spawnPointEvents() noexcept
-{
-    // Deprecated in runner-v2: points now come directly from sphere collisions.
-}
-
-void GameState::processRunnerCollisions(float dt) noexcept
-{
-    if (mRunnerCollisionTimer > 0.0f)
-    {
-        mRunnerCollisionTimer = std::max(0.0f, mRunnerCollisionTimer - dt);
-    }
-
-    const glm::vec3 playerPos = mPlayer.getPosition();
-
-    if (mRunnerCollisionTimer <= 0.0f)
-    {
-        int accumulatedScoreDelta = 0;
-        bool hadPenalty = false;
-        bool hadBonus = false;
-
-        auto scoreForMaterial = [this](Material::MaterialType materialType) -> int
-        {
-            switch (materialType)
-            {
-            case Material::MaterialType::METAL:
-                return -mRunnerObstaclePenalty;
-            case Material::MaterialType::DIELECTRIC:
-                return std::max(10, mRunnerPickupMaxValue);
-            case Material::MaterialType::LAMBERTIAN:
-            default:
-                return std::max(5, mRunnerPickupMaxValue / 2);
-            }
-        };
-
-        const auto collisionEvents = mWorld.consumeRunnerCollisionEvents();
-        for (const auto &event : collisionEvents)
-        {
-            const int scoreDelta = scoreForMaterial(event.materialType);
-            accumulatedScoreDelta += scoreDelta;
-
-            RunnerScorePopup popup;
-            popup.worldPosition = event.worldPosition + glm::vec3(0.0f, 1.65f, 0.0f);
-            popup.value = scoreDelta;
-            mRunnerScorePopups.push_back(popup);
-
-            if (scoreDelta < 0)
-            {
-                hadPenalty = true;
-            }
-            else
-            {
-                hadBonus = true;
-            }
-        }
-
-        if (accumulatedScoreDelta != 0)
-        {
-            mPlayerPoints += accumulatedScoreDelta;
-            mRunnerCollisionTimer = mRunnerCollisionCooldown;
-
-            if (hadPenalty)
-            {
-                mPlayer.triggerCollisionAnimation(false);
-            }
-            else if (hadBonus)
-            {
-                mPlayer.triggerCollisionAnimation(true);
-            }
-
-            if (mSoundPlayer && !mGameIsPaused)
-            {
-                mSoundPlayer->play(SoundEffect::ID::THROW, sf::Vector2f{playerPos.x, playerPos.z});
-            }
-        }
-    }
-
-    if (mPlayerPoints < 0)
-    {
-        mRunLost = true;
-    }
-
-    if (mPlayerPoints != mLastAnnouncedPoints)
-    {
-        mLastAnnouncedPoints = mPlayerPoints;
-    }
-}
-
-void GameState::updateRunnerScorePopups(float dt) noexcept
-{
-    if (mRunnerScorePopups.empty() || dt <= 0.0f)
-    {
-        return;
-    }
-
-    for (auto &popup : mRunnerScorePopups)
-    {
-        popup.age += dt;
-    }
-
-    // Remove expired popups using erase-remove idiom (C++17 compatible)
-    mRunnerScorePopups.erase(
-        std::remove_if(mRunnerScorePopups.begin(), mRunnerScorePopups.end(),
-                      [](const RunnerScorePopup &popup) { return popup.age >= popup.lifetime; }),
-        mRunnerScorePopups.end());
-}
-
-void GameState::resetRunnerRun() noexcept
-{
-    mPlayerPoints = mRunnerStartingPoints;
-    // Start at positive X for grid shader visibility
-    mRunnerDistance = 100.0f;
-    mRunnerLateralArc = 0.0f;
-    mRunnerCollisionTimer = 0.0f;
-    mRunnerPointEvents.clear();
-    mRunnerScorePopups.clear();
-    mRunnerBreakPlaneShards.clear();
-    mRunLost = false;
-
-    const glm::vec3 center = mVoronoiPlanet.getCenter();
-    const float radius = std::max(1.0f, mVoronoiPlanet.getRadius());
-    glm::vec3 current = computeRunnerPlanetPosition(mRunnerDistance, mRunnerLateralArc, center, radius);
-
-    mRunnerNextPickupZ = 0.0f + mRunnerPickupSpacing;
-    mPlayer.configureSphericalGravity(true, center, radius);
-    mPlayer.setPosition(current);
-    mWorld.setRunnerPlayerPosition(current);
-    mWorld.consumeRunnerCollisionEvents();
-
-    mRunnerBreakPlaneActive = true;
-    mRunnerBreakPlaneX = current.x + 80.0f;
-    mRunnerBreakPlaneRespawnTimer = 0.0f;
-    mRunnerBreakPlaneLastPlayerX = current.x;
-
-    // Calculate proper camera position behind player on sphere
-    const float theta = mRunnerDistance / radius;
-    const float phi = mRunnerLateralArc / radius;
-    const glm::vec3 surfaceNormal = glm::normalize(current - center);
-    
-    // Forward tangent along theta direction
-    const float cosPhi = std::cos(phi);
-    const float sinTheta = std::sin(theta);
-    const float cosTheta = std::cos(theta);
-    
-    glm::vec3 forwardTangent = glm::vec3(
-        -cosPhi * sinTheta,
-        0.0f,
-        cosPhi * cosTheta
-    );
-    
-    // Safety check: if tangent is near-zero (at poles), use a fallback direction
-    const float tangentLength = glm::length(forwardTangent);
-    if (tangentLength > 0.001f)
-    {
-        forwardTangent = forwardTangent / tangentLength;
-    }
-    else
-    {
-        // At poles, use perpendicular to surface normal as forward direction
-        forwardTangent = glm::normalize(glm::cross(surfaceNormal, glm::vec3(0.0f, 0.0f, 1.0f)));
-        if (glm::length(forwardTangent) < 0.001f)
-        {
-            forwardTangent = glm::normalize(glm::cross(surfaceNormal, glm::vec3(1.0f, 0.0f, 0.0f)));
-        }
-    }
-    
-    const float forwardYaw = glm::degrees(std::atan2(forwardTangent.z, forwardTangent.x));
-    
-    // Position camera behind player
-    const float cameraDistance = mCamera.getThirdPersonDistance();
-    const float cameraHeight = mCamera.getThirdPersonHeight();
-    glm::vec3 backwardTangent = -forwardTangent;
-    glm::vec3 cameraPos = current + backwardTangent * cameraDistance + surfaceNormal * cameraHeight;
-    
-    // Ensure camera stays outside planet surface
-    glm::vec3 cameraRadial = cameraPos - center;
-    const float cameraDistFromCenter = glm::length(cameraRadial);
-    const float minCameraDistance = radius + 2.0f;
-    
-    if (cameraDistFromCenter < minCameraDistance)
-    {
-        cameraRadial = glm::normalize(cameraRadial);
-        cameraPos = center + cameraRadial * minCameraDistance;
-    }
-    
-    mCamera.setPosition(cameraPos);
-    mCamera.setUp(surfaceNormal);
-    mCamera.setFollowTarget(current);
-    
-    // Camera yaw faces forward (same as player), pitch tilts slightly downward toward player
-    const glm::vec3 toPlayer = current - cameraPos;
-    const float distToPlayer = glm::length(toPlayer);
-    const float pitchAngle = (distToPlayer > 0.001f) 
-        ? glm::degrees(std::asin(std::clamp(toPlayer.y / distToPlayer, -1.0f, 1.0f)))
-        : 0.0f;
-    
-    mCamera.setYawPitch(forwardYaw, pitchAngle);
-
-    // Initialize floating billboards in space around the planet
-    mFloatingBillboards.clear();
-    std::mt19937 rng(42); // Fixed seed for consistent placement
-    std::uniform_real_distribution<float> thetaDist(0.0f, glm::two_pi<float>());
-    std::uniform_real_distribution<float> phiDist(-glm::half_pi<float>(), glm::half_pi<float>());
-    std::uniform_real_distribution<float> altitudeDist(radius * 1.3f, radius * 2.5f);
-    std::uniform_real_distribution<float> animPhaseDist(0.0f, 1.0f);
-    std::uniform_real_distribution<float> rotSpeedDist(-0.3f, 0.3f);
-    
-    constexpr int kNumFloatingBillboards = 40;
-    for (int i = 0; i < kNumFloatingBillboards; ++i)
-    {
-        const float theta = thetaDist(rng);
-        const float phi = phiDist(rng);
-        const float altitude = altitudeDist(rng);
-        
-        glm::vec3 position = center + glm::vec3(
-            altitude * std::cos(phi) * std::cos(theta),
-            altitude * std::sin(phi),
-            altitude * std::cos(phi) * std::sin(theta)
-        );
-        
-        mFloatingBillboards.push_back({
-            position,
-            animPhaseDist(rng),
-            rotSpeedDist(rng)
-        });
-    }
-
-    mLastAnnouncedPoints = mPlayerPoints;
-    mCurrentBatch = 0;
-    mCurrentTileIndex = 0;
-}
-
-void GameState::drawRunnerHud() const noexcept
-{
-    if (!mArcadeModeEnabled)
-    {
-        return;
-    }
-
-    ImGui::SetNextWindowPos(ImVec2(16.0f, 16.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.42f);
-
-    constexpr ImGuiWindowFlags hudFlags =
-        ImGuiWindowFlags_NoDecoration |
-        ImGuiWindowFlags_AlwaysAutoResize |
-        ImGuiWindowFlags_NoSavedSettings |
-        ImGuiWindowFlags_NoFocusOnAppearing |
-        ImGuiWindowFlags_NoNav;
-
-    if (ImGui::Begin("Arcade HUD", nullptr, hudFlags))
-    {
-        const int lambertBonus = std::max(5, mRunnerPickupMaxValue / 2);
-        const int dielectricBonus = std::max(10, mRunnerPickupMaxValue);
-
-        ImGui::Text("Points: %d", mPlayerPoints);
-        ImGui::Text("Distance: %.0f", mRunnerDistance);
-        ImGui::Text("Speed: %.1f", mRunnerSpeed);
-
-        if (mRunLost)
-        {
-            ImGui::Separator();
-            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Points below zero!");
-            ImGui::Text("Press Enter to reset run");
-        }
-    }
-    ImGui::End();
-}
-
-void GameState::drawRunnerScorePopups() const noexcept
-{
-    if (mRunnerScorePopups.empty() || mCamera.getMode() != CameraMode::THIRD_PERSON)
-    {
-        return;
-    }
-
-    const int safeHeight = std::max(mWindowHeight, 1);
-    const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
-    const glm::mat4 view = mCamera.getLookAt();
-    const glm::mat4 projection = mCamera.getPerspective(aspectRatio);
-
-    Shader *billboardShader = nullptr;
-    try
-    {
-        billboardShader = &getContext().getShaderManager()->get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
-    }
-    catch (const std::exception &)
-    {
-        billboardShader = nullptr;
-    }
-
-    ImFont *font = nullptr;
-    try
-    {
-        font = getContext().getFontManager()->get(Fonts::ID::COUSINE_REGULAR).get();
-    }
-    catch (const std::exception &)
-    {
-        font = nullptr;
-    }
-
-    GLuint atlasTextureId = 0;
-    int atlasWidth = 0;
-    int atlasHeight = 0;
-    ImFontBaked *fontBaked = nullptr;
-    if (font)
-    {
-        fontBaked = font->GetFontBaked(std::max(1.0f, font->LegacySize));
-    }
-
-    if (font && font->OwnerAtlas && font->OwnerAtlas->TexData)
-    {
-        const ImTextureID texId = font->OwnerAtlas->TexData->TexID;
-        if (texId != ImTextureID_Invalid)
-        {
-            atlasTextureId = static_cast<GLuint>(static_cast<std::uintptr_t>(texId));
-        }
-        atlasWidth = font->OwnerAtlas->TexData->Width;
-        atlasHeight = font->OwnerAtlas->TexData->Height;
-    }
-
-    const bool canRenderBillboards = (billboardShader != nullptr && atlasTextureId != 0 && atlasWidth > 0 && atlasHeight > 0 && fontBaked != nullptr);
-
-    ImDrawList *drawList = nullptr;
-    if (!canRenderBillboards)
-    {
-        drawList = ImGui::GetForegroundDrawList();
-    }
-
-    const glm::vec3 right = glm::normalize(mCamera.getRight());
-    constexpr float kPopupDigitHalfSize = 0.62f;
-    constexpr float kDigitSpacing = 0.85f;
-
-    for (const auto &popup : mRunnerScorePopups)
-    {
-        const float lifeT = std::clamp(popup.age / std::max(0.01f, popup.lifetime), 0.0f, 1.0f);
-        const float alpha = 1.0f - lifeT;
-        if (alpha <= 0.01f)
-        {
-            continue;
-        }
-
-        const std::string label = (popup.value > 0 ? "+" : "") + std::to_string(popup.value);
-        const glm::vec3 centerPos = popup.worldPosition + glm::vec3(0.0f, popup.riseSpeed * popup.age, 0.0f);
-
-        if (canRenderBillboards)
-        {
-            const float billboardScale = 1.0f + (1.0f - lifeT) * 0.22f;
-            const float halfSize = kPopupDigitHalfSize * billboardScale;
-            const float totalWidth = static_cast<float>(label.size()) * kDigitSpacing;
-            const glm::vec3 leftStart = centerPos - right * (totalWidth * 0.5f);
-
-            for (std::size_t i = 0; i < label.size(); ++i)
-            {
-                const ImFontGlyph *glyph = fontBaked->FindGlyphNoFallback(static_cast<ImWchar>(label[i]));
-                if (!glyph)
-                {
-                    continue;
-                }
-
-                const glm::vec3 charPos = leftStart + right * (static_cast<float>(i) * kDigitSpacing);
-                const glm::vec4 uvRect(glyph->U0, glyph->V0, glyph->U1, glyph->V1);
-                const glm::vec4 tintColor = (popup.value >= 0)
-                                                ? glm::vec4(0.37f, 1.0f, 0.46f, alpha)
-                                                : glm::vec4(1.0f, 0.40f, 0.40f, alpha);
-
-                const float glyphWidth = std::max(0.001f, glyph->X1 - glyph->X0);
-                const float glyphHeight = std::max(0.001f, glyph->Y1 - glyph->Y0);
-                const float glyphAspect = std::clamp(glyphWidth / glyphHeight, 0.30f, 1.80f);
-                glm::vec2 charHalfSize(halfSize * glyphAspect, halfSize);
-
-                if (label[i] == '-')
-                {
-                    charHalfSize.x = halfSize * 0.95f;
-                    charHalfSize.y = halfSize * 0.28f;
-                }
-
-                GLSDLHelper::renderBillboardSpriteUV(
-                    *billboardShader,
-                    atlasTextureId,
-                    uvRect,
-                    charPos,
-                    halfSize,
-                    view,
-                    projection,
-                    tintColor,
-                    false,
-                    false,
-                    false,
-                    charHalfSize);
-            }
-
-            continue;
-        }
-
-        if (!drawList)
-        {
-            continue;
-        }
-
-        ImVec2 screenPos{};
-        if (!projectWorldToScreen(centerPos, view, projection, mWindowWidth, mWindowHeight, screenPos))
-        {
-            continue;
-        }
-
-        const float fontScale = 1.0f + (1.0f - lifeT) * 0.22f;
-        const float fontSize = ImGui::GetFontSize() * fontScale;
-        const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
-        const ImVec2 textPos(screenPos.x - textSize.x * 0.5f, screenPos.y - textSize.y);
-
-        const ImU32 shadowColor = IM_COL32(0, 0, 0, static_cast<int>(150.0f * alpha));
-        const ImU32 textColor = popup.value >= 0
-                                    ? IM_COL32(94, 255, 118, static_cast<int>(255.0f * alpha))
-                                    : IM_COL32(255, 96, 96, static_cast<int>(255.0f * alpha));
-
-        drawList->AddText(ImGui::GetFont(), fontSize, ImVec2(textPos.x + 1.0f, textPos.y + 1.0f), shadowColor, label.c_str());
-        drawList->AddText(ImGui::GetFont(), fontSize, textPos, textColor, label.c_str());
     }
 }
 
