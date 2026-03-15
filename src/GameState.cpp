@@ -5,25 +5,38 @@
 #include <dearimgui/imgui.h>
 
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
+#include <limits>
+#include <queue>
 #include <random>
 #include <ranges>
+#include <sstream>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glad/glad.h>
 
+#include <MazeBuilder/colored_grid.h>
+#include <MazeBuilder/cell.h>
+#include <MazeBuilder/dfs.h>
+#include <MazeBuilder/grid_operations.h>
+#include <MazeBuilder/randomizer.h>
+
 #include "Font.hpp"
 #include "GLSDLHelper.hpp"
 #include "GLTFModel.hpp"
+#include "Level.hpp"
 #include "MusicPlayer.hpp"
 #include "Options.hpp"
-#include "PathTraceScene.hpp"
 #include "Player.hpp"
 #include "ResourceManager.hpp"
-#include "SceneRenderer.hpp"
 #include "Shader.hpp"
 #include "SoundPlayer.hpp"
 #include "Sphere.hpp"
@@ -32,19 +45,35 @@
 
 namespace
 {
-    constexpr GLint kTestAlbedoTextureUnit = 3;
-    constexpr std::size_t kMaxPathTracerSpheres = 200;
-    constexpr std::size_t kMaxPathTracerTriangles = 192;
-    constexpr bool kEnableTrianglePathTraceProxy = true;
-    constexpr float kPlayerProxyRadius = 1.4175f;
     constexpr float kPlayerShadowCenterYOffset = 1.4175f;
-    constexpr float kCharacterRasterScale = 1.491f;
-    constexpr float kCharacterPathTraceProxyScale = 1.491f;
     constexpr float kCharacterModelYOffset = 0.25f;
-    constexpr float kFragmentRenderScale = 0.75f;
-    constexpr int kFragmentTileWidth = 320;
-    constexpr int kFragmentTileHeight = 180;
-    constexpr int kFragmentPassesPerFrame = 6;
+
+    constexpr unsigned int kSimpleMazeRows = 20u;
+    constexpr unsigned int kSimpleMazeCols = 20u;
+    constexpr unsigned int kSimpleMazeLevels = 3u;
+    constexpr float kSimpleCellSize = 2.4f;
+    constexpr float kSimpleWallHeight = 1.8f;
+    constexpr float kSimpleWallThickness = 0.20f;
+    constexpr float kSimpleLevelSpacing = 2.7f;
+    constexpr float kSimpleFloorY = 0.0f;
+    constexpr float kRasterBirdsEyeFovDeg = 52.0f;
+    constexpr float kRasterZoomMinHeadroom = 1.6f;
+    constexpr float kRasterZoomStep = 0.85f;
+    constexpr float kRasterWallScreenMarginPx = 20.0f;
+
+    struct RasterVertex
+    {
+        glm::vec3 position;
+        glm::vec3 color;
+    };
+
+    // Maze scene constants
+    constexpr int kMazeRows = 50;
+    constexpr int kMazeCols = 50;
+    constexpr float kMazeCellSize = 2.0f;
+    constexpr float kMazeWallHeight = 2.5f;
+    constexpr float kMazeWallThickness = 0.18f;
+    constexpr float kMazeFloorY = 0.0f;
 
     glm::vec3 computeSunDirection(float /*timeSeconds*/) noexcept
     {
@@ -72,34 +101,6 @@ namespace
         return {renderWidth, renderHeight};
     }
 
-    uint32_t computeAdaptiveVoronoiCellBudget(uint32_t availableCells, int renderWidth, int renderHeight) noexcept
-    {
-        if (availableCells == 0u)
-        {
-            return 0u;
-        }
-
-        const std::size_t renderPixels = static_cast<std::size_t>(std::max(1, renderWidth)) *
-                                         static_cast<std::size_t>(std::max(1, renderHeight));
-
-        uint32_t budget = 1024u;
-        if (renderPixels > 1800ull * 1000ull)
-        {
-            budget = 448u;
-        }
-        else if (renderPixels > 1400ull * 1000ull)
-        {
-            budget = 576u;
-        }
-        else if (renderPixels > 1000ull * 1000ull)
-        {
-            budget = 768u;
-        }
-
-        budget = std::max(256u, budget);
-        return std::min(availableCells, budget);
-    }
-
     uint32_t computeAdaptiveTriangleShadowBudget(int renderWidth, int renderHeight) noexcept
     {
         const std::size_t renderPixels = static_cast<std::size_t>(std::max(1, renderWidth)) *
@@ -120,26 +121,56 @@ namespace
         return 64u;
     }
 
+    glm::vec3 packedRGBToLinear(std::uint32_t packed)
+    {
+        const float r = static_cast<float>((packed >> 16) & 0xFFu) / 255.0f;
+        const float g = static_cast<float>((packed >> 8) & 0xFFu) / 255.0f;
+        const float b = static_cast<float>(packed & 0xFFu) / 255.0f;
+        const glm::vec3 srgb(r, g, b);
+        return glm::pow(srgb, glm::vec3(2.2f));
+    }
+
+    uint32_t computeAdaptiveSphereShadowBudget(int renderWidth, int renderHeight) noexcept
+    {
+        const std::size_t renderPixels = static_cast<std::size_t>(std::max(1, renderWidth)) *
+                                         static_cast<std::size_t>(std::max(1, renderHeight));
+
+        if (renderPixels > 1800ull * 1000ull)
+        {
+            return 28u;
+        }
+        if (renderPixels > 1400ull * 1000ull)
+        {
+            return 36u;
+        }
+        if (renderPixels > 1000ull * 1000ull)
+        {
+            return 44u;
+        }
+        return 56u;
+    }
+
     uint32_t computeAdaptivePathTraceTileEdge(int renderWidth, int renderHeight) noexcept
     {
         const std::size_t renderPixels = static_cast<std::size_t>(std::max(1, renderWidth)) *
                                          static_cast<std::size_t>(std::max(1, renderHeight));
 
-        // Keep tile sizes aligned with the 20x20 local workgroup while adapting
-        // frame cost for higher resolutions.
+        // Keep tile sizes aligned with the 16x16 local workgroup while adapting
+        // frame cost for higher resolutions.  BVH-accelerated intersection
+        // makes each tile cheaper, so use smaller tiles for smoother coverage.
         if (renderPixels > 1800ull * 1000ull)
         {
-            return 220u;
+            return 160u;
         }
         if (renderPixels > 1400ull * 1000ull)
         {
-            return 280u;
+            return 192u;
         }
         if (renderPixels > 1000ull * 1000ull)
         {
-            return 340u;
+            return 256u;
         }
-        return 420u;
+        return 320u;
     }
 
     bool projectWorldToScreen(const glm::vec3 &worldPos,
@@ -173,7 +204,7 @@ namespace
 }
 
 GameState::GameState(StateStack &stack, Context context)
-    : State{stack, context}, mWorld{*context.getRenderWindow(), *context.getFontManager(), *context.getTextureManager(), *context.getShaderManager(), *context.getLevelsManager()}, mPlayer{*context.getPlayer()}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mComputeShader{nullptr}, mPathTracerOutputShader{nullptr}, mPathTracerTonemapShader{nullptr}, mCompositeShader{nullptr}, mOITResolveShader{nullptr}, mSkinnedModelShader{nullptr}, mGameIsPaused{false}
+    : State{stack, context}, mWorld{*context.getRenderWindow(), *context.getFontManager(), *context.getTextureManager(), *context.getShaderManager(), *context.getLevelsManager()}, mPlayer{*context.getPlayer()}, mGameMusic{nullptr}, mDisplayShader{nullptr}, mCompositeShader{nullptr}, mOITResolveShader{nullptr}, mGameIsPaused{false}
       // Initialize camera at maze spawn position (will be updated after first chunk loads)
       ,
       mCamera{}
@@ -189,13 +220,8 @@ GameState::GameState(StateStack &stack, Context context)
     try
     {
         mDisplayShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD);
-        mComputeShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_COMPUTE);
-        mPathTracerOutputShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_OUTPUT);
-        mPathTracerTonemapShader = &shaders.get(Shaders::ID::GLSL_PATH_TRACER_TONEMAP);
         mCompositeShader = &shaders.get(Shaders::ID::GLSL_COMPOSITE_SCENE);
         mOITResolveShader = &shaders.get(Shaders::ID::GLSL_OIT_RESOLVE);
-        mSkinnedModelShader = &shaders.get(Shaders::ID::GLSL_MODEL_WITH_SKINNING);
-        mStencilOutlineShader = &shaders.get(Shaders::ID::GLSL_STENCIL_OUTLINE);
         mShadowShader = &shaders.get(Shaders::ID::GLSL_SHADOW_VOLUME);
         mWalkParticlesComputeShader = &shaders.get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
         mWalkParticlesRenderShader = &shaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
@@ -221,12 +247,7 @@ GameState::GameState(StateStack &stack, Context context)
     auto &textures = *context.getTextureManager();
     try
     {
-        mAccumTex = &textures.get(Textures::ID::PATH_TRACER_ACCUM);
-        mPathTraceOutputTex = &textures.get(Textures::ID::PATH_TRACER_OUTPUT);
-        mPathTraceStageTex = &textures.get(Textures::ID::PATH_TRACER_STAGE);
-        mDisplayTex = &textures.get(Textures::ID::PATH_TRACER_DISPLAY);
-        mPreviewAccumTex = &textures.get(Textures::ID::PATH_TRACER_PREVIEW_ACCUM);
-        mPreviewOutputTex = &textures.get(Textures::ID::PATH_TRACER_PREVIEW_OUTPUT);
+        mDisplayTex = &textures.get(Textures::ID::RUNNER_BREAK_PLANE);
         mNoiseTexture = &textures.get(Textures::ID::NOISE2D);
         mTestAlbedoTexture = &textures.get(Textures::ID::SDL_LOGO);
         mBillboardColorTex = &textures.get(Textures::ID::BILLBOARD_COLOR);
@@ -246,12 +267,7 @@ GameState::GameState(StateStack &stack, Context context)
     catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get texture resources: %s", e.what());
-        mAccumTex = nullptr;
-        mPathTraceOutputTex = nullptr;
-        mPathTraceStageTex = nullptr;
         mDisplayTex = nullptr;
-        mPreviewAccumTex = nullptr;
-        mPreviewOutputTex = nullptr;
         mNoiseTexture = nullptr;
         mTestAlbedoTexture = nullptr;
         mBillboardColorTex = nullptr;
@@ -294,6 +310,9 @@ GameState::GameState(StateStack &stack, Context context)
     glm::vec3 spawnPos = mWorld.getMazeSpawnPosition();
     mPlayer.setPosition(spawnPos);
 
+    // Create player physics body for Box2D interaction
+    mWorld.createPlayerBody(spawnPos);
+
     // Update camera to an elevated position behind the spawn
     glm::vec3 cameraSpawn = spawnPos + glm::vec3(0.0f, 50.0f, 50.0f);
     mCamera.setPosition(cameraSpawn);
@@ -318,49 +337,46 @@ GameState::GameState(StateStack &stack, Context context)
 
     mWorld.updateSphereChunks(mPlayer.getPosition());
 
-    // Initialize GPU graphics pipeline following Compute.cpp approach
     if (mShadersInitialized)
     {
-        initializeGraphicsResources();
-        initializeWalkParticles();
+        if (auto *window = getContext().getRenderWindow(); window != nullptr)
+        {
+            if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
+            {
+                int width = 0;
+                int height = 0;
+                SDL_GetWindowSizeInPixels(sdlWindow, &width, &height);
+                if (width > 0 && height > 0)
+                {
+                    mWindowWidth = width;
+                    mWindowHeight = height;
+                }
+            }
+        }
 
-        // Initialize billboard rendering for character sprites
+        GLSDLHelper::enableRenderingFeatures();
+        mVAO = GLSDLHelper::createAndBindVAO();
+        initializeRasterMazeResources();
+        buildRasterMazeGeometry();
+        initializeWalkParticles();
+        initializeMotionBlur();
         GLSDLHelper::initializeBillboardRendering();
 
-        // â”€â”€ Fragment-shader path tracer (GLSLPT-style) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        try
+        // Respawn the player at the centre of the first open cell of the raster maze.
+        // The maze is centred at the origin; cell (0,0) corner is at (-halfW, 0, -halfD).
         {
-            auto &shaders = *context.getShaderManager();
-            Shader *tileShader    = &shaders.get(Shaders::ID::GLSL_TILE_TEST);
-            Shader *previewShader = &shaders.get(Shaders::ID::GLSL_PREVIEW_TEST);
-            Shader *outputShader  = &shaders.get(Shaders::ID::GLSL_OUTPUT_TEST);
-            Shader *tonemapShader = &shaders.get(Shaders::ID::GLSL_TONE_TEST);
-
-            mPathTraceScene = std::make_unique<PathTraceScene>();
-            buildPathTraceScene();
-
-            auto &opts = mPathTraceScene->getRenderOptions();
-            const int fragmentRenderWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(mRenderWidth) * kFragmentRenderScale)));
-            const int fragmentRenderHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(mRenderHeight) * kFragmentRenderScale)));
-            opts.renderResolution = {fragmentRenderWidth, fragmentRenderHeight};
-            opts.windowResolution = {mWindowWidth, mWindowHeight};
-            opts.tileWidth = kFragmentTileWidth;
-            opts.tileHeight = kFragmentTileHeight;
-
-            mSceneRenderer = std::make_unique<SceneRenderer>(mPathTraceScene.get());
-            mSceneRenderer->setShaders(tileShader, previewShader, outputShader, tonemapShader);
-            mSceneRenderer->rebuildShadersWithDefines();
-            mSceneRenderer->initShaderUniforms();
-
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Fragment path tracer ready");
+            const float halfW = 0.5f * static_cast<float>(kSimpleMazeCols) * kSimpleCellSize;
+            const float halfD = 0.5f * static_cast<float>(kSimpleMazeRows) * kSimpleCellSize;
+            // True cell-centre of cell (0,0): half a cell-width in from each corner.
+            const glm::vec3 rasterSpawn(-halfW + kSimpleCellSize * 0.5f, 1.0f, -halfD + kSimpleCellSize * 0.5f);
+            mPlayer.setPosition(rasterSpawn);
+            mWorld.createPlayerBody(rasterSpawn);   // safe: destroys any prior body first
+            mCamera.setFollowTarget(rasterSpawn);
+            // Re-apply birds-eye camera NOW so the very first draw() sees the correct view.
+            applyRasterBirdsEyeCamera();
         }
-        catch (const std::exception &e)
-        {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "GameState: Fragment path tracer init failed: %s", e.what());
-            mSceneRenderer.reset();
-            mPathTraceScene.reset();
-        }
+
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Pure raster maze mode ready");
     }
 }
 
@@ -380,152 +396,12 @@ GameState::~GameState()
 
 void GameState::draw() const noexcept
 {
-    if (mShadersInitialized)
-    {
-        if (mRenderMode == RenderMode::FRAGMENT && mSceneRenderer && mSceneRenderer->isInitialized())
-        {
-            renderWithFragmentShaders();
-        }
-        else
-        {
-            // Use compute shader rendering pipeline (path tracing)
-            renderWithComputeShaders();
-
-
-            // Keep rasterized character overlay for readability even when triangle proxy is enabled.
-            renderPlayerCharacter();
-
-            // Render character shadow to shadow texture
-            renderCharacterShadow();
-
-            // Render player reflection on ground plane
-            renderPlayerReflection();
-
-            // Note: Voronoi planet is rendered into the billboard FBO in renderPlayerCharacter()
-
-            // Reset viewport to main window before compositing
-            glViewport(0, 0, mWindowWidth, mWindowHeight);
-
-            if (mCompositeShader && mBillboardFBO != 0 && mBillboardColorTex)
-            {
-                renderCompositeScene();
-            }
-        }
-    }
-
-    // â”€â”€ Render mode toggle (ImGui) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    {
-        ImGui::SetNextWindowPos(ImVec2(static_cast<float>(mWindowWidth) - 260.0f, 16.0f), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowBgAlpha(0.7f);
-        if (ImGui::Begin("Renderer", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            int mode = static_cast<int>(mRenderMode);
-            ImGui::RadioButton("Compute", &mode, 0);
-            ImGui::SameLine();
-            ImGui::RadioButton("Fragment (GLSLPT)", &mode, 1);
-            if (static_cast<int>(mRenderMode) != mode)
-            {
-                // const_cast is safe here â€“ mRenderMode is mutable UI state
-                const_cast<GameState *>(this)->mRenderMode = static_cast<RenderMode>(mode);
-                if (const_cast<GameState *>(this)->mRenderMode == RenderMode::FRAGMENT)
-                {
-                    const_cast<GameState *>(this)->frameFragmentCornellCamera();
-                }
-                if (mSceneRenderer)
-                    mSceneRenderer->markDirty();
-            }
-            if (mRenderMode == RenderMode::FRAGMENT && mSceneRenderer)
-            {
-                ImGui::Text("Samples: %d", mSceneRenderer->getSampleCount());
-            }
-        }
-        ImGui::End();
-    }
-}
-
-void GameState::initializeGraphicsResources() noexcept
-{
-    if (auto *window = getContext().getRenderWindow(); window != nullptr)
-    {
-        if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
-        {
-            int width = 0;
-            int height = 0;
-            SDL_GetWindowSizeInPixels(sdlWindow, &width, &height);
-            if (width > 0 && height > 0)
-            {
-                mWindowWidth = width;
-                mWindowHeight = height;
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Initial window size in pixels: %dx%d",
-                    mWindowWidth, mWindowHeight);
-            }
-        }
-    }
-
-    // Enable OpenGL features using helper
-    GLSDLHelper::enableRenderingFeatures();
-
-    // Create VAO for fullscreen quad using helper
-    mVAO = GLSDLHelper::createAndBindVAO();
-
-    // Create SSBO for sphere data using helper
-    mShapeSSBO = GLSDLHelper::createAndBindSSBO(1);
-    mTriangleSSBO = GLSDLHelper::createAndBindSSBO(2);
-
-    updateRenderResolution();
-
-    // Create textures for path tracing
-    createPathTracerTextures();
-    if (mPathTracePostFBO == 0)
-    {
-        glGenFramebuffers(1, &mPathTracePostFBO);
-    }
-    createCompositeTargets();
-    initializeShadowResources();     // Initialize shadow rendering
-    initializeReflectionResources(); // Initialize reflection rendering
-
-    // Upload sphere data from World to GPU with extra capacity for dynamic spawning
-    const auto &spheres = mWorld.getSpheres();
-
-    // Allocate buffer with 4x capacity to handle chunk-based spawning
-    // This reduces frequent reallocations as spheres are loaded/unloaded
-    size_t initialCapacity = std::max(spheres.size() * 4, size_t(1000));
-    size_t bufferSize = initialCapacity * sizeof(Sphere);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mShapeSSBO);
-    GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(bufferSize), nullptr);
-    mShapeSSBOCapacityBytes = bufferSize;
-
-    // Upload initial sphere data
-    if (!spheres.empty())
-    {
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, mShapeSSBO);
-        GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(spheres.size() * sizeof(Sphere)), spheres.data());
-    }
-
-    const std::size_t triangleBufferSize = kMaxPathTracerTriangles * sizeof(GLTFModel::RayTraceTriangle);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mTriangleSSBO);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mTriangleSSBO);
-    GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(triangleBufferSize), nullptr);
-    mTriangleSSBOCapacityBytes = triangleBufferSize;
-
-    // Create Voronoi planet shader and planet mesh
-    try
-    {
-        // mVoronoiShaderOwned = std::make_unique<Shader>();
-        // mVoronoiShaderOwned->compileAndAttachShader(Shader::ShaderType::VERTEX, "shaders/voronoi.vert.glsl");
-        // mVoronoiShaderOwned->compileAndAttachShader(Shader::ShaderType::FRAGMENT, "shaders/voronoi.frag.glsl");
-        // mVoronoiShaderOwned->linkProgram();
-        // mVoronoiShader = mVoronoiShaderOwned.get();
-
-        // Initialize planet with spherical parameters: radius 50, center at origin
-        mVoronoiPlanet.initialize(50.0f, glm::vec3(0.0f), 1024, 128, 64);
-        mVoronoiPlanet.uploadToGPU();
-    }
-    catch (const std::exception &e)
-    {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "GameState: Voronoi planet shader/mesh init failed: %s", e.what());
-    }
+    renderRasterMaze();
+    renderPickupSpheres();
+    renderPlayerCharacter();
+    renderWalkParticles();
+    renderMotionBlur();
+    renderScoreBillboards();
 }
 
 void GameState::updateRenderResolution() noexcept
@@ -537,66 +413,35 @@ void GameState::updateRenderResolution() noexcept
     mRenderHeight = newRenderHeight;
 }
 
-void GameState::createPathTracerTextures() noexcept
-{
-    // Update existing textures to new resolution
-    // (They were initially created at 512x512 in LoadingState)
-    if (!mAccumTex || !mPathTraceOutputTex || !mPathTraceStageTex || !mDisplayTex || !mPreviewAccumTex || !mPreviewOutputTex)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Path tracer textures not initialized!");
-        return;
-    }
-
-    mPreviewRenderWidth = std::max(1, mRenderWidth / 3);
-    mPreviewRenderHeight = std::max(1, mRenderHeight / 3);
-
-    bool accumSuccess = mAccumTex->loadRGBA32F(
-        static_cast<int>(mRenderWidth),
-        static_cast<int>(mRenderHeight),
-        0);
-
-    bool outputSuccess = mPathTraceOutputTex->loadRGBA32F(
-        static_cast<int>(mRenderWidth),
-        static_cast<int>(mRenderHeight),
-        0);
-
-    bool stageSuccess = mPathTraceStageTex->loadRGBA32F(
-        static_cast<int>(mRenderWidth),
-        static_cast<int>(mRenderHeight),
-        0);
-
-    bool displaySuccess = mDisplayTex->loadRGBA32F(
-        static_cast<int>(mRenderWidth),
-        static_cast<int>(mRenderHeight),
-        0);
-
-    bool previewAccumSuccess = mPreviewAccumTex->loadRGBA32F(
-        static_cast<int>(mPreviewRenderWidth),
-        static_cast<int>(mPreviewRenderHeight),
-        0);
-
-    bool previewOutputSuccess = mPreviewOutputTex->loadRGBA32F(
-        static_cast<int>(mPreviewRenderWidth),
-        static_cast<int>(mPreviewRenderHeight),
-        0);
-
-    if (!accumSuccess || !outputSuccess || !stageSuccess || !displaySuccess || !previewAccumSuccess || !previewOutputSuccess)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                     "GameState: Failed to resize path tracer textures (accum:%d output:%d stage:%d display:%d pAccum:%d pOutput:%d)",
-                     accumSuccess, outputSuccess, stageSuccess, displaySuccess, previewAccumSuccess, previewOutputSuccess);
-        return;
-    }
-
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Path tracer textures recreated (window/internal/preview):\t%dx%d / %dx%d / %dx%d",
-        mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight,
-        mPreviewRenderWidth, mPreviewRenderHeight);
-}
-
 void GameState::handleWindowResize() noexcept
 {
-    // Window resize is now handled in handleEvent() with proper physical pixel detection
-    // This method is kept for future use but resize handling is in event loop
+    auto *window = getContext().getRenderWindow();
+    if (!window)
+    {
+        return;
+    }
+
+    SDL_Window *sdlWindow = window->getSDLWindow();
+    if (!sdlWindow)
+    {
+        return;
+    }
+
+    int newW = 0;
+    int newH = 0;
+    SDL_GetWindowSizeInPixels(sdlWindow, &newW, &newH);
+
+    if (newW <= 0 || newH <= 0 || (newW == mWindowWidth && newH == mWindowHeight))
+    {
+        return;
+    }
+
+    mWindowWidth = newW;
+    mWindowHeight = newH;
+    glViewport(0, 0, mWindowWidth, mWindowHeight);
+    updateRenderResolution();
+    updateRasterBirdsEyeZoomLimits();
+    applyRasterBirdsEyeCamera();
 }
 
 void GameState::createCompositeTargets() noexcept
@@ -991,8 +836,7 @@ bool GameState::checkCameraMovement() const noexcept
         std::abs(currentYaw - mLastCameraYaw) > angleEpsilon ||
         std::abs(currentPitch - mLastCameraPitch) > angleEpsilon)
     {
-        // Camera moved - update tracking only.
-        // Accumulation policy (including motion blur windowing) is handled in renderWithComputeShaders().
+        // Camera moved - update tracking.
         mLastCameraPosition = currentPos;
         mLastCameraYaw = currentYaw;
         mLastCameraPitch = currentPitch;
@@ -1012,6 +856,7 @@ void GameState::renderCharacterShadow() const noexcept
     {
         return;
     }
+
 
     // Render shadow to texture
     glBindFramebuffer(GL_FRAMEBUFFER, mShadowFBO);
@@ -1080,6 +925,7 @@ void GameState::renderPlayerReflection() const noexcept
         return;
     }
 
+
     // Verify texture size matches expected size
     glBindTexture(GL_TEXTURE_2D, mReflectionColorTex->get());
     GLint texWidth = 0, texHeight = 0;
@@ -1115,703 +961,1002 @@ void GameState::renderPlayerReflection() const noexcept
     const glm::vec3 modelPos = mPlayer.getPosition() + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f);
     glm::vec3 reflectedModelPos = modelPos;
     reflectedModelPos.y = (2.0f * groundY) - modelPos.y;
-    if (mSkinnedModelShader)
-    {
-        auto *models = getContext().getModelsManager();
-        if (models)
-        {
-            try
-            {
-                const GLTFModel &characterModel = models->get(Models::ID::STYLIZED_CHARACTER);
-                if (characterModel.isLoaded())
-                {
-                    const float timeSeconds = static_cast<float>(SDL_GetTicks()) / 1000.0f;
-
-                    glm::mat4 modelMatrix(1.0f);
-                    modelMatrix = glm::translate(modelMatrix, reflectedModelPos);
-                    modelMatrix = glm::rotate(modelMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-                    modelMatrix = glm::scale(modelMatrix, glm::vec3(kCharacterRasterScale));
-
-                    // Scale Y negative for reflection
-                    modelMatrix = glm::scale(modelMatrix, glm::vec3(1.0f, -1.0f, 1.0f));
-
-                    mSkinnedModelShader->bind();
-                    mSkinnedModelShader->setUniform("uSunDir", computeSunDirection(timeSeconds));
-
-                    glm::mat4 viewMatrix = mCamera.getLookAt();
-                    glm::mat4 projMatrix = mCamera.getPerspective(aspectRatio);
-
-                    characterModel.render(
-                        *mSkinnedModelShader,
-                        modelMatrix,
-                        viewMatrix,
-                        projMatrix,
-                        mModelAnimTimeSeconds);
-                }
-            }
-            catch (const std::exception &e)
-            {
-                SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Reflection render failed: %s", e.what());
-            }
-        }
-    }
+    (void)reflectedModelPos;
+    (void)aspectRatio;
 
     // Ensure reflection rendering completes before unbinding
     glFlush();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void GameState::renderWithComputeShaders() const noexcept
+void GameState::initializeRasterMazeResources() noexcept
 {
-    if (!mComputeShader || !mPathTracerOutputShader || !mPathTracerTonemapShader)
+    static const char *kMazeVS = R"(#version 430 core
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aColor;
+uniform mat4 uMVP;
+out vec3 vColor;
+out vec3 vWorldPos;
+out vec2 vTexCoord;
+void main()
+{
+    vColor = aColor;
+    vWorldPos = aPosition;
+    // Generate texture coordinates from world position for sprite sheet mapping
+    vTexCoord = aPosition.xz * 0.15;
+    gl_Position = uMVP * vec4(aPosition, 1.0);
+}
+)";
+
+    static const char *kMazeFS = R"(#version 430 core
+in vec3 vColor;
+in vec3 vWorldPos;
+in vec2 vTexCoord;
+uniform sampler2D uSpriteSheet;
+uniform int uHasTexture;
+uniform float uTime;
+layout (location = 0) out vec4 FragColor;
+void main()
+{
+    vec3 color = vColor;
+
+    // Apply sprite sheet texture to walls (vertical surfaces have y > floor level)
+    if (uHasTexture != 0 && vWorldPos.y > 0.1)
     {
-        return;
+        // Tile the sprite sheet across walls
+        vec2 uv = fract(vTexCoord * 2.0);
+        // Select a region of the sprite sheet (first character frame area)
+        uv = uv * 0.125; // Use 1/8 of the sheet
+        vec4 texColor = texture(uSpriteSheet, uv);
+        color = mix(color, texColor.rgb, 0.35);
     }
 
-    if (!mComputeShader->isLinked())
+    // Add reflection effect - simulate environment reflection on walls
+    float reflectiveness = 0.0;
+    if (vWorldPos.y > 0.1)
     {
-        return;
+        // Fresnel-like reflection based on view angle approximation
+        float wallFacing = abs(sin(vWorldPos.x * 0.5) * cos(vWorldPos.z * 0.5));
+        reflectiveness = wallFacing * 0.25;
+        
+        // Animated reflection shimmer (refractive caustics)
+        float caustic = sin(vWorldPos.x * 3.0 + uTime * 1.5) *
+                        cos(vWorldPos.z * 2.7 + uTime * 1.2) * 0.5 + 0.5;
+        vec3 reflectionColor = mix(vec3(0.3, 0.4, 0.8), vec3(0.8, 0.6, 1.0), caustic);
+        color = mix(color, reflectionColor, reflectiveness);
     }
 
-    if (auto *window = getContext().getRenderWindow(); window != nullptr)
+    // Add refraction-like distortion on floor
+    if (vWorldPos.y <= 0.1)
     {
-        if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
+        float refract = sin(vWorldPos.x * 5.0 + uTime * 0.8) *
+                        cos(vWorldPos.z * 4.5 + uTime * 0.6) * 0.08;
+        color += vec3(refract * 0.3, refract * 0.2, refract * 0.5);
+    }
+
+    FragColor = vec4(color, 1.0);
+}
+)";
+
+    static const char *kSkyVS = R"(#version 430 core
+out vec2 vNDC;
+void main()
+{
+    const vec2 p[4] = vec2[](vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(1.0, 1.0));
+    vNDC = p[gl_VertexID];
+    gl_Position = vec4(p[gl_VertexID], 0.0, 1.0);
+}
+)";
+
+    static const char *kSkyFS = R"(#version 430 core
+in vec2 vNDC;
+layout (location = 0) out vec4 FragColor;
+void main()
+{
+    float t = clamp(vNDC.y * 0.5 + 0.5, 0.0, 1.0);
+    vec3 zenith = vec3(0.06, 0.04, 0.18);
+    vec3 horizon = vec3(0.92, 0.24, 0.55);
+    vec3 nadir = vec3(0.03, 0.02, 0.08);
+    vec3 sky = mix(nadir, mix(horizon, zenith, t), smoothstep(0.0, 0.35, t));
+
+    vec2 sunPos = vec2(0.35, 0.28);
+    float d = length(vNDC - sunPos);
+    float sun = exp(-d * 12.0);
+    sky += vec3(1.0, 0.55, 0.16) * sun * 0.6;
+
+    FragColor = vec4(sky, 1.0);
+}
+)";
+
+    static const char *kSkinnedCharVS = R"(
+#version 430 core
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec3 aNormal;
+layout(location = 3) in ivec4 aBoneIds;
+layout(location = 4) in vec4 aBoneWeights;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+uniform mat4 uBones[200];
+uniform uint uBoneCount;
+uniform int  uHasTexCoord;
+out vec3 vWorldNormal;
+out vec3 vWorldPos;
+void main()
+{
+    float wt = aBoneWeights.x + aBoneWeights.y + aBoneWeights.z + aBoneWeights.w;
+    vec4 skinnedPos;
+    vec3 skinnedNorm;
+    if (wt > 0.001 && uBoneCount > 1u)
+    {
+        skinnedPos  = vec4(0.0);
+        skinnedNorm = vec3(0.0);
+        for (int i = 0; i < 4; ++i)
         {
-            int width = 0;
-            int height = 0;
-            SDL_GetWindowSize(sdlWindow, &width, &height);
-            // Window resize handling is done in update() for better state management
+            int   id = aBoneIds[i];
+            float w  = aBoneWeights[i];
+            if (w <= 0.0 || id < 0 || uint(id) >= uBoneCount) continue;
+            skinnedPos  += w * (uBones[id] * vec4(aPosition, 1.0));
+            skinnedNorm += w * (mat3(uBones[id]) * aNormal);
         }
-    }
-
-    // Keep camera tracking up to date for accumulation policy decisions
-    const bool cameraMoved = checkCameraMovement();
-
-    // Update sphere data on GPU every frame (physics may have changed positions)
-    const auto &spheres = mWorld.getSpheres();
-
-    std::vector<Sphere> renderSpheres;
-    renderSpheres.reserve(std::min<std::size_t>(spheres.size() + 1, kMaxPathTracerSpheres));
-
-    const std::size_t baseCount = std::min<std::size_t>(spheres.size(), kMaxPathTracerSpheres);
-    renderSpheres.insert(renderSpheres.end(), spheres.begin(), spheres.begin() + static_cast<std::ptrdiff_t>(baseCount));
-
-    const std::size_t totalSphereCount = renderSpheres.size();
-    const std::size_t primarySphereCount = totalSphereCount;
-
-    // Handle case with zero spheres gracefully (can happen during arcade mode when spheres spawn/despawn)
-    // The compute shader will simply render nothing, which is fine
-    if (renderSpheres.empty())
-    {
-        // Return early - no spheres to process
-        // This is normal during gameplay as spheres spawn ahead and despawn behind the player
-        return;
-    }
-
-    // Calculate required buffer size
-    const std::size_t requiredSize = renderSpheres.size() * sizeof(Sphere);
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mShapeSSBO);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mShapeSSBO);
-
-    // Check if we need to reallocate the buffer (sphere count changed)
-    if (mShapeSSBOCapacityBytes < requiredSize)
-    {
-        // Reallocating buffer with new size (add some headroom to avoid frequent reallocations)
-        const std::size_t newSize = requiredSize * 2;
-        GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(newSize), renderSpheres.data());
-        mShapeSSBOCapacityBytes = newSize;
     }
     else
     {
-        // Update existing buffer
-        GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(requiredSize), renderSpheres.data());
+        skinnedPos  = vec4(aPosition, 1.0);
+        skinnedNorm = aNormal;
     }
+    vec4 worldPos  = uModel * skinnedPos;
+    vWorldNormal = normalize(transpose(inverse(mat3(uModel))) * normalize(skinnedNorm));
+    vWorldPos    = worldPos.xyz;
+    gl_Position  = uProjection * uView * worldPos;
+}
+)";
 
-    const float timeSeconds = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+    static const char *kSkinnedCharFS = R"(
+#version 430 core
+in vec3 vWorldNormal;
+in vec3 vWorldPos;
+layout(location = 0) out vec4 FragColor;
+void main()
+{
+    vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
+    vec3 N = normalize(vWorldNormal);
+    float diff = max(dot(N, lightDir), 0.0);
+    float amb  = 0.40;
+    vec3 baseColor = vec3(0.80, 0.60, 0.45);
+    vec3 color = baseColor * (amb + diff * 0.60);
+    FragColor = vec4(color, 1.0);
+}
+)";
 
-    std::vector<GLTFModel::RayTraceTriangle> traceTriangles;
-    if (kEnableTrianglePathTraceProxy)
+    mRasterMazeShader = std::make_unique<Shader>();
+    mRasterMazeShader->compileAndAttachShader(Shader::ShaderType::VERTEX, "raster_maze_vs", kMazeVS);
+    mRasterMazeShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, "raster_maze_fs", kMazeFS);
+    mRasterMazeShader->linkProgram();
+
+    mRasterSkyShader = std::make_unique<Shader>();
+    mRasterSkyShader->compileAndAttachShader(Shader::ShaderType::VERTEX, "raster_sky_vs", kSkyVS);
+    mRasterSkyShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, "raster_sky_fs", kSkyFS);
+    mRasterSkyShader->linkProgram();
+
+    mSkinnedCharacterShader = std::make_unique<Shader>();
+    mSkinnedCharacterShader->compileAndAttachShader(Shader::ShaderType::VERTEX, "skinned_char_vs", kSkinnedCharVS);
+    mSkinnedCharacterShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, "skinned_char_fs", kSkinnedCharFS);
+    mSkinnedCharacterShader->linkProgram();
+
+    if (mRasterMazeVAO == 0)
+        glGenVertexArrays(1, &mRasterMazeVAO);
+    if (mRasterMazeVBO == 0)
+        glGenBuffers(1, &mRasterMazeVBO);
+}
+
+void GameState::buildRasterMazeGeometry() noexcept
+{
+    std::vector<RasterVertex> vertices;
+    vertices.reserve(50000);
+    mMazeWallAABBs.clear();
+
+    auto pushTri = [&vertices](const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c, const glm::vec3 &color)
     {
-        traceTriangles.reserve(kMaxPathTracerTriangles);
-    }
+        vertices.push_back({a, color});
+        vertices.push_back({b, color});
+        vertices.push_back({c, color});
+    };
 
-    auto *models = getContext().getModelsManager();
-    if (kEnableTrianglePathTraceProxy && models)
+    auto pushQuad = [&pushTri](const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c, const glm::vec3 &d, const glm::vec3 &color)
     {
-        try
+        pushTri(a, b, c, color);
+        pushTri(a, c, d, color);
+    };
+
+    auto pushBox = [&pushQuad](const glm::vec3 &center, const glm::vec3 &size, const glm::vec3 &color)
+    {
+        const glm::vec3 h = 0.5f * size;
+        const glm::vec3 p000 = center + glm::vec3(-h.x, -h.y, -h.z);
+        const glm::vec3 p001 = center + glm::vec3(-h.x, -h.y,  h.z);
+        const glm::vec3 p010 = center + glm::vec3(-h.x,  h.y, -h.z);
+        const glm::vec3 p011 = center + glm::vec3(-h.x,  h.y,  h.z);
+        const glm::vec3 p100 = center + glm::vec3( h.x, -h.y, -h.z);
+        const glm::vec3 p101 = center + glm::vec3( h.x, -h.y,  h.z);
+        const glm::vec3 p110 = center + glm::vec3( h.x,  h.y, -h.z);
+        const glm::vec3 p111 = center + glm::vec3( h.x,  h.y,  h.z);
+
+        pushQuad(p001, p101, p111, p011, color);
+        pushQuad(p100, p000, p010, p110, color);
+        pushQuad(p000, p001, p011, p010, color);
+        pushQuad(p101, p100, p110, p111, color);
+        pushQuad(p010, p011, p111, p110, color);
+        pushQuad(p000, p100, p101, p001, color);
+    };
+
+    auto mazeGrid = std::make_unique<mazes::colored_grid>(kSimpleMazeRows, kSimpleMazeCols, 1u);
+    mazes::randomizer rng{};
+    rng.seed(rng(0u, 4'200'000u));
+    mazes::dfs dfsAlgo{};
+    dfsAlgo.run(mazeGrid.get(), rng);
+    mazeGrid->initialize_distance_coloring(0, mazeGrid->operations().num_cells() - 1);
+
+    const float mazeWidth = static_cast<float>(kSimpleMazeCols) * kSimpleCellSize;
+    const float mazeDepth = static_cast<float>(kSimpleMazeRows) * kSimpleCellSize;
+    const glm::vec3 mazeOrigin(-mazeWidth * 0.5f, kSimpleFloorY, -mazeDepth * 0.5f);
+    const glm::vec3 mazeCenter(0.0f, kSimpleFloorY + 0.5f * (kSimpleMazeLevels - 1u) * kSimpleLevelSpacing, 0.0f);
+
+    auto &&gridOps = mazeGrid->operations();
+    for (unsigned int level = 0u; level < kSimpleMazeLevels; ++level)
+    {
+        const float levelBaseY = kSimpleFloorY + static_cast<float>(level) * kSimpleLevelSpacing;
+
+        for (unsigned int row = 0u; row < kSimpleMazeRows; ++row)
         {
-            const GLTFModel &characterModel = models->get(Models::ID::STYLIZED_CHARACTER);
-            if (characterModel.isLoaded())
+            for (unsigned int col = 0u; col < kSimpleMazeCols; ++col)
             {
-                glm::mat4 modelMatrix(1.0f);
-                modelMatrix = glm::translate(modelMatrix, mPlayer.getPosition() + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f));
-                modelMatrix = glm::rotate(modelMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-                modelMatrix = glm::scale(modelMatrix, glm::vec3(kCharacterPathTraceProxyScale));
+                const int idx = static_cast<int>(row * kSimpleMazeCols + col);
+                const auto cellPtr = gridOps.search(idx);
+                if (!cellPtr)
+                    continue;
 
-                characterModel.extractRayTraceTriangles(
-                    traceTriangles,
-                    modelMatrix,
-                    mModelAnimTimeSeconds,
-                    kMaxPathTracerTriangles);
-            }
-        }
-        catch (const std::exception &)
-        {
-        }
-    }
+                const float cx = mazeOrigin.x + (static_cast<float>(col) + 0.5f) * kSimpleCellSize;
+                const float cz = mazeOrigin.z + (static_cast<float>(row) + 0.5f) * kSimpleCellSize;
 
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mTriangleSSBO);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mTriangleSSBO);
+                glm::vec3 tileColor = packedRGBToLinear(mazeGrid->background_color_for(cellPtr));
+                const float levelTint = 0.88f + 0.12f *
+                    (kSimpleMazeLevels > 1u ? static_cast<float>(level) / static_cast<float>(kSimpleMazeLevels - 1u) : 0.0f);
+                tileColor *= levelTint;
 
-    const std::size_t triangleBytes = traceTriangles.size() * sizeof(GLTFModel::RayTraceTriangle);
-    if (kEnableTrianglePathTraceProxy && triangleBytes > 0)
-    {
-        if (mTriangleSSBOCapacityBytes < triangleBytes)
-        {
-            const std::size_t newSize = std::max(triangleBytes * 2, mTriangleSSBOCapacityBytes * 2);
-            GLSDLHelper::allocateSSBOBuffer(static_cast<GLsizeiptr>(newSize), traceTriangles.data());
-            mTriangleSSBOCapacityBytes = newSize;
-        }
-        else
-        {
-            GLSDLHelper::updateSSBOBuffer(0, static_cast<GLsizeiptr>(triangleBytes), traceTriangles.data());
-        }
+                const float y = levelBaseY + 0.01f;
+                const glm::vec3 a(cx - 0.5f * kSimpleCellSize, y, cz - 0.5f * kSimpleCellSize);
+                const glm::vec3 b(cx + 0.5f * kSimpleCellSize, y, cz - 0.5f * kSimpleCellSize);
+                const glm::vec3 c(cx + 0.5f * kSimpleCellSize, y, cz + 0.5f * kSimpleCellSize);
+                const glm::vec3 d(cx - 0.5f * kSimpleCellSize, y, cz + 0.5f * kSimpleCellSize);
+                pushQuad(a, b, c, d, tileColor);
 
-        // Ensure SSBO data is visible to compute shader before dispatch
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
-    }
+                const glm::vec3 wallColor(0.22f, 0.07f, 0.34f);
 
-    // Balanced profile: preserve clarity while avoiding full-frame compute every frame.
-    constexpr bool kEnablePreviewDuringMotion = true;
-    constexpr bool kQualityFirstDispatch = false;
+                // Distance-based material: reflective (metal) walls are brighter,
+                // refractive (glass) walls get a bluish tint
+                int dist = static_cast<int>(std::abs(static_cast<int>(row) - static_cast<int>(kSimpleMazeRows / 2u))) +
+                           static_cast<int>(std::abs(static_cast<int>(col) - static_cast<int>(kSimpleMazeCols / 2u)));
 
-    // Dynamic motion history blending.
-    constexpr float kMotionBlurMinSpeed = 0.60f;
-    constexpr float kMotionBlurFullSpeed = 9.0f;
-    constexpr float kStaticHistoryBlend = 0.95f;
-    constexpr float kMovingHistoryBlend = 0.86f;
-    constexpr float kPreviewTriggerBlur = 0.30f;
+                glm::vec3 actualWallColor = wallColor;
+                if (dist > 0 && dist % 3 == 0)
+                {
+                    // Metal/reflective walls - brighter, slight chrome tint
+                    actualWallColor = glm::vec3(0.45f, 0.40f, 0.55f);
+                }
+                else if (dist > 0 && dist % 5 == 0)
+                {
+                    // Glass/refractive walls - bluish transparent look
+                    actualWallColor = glm::vec3(0.18f, 0.30f, 0.55f);
+                }
 
-    const float speed = mPlayerPlanarSpeedForFx;
-    const float denom = std::max(0.001f, kMotionBlurFullSpeed - kMotionBlurMinSpeed);
-    const float blurFactor = std::clamp((speed - kMotionBlurMinSpeed) / denom, 0.0f, 1.0f);
+                const auto east = gridOps.get_east(cellPtr);
+                if (!(east && cellPtr->is_linked(east)))
+                {
+                    pushBox(glm::vec3(cx + 0.5f * kSimpleCellSize, levelBaseY + 0.5f * kSimpleWallHeight, cz),
+                            glm::vec3(kSimpleWallThickness, kSimpleWallHeight, kSimpleCellSize + kSimpleWallThickness),
+                            actualWallColor);
+                    if (level == 0u)  // Collect XZ AABB once (same footprint across all levels)
+                    {
+                        const float hw = kSimpleWallThickness * 0.5f;
+                        const float hz = (kSimpleCellSize + kSimpleWallThickness) * 0.5f;
+                        mMazeWallAABBs.emplace_back(cx + 0.5f*kSimpleCellSize - hw, cz - hz,
+                                                    cx + 0.5f*kSimpleCellSize + hw, cz + hz);
+                    }
+                }
 
-    const float effectiveBlurFactor = std::clamp(blurFactor, 0.0f, 1.0f);
-    const float historyBlend = kStaticHistoryBlend + (kMovingHistoryBlend - kStaticHistoryBlend) * effectiveBlurFactor;
+                const auto south = gridOps.get_south(cellPtr);
+                if (!(south && cellPtr->is_linked(south)))
+                {
+                    pushBox(glm::vec3(cx, levelBaseY + 0.5f * kSimpleWallHeight, cz + 0.5f * kSimpleCellSize),
+                            glm::vec3(kSimpleCellSize + kSimpleWallThickness, kSimpleWallHeight, kSimpleWallThickness),
+                            actualWallColor);
+                    if (level == 0u)
+                    {
+                        const float hx = (kSimpleCellSize + kSimpleWallThickness) * 0.5f;
+                        const float hw = kSimpleWallThickness * 0.5f;
+                        mMazeWallAABBs.emplace_back(cx - hx, cz + 0.5f*kSimpleCellSize - hw,
+                                                    cx + hx, cz + 0.5f*kSimpleCellSize + hw);
+                    }
+                }
 
-    constexpr uint32_t kStaticTilesPerFrame = 6u;
-    constexpr uint32_t kMovingTilesPerFrame = 12u;
-    const bool usePreviewMode = kEnablePreviewDuringMotion && (cameraMoved || effectiveBlurFactor > kPreviewTriggerBlur);
-    const bool preferFullFrameDispatch = kQualityFirstDispatch || cameraMoved;
+                if (col == 0u)
+                {
+                    pushBox(glm::vec3(cx - 0.5f * kSimpleCellSize, levelBaseY + 0.5f * kSimpleWallHeight, cz),
+                            glm::vec3(kSimpleWallThickness, kSimpleWallHeight, kSimpleCellSize + kSimpleWallThickness),
+                            actualWallColor);
+                    if (level == 0u)
+                    {
+                        const float hw = kSimpleWallThickness * 0.5f;
+                        const float hz = (kSimpleCellSize + kSimpleWallThickness) * 0.5f;
+                        mMazeWallAABBs.emplace_back(cx - 0.5f*kSimpleCellSize - hw, cz - hz,
+                                                    cx - 0.5f*kSimpleCellSize + hw, cz + hz);
+                    }
+                }
 
-    Texture *targetAccumTex = usePreviewMode ? mPreviewAccumTex : mAccumTex;
-    Texture *targetOutputTex = usePreviewMode ? mPreviewOutputTex : mPathTraceOutputTex;
-    const int targetWidth = usePreviewMode ? mPreviewRenderWidth : mRenderWidth;
-    const int targetHeight = usePreviewMode ? mPreviewRenderHeight : mRenderHeight;
-
-    if (!targetAccumTex || !targetOutputTex || !mPathTraceStageTex || !mDisplayTex || mPathTracePostFBO == 0)
-    {
-        return;
-    }
-
-    // Always compute each frame; temporal history blending controls persistence.
-    if (mTotalBatches > 0u)
-    {
-        mComputeShader->bind();
-
-        // Calculate aspect ratio
-        float ar = static_cast<float>(targetWidth) / static_cast<float>(targetHeight);
-
-        // Set camera uniforms (following Compute.cpp renderPathTracer)
-        mComputeShader->setUniform("uCamera.eye", mCamera.getActualPosition());
-        mComputeShader->setUniform("uCamera.far", mCamera.getFar());
-        mComputeShader->setUniform("uCamera.ray00", mCamera.getFrustumEyeRay(ar, -1, -1));
-        mComputeShader->setUniform("uCamera.ray01", mCamera.getFrustumEyeRay(ar, -1, 1));
-        mComputeShader->setUniform("uCamera.ray10", mCamera.getFrustumEyeRay(ar, 1, -1));
-        mComputeShader->setUniform("uCamera.ray11", mCamera.getFrustumEyeRay(ar, 1, 1));
-
-        const uint32_t samplesPerBatch = usePreviewMode
-            ? std::max(2u, mSamplesPerBatch / 2u)
-            : mSamplesPerBatch;
-
-
-        // Set batch uniforms for progressive rendering
-        mComputeShader->setUniform("uBatch", mCurrentBatch);
-        mComputeShader->setUniform("uSamplesPerBatch", samplesPerBatch);
-
-        const uint32_t adaptiveVoronoiCellCount = computeAdaptiveVoronoiCellBudget(
-            static_cast<uint32_t>(mVoronoiPlanet.getCellCount()),
-            mRenderWidth,
-            mRenderHeight);
-        const uint32_t adaptiveTriangleShadowBudget = computeAdaptiveTriangleShadowBudget(
-            mRenderWidth,
-            mRenderHeight);
-        const uint32_t adaptiveTileEdge = computeAdaptivePathTraceTileEdge(
-            mRenderWidth,
-            mRenderHeight);
-        // Bind Voronoi cell color/seed/painted SSBOs used by the compute shader.
-        // Keep cell count at zero unless all buffers exist for safe access.
-        mComputeShader->setUniform("uVoronoiCellCount", static_cast<GLuint>(0));
-        mComputeShader->setUniform("uPlanetRadius", mVoronoiPlanet.getRadius());
-        mComputeShader->setUniform("uPlanetCenter", mVoronoiPlanet.getCenter());
-        mComputeShader->setUniform("uTriangleShadowTestBudget", adaptiveTriangleShadowBudget);
-        if (mVoronoiCellColorSSBO != 0 && mVoronoiCellSeedSSBO != 0 && mVoronoiCellPaintedSSBO != 0) {
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, mVoronoiCellColorSSBO);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, mVoronoiCellSeedSSBO);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, mVoronoiCellPaintedSSBO);
-            mComputeShader->setUniform("uVoronoiCellCount", adaptiveVoronoiCellCount);
-        }
-
-        // Set sphere count uniform (NEW - tells shader how many spheres to check)
-        mComputeShader->setUniform("uSphereCount", static_cast<uint32_t>(totalSphereCount));
-        mComputeShader->setUniform("uPrimaryRaySphereCount", static_cast<uint32_t>(primarySphereCount));
-        mComputeShader->setUniform("uTriangleCount", kEnableTrianglePathTraceProxy ? static_cast<uint32_t>(traceTriangles.size()) : 0u);
-
-        static constexpr auto NOISE_TEXTURE_UNIT = 2;
-
-        mComputeShader->setUniform("uTime", static_cast<GLfloat>(timeSeconds));
-        mComputeShader->setUniform("uHistoryBlend", historyBlend);
-        mComputeShader->setUniform("uNoiseTex", static_cast<GLint>(NOISE_TEXTURE_UNIT));
-        mComputeShader->setUniform("uTestAlbedoTex", kTestAlbedoTextureUnit);
-        mComputeShader->setUniform("uTestTextureStrength", mTestAlbedoTexture ? 1.0f : 0.0f);
-        mComputeShader->setUniform("uSphereTexScale", glm::vec2(2.2f, 1.0f));
-        mComputeShader->setUniform("uTriangleTexScale", glm::vec2(3.0f, 3.0f));
-        // Shadow casting uniforms
-        mComputeShader->setUniform("uPlayerPos", mPlayer.getPosition() + glm::vec3(0.0f, kPlayerShadowCenterYOffset, 0.0f));
-        mComputeShader->setUniform("uPlayerRadius", kPlayerProxyRadius);
-
-        mComputeShader->setUniform("uLightDir", computeSunDirection(timeSeconds));
-
-        // Bind both textures as images for compute shader
-        glBindImageTexture(0, targetAccumTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
-        glBindImageTexture(1, targetOutputTex->get(), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
-
-        // Bind starfield noise texture sampler to texture unit 2
-        glActiveTexture(GL_TEXTURE0 + NOISE_TEXTURE_UNIT);
-        glBindTexture(GL_TEXTURE_2D, mNoiseTexture ? mNoiseTexture->get() : 0);
-
-        glActiveTexture(GL_TEXTURE0 + kTestAlbedoTextureUnit);
-        glBindTexture(GL_TEXTURE_2D, mTestAlbedoTexture ? mTestAlbedoTexture->get() : 0);
-
-        // Dispatch one or more adaptive tiles this frame.
-        // Movement/camera changes force full-frame updates to avoid patchy temporal lag.
-        const uint32_t targetTilesX = std::max(1u, (static_cast<uint32_t>(targetWidth) + adaptiveTileEdge - 1u) / adaptiveTileEdge);
-        const uint32_t targetTilesY = std::max(1u, (static_cast<uint32_t>(targetHeight) + adaptiveTileEdge - 1u) / adaptiveTileEdge);
-        const uint32_t targetTotalTiles = std::max(1u, targetTilesX * targetTilesY);
-        const uint32_t desiredTilesPerFrame = usePreviewMode ? kMovingTilesPerFrame : kStaticTilesPerFrame;
-        const uint32_t targetDispatchTileCount = preferFullFrameDispatch
-            ? targetTotalTiles
-            : std::min(targetTotalTiles, desiredTilesPerFrame);
-
-        for (uint32_t tileOffset = 0u; tileOffset < targetDispatchTileCount; ++tileOffset)
-        {
-            const uint32_t tileIndex = (mCurrentTileIndex + tileOffset) % targetTotalTiles;
-            const uint32_t tileX = tileIndex % targetTilesX;
-            const uint32_t tileY = tileIndex / targetTilesX;
-
-            const uint32_t tileOriginX = tileX * adaptiveTileEdge;
-            const uint32_t tileOriginY = tileY * adaptiveTileEdge;
-            const uint32_t tileWidth = std::max(1u, std::min(adaptiveTileEdge, static_cast<uint32_t>(targetWidth) - tileOriginX));
-            const uint32_t tileHeight = std::max(1u, std::min(adaptiveTileEdge, static_cast<uint32_t>(targetHeight) - tileOriginY));
-
-            mComputeShader->setUniform("uTileOrigin", glm::uvec2(tileOriginX, tileOriginY));
-            mComputeShader->setUniform("uTileSize", glm::uvec2(tileWidth, tileHeight));
-
-            GLuint groupsX = (tileWidth + 19) / 20;
-            GLuint groupsY = (tileHeight + 19) / 20;
-            glDispatchCompute(groupsX, groupsY, 1);
-        }
-
-        // Memory barrier to ensure compute shader writes are visible
-        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-
-        const uint32_t advancedTiles = targetDispatchTileCount;
-        const uint32_t nextTile = (mCurrentTileIndex + advancedTiles) % targetTotalTiles;
-        const uint32_t wraps = (mCurrentTileIndex + advancedTiles) / targetTotalTiles;
-        mCurrentTileIndex = nextTile;
-        for (uint32_t i = 0u; i < wraps; ++i)
-        {
-            if (mCurrentBatch == 0xFFFFFFFFu)
-            {
-                mCurrentBatch = 0u;
-            }
-            else
-            {
-                mCurrentBatch++;
+                if (row == 0u)
+                {
+                    pushBox(glm::vec3(cx, levelBaseY + 0.5f * kSimpleWallHeight, cz - 0.5f * kSimpleCellSize),
+                            glm::vec3(kSimpleCellSize + kSimpleWallThickness, kSimpleWallHeight, kSimpleWallThickness),
+                            actualWallColor);
+                    if (level == 0u)
+                    {
+                        const float hx = (kSimpleCellSize + kSimpleWallThickness) * 0.5f;
+                        const float hw = kSimpleWallThickness * 0.5f;
+                        mMazeWallAABBs.emplace_back(cx - hx, cz - 0.5f*kSimpleCellSize - hw,
+                                                    cx + hx, cz - 0.5f*kSimpleCellSize + hw);
+                    }
+                }
             }
         }
     }
 
-    // GLSLPT-style output workflow:
-    // 1) Copy current tracing result into an intermediate full-resolution stage
-    // 2) Tonemap stage into the display texture used by final scene compositing
-    glBindFramebuffer(GL_FRAMEBUFFER, mPathTracePostFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mPathTraceStageTex->get(), 0);
-    glViewport(0, 0, mRenderWidth, mRenderHeight);
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-
-    mPathTracerOutputShader->bind();
-    mPathTracerOutputShader->setUniform("uInputTex", 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, targetOutputTex->get());
-    glBindVertexArray(mVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mDisplayTex->get(), 0);
-    glViewport(0, 0, mRenderWidth, mRenderHeight);
-    mPathTracerTonemapShader->bind();
-    mPathTracerTonemapShader->setUniform("uInputTex", 0);
-    mPathTracerTonemapShader->setUniform("uExposure", 1.0f);
-    mPathTracerTonemapShader->setUniform("uEnableTonemap", static_cast<GLint>(1));
-    mPathTracerTonemapShader->setUniform("uPreviewMode", static_cast<GLint>(usePreviewMode ? 1 : 0));
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, mPathTraceStageTex->get());
-    glBindVertexArray(mVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, mWindowWidth, mWindowHeight);
-
-    glDepthMask(GL_TRUE);
-}
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Fragment-shader path tracing (GLSLPT-style)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-void GameState::renderWithFragmentShaders() const noexcept
-{
-    if (!mSceneRenderer || !mSceneRenderer->isInitialized())
-        return;
-
-    const bool isDirty = (mPathTraceScene && mPathTraceScene->dirty);
-    const int passesThisFrame = isDirty ? 1 : kFragmentPassesPerFrame;
-
-    for (int i = 0; i < passesThisFrame; ++i)
+    // Boundary billboard pillars: tall bright-orange posts just outside the outer
+    // perimeter wall, one per cell interval.  Visible from the bird's-eye camera
+    // as an orange ring delimiting the playable area.
     {
-        mSceneRenderer->update(0.0f);
-        mSceneRenderer->render();
+        const glm::vec3 pillarColor(0.95f, 0.55f, 0.05f);
+        constexpr float kPillarH = 3.5f;
+        constexpr float kPillarW = 0.30f;
+        const float pillarY  = kSimpleFloorY + kPillarH * 0.5f;
+        const float margin   = kSimpleCellSize * 0.5f + kSimpleWallThickness + 0.25f;
+
+        // North / South rows (full width including corners)
+        for (unsigned int c = 0u; c <= kSimpleMazeCols; ++c)
+        {
+            const float px = mazeOrigin.x + static_cast<float>(c) * kSimpleCellSize;
+            pushBox(glm::vec3(px, pillarY, mazeOrigin.z - margin),
+                    glm::vec3(kPillarW, kPillarH, kPillarW), pillarColor);
+            pushBox(glm::vec3(px, pillarY, mazeOrigin.z + mazeDepth + margin),
+                    glm::vec3(kPillarW, kPillarH, kPillarW), pillarColor);
+        }
+        // West / East columns (skip corners already placed)
+        for (unsigned int r = 1u; r < kSimpleMazeRows; ++r)
+        {
+            const float pz = mazeOrigin.z + static_cast<float>(r) * kSimpleCellSize;
+            pushBox(glm::vec3(mazeOrigin.x - margin, pillarY, pz),
+                    glm::vec3(kPillarW, kPillarH, kPillarW), pillarColor);
+            pushBox(glm::vec3(mazeOrigin.x + mazeWidth + margin, pillarY, pz),
+                    glm::vec3(kPillarW, kPillarH, kPillarW), pillarColor);
+        }
     }
 
-    mSceneRenderer->present();
-}
+    const glm::vec3 floorCol(0.18f, 0.13f, 0.28f);
+    const float floorY = kSimpleFloorY;
+    pushQuad(glm::vec3(-2400.0f, floorY, -2400.0f),
+             glm::vec3(2400.0f, floorY, -2400.0f),
+             glm::vec3(2400.0f, floorY, 2400.0f),
+             glm::vec3(-2400.0f, floorY, 2400.0f),
+             floorCol);
 
-void GameState::syncPathTraceCamera() noexcept
-{
-    if (!mPathTraceScene)
-        return;
+    glBindVertexArray(mRasterMazeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, mRasterMazeVBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(vertices.size() * sizeof(RasterVertex)),
+                 vertices.data(),
+                 GL_STATIC_DRAW);
 
-    auto &ptCam = mPathTraceScene->getCamera();
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RasterVertex), reinterpret_cast<void *>(offsetof(RasterVertex, position)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(RasterVertex), reinterpret_cast<void *>(offsetof(RasterVertex, color)));
+    glBindVertexArray(0);
 
-    ptCam.position = mCamera.getActualPosition();
+    mRasterMazeVertexCount = static_cast<GLsizei>(vertices.size());
 
-    const glm::vec3 fwd = glm::normalize(mCamera.getTarget());
-    const glm::vec3 worldUp{0.0f, 1.0f, 0.0f};
-    const glm::vec3 right = glm::normalize(glm::cross(fwd, worldUp));
-    const glm::vec3 up = glm::normalize(glm::cross(right, fwd));
-
-    ptCam.forward = fwd;
-    ptCam.right = right;
-    ptCam.up = up;
-
-    ptCam.fov = glm::radians(45.0f);
-
-    // Mark scene dirty when camera moves so accumulation resets
-    const glm::vec3 actualCameraPos = mCamera.getActualPosition();
-
-    const bool cameraMoved =
-        (glm::distance(mLastCameraPosition, actualCameraPos) > 0.001f) ||
-        (std::abs(mLastCameraYaw - mCamera.getYaw()) > 0.01f) ||
-        (std::abs(mLastCameraPitch - mCamera.getPitch()) > 0.01f);
-
-    if (cameraMoved)
-        mPathTraceScene->dirty = true;
-
-    // Update movement baseline every frame so we only reset accumulation on actual deltas.
-    mLastCameraPosition = actualCameraPos;
-    mLastCameraYaw = mCamera.getYaw();
-    mLastCameraPitch = mCamera.getPitch();
-}
-
-void GameState::frameFragmentCornellCamera() noexcept
-{
-    // Cornell scene is centered near origin and open toward +Z.
-    mCamera.setMode(CameraMode::FIRST_PERSON);
-    mCamera.setPosition(glm::vec3(0.0f, 0.0f, 12.0f));
-    mCamera.setYawPitch(-90.0f, 0.0f);
+    mRasterMazeCenter = mazeCenter;
+    mRasterMazeWidth = mazeWidth;
+    mRasterMazeDepth = mazeDepth;
+    mRasterMazeTopY = kSimpleFloorY + static_cast<float>(kSimpleMazeLevels - 1u) * kSimpleLevelSpacing + kSimpleWallHeight;
+    mCamera.setFieldOfView(kRasterBirdsEyeFovDeg);
+    updateRasterBirdsEyeZoomLimits();
+    mRasterBirdsEyeDistance = mRasterBirdsEyeMaxDistance;
+    applyRasterBirdsEyeCamera();
+    // NOTE: cursor lock intentionally NOT disabled here; GameState keeps it
+    // locked for relative-mouse top-down movement during gameplay.
 
     mLastCameraPosition = mCamera.getActualPosition();
     mLastCameraYaw = mCamera.getYaw();
     mLastCameraPitch = mCamera.getPitch();
 
-    if (mPathTraceScene)
-    {
-        mPathTraceScene->dirty = true;
-    }
-    if (mSceneRenderer)
-    {
-        mSceneRenderer->markDirty();
-    }
-}
-
-void GameState::buildPathTraceScene() noexcept
-{
-    if (!mPathTraceScene)
-        return;
-
-    // â”€â”€ Cornell Box â€“ classic test scene â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Box dimensions: 10Ã—10Ã—10, centered at origin
-
-    // Meshes: each wall is two triangles (a quad)
-    auto makeQuad = [](const glm::vec3 &v0, const glm::vec3 &v1,
-                       const glm::vec3 &v2, const glm::vec3 &v3,
-                       const glm::vec3 &normal) -> PTMesh
-    {
-        PTMesh mesh;
-        // Triangle 1: v0, v1, v2
-        mesh.verticesUVX.push_back(glm::vec4(v0, 0.0f));
-        mesh.verticesUVX.push_back(glm::vec4(v1, 1.0f));
-        mesh.verticesUVX.push_back(glm::vec4(v2, 1.0f));
-        mesh.normalsUVY.push_back(glm::vec4(normal, 0.0f));
-        mesh.normalsUVY.push_back(glm::vec4(normal, 0.0f));
-        mesh.normalsUVY.push_back(glm::vec4(normal, 1.0f));
-        // Triangle 2: v0, v2, v3
-        mesh.verticesUVX.push_back(glm::vec4(v0, 0.0f));
-        mesh.verticesUVX.push_back(glm::vec4(v2, 1.0f));
-        mesh.verticesUVX.push_back(glm::vec4(v3, 0.0f));
-        mesh.normalsUVY.push_back(glm::vec4(normal, 0.0f));
-        mesh.normalsUVY.push_back(glm::vec4(normal, 1.0f));
-        mesh.normalsUVY.push_back(glm::vec4(normal, 1.0f));
-        return mesh;
-    };
-
-    const float H = 5.0f; // half-extent
-
-    // â”€â”€ Materials â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    PTMaterial whiteMat;
-    whiteMat.baseColor = glm::vec3(0.73f);
-    whiteMat.roughness = 1.0f;
-    int whiteID = mPathTraceScene->addMaterial(whiteMat);
-
-    PTMaterial redMat;
-    redMat.baseColor = glm::vec3(0.65f, 0.05f, 0.05f);
-    redMat.roughness = 1.0f;
-    int redID = mPathTraceScene->addMaterial(redMat);
-
-    PTMaterial greenMat;
-    greenMat.baseColor = glm::vec3(0.12f, 0.45f, 0.15f);
-    greenMat.roughness = 1.0f;
-    int greenID = mPathTraceScene->addMaterial(greenMat);
-
-    PTMaterial lightMat;
-    lightMat.baseColor = glm::vec3(0.0f);
-    // Use neutral white emitter to avoid warm/yellow scene bias.
-    lightMat.emission = glm::vec3(15.0f);
-    int lightID = mPathTraceScene->addMaterial(lightMat);
-
-    // â”€â”€ Walls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Floor (white)
-    PTMesh floor = makeQuad(
-        {-H, -H, -H}, {H, -H, -H}, {H, -H, H}, {-H, -H, H},
-        {0, 1, 0});
-    floor.name = "floor";
-    int floorMeshID = mPathTraceScene->addMesh(std::move(floor));
-    mPathTraceScene->addMeshInstance({"floor", floorMeshID, whiteID, glm::mat4(1.0f)});
-
-    // Ceiling (white)
-    PTMesh ceiling = makeQuad(
-        {-H, H, H}, {H, H, H}, {H, H, -H}, {-H, H, -H},
-        {0, -1, 0});
-    ceiling.name = "ceiling";
-    int ceilingMeshID = mPathTraceScene->addMesh(std::move(ceiling));
-    mPathTraceScene->addMeshInstance({"ceiling", ceilingMeshID, whiteID, glm::mat4(1.0f)});
-
-    // Back wall (white)
-    PTMesh backWall = makeQuad(
-        {-H, -H, -H}, {-H, H, -H}, {H, H, -H}, {H, -H, -H},
-        {0, 0, 1});
-    backWall.name = "back";
-    int backMeshID = mPathTraceScene->addMesh(std::move(backWall));
-    mPathTraceScene->addMeshInstance({"back", backMeshID, whiteID, glm::mat4(1.0f)});
-
-    // Left wall (red)
-    PTMesh leftWall = makeQuad(
-        {-H, -H, H}, {-H, H, H}, {-H, H, -H}, {-H, -H, -H},
-        {1, 0, 0});
-    leftWall.name = "left";
-    int leftMeshID = mPathTraceScene->addMesh(std::move(leftWall));
-    mPathTraceScene->addMeshInstance({"left", leftMeshID, redID, glm::mat4(1.0f)});
-
-    // Right wall (green)
-    PTMesh rightWall = makeQuad(
-        {H, -H, -H}, {H, H, -H}, {H, H, H}, {H, -H, H},
-        {-1, 0, 0});
-    rightWall.name = "right";
-    int rightMeshID = mPathTraceScene->addMesh(std::move(rightWall));
-    mPathTraceScene->addMeshInstance({"right", rightMeshID, greenID, glm::mat4(1.0f)});
-
-    // â”€â”€ Light (small quad on ceiling) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const float L = 1.3f; // light half-size
-    PTMesh lightQuad = makeQuad(
-        {-L, H - 0.01f, -L}, {L, H - 0.01f, -L},
-        {L, H - 0.01f, L}, {-L, H - 0.01f, L},
-        {0, -1, 0});
-    lightQuad.name = "light";
-    int lightMeshID = mPathTraceScene->addMesh(std::move(lightQuad));
-    mPathTraceScene->addMeshInstance({"light", lightMeshID, lightID, glm::mat4(1.0f)});
-
-    // Add area light descriptor for shader sampling
-    PTLight areaLight;
-    areaLight.position = glm::vec3(0.0f, H - 0.01f, 0.0f);
-    areaLight.emission = glm::vec3(15.0f);
-    areaLight.u = glm::vec3(L * 2.0f, 0.0f, 0.0f);
-    areaLight.v = glm::vec3(0.0f, 0.0f, L * 2.0f);
-    areaLight.area = (L * 2.0f) * (L * 2.0f);
-    areaLight.type = 0.0f; // quad light
-    mPathTraceScene->addLight(areaLight);
-
-    // â”€â”€ Camera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    PTCamera cam;
-    cam.position = glm::vec3(0.0f, 0.0f, 3.0f);
-    cam.forward = glm::vec3(0.0f, 0.0f, -1.0f);
-    cam.up = glm::vec3(0.0f, 1.0f, 0.0f);
-    cam.right = glm::vec3(1.0f, 0.0f, 0.0f);
-    cam.fov = glm::radians(45.0f);
-    cam.focalDist = 8.0f;
-    cam.aperture = 0.0f;
-    mPathTraceScene->setCamera(cam);
-
-    // â”€â”€ Render options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    auto &opts = mPathTraceScene->getRenderOptions();
-    opts.maxDepth = 4;
-    opts.enableUniformLight = false;
-    opts.uniformLightCol = glm::vec3(0.3f);
-    opts.enableEnvMap = false;
-    opts.enableBackground = false;
-    opts.backgroundCol = glm::vec3(0.0f);
-
-    mPathTraceScene->processScene();
-
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "GameState: Cornell Box scene built  meshes=%d tris=%zu lights=%zu",
-                static_cast<int>(mPathTraceScene->getMeshInstances().size()),
-                mPathTraceScene->getVertIndices().size(),
-                mPathTraceScene->getLights().size());
+                "GameState: Raster maze built ? rows=%u cols=%u levels=%u vertices=%d zoom=[%.2f, %.2f]",
+                kSimpleMazeRows,
+                kSimpleMazeCols,
+                kSimpleMazeLevels,
+                mRasterMazeVertexCount,
+                mRasterBirdsEyeMinDistance,
+                mRasterBirdsEyeMaxDistance);
 }
 
-void GameState::renderCompositeScene() const noexcept
+void GameState::renderPlayerCharacter() const noexcept
 {
-    if (!mCompositeShader || !mDisplayTex || !mBillboardColorTex || mBillboardColorTex->get() == 0)
+    if (!mSkinnedCharacterShader || !mSkinnedCharacterShader->isLinked())
+        return;
+
+    auto *modelsManager = getContext().getModelsManager();
+    if (!modelsManager)
+        return;
+
+    GLTFModel *model = nullptr;
+    try
+    {
+        model = &modelsManager->get(Models::ID::STYLIZED_CHARACTER);
+    }
+    catch (const std::exception &)
     {
         return;
     }
-    // Ensure we're rendering to the main framebuffer
+
+    if (!model || !model->isLoaded())
+        return;
+
+    const float aspectRatio = static_cast<float>(std::max(1, mWindowWidth)) /
+                              static_cast<float>(std::max(1, mWindowHeight));
+    const glm::mat4 view = mCamera.getLookAt();
+    const glm::mat4 proj = mCamera.getPerspective(aspectRatio);
+
+    const glm::vec3 playerPos = mPlayer.getPosition() + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f);
+    const float facingDeg = mPlayer.getFacingDirection();
+
+    glm::mat4 modelMat = glm::translate(glm::mat4(1.0f), playerPos);
+    modelMat = glm::rotate(modelMat, glm::radians(facingDeg), glm::vec3(0.0f, 1.0f, 0.0f));
+    // Scale can be adjusted if the exported model units differ from world units
+    modelMat = glm::scale(modelMat, glm::vec3(1.0f));
+
+    GLboolean prevDepthTest = GL_FALSE;
+    GLboolean prevCullFace  = GL_FALSE;
+    GLint prevDepthFunc = GL_LESS;
+    glGetBooleanv(GL_DEPTH_TEST, &prevDepthTest);
+    glGetBooleanv(GL_CULL_FACE,  &prevCullFace);
+    glGetIntegerv(GL_DEPTH_FUNC, &prevDepthFunc);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
+    model->render(*mSkinnedCharacterShader, modelMat, view, proj, mModelAnimTimeSeconds);
+
+    if (!prevDepthTest) glDisable(GL_DEPTH_TEST);
+    else glDepthFunc(static_cast<GLenum>(prevDepthFunc));
+    if (!prevCullFace)  glDisable(GL_CULL_FACE);
+}
+
+void GameState::renderScoreBillboards() const noexcept
+{
+    // Render score HUD using ImGui
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.5f);
+    ImGui::Begin("##ScoreHUD", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav);
+
+    // Get font from FontManager for score display
+    Font *scoreFont = nullptr;
+    try
+    {
+        scoreFont = &const_cast<FontManager &>(*getContext().getFontManager()).get(Fonts::ID::LIMELIGHT);
+    }
+    catch (const std::exception &)
+    {
+    }
+
+    if (scoreFont && scoreFont->get())
+    {
+        ImGui::PushFont(scoreFont->get());
+    }
+
+    const int score = mWorld.getScore();
+    const ImVec4 scoreColor = (score >= 0)
+        ? ImVec4(0.2f, 1.0f, 0.3f, 1.0f)   // Green for positive
+        : ImVec4(1.0f, 0.2f, 0.2f, 1.0f);   // Red for negative
+
+    ImGui::TextColored(scoreColor, "SCORE: %d", score);
+
+    if (scoreFont && scoreFont->get())
+    {
+        ImGui::PopFont();
+    }
+
+    ImGui::End();
+
+    // Render floating score popups in world space using ImGui overlays
+    const float aspectRatio = static_cast<float>(std::max(1, mWindowWidth)) /
+                              static_cast<float>(std::max(1, mWindowHeight));
+    const glm::mat4 view = mCamera.getLookAt();
+    const glm::mat4 proj = mCamera.getPerspective(aspectRatio);
+
+    for (size_t i = 0; i < mActiveScorePopups.size(); ++i)
+    {
+        const auto &[worldPos, value] = mActiveScorePopups[i];
+        const float timer = mScorePopupTimers[i];
+
+        // Animate popup floating upward
+        glm::vec3 animPos = worldPos + glm::vec3(0.0f, (2.0f - timer) * 2.0f, 0.0f);
+
+        ImVec2 screenPos;
+        if (projectWorldToScreen(animPos, view, proj, mWindowWidth, mWindowHeight, screenPos))
+        {
+            const float alpha = std::min(1.0f, timer);
+            const ImVec4 popupColor = (value >= 0)
+                ? ImVec4(0.1f, 1.0f, 0.2f, alpha)
+                : ImVec4(1.0f, 0.15f, 0.15f, alpha);
+
+            char label[64];
+            snprintf(label, sizeof(label), "##popup%zu", i);
+            ImGui::SetNextWindowPos(screenPos, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            ImGui::SetNextWindowBgAlpha(0.0f);
+            ImGui::Begin(label, nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                         ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav);
+
+            if (scoreFont && scoreFont->get())
+                ImGui::PushFont(scoreFont->get());
+
+            ImGui::TextColored(popupColor, "%s%d", (value >= 0) ? "+" : "", value);
+
+            if (scoreFont && scoreFont->get())
+                ImGui::PopFont();
+
+            ImGui::End();
+        }
+    }
+}
+
+void GameState::renderPickupSpheres() const noexcept
+{
+    const auto &pickups = mWorld.getPickupSpheres();
+    if (pickups.empty())
+        return;
+
+    if (!mRasterMazeShader)
+        return;
+
+    // Lazily create cached VAO/VBO
+    if (mPickupVAO == 0)
+    {
+        glGenVertexArrays(1, &const_cast<GameState *>(this)->mPickupVAO);
+        glGenBuffers(1, &const_cast<GameState *>(this)->mPickupVBO);
+        glBindVertexArray(mPickupVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, mPickupVBO);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RasterVertex),
+                              reinterpret_cast<void *>(offsetof(RasterVertex, position)));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(RasterVertex),
+                              reinterpret_cast<void *>(offsetof(RasterVertex, color)));
+        glBindVertexArray(0);
+        mPickupsDirty = true;
+    }
+
+    // Rebuild geometry only when pickups change (collected) or first time
+    if (mPickupsDirty)
+    {
+        std::vector<RasterVertex> pickupVerts;
+        pickupVerts.reserve(pickups.size() * 36);
+
+        auto pushQuad = [&pickupVerts](const glm::vec3 &a, const glm::vec3 &b,
+                                        const glm::vec3 &c, const glm::vec3 &d,
+                                        const glm::vec3 &color)
+        {
+            pickupVerts.push_back({a, color});
+            pickupVerts.push_back({b, color});
+            pickupVerts.push_back({c, color});
+            pickupVerts.push_back({a, color});
+            pickupVerts.push_back({c, color});
+            pickupVerts.push_back({d, color});
+        };
+
+        for (const auto &pickup : pickups)
+        {
+            if (pickup.collected)
+                continue;
+
+            const glm::vec3 &pos = pickup.position;
+
+            glm::vec3 color;
+            if (pickup.value > 0)
+                color = glm::vec3(0.15f, 0.85f, 0.25f);
+            else if (pickup.value < 0)
+                color = glm::vec3(0.90f, 0.15f, 0.15f);
+            else
+                color = glm::vec3(0.90f, 0.85f, 0.15f);
+
+            const float h = 0.4f;
+            const glm::vec3 p000 = pos + glm::vec3(-h, -h, -h);
+            const glm::vec3 p001 = pos + glm::vec3(-h, -h,  h);
+            const glm::vec3 p010 = pos + glm::vec3(-h,  h, -h);
+            const glm::vec3 p011 = pos + glm::vec3(-h,  h,  h);
+            const glm::vec3 p100 = pos + glm::vec3( h, -h, -h);
+            const glm::vec3 p101 = pos + glm::vec3( h, -h,  h);
+            const glm::vec3 p110 = pos + glm::vec3( h,  h, -h);
+            const glm::vec3 p111 = pos + glm::vec3( h,  h,  h);
+
+            pushQuad(p001, p101, p111, p011, color);
+            pushQuad(p100, p000, p010, p110, color * 0.8f);
+            pushQuad(p000, p001, p011, p010, color * 0.9f);
+            pushQuad(p101, p100, p110, p111, color * 0.85f);
+            pushQuad(p010, p011, p111, p110, color * 1.1f);
+            pushQuad(p000, p100, p101, p001, color * 0.7f);
+        }
+
+        glBindBuffer(GL_ARRAY_BUFFER, mPickupVBO);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(pickupVerts.size() * sizeof(RasterVertex)),
+                     pickupVerts.data(), GL_DYNAMIC_DRAW);
+        const_cast<GameState *>(this)->mPickupVertexCount = static_cast<GLsizei>(pickupVerts.size());
+        mPickupsDirty = false;
+    }
+
+    if (mPickupVertexCount == 0)
+        return;
+
+    const float aspectRatio = static_cast<float>(std::max(1, mWindowWidth)) /
+                              static_cast<float>(std::max(1, mWindowHeight));
+    const glm::mat4 mvp = mCamera.getPerspective(aspectRatio) * mCamera.getLookAt();
+
+    glEnable(GL_DEPTH_TEST);
+    mRasterMazeShader->bind();
+    mRasterMazeShader->setUniform("uMVP", mvp);
+    mRasterMazeShader->setUniform("uHasTexture", 0);
+    glBindVertexArray(mPickupVAO);
+    glDrawArrays(GL_TRIANGLES, 0, mPickupVertexCount);
+}
+
+void GameState::initializeMotionBlur() noexcept
+{
+    if (mMotionBlurInitialized)
+        return;
+
+    // Create motion blur compositing shader
+    static const char *kMotionBlurVS = R"(#version 430 core
+out vec2 vUV;
+void main()
+{
+    const vec2 p[4] = vec2[](vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(1.0, 1.0));
+    vUV = p[gl_VertexID] * 0.5 + 0.5;
+    gl_Position = vec4(p[gl_VertexID], 0.0, 1.0);
+}
+)";
+
+    static const char *kMotionBlurFS = R"(#version 430 core
+in vec2 vUV;
+uniform sampler2D uCurrentFrame;
+uniform sampler2D uPrevFrame;
+uniform vec2 uVelocity;
+uniform float uBlurStrength;
+layout(location = 0) out vec4 FragColor;
+
+void main()
+{
+    vec4 current = texture(uCurrentFrame, vUV);
+    
+    // Directional motion blur based on player velocity
+    vec2 blurDir = uVelocity * uBlurStrength * 0.01;
+    vec4 blurred = vec4(0.0);
+    const int samples = 4;
+    for (int i = 0; i < samples; ++i)
+    {
+        float t = float(i) / float(samples - 1) - 0.5;
+        blurred += texture(uCurrentFrame, vUV + blurDir * t);
+    }
+    blurred /= float(samples);
+
+    // Blend between sharp and blurred based on velocity magnitude
+    float speed = length(uVelocity);
+    float blendFactor = clamp(speed * 0.02, 0.0, 0.6);
+    
+    // Also blend with previous frame for temporal smoothing
+    vec4 prev = texture(uPrevFrame, vUV);
+    vec4 result = mix(current, blurred, blendFactor);
+    result = mix(result, prev, 0.1 * blendFactor);
+    
+    FragColor = result;
+}
+)";
+
+    mMotionBlurShader = std::make_unique<Shader>();
+    mMotionBlurShader->compileAndAttachShader(Shader::ShaderType::VERTEX, "motion_blur_vs", kMotionBlurVS);
+    mMotionBlurShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, "motion_blur_fs", kMotionBlurFS);
+    mMotionBlurShader->linkProgram();
+
+    // Create render textures for motion blur ping-pong
+    glGenTextures(1, &mMotionBlurTex);
+    glBindTexture(GL_TEXTURE_2D, mMotionBlurTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F,
+                 std::max(1, mWindowWidth), std::max(1, mWindowHeight),
+                 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glGenTextures(1, &mPrevFrameTex);
+    glBindTexture(GL_TEXTURE_2D, mPrevFrameTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F,
+                 std::max(1, mWindowWidth), std::max(1, mWindowHeight),
+                 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glGenFramebuffers(1, &mMotionBlurFBO);
+
+    mMotionBlurInitialized = true;
+}
+
+void GameState::renderMotionBlur() const noexcept
+{
+    if (!mMotionBlurInitialized || !mMotionBlurShader)
+        return;
+
+    const glm::vec2 playerVel = mWorld.getPlayerVelocity();
+    const float speed = glm::length(playerVel);
+
+    // Only apply motion blur when moving fast enough
+    if (speed < 2.0f)
+        return;
+
+    const GLsizei w = std::max(1, mWindowWidth);
+    const GLsizei h = std::max(1, mWindowHeight);
+
+    // Blit default framebuffer into mMotionBlurTex via FBO (no CPU stall)
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, mMotionBlurFBO);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mMotionBlurTex, 0);
+    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    // Apply motion blur as fullscreen pass back to default framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, mWindowWidth, mWindowHeight);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
 
-    mCompositeShader->bind();
-    mCompositeShader->setUniform("uSceneTex", 0);
-    mCompositeShader->setUniform("uBillboardTex", 1);
-    mCompositeShader->setUniform("uShadowTex", 2);
-    mCompositeShader->setUniform("uReflectionTex", 3);
-    mCompositeShader->setUniform("uInvResolution", glm::vec2(1.0f / static_cast<float>(mWindowWidth), 1.0f / static_cast<float>(mWindowHeight)));
-    mCompositeShader->setUniform("uBloomThreshold", 0.65f);
-    mCompositeShader->setUniform("uBloomStrength", 0.32f);
-    mCompositeShader->setUniform("uSpriteAlpha", 1.0f);
-    mCompositeShader->setUniform("uShadowStrength", 0.65f);
-    mCompositeShader->setUniform("uEnableShadows", mShadowsInitialized && mShadowTexture && mShadowTexture->get() != 0);
-    mCompositeShader->setUniform("uEnableReflections", mReflectionsInitialized && mReflectionColorTex && mReflectionColorTex->get() != 0);
-
+    mMotionBlurShader->bind();
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, mDisplayTex->get());
+    glBindTexture(GL_TEXTURE_2D, mMotionBlurTex);
+    mMotionBlurShader->setUniform("uCurrentFrame", 0);
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, mBillboardColorTex->get());
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, mShadowTexture ? mShadowTexture->get() : 0);
-    glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex ? mReflectionColorTex->get() : 0);
+    glBindTexture(GL_TEXTURE_2D, mPrevFrameTex);
+    mMotionBlurShader->setUniform("uPrevFrame", 1);
+    mMotionBlurShader->setUniform("uVelocity", playerVel);
+    mMotionBlurShader->setUniform("uBlurStrength", std::min(speed * 0.1f, 1.5f));
 
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    // Store result as previous frame via FBO blit
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, mMotionBlurFBO);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mPrevFrameTex, 0);
+    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glActiveTexture(GL_TEXTURE0);
 }
 
-void GameState::resolveOITToBillboardTarget() const noexcept
+void GameState::renderRasterMaze() const noexcept
 {
-    if (!mOITResolveShader || mBillboardFBO == 0 || !mOITAccumTex || !mOITRevealTex || mOITAccumTex->get() == 0 || mOITRevealTex->get() == 0)
-    {
+    if (!mRasterMazeShader || !mRasterSkyShader)
         return;
-    }
 
-    GLboolean depthTestEnabled = GL_FALSE;
-    GLboolean blendEnabled = GL_FALSE;
-    glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
-    glGetBooleanv(GL_BLEND, &blendEnabled);
-
-    GLint prevActiveTexture = GL_TEXTURE0;
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTexture);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, mWindowWidth, mWindowHeight);
 
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    mOITResolveShader->bind();
-    mOITResolveShader->setUniform("uOITAccumTex", 0);
-    mOITResolveShader->setUniform("uOITRevealTex", 1);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, mOITAccumTex->get());
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, mOITRevealTex->get());
-
+    mRasterSkyShader->bind();
     glBindVertexArray(mVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-    glActiveTexture(static_cast<GLenum>(prevActiveTexture));
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
 
-    if (!blendEnabled)
-    {
-        glDisable(GL_BLEND);
-    }
+    const float aspectRatio = static_cast<float>(std::max(1, mWindowWidth)) / static_cast<float>(std::max(1, mWindowHeight));
+    const glm::mat4 mvp = mCamera.getPerspective(aspectRatio) * mCamera.getLookAt();
+    mRasterMazeShader->bind();
+    mRasterMazeShader->setUniform("uMVP", mvp);
+    mRasterMazeShader->setUniform("uTime", static_cast<float>(SDL_GetTicks()) * 0.001f);
 
-    if (depthTestEnabled)
+    // Bind the sprite sheet for texture mapping on maze walls
+    const Texture *spriteSheet = mWorld.getCharacterSpriteSheet();
+    if (spriteSheet && spriteSheet->get() != 0)
     {
-        glEnable(GL_DEPTH_TEST);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, spriteSheet->get());
+        mRasterMazeShader->setUniform("uSpriteSheet", 0);
+        mRasterMazeShader->setUniform("uHasTexture", 1);
     }
     else
     {
-        glDisable(GL_DEPTH_TEST);
+        mRasterMazeShader->setUniform("uHasTexture", 0);
     }
-    glDepthMask(GL_TRUE);
+
+    glBindVertexArray(mRasterMazeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, mRasterMazeVertexCount);
+}
+
+void GameState::updateRasterBirdsEyeZoomLimits() noexcept
+{
+    const float safeWidth = static_cast<float>(std::max(1, mWindowWidth));
+    const float safeHeight = static_cast<float>(std::max(1, mWindowHeight));
+    const float halfW = 0.5f * safeWidth;
+    const float halfH = 0.5f * safeHeight;
+
+    const float marginX = std::min(kRasterWallScreenMarginPx, std::max(1.0f, halfW - 1.0f));
+    const float marginY = std::min(kRasterWallScreenMarginPx, std::max(1.0f, halfH - 1.0f));
+
+    const float halfMazeW = 0.5f * std::max(0.001f, mRasterMazeWidth);
+    const float halfMazeD = 0.5f * std::max(0.001f, mRasterMazeDepth);
+
+    const float scaleX = halfW / std::max(1.0f, halfW - marginX);
+    const float scaleY = halfH / std::max(1.0f, halfH - marginY);
+    const float requiredHalfW = halfMazeW * scaleX;
+    const float requiredHalfD = halfMazeD * scaleY;
+
+    const float aspect = safeWidth / safeHeight;
+    const float verticalHalf = std::max(requiredHalfD, requiredHalfW / std::max(0.001f, aspect));
+    const float tanHalfFov = std::tan(glm::radians(kRasterBirdsEyeFovDeg * 0.5f));
+    const float fitDistance = verticalHalf / std::max(0.001f, tanHalfFov);
+
+    mRasterBirdsEyeMaxDistance = std::max(fitDistance, 2.0f);
+    const float minDistanceFromTop = std::max(2.0f, (mRasterMazeTopY - mRasterMazeCenter.y) + kRasterZoomMinHeadroom);
+    mRasterBirdsEyeMinDistance = std::min(minDistanceFromTop, mRasterBirdsEyeMaxDistance);
+    mRasterBirdsEyeDistance = glm::clamp(mRasterBirdsEyeDistance, mRasterBirdsEyeMinDistance, mRasterBirdsEyeMaxDistance);
+}
+
+void GameState::applyRasterBirdsEyeCamera() noexcept
+{
+    mCamera.setMode(CameraMode::FIRST_PERSON);
+    mCamera.setFieldOfView(kRasterBirdsEyeFovDeg);
+    // Track the player's XZ position so the overhead camera follows the character.
+    const glm::vec3 playerPos = mPlayer.getPosition();
+    // Clamp camera XZ to maze extents so the maze stays on screen even if the
+    // player has not yet been collision-resolved (e.g., the first frame).
+    const float halfW = (mRasterMazeWidth  > 0.0f) ? mRasterMazeWidth  * 0.5f : 24.0f;
+    const float halfD = (mRasterMazeDepth  > 0.0f) ? mRasterMazeDepth  * 0.5f : 24.0f;
+    const float camX  = glm::clamp(playerPos.x, mRasterMazeCenter.x - halfW, mRasterMazeCenter.x + halfW);
+    const float camZ  = glm::clamp(playerPos.z, mRasterMazeCenter.z - halfD, mRasterMazeCenter.z + halfD);
+    mCamera.setPosition(glm::vec3(camX, mRasterBirdsEyeDistance + playerPos.y, camZ));
+    // yaw=-90° gives: screen-right = world+X, screen-up = world−Z (row 0 at top).
+    // Pitch slightly off vertical avoids a singular camera basis.
+    mCamera.setYawPitch(-90.0f, -89.9f, /*clampPitch=*/false, /*wrapYaw=*/true);
+}
+
+void GameState::resolvePlayerWallCollisions(glm::vec3 &pos) const noexcept
+{
+    // Treat the player as a circle in the XZ plane and push it out of each wall AABB.
+    // wall AABB packed as glm::vec4(minX, minZ, maxX, maxZ).
+    constexpr float kPlayerRadius = 0.42f;  // fits through a corridor (cellSize - wallThickness ≈ 2.2)
+    constexpr int   kIterations   = 6;      // multiple passes handle corner pile-ups
+
+    for (int iter = 0; iter < kIterations; ++iter)
+    {
+        for (const auto &wall : mMazeWallAABBs)
+        {
+            const float closestX = glm::clamp(pos.x, wall.x, wall.z);
+            const float closestZ = glm::clamp(pos.z, wall.y, wall.w);
+            const float dx = pos.x - closestX;
+            const float dz = pos.z - closestZ;
+            const float distSq = dx * dx + dz * dz;
+
+            if (distSq >= kPlayerRadius * kPlayerRadius)
+                continue;   // no overlap
+
+            if (distSq > 0.0f)
+            {
+                const float dist = std::sqrt(distSq);
+                const float push = kPlayerRadius - dist;
+                pos.x += (dx / dist) * push;
+                pos.z += (dz / dist) * push;
+            }
+            else
+            {
+                // Centre inside the AABB — push along the axis of least penetration
+                const float ox = std::min(pos.x - wall.x, wall.z - pos.x);
+                const float oz = std::min(pos.z - wall.y, wall.w - pos.z);
+                if (ox < oz)
+                    pos.x += (pos.x < (wall.x + wall.z) * 0.5f) ? -(ox + kPlayerRadius) : (ox + kPlayerRadius);
+                else
+                    pos.z += (pos.z < (wall.y + wall.w) * 0.5f) ? -(oz + kPlayerRadius) : (oz + kPlayerRadius);
+            }
+        }
+    }
+
+    // Hard clamp to maze outer boundary as a safety net.
+    if (mRasterMazeWidth > 0.0f && mRasterMazeDepth > 0.0f)
+    {
+        const float limitW = mRasterMazeWidth  * 0.5f - kPlayerRadius;
+        const float limitD = mRasterMazeDepth  * 0.5f - kPlayerRadius;
+        pos.x = glm::clamp(pos.x, mRasterMazeCenter.x - limitW, mRasterMazeCenter.x + limitW);
+        pos.z = glm::clamp(pos.z, mRasterMazeCenter.z - limitD, mRasterMazeCenter.z + limitD);
+    }
 }
 
 void GameState::cleanupResources() noexcept
 {
-    // Clean up fragment path tracer resources
-    if (mSceneRenderer)
+    if (mRasterMazeShader)
     {
-        mSceneRenderer->cleanup();
-        mSceneRenderer.reset();
+        mRasterMazeShader->cleanUp();
+        mRasterMazeShader.reset();
     }
-    mPathTraceScene.reset();
+    if (mRasterSkyShader)
+    {
+        mRasterSkyShader->cleanUp();
+        mRasterSkyShader.reset();
+    }
+    if (mRasterMazeVBO != 0)
+    {
+        glDeleteBuffers(1, &mRasterMazeVBO);
+        mRasterMazeVBO = 0;
+    }
+    if (mRasterMazeVAO != 0)
+    {
+        glDeleteVertexArrays(1, &mRasterMazeVAO);
+        mRasterMazeVAO = 0;
+    }
+    mRasterMazeVertexCount = 0;
 
-        if (mPathTracePostFBO != 0)
-        {
-            glDeleteFramebuffers(1, &mPathTracePostFBO);
-            mPathTracePostFBO = 0;
-        }
+    // Clean up motion blur resources
+    if (mPickupVBO != 0)
+    {
+        glDeleteBuffers(1, &mPickupVBO);
+        mPickupVBO = 0;
+    }
+    if (mPickupVAO != 0)
+    {
+        glDeleteVertexArrays(1, &mPickupVAO);
+        mPickupVAO = 0;
+    }
+    mPickupVertexCount = 0;
+    if (mMotionBlurFBO != 0)
+    {
+        glDeleteFramebuffers(1, &mMotionBlurFBO);
+        mMotionBlurFBO = 0;
+    }
+    if (mMotionBlurTex != 0)
+    {
+        glDeleteTextures(1, &mMotionBlurTex);
+        mMotionBlurTex = 0;
+    }
+    if (mPrevFrameTex != 0)
+    {
+        glDeleteTextures(1, &mPrevFrameTex);
+        mPrevFrameTex = 0;
+    }
+    if (mMotionBlurShader)
+    {
+        mMotionBlurShader->cleanUp();
+        mMotionBlurShader.reset();
+    }
+    mMotionBlurInitialized = false;
 
     GLSDLHelper::deleteVAO(mVAO);
-    GLSDLHelper::deleteBuffer(mShapeSSBO);
-    GLSDLHelper::deleteBuffer(mTriangleSSBO);
-    mShapeSSBOCapacityBytes = 0;
-    mTriangleSSBOCapacityBytes = 0;
 
     if (mBillboardFBO != 0)
     {
@@ -1884,22 +2029,13 @@ void GameState::cleanupResources() noexcept
     mWalkParticlesRenderShader = nullptr;
     mShadowShader = nullptr;
 
-    mAccumTex = nullptr;
-    mPathTraceOutputTex = nullptr;
-    mPathTraceStageTex = nullptr;
     mDisplayTex = nullptr;
-    mPreviewAccumTex = nullptr;
-    mPreviewOutputTex = nullptr;
     mNoiseTexture = nullptr;
 
     // Shaders are now managed by ShaderManager - don't delete them here
     mDisplayShader = nullptr;
-    mComputeShader = nullptr;
-    mPathTracerOutputShader = nullptr;
-    mPathTracerTonemapShader = nullptr;
     mCompositeShader = nullptr;
     mOITResolveShader = nullptr;
-    mStencilOutlineShader = nullptr;
     mShadowShader = nullptr;
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: OpenGL resources cleaned up");
@@ -1923,7 +2059,9 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     // Ensure local paused flag is cleared when returning from pause/menu flows.
     mGameIsPaused = false;
 
-    // Window resize is now handled in handleEvent() with DPI-aware pixel detection
+    // Keep render targets synchronized with physical pixel size even if a resize
+    // event was dropped or coalesced by the platform.
+    handleWindowResize();
 
     const glm::vec3 playerPosBeforeUpdate = mPlayer.getPosition();
 
@@ -1951,34 +2089,45 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
         }
     }
 
+    const auto prevPickupCount = mWorld.getPickupSpheres().size();
     mWorld.update(dt);
 
+    // Pre-read relative mouse delta BEFORE handleRealtimeInput consumes the accumulator.
+    // This lets handleBirdsEyeInput receive the actual mouse movement for this frame.
+    float relMouseX = 0.0f, relMouseY = 0.0f;
+    SDL_GetRelativeMouseState(&relMouseX, &relMouseY);
+
+    // Run Player logic for gravity / animation state / jump – but discard the
+    // camera-relative XZ position change it produces (broken for straight-down camera).
+    const glm::vec3 preMoveXZ = mPlayer.getPosition();
     mPlayer.handleRealtimeInput(mCamera, dt);
-    
+    {
+        // Restore X/Z: keep only the Y (gravity) change from handleRealtimeInput.
+        glm::vec3 afterGravityPos = mPlayer.getPosition();
+        afterGravityPos.x = preMoveXZ.x;
+        afterGravityPos.z = preMoveXZ.z;
+        mPlayer.setPosition(afterGravityPos);
+    }
+
+    // Apply top-down XZ movement from keyboard, mouse, and touch.
+    handleBirdsEyeInput(dt, relMouseX, relMouseY);
+    // Joystick left-stick XZ movement.
     updateJoystickInput(dt);
 
-    glm::vec3 chunkAnchor = mPlayer.getPosition();
-    mWorld.updateSphereChunks(chunkAnchor);
-
-    // Paint ground-plane Voronoi cell under player
-    if (dt > 0.0f)
+    // Resolve against static maze wall geometry (circle vs AABB, multi-pass).
     {
-        const glm::vec3 p = mPlayer.getPosition();
-        mVoronoiPlanet.paintAtPosition(p, glm::vec3(1.0f));
-        // Upload Voronoi cell colors, seeds, and painted states to SSBOs for compute shader
-        if (mVoronoiCellColorSSBO == 0) {
-            glGenBuffers(1, &mVoronoiCellColorSSBO);
-        }
-        if (mVoronoiCellSeedSSBO == 0) {
-            glGenBuffers(1, &mVoronoiCellSeedSSBO);
-        }
-        if (mVoronoiCellPaintedSSBO == 0) {
-            glGenBuffers(1, &mVoronoiCellPaintedSSBO);
-        }
-        mVoronoiPlanet.uploadCellColorsToSSBO(mVoronoiCellColorSSBO);
-        mVoronoiPlanet.uploadCellSeedsToSSBO(mVoronoiCellSeedSSBO);
-        mVoronoiPlanet.uploadPaintedStatesToSSBO(mVoronoiCellPaintedSSBO);
+        glm::vec3 pos = mPlayer.getPosition();
+        resolvePlayerWallCollisions(pos);
+        mPlayer.setPosition(pos);
     }
+
+    // Sphere chunk streaming is for the path-tracer mode; skip it in the
+    // raster maze to avoid triggering background work items every frame.
+    // mWorld.update() still runs processCompletedChunks() internally.
+
+    // If new pickups appeared (new chunks loaded), mark GPU buffer dirty
+    if (mWorld.getPickupSpheres().size() != prevPickupCount)
+        mPickupsDirty = true;
 
     // Update mSoundPlayer: set listener position based on camera and remove stopped mSoundPlayer
     if (!mGameIsPaused)
@@ -1988,6 +2137,39 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
 
     // Update player animation
     mPlayer.updateAnimation(dt);
+
+    // Collect nearby pickups for scoring
+    {
+        int pointsGained = mWorld.collectNearbyPickups(mPlayer.getPosition(), 3.5f);
+        if (pointsGained != 0)
+        {
+            mPickupsDirty = true;
+            // Add score popup
+            mActiveScorePopups.emplace_back(mPlayer.getPosition() + glm::vec3(0.0f, 3.0f, 0.0f), pointsGained);
+            mScorePopupTimers.push_back(2.0f);
+
+            if (mSoundPlayer)
+            {
+                mSoundPlayer->play(SoundEffect::ID::SELECT,
+                    sf::Vector2f{mPlayer.getPosition().x, mPlayer.getPosition().z});
+            }
+        }
+    }
+
+    // Update score popup timers
+    for (size_t i = 0; i < mScorePopupTimers.size();)
+    {
+        mScorePopupTimers[i] -= dt;
+        if (mScorePopupTimers[i] <= 0.0f)
+        {
+            mScorePopupTimers.erase(mScorePopupTimers.begin() + static_cast<ptrdiff_t>(i));
+            mActiveScorePopups.erase(mActiveScorePopups.begin() + static_cast<ptrdiff_t>(i));
+        }
+        else
+        {
+            ++i;
+        }
+    }
     
     if (dt > 0.0f)
     {
@@ -2009,71 +2191,23 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
         mLastFxPlayerPosition = playerPosNow;
     }
 
-    // Update fragment path tracer camera (render() advances tile/sample state)
-    if (mRenderMode == RenderMode::FRAGMENT && mSceneRenderer && mPathTraceScene)
-    {
-        syncPathTraceCamera();
-    }
+    applyRasterBirdsEyeCamera();
 
     return true;
 }
 
 bool GameState::handleEvent(const SDL_Event &event) noexcept
 {
-    // Handle window resize event - query physical pixels to handle DPI scaling
+    // Handle window resize event with DPI-aware pixel detection.
     if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
     {
-        // Always query the actual pixel size from SDL instead of trusting event data
-        // This ensures we get physical pixels on DPI-scaled displays
-        if (auto *window = getContext().getRenderWindow(); window != nullptr)
-        {
-            if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
-            {
-                int newW = 0, newH = 0;
-                SDL_GetWindowSizeInPixels(sdlWindow, &newW, &newH);
-
-                if (newW > 0 && newH > 0 && (newW != mWindowWidth || newH != mWindowHeight))
-                {
-                    mWindowWidth = newW;
-                    mWindowHeight = newH;
-                    // Update OpenGL viewport to match new window size
-                    glViewport(0, 0, mWindowWidth, mWindowHeight);
-                    // Update internal rendering resolution for path tracer
-                    updateRenderResolution();
-
-                    if (mPathTraceScene && mSceneRenderer)
-                    {
-                        auto &opts = mPathTraceScene->getRenderOptions();
-                        const int fragmentRenderWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(mRenderWidth) * kFragmentRenderScale)));
-                        const int fragmentRenderHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(mRenderHeight) * kFragmentRenderScale)));
-                        opts.renderResolution = {fragmentRenderWidth, fragmentRenderHeight};
-                        opts.windowResolution = {mWindowWidth, mWindowHeight};
-                        opts.tileWidth = kFragmentTileWidth;
-                        opts.tileHeight = kFragmentTileHeight;
-                        mSceneRenderer->initFBOs();
-                        mSceneRenderer->initShaderUniforms();
-                        mSceneRenderer->markDirty();
-                    }
-
-                    // Recreate path tracer textures
-                    createPathTracerTextures();
-                    createCompositeTargets();
-                    initializeShadowResources();
-                    initializeReflectionResources();
-                    // Reset accumulation for new size
-                    mCurrentBatch = 0;
-                    mCurrentTileIndex = 0;
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Window resized to physical pixels %dx%d with render resolution %dx%d",
-                        mWindowWidth, mWindowHeight, mRenderWidth, mRenderHeight);
-                }
-            }
-        }
+        handleWindowResize();
     }
 
     // World still handles mouse panning for the 2D view
     mWorld.handleEvent(event);
 
-    // Handle camera discrete events through Player
+    // Keep player event handling active for gameplay controls.
     mPlayer.handleEvent(event, mCamera);
 
     if (event.type == SDL_EVENT_KEY_DOWN)
@@ -2087,6 +2221,10 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
         // Jump with SPACE
         if (event.key.scancode == SDL_SCANCODE_SPACE)
         {
+            // Apply jump impulse through Box2D physics
+            mWorld.applyPlayerJumpImpulse(8.0f);
+            mPlayer.jump();
+
             if (mSoundPlayer && !mGameIsPaused)
             {
                 mSoundPlayer->play(SoundEffect::ID::SELECT, sf::Vector2f{mPlayer.getPosition().x, mPlayer.getPosition().z});
@@ -2109,48 +2247,34 @@ bool GameState::handleEvent(const SDL_Event &event) noexcept
         {
             triggerHapticTest(0.65f, 0.08f);
         }
-
-        // Toggle render mode with F5
-        if (event.key.scancode == SDL_SCANCODE_F5)
-        {
-            mRenderMode = (mRenderMode == RenderMode::COMPUTE)
-                              ? RenderMode::FRAGMENT
-                              : RenderMode::COMPUTE;
-            if (mRenderMode == RenderMode::FRAGMENT)
-            {
-                frameFragmentCornellCamera();
-            }
-            if (mSceneRenderer)
-                mSceneRenderer->markDirty();
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Render mode â†’ %s",
-                        mRenderMode == RenderMode::COMPUTE ? "Compute" : "Fragment");
-        }
     }
 
-    // Handle mouse motion for camera rotation (right mouse button)
-    if (event.type == SDL_EVENT_MOUSE_MOTION)
-    {
-        std::uint32_t mouseState = SDL_GetMouseState(nullptr, nullptr);
-        if (mouseState & SDL_BUTTON_RMASK)
-        {
-            static constexpr float SENSITIVITY = 0.35f;
-            if (mCamera.getMode() == CameraMode::THIRD_PERSON)
-            {
-                mCamera.rotate(event.motion.xrel * SENSITIVITY, -event.motion.yrel * SENSITIVITY);
-                mCamera.updateThirdPersonPosition();
-            }
-            else
-            {
-                // First-person camera rotation
-                mCamera.rotate(event.motion.xrel * SENSITIVITY, -event.motion.yrel * SENSITIVITY);
-            }
-        }
-    }
 
-    // Handle mouse wheel for field of view adjustment
+    // Mouse wheel: bounded bird's-eye zoom
     if (event.type == SDL_EVENT_MOUSE_WHEEL)
     {
-        mCamera.updateFieldOfView(static_cast<float>(event.wheel.y));
+        mRasterBirdsEyeDistance -= static_cast<float>(event.wheel.y) * kRasterZoomStep;
+        mRasterBirdsEyeDistance = glm::clamp(mRasterBirdsEyeDistance, mRasterBirdsEyeMinDistance, mRasterBirdsEyeMaxDistance);
+        applyRasterBirdsEyeCamera();
+    }
+
+    // Touch events: single-finger drag moves the player (normalised 0‥1 coordinates).
+    if (event.type == SDL_EVENT_FINGER_DOWN)
+    {
+        mTouchActive = true;
+        mTouchLastPos = glm::vec2(event.tfinger.x, event.tfinger.y);
+        mTouchDelta   = glm::vec2(0.0f);
+    }
+    else if (event.type == SDL_EVENT_FINGER_MOTION && mTouchActive)
+    {
+        const glm::vec2 currentPos(event.tfinger.x, event.tfinger.y);
+        mTouchDelta  += currentPos - mTouchLastPos;
+        mTouchLastPos = currentPos;
+    }
+    else if (event.type == SDL_EVENT_FINGER_UP)
+    {
+        mTouchActive = false;
+        mTouchDelta  = glm::vec2(0.0f);
     }
 
     return true;
@@ -2248,33 +2372,133 @@ void GameState::cleanupJoystickAndHaptics() noexcept
     mJoystickRumbleSupported = false;
 }
 
+void GameState::handleBirdsEyeInput(float dt, float relMouseX, float relMouseY) noexcept
+{
+    if (!mPlayer.isActive() || mPlayer.isFrozen() || dt <= 0.0f)
+        return;
+
+    // World-space movement speeds for a birds-eye top-down view.
+    // Screen-right = world +X, screen-up = world −Z (yaw=−90°).
+    constexpr float kKeyMoveSpeed    = 6.0f;   // world units / second  (keyboard)
+    constexpr float kMouseSensitivity = 0.018f;  // world units / pixel   (relative mouse)
+    constexpr float kTouchSensitivity = 12.0f;  // world units / normalised delta (0‥1)
+    constexpr float kMouseDeadzone    = 0.5f;   // pixels
+    // Hard cap on XZ movement per frame — keeps substep count bounded even
+    // during fast mouse flicks. Set to half a cell width (plenty fast).
+    constexpr float kMaxMovePerFrame = 1.1f;    // world units / frame
+
+    glm::vec3 delta(0.0f);
+
+    // --- Keyboard (WASD + arrow keys) ---
+    {
+        int numKeys = 0;
+        const bool *keys = SDL_GetKeyboardState(&numKeys);
+        if (keys)
+        {
+            if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP])    delta.z -= kKeyMoveSpeed * dt;
+            if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN])  delta.z += kKeyMoveSpeed * dt;
+            if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])  delta.x -= kKeyMoveSpeed * dt;
+            if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) delta.x += kKeyMoveSpeed * dt;
+        }
+    }
+
+    // --- Relative mouse (cursor locked, so relX/Y accumulate freely) ---
+    // relMouseX > 0 → mouse moved right → player moves +X (screen-right)
+    // relMouseY > 0 → mouse moved down  → player moves +Z (screen-down)
+    if (mCursorLocked)
+    {
+        if (std::abs(relMouseX) > kMouseDeadzone) delta.x += relMouseX * kMouseSensitivity;
+        if (std::abs(relMouseY) > kMouseDeadzone) delta.z += relMouseY * kMouseSensitivity;
+    }
+
+    // --- Touch (normalised 0‥1 finger coordinates) ---
+    // Accumulated touch delta is consumed here each frame.
+    if (mTouchActive && (std::abs(mTouchDelta.x) > 0.0001f || std::abs(mTouchDelta.y) > 0.0001f))
+    {
+        delta.x += mTouchDelta.x * kTouchSensitivity;
+        delta.z += mTouchDelta.y * kTouchSensitivity;
+        mTouchDelta = glm::vec2(0.0f);
+    }
+
+    if (glm::length(glm::vec2(delta.x, delta.z)) < 0.0001f)
+        return;
+
+    // Clamp total movement to kMaxMovePerFrame so a sudden large mouse delta
+    // doesn't drive substep count into the hundreds (which spikes the CPU).
+    {
+        const float len = std::sqrt(delta.x * delta.x + delta.z * delta.z);
+        if (len > kMaxMovePerFrame)
+        {
+            const float inv = kMaxMovePerFrame / len;
+            delta.x *= inv;
+            delta.z *= inv;
+        }
+    }
+
+    // Advance in substeps no larger than kMaxSubstepDist (well under wall
+    // thickness = 0.20) so the player can never skip past a wall in one frame.
+    // After each substep the resolver sees the player approaching the wall
+    // face-on, not already past it, so it always pushes back correctly.
+    constexpr float kMaxSubstepDist = 0.07f;
+    const float totalDist = std::sqrt(delta.x * delta.x + delta.z * delta.z);
+    const int numSteps = std::max(1, static_cast<int>(std::ceil(totalDist / kMaxSubstepDist)));
+    const float sx = delta.x / static_cast<float>(numSteps);
+    const float sz = delta.z / static_cast<float>(numSteps);
+
+    glm::vec3 pos = mPlayer.getPosition();
+    for (int i = 0; i < numSteps; ++i)
+    {
+        pos.x += sx;
+        pos.z += sz;
+        resolvePlayerWallCollisions(pos);
+    }
+    mPlayer.setPosition(pos);
+
+    // Update facing direction to match the movement direction (top-down view).
+    // atan2(dx, -dz) maps movement vector to a yaw angle in degrees.
+    const float facingDeg = glm::degrees(std::atan2(delta.x, -delta.z));
+    mPlayer.setFacingDirection(facingDeg);
+}
+
 void GameState::updateJoystickInput(float dt) noexcept
 {
-    if (!mJoystick || dt <= 0.0f)
+    if (!mJoystick || dt <= 0.0f || mPlayer.isFrozen())
     {
         return;
     }
 
     constexpr int kLeftStickXAxis = 0;
-    const Sint16 axisRaw = SDL_GetJoystickAxis(mJoystick, kLeftStickXAxis);
-    const float axisNorm = std::clamp(static_cast<float>(axisRaw) / 32767.0f, -1.0f, 1.0f);
-    if (std::abs(axisNorm) <= mJoystickDeadzone)
-    {
-        return;
-    }
+    constexpr int kLeftStickYAxis = 1;
+    const Sint16 axisXRaw = SDL_GetJoystickAxis(mJoystick, kLeftStickXAxis);
+    const Sint16 axisYRaw = SDL_GetJoystickAxis(mJoystick, kLeftStickYAxis);
+    const float axisXNorm = std::clamp(static_cast<float>(axisXRaw) / 32767.0f, -1.0f, 1.0f);
+    const float axisYNorm = std::clamp(static_cast<float>(axisYRaw) / 32767.0f, -1.0f, 1.0f);
 
-    const float sign = (axisNorm >= 0.0f) ? 1.0f : -1.0f;
-    const float mag = (std::abs(axisNorm) - mJoystickDeadzone) / std::max(0.001f, 1.0f - mJoystickDeadzone);
-    const float strafe = sign * std::clamp(mag, 0.0f, 1.0f) * mJoystickStrafeSpeed * dt;
+    // Apply radial deadzone and normalise both axes together.
+    const float magnitude = std::sqrt(axisXNorm * axisXNorm + axisYNorm * axisYNorm);
+    if (magnitude <= mJoystickDeadzone)
+        return;
+
+    const float scale = (magnitude - mJoystickDeadzone) / std::max(0.001f, 1.0f - mJoystickDeadzone);
+    const float normX = (axisXNorm / magnitude) * std::clamp(scale, 0.0f, 1.0f) * mJoystickStrafeSpeed * dt;
+    const float normZ = (axisYNorm / magnitude) * std::clamp(scale, 0.0f, 1.0f) * mJoystickStrafeSpeed * dt;
+
+    // Left-stick X → world +X (screen-right), left-stick Y → world +Z (screen-down).
+    // Substep to prevent tunneling through thin walls (same approach as mouse input).
+    constexpr float kMaxSubstepDist = 0.07f;
+    const float totalDist = std::sqrt(normX * normX + normZ * normZ);
+    const int numSteps = std::max(1, static_cast<int>(std::ceil(totalDist / kMaxSubstepDist)));
+    const float sx = normX / static_cast<float>(numSteps);
+    const float sz = normZ / static_cast<float>(numSteps);
 
     glm::vec3 playerPos = mPlayer.getPosition();
-    playerPos.z += strafe;
-    mPlayer.setPosition(playerPos);
-    mCamera.setFollowTarget(playerPos);
-    if (mCamera.getMode() == CameraMode::THIRD_PERSON)
+    for (int i = 0; i < numSteps; ++i)
     {
-        mCamera.updateThirdPersonPosition();
+        playerPos.x += sx;
+        playerPos.z += sz;
+        resolvePlayerWallCollisions(playerPos);
     }
+    mPlayer.setPosition(playerPos);
 }
 
 void GameState::triggerHapticTest(float strength, float seconds) noexcept
@@ -2290,242 +2514,6 @@ void GameState::triggerHapticTest(float strength, float seconds) noexcept
     const Uint32 durationMs = static_cast<Uint32>(std::max(0.0f, seconds) * 1000.0f);
 
     SDL_RumbleJoystick(mJoystick, low, high, durationMs);
-}
-
-void GameState::renderPlayerCharacter() const noexcept
-{
-    // Only render in third-person mode
-    if (mCamera.getMode() != CameraMode::THIRD_PERSON)
-    {
-        return;
-    }
-
-    if (mCompositeShader && mBillboardFBO != 0)
-    {
-        glBindFramebuffer(GL_FRAMEBUFFER, mBillboardFBO);
-        glViewport(0, 0, mWindowWidth, mWindowHeight);
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-        glDrawBuffer(GL_COLOR_ATTACHMENT0);
-    }
-
-    // The path tracer draws a fullscreen 2D quad which doesn't use depth properly.
-    // Clear the depth buffer so our 3D billboard can render.
-    glClear(GL_DEPTH_BUFFER_BIT);
-
-    // Reset depth function to default
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-
-    // Also ensure we have proper 3D projection set up
-    glEnable(GL_DEPTH_TEST);
-    glDisable(GL_STENCIL_TEST);
-    GLSDLHelper::setBillboardOITPass(false);
-
-    // Render Voronoi planet into the billboard target so it gets composited
-    // (VoronoiPlanet overlay rendering removed)
-
-    bool renderedModel = false;
-    if (mSkinnedModelShader)
-    {
-        auto *models = getContext().getModelsManager();
-        if (models)
-        {
-            GLboolean cullFaceWasEnabled = GL_FALSE;
-            bool cullStateCaptured = false;
-            try
-            {
-                const GLTFModel &characterModel = models->get(Models::ID::STYLIZED_CHARACTER);
-                if (characterModel.isLoaded())
-                {
-                    const int safeHeight = std::max(mWindowHeight, 1);
-                    const float aspectRatio = static_cast<float>(mWindowWidth) / static_cast<float>(safeHeight);
-                    const float timeSeconds = static_cast<float>(SDL_GetTicks()) / 1000.0f;
-                    const glm::mat4 viewMatrix = mCamera.getLookAt();
-                    const glm::mat4 projMatrix = mCamera.getPerspective(aspectRatio);
-                    const bool drawStencilOutline =
-                        mStencilOutlineEnabled &&
-                        mStencilOutlineShader &&
-                        mStencilOutlineShader->isLinked() &&
-                        mStencilOutlineWidth > 0.0005f;
-
-                    glGetBooleanv(GL_CULL_FACE, &cullFaceWasEnabled);
-                    cullStateCaptured = true;
-                    glDisable(GL_CULL_FACE);
-
-                    if (drawStencilOutline)
-                    {
-                        glEnable(GL_STENCIL_TEST);
-                        glStencilMask(0xFF);
-                        glClear(GL_STENCIL_BUFFER_BIT);
-                        glStencilFunc(GL_ALWAYS, 1, 0xFF);
-                        glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-                    }
-
-                    // Build model matrix with player oriented to planet surface
-                    glm::mat4 modelMatrix(1.0f);
-                    const glm::vec3 playerPos = mPlayer.getPosition();
-                    modelMatrix = glm::translate(modelMatrix, playerPos);
-                    
-                    // Build local coordinate frame aligned with planet surface
-                    const glm::vec3 upAxis = mPlayer.getSurfaceNormal();
-                    glm::vec3 forwardDir = mPlayer.getForwardTangent();  // Forward along sphere surface
-                    
-                    // Apply yaw rotation around the surface normal
-                    const float playerYaw = glm::radians(mPlayer.getFacingDirection());
-                    
-                    // Calculate right vector (perpendicular to both forward and up)
-                    glm::vec3 rightDir = glm::normalize(glm::cross(forwardDir, upAxis));
-                    if (glm::length(rightDir) < 0.001f)
-                    {
-                        // Fallback if forward and up are parallel
-                        rightDir = glm::vec3(1.0f, 0.0f, 0.0f);
-                    }
-                    
-                    // Rotate forward and right by player yaw around surface normal
-                    const float cosYaw = std::cos(playerYaw);
-                    const float sinYaw = std::sin(playerYaw);
-                    forwardDir = forwardDir * cosYaw + rightDir * sinYaw;
-                    rightDir = rightDir * cosYaw - glm::normalize(mPlayer.getForwardTangent()) * sinYaw;
-                    
-                    // Correct any numerical drift and ensure orthogonality
-                    rightDir = glm::normalize(rightDir);
-                    forwardDir = glm::normalize(forwardDir);
-                    if (glm::length(glm::cross(rightDir, upAxis)) < 0.001f)
-                    {
-                        rightDir = glm::normalize(glm::cross(upAxis, forwardDir));
-                    }
-                    
-                    // Build rotation matrix from world axes to local axes
-                    glm::mat4 rotationMatrix = glm::mat4(
-                        glm::vec4(rightDir, 0.0f),
-                        glm::vec4(upAxis, 0.0f),
-                        glm::vec4(-forwardDir, 0.0f),
-                        glm::vec4(0.0f, 0.0f, 0.0f, 1.0f)
-                    );
-                    
-                    modelMatrix = modelMatrix * rotationMatrix;
-                    modelMatrix = glm::scale(modelMatrix, glm::vec3(kCharacterRasterScale));
-
-                    mSkinnedModelShader->bind();
-                    mSkinnedModelShader->setUniform("uSunDir", computeSunDirection(timeSeconds));
-                    mSkinnedModelShader->setUniform("uAlbedoTex", kTestAlbedoTextureUnit);
-                    mSkinnedModelShader->setUniform("uUseAlbedoTex", mTestAlbedoTexture ? 1 : 0);
-                    mSkinnedModelShader->setUniform("uAlbedoUVScale", glm::vec2(3.0f, 3.0f));
-
-                    glActiveTexture(GL_TEXTURE0 + kTestAlbedoTextureUnit);
-                    glBindTexture(GL_TEXTURE_2D, mTestAlbedoTexture ? mTestAlbedoTexture->get() : 0);
-
-                    characterModel.render(
-                        *mSkinnedModelShader,
-                        modelMatrix,
-                        viewMatrix,
-                        projMatrix,
-                        mModelAnimTimeSeconds);
-
-                    if (drawStencilOutline)
-                    {
-                        const float outlineScale = 1.0f + mStencilOutlineWidth;
-                        glm::mat4 outlineModel = modelMatrix;
-                        outlineModel = glm::scale(outlineModel, glm::vec3(outlineScale));
-
-                        glm::vec3 outlineColor = mStencilOutlineColor;
-                        if (mStencilOutlinePulseEnabled)
-                        {
-                            const float pulse = 0.5f + 0.5f * std::sin(timeSeconds * mStencilOutlinePulseSpeed * 6.2831853f);
-                            const float pulseMix = std::clamp(mStencilOutlinePulseAmount * pulse, 0.0f, 0.85f);
-                            outlineColor = glm::mix(outlineColor, glm::vec3(1.0f), pulseMix);
-                        }
-
-                        glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
-                        glStencilMask(0x00);
-                        glDisable(GL_DEPTH_TEST);
-
-                        mStencilOutlineShader->bind();
-                        mStencilOutlineShader->setUniform("uOutlineColor", glm::vec4(outlineColor, 1.0f));
-
-                        characterModel.render(
-                            *mStencilOutlineShader,
-                            outlineModel,
-                            viewMatrix,
-                            projMatrix,
-                            mModelAnimTimeSeconds);
-
-                        glStencilMask(0xFF);
-                        glStencilFunc(GL_ALWAYS, 0, 0xFF);
-                        glEnable(GL_DEPTH_TEST);
-                        glDisable(GL_STENCIL_TEST);
-                    }
-
-                    renderedModel = true;
-                }
-            }
-            catch (const std::exception &e)
-            {
-                static bool loggedOnce = false;
-                if (!loggedOnce)
-                {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "GameState: Skinned model render failed; using billboard fallback: %s", e.what());
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Skinned model render failed; using billboard fallback");
-                    loggedOnce = true;
-                }
-            }
-
-            if (cullStateCaptured && cullFaceWasEnabled)
-            {
-                glEnable(GL_CULL_FACE);
-            }
-        }
-    }
-
-    if (!renderedModel)
-    {
-        mWorld.renderPlayerCharacter(mPlayer, mCamera);
-    }
-
-    renderWalkParticles();
-
-    if (mOITInitialized && mOITFBO != 0 && mOITResolveShader)
-    {
-        glBindFramebuffer(GL_FRAMEBUFFER, mOITFBO);
-        constexpr GLenum oitDrawBuffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
-        glDrawBuffers(2, oitDrawBuffers);
-        glViewport(0, 0, mWindowWidth, mWindowHeight);
-
-        const float zeroColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        const float oneReveal[4] = {1.0f, 0.0f, 0.0f, 0.0f};
-        glClearBufferfv(GL_COLOR, 0, zeroColor);
-        glClearBufferfv(GL_COLOR, 1, oneReveal);
-        glClear(GL_DEPTH_BUFFER_BIT);
-
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LESS);
-        glDepthMask(GL_FALSE);
-
-        glEnable(GL_BLEND);
-        glBlendEquation(GL_FUNC_ADD);
-        glBlendFunci(0, GL_ONE, GL_ONE);
-        glBlendFunci(1, GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
-
-        GLSDLHelper::setBillboardOITPass(true);
-        GLSDLHelper::setBillboardOITPass(false);
-
-        glDepthMask(GL_TRUE);
-        glDisable(GL_BLEND);
-        resolveOITToBillboardTarget();
-        glDisable(GL_BLEND);
-    }
-    else
-    {
-        GLSDLHelper::setBillboardOITPass(false);
-    }
-
-    if (mCompositeShader && mBillboardFBO != 0)
-    {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
-        glReadBuffer(GL_BACK); // CRITICAL: Reset to default for main framebuffer
-    }
 }
 
 float GameState::getRenderScale() const noexcept

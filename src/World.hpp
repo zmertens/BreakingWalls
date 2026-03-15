@@ -35,6 +35,8 @@ class World final
     friend class Player;
 
 public:
+    // NOTE: World's primary responsibility is physics simulation/state.
+    // Rendering helper APIs remain only for compatibility while raster paths are being retired.
     explicit World(RenderWindow &window, FontManager &fonts, TextureManager &textures, ShaderManager &shaders, LevelsManager &levels);
     ~World(); // Defined in .cpp to avoid incomplete type issues
 
@@ -91,6 +93,45 @@ public:
     /// Get the character sprite sheet texture (for external rendering)
     [[nodiscard]] const Texture *getCharacterSpriteSheet() const noexcept;
 
+    // ========================================================================
+    // Scoring system
+    // ========================================================================
+
+    /// Get current player score
+    [[nodiscard]] int getScore() const noexcept { return mScore; }
+
+    /// Add points to score (can be negative)
+    void addScore(int points) noexcept { mScore += points; }
+
+    /// Get pickup sphere positions and values for rendering score billboards
+    struct PickupSphere
+    {
+        glm::vec3 position;
+        int value;
+        bool collected{false};
+    };
+
+    [[nodiscard]] const std::vector<PickupSphere> &getPickupSpheres() const noexcept { return mPickupSpheres; }
+
+    /// Check and collect pickups near a position, returns points gained
+    int collectNearbyPickups(const glm::vec3 &playerPos, float collectRadius = 3.0f) noexcept;
+
+    // ========================================================================
+    // Physics player body
+    // ========================================================================
+
+    /// Create a dynamic player body in the physics world
+    void createPlayerBody(const glm::vec3 &position) noexcept;
+
+    /// Get the player physics body for external queries
+    [[nodiscard]] b2BodyId getPlayerBodyId() const noexcept { return mPlayerBodyId; }
+
+    /// Apply impulse to player body (for jumping)
+    void applyPlayerJumpImpulse(float impulse) noexcept;
+
+    /// Get player body velocity for motion blur
+    [[nodiscard]] glm::vec2 getPlayerVelocity() const noexcept;
+
 private:
     void initPathTracerScene() noexcept;
     
@@ -134,6 +175,7 @@ private:
         ChunkCoord coord;
         std::vector<MazeCell> cells;
         std::vector<Sphere> spheres;
+        std::vector<PickupSphere> pickupSpheres;
         glm::vec3 spawnPosition;
         bool hasSpawnPosition{false};
     };
@@ -154,6 +196,7 @@ private:
     std::vector<MazeCell> parseMazeCells(const std::string &mazeStr, const ChunkCoord &coord,
                                          glm::vec3 &outSpawnPosition, bool &outHasSpawn) const noexcept;
     void buildMazeWallSpheres(const std::vector<MazeCell> &cells, std::vector<Sphere> &outSpheres) const noexcept;
+    void buildPickupSpheres(const std::vector<MazeCell> &cells, std::vector<PickupSphere> &outPickups, const ChunkCoord &coord) const noexcept;
     Material::MaterialType getMaterialForDistance(int distance) const noexcept;
 
     static constexpr auto FORCE_DUE_TO_GRAVITY = 9.8f;
@@ -215,6 +258,13 @@ private:
     // Character sprite sheet dimensions (for animation rendering)
     static constexpr int CHARACTER_TILE_SIZE = 128;
     static constexpr int CHARACTER_FRAMES_PER_ROW = 9;
+
+    // Scoring system
+    int mScore{0};
+    std::vector<PickupSphere> mPickupSpheres;
+
+    // Player physics body
+    b2BodyId mPlayerBodyId{b2_nullBodyId};
 };
 
 #endif // WORLD_HPP

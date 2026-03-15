@@ -70,6 +70,9 @@ public:
     [[nodiscard]] float getFar() const;
     void setFar(float far);
 
+    [[nodiscard]] float getFieldOfView() const noexcept;
+    void setFieldOfView(float fov) noexcept;
+
     [[nodiscard]] float getYaw() const;
     [[nodiscard]] float getPitch() const;
 

@@ -373,7 +373,7 @@ void GLSDLHelper::destroyAndQuit() noexcept
 
     if (mWindow)
     {
-        SDL_Log("SDLHelper::destroyAndQuit() - Destroying window %p\n", static_cast<void *>(mWindow));
+        SDL_Log("SDLHelper::destroyAndQuit() - Destroying window with pointer value: %p\n", static_cast<void *>(mWindow));
         SDL_DestroyWindow(mWindow);
         mWindow = nullptr;
     }
@@ -439,12 +439,78 @@ GLuint GLSDLHelper::createAndBindSSBO(GLuint bindingPoint) noexcept
 
 void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) noexcept
 {
+    if (bufferSize <= 0)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                    "GLSDLHelper::allocateSSBOBuffer called with non-positive size: %lld",
+                    static_cast<long long>(bufferSize));
+        return;
+    }
+
+    GLint boundBuffer = 0;
+    glGetIntegerv(GL_SHADER_STORAGE_BUFFER_BINDING, &boundBuffer);
+    if (boundBuffer == 0)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "GLSDLHelper::allocateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound");
+        return;
+    }
+
+    GLint64 maxBlockSize = 0;
+    glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &maxBlockSize);
+    if (maxBlockSize > 0 && static_cast<GLint64>(bufferSize) > maxBlockSize)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "GLSDLHelper::allocateSSBOBuffer size %lld exceeds GL_MAX_SHADER_STORAGE_BLOCK_SIZE %lld",
+                     static_cast<long long>(bufferSize),
+                     static_cast<long long>(maxBlockSize));
+        return;
+    }
+
     glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, data, GL_DYNAMIC_DRAW);
+
+    const GLenum err = glGetError();
+    if (err != GL_NO_ERROR)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "GLSDLHelper::allocateSSBOBuffer glBufferData failed (buffer=%d size=%lld err=0x%x)",
+                     boundBuffer,
+                     static_cast<long long>(bufferSize),
+                     static_cast<unsigned int>(err));
+    }
 }
 
 void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void *data) noexcept
 {
+    if (size <= 0)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                    "GLSDLHelper::updateSSBOBuffer called with non-positive size: %lld",
+                    static_cast<long long>(size));
+        return;
+    }
+
+    GLint boundBuffer = 0;
+    glGetIntegerv(GL_SHADER_STORAGE_BUFFER_BINDING, &boundBuffer);
+    if (boundBuffer == 0)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "GLSDLHelper::updateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound");
+        return;
+    }
+
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, offset, size, data);
+
+    const GLenum err = glGetError();
+    if (err != GL_NO_ERROR)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "GLSDLHelper::updateSSBOBuffer glBufferSubData failed (buffer=%d offset=%lld size=%lld err=0x%x)",
+                     boundBuffer,
+                     static_cast<long long>(offset),
+                     static_cast<long long>(size),
+                     static_cast<unsigned int>(err));
+    }
 }
 
 void GLSDLHelper::deleteVAO(GLuint &vao) noexcept

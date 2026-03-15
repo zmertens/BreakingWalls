@@ -60,15 +60,14 @@ message(STATUS "GLM included at ${GLM_DIR}")
 
 # Get MazeBuilder
 set(MAZE_BUILDER_REPO_URL "https://github.com/zmertens/MazeBuilder")
-set(MAZE_BUILDER_GIT_TAG "v7.8.2")
+set(MAZE_BUILDER_GIT_TAG "v7.9.0")
 message(STATUS "Fetching MazeBuilder from ${MAZE_BUILDER_REPO_URL} at tag ${MAZE_BUILDER_GIT_TAG}")
 FetchGitRepo(MazeBuilder ${MAZE_BUILDER_REPO_URL} ${MAZE_BUILDER_GIT_TAG})
 
 set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/Animation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/BVH.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Camera.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PathTraceScene.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SceneRenderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Font.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GameState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GLTFModel.cpp
@@ -90,7 +89,6 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/Shader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SoundPlayer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Sphere.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/VoronoiPlanet.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SplashState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/StateStack.cpp

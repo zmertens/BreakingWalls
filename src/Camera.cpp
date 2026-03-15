@@ -163,6 +163,16 @@ void Camera::setFar(float far)
     mFar = far;
 }
 
+float Camera::getFieldOfView() const noexcept
+{
+    return mFieldOfView;
+}
+
+void Camera::setFieldOfView(float fov) noexcept
+{
+    mFieldOfView = glm::clamp(fov, 1.0f, scMaxFieldOfView);
+}
+
 float Camera::getYaw() const
 {
     return mYaw;
@@ -318,15 +328,12 @@ glm::vec3 Camera::getActualPosition() const
 glm::mat4 Camera::getThirdPersonLookAt() const
 {
     glm::vec3 cameraPos = getActualPosition();
-    // Look at the follow target (player position) plus a slight height offset
-    glm::vec3 lookAtPoint = mFollowTarget + mUp;
-
-    // Debug log on first call
-    static bool firstCall = true;
-    if (firstCall)
-    {
-        firstCall = false;
-    }
+    // Look at a fixed world-up offset from the follow target so the
+    // look-at point does not drift when the camera is pitched/rotated.
+    // 0.75 units above the player's feet puts the character's chest/shoulder
+    // at the viewport centre, regardless of mUp orientation.
+    static const glm::vec3 kWorldUp{0.0f, 1.0f, 0.0f};
+    glm::vec3 lookAtPoint = mFollowTarget + kWorldUp * 0.75f;
 
     return glm::lookAt(cameraPos, lookAtPoint, glm::normalize(mUp));
 }

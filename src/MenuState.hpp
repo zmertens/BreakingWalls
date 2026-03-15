@@ -29,8 +29,7 @@ private:
     {
         NAVIGATION = 0,
         SETTINGS = 1,
-        PARTICLE_SCENE = 2,
-        STENCILS = 3
+        PARTICLE_SCENE = 2
     };
 
     enum class MenuItem : unsigned int
@@ -40,10 +39,9 @@ private:
         NETWORK_GAME = 2,
         SETTINGS = 3,
         PARTICLE_SCENE = 4,
-        STENCILS = 5,
-        SPLASH = 6,
-        QUIT = 7,
-        COUNT = 8
+        SPLASH = 5,
+        QUIT = 6,
+        COUNT = 7
     };
 
     Font *mFont;
@@ -69,33 +67,15 @@ private:
         bool antialiasing{true};
         bool showDebugOverlay{false};
         bool arcadeModeEnabled{true};
-        bool stencilOutlineEnabled{true};
-        bool stencilOutlinePulseEnabled{false};
 
         float masterVolume{50.0f};
         float musicVolume{75.0f};
+        float renderQuality{1.0f};
         float sfxVolume{10.0f};
         float runnerSpeed{30.0f};
         float runnerStrafeLimit{35.0f};
         float runnerPickupSpacing{18.0f};
         float runnerCollisionCooldown{0.40f};
-        float stencilOutlineWidth{0.05f};
-        float stencilOutlinePulseSpeed{2.4f};
-        float stencilOutlinePulseAmount{0.28f};
-        glm::vec3 stencilOutlineColor{0.38f, 0.94f, 1.0f};
-
-        int runnerStartingPoints{100};
-        int runnerPickupMinValue{-25};
-        int runnerPickupMaxValue{40};
-        int runnerObstaclePenalty{25};
-        int motionBlurBracket1Points{300};
-        int motionBlurBracket2Points{500};
-        int motionBlurBracket3Points{800};
-        int motionBlurBracket4Points{1200};
-        float motionBlurBracket1Boost{0.10f};
-        float motionBlurBracket2Boost{0.18f};
-        float motionBlurBracket3Boost{0.28f};
-        float motionBlurBracket4Boost{0.38f};
     };
 
     mutable SettingsUiState mSettingsUi;
@@ -149,8 +129,8 @@ private:
     void initializeSettingsUiFromOptions() const noexcept;
     void drawNavigationTab() const noexcept;
     void drawSettingsTab() const noexcept;
+    void drawSettingsPreviewPanel() const noexcept;
     void drawParticleSceneTab() const noexcept;
-    void drawStencilsTab() const noexcept;
     void drawParticleControls() const noexcept;
     void resetSettingsToDefaults() const noexcept;
     void applySettingsFromUi() const noexcept;

@@ -63,6 +63,19 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
     if (!mIsActive)
         return;
 
+    // In Cornell/comparison view the player position is locked; skip all input.
+    if (mFrozen)
+    {
+        mMovingForward = false;
+        mMovingBackward = false;
+        mMovingLeft = false;
+        mMovingRight = false;
+        mIsMoving = false;
+        mIsJumping = false;
+        updateAnimationState();
+        return;
+    }
+
     int numKeys = 0;
     const auto *keyState = SDL_GetKeyboardState(&numKeys);
 
@@ -632,6 +645,14 @@ void Player::setPosition(const glm::vec3 &position) noexcept
     {
         mIsOnGround = false;
     }
+    mAnimator.setPosition(mPosition);
+}
+
+void Player::setPositionUnconstrained(const glm::vec3 &position) noexcept
+{
+    mPosition = position;
+    mVerticalVelocity = 0.0f;
+    mIsOnGround = true;
     mAnimator.setPosition(mPosition);
 }
 

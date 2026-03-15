@@ -52,6 +52,7 @@ namespace JSONKeys
     constexpr std::string_view ENEMY_HITPOINTS_DEFAULT = "enemy_hitpoints_default";
     constexpr std::string_view ENEMY_SPEED_DEFAULT = "enemy_speed_default";
     constexpr std::string_view EXPLOSIONS_SPRITE_SHEET = "explosion_spritesheet";
+    constexpr std::string_view FAA_LOGO = "FAA_logo";
     constexpr std::string_view GAME_MENU_REMIXED_MUSIC = "game_menu_remixed_music";
     constexpr std::string_view LOADING_MUSIC = "loading_music";
     constexpr std::string_view LEVEL_DEFAULTS = "level_defaults";
@@ -61,21 +62,12 @@ namespace JSONKeys
     constexpr std::string_view PLAYER_SPEED_DEFAULT = "player_speed_default";
     constexpr std::string_view SDL_LOGO = "SDL_logo";
     constexpr std::string_view SFML_LOGO = "SFML_logo";
-    constexpr std::string_view SHADER_SIMPLE_VERTEX = "shader_simple_vert_glsl";
-    constexpr std::string_view SHADER_OUTPUT_FRAGMENT = "shader_output_frag_glsl";
-    constexpr std::string_view SHADER_PREVIEW_FRAGMENT = "shader_preview_frag_glsl";
-    constexpr std::string_view SHADER_TILE_FRAGMENT = "shader_tile_frag_glsl";
-    constexpr std::string_view SHADER_TONEMAP_FRAGMENT = "shader_tonemap_frag_glsl";
     constexpr std::string_view SHADER_BILLBOARD_VERTEX = "shader_billboard_vert_glsl";
     constexpr std::string_view SHADER_BILLBOARD_FRAGMENT = "shader_billboard_frag_glsl";
     constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";
     constexpr std::string_view SHADER_COMPOSITE_VERTEX = "shader_composite_vert_glsl";
     constexpr std::string_view SHADER_COMPOSITE_FRAGMENT = "shader_composite_frag_glsl";
-    constexpr std::string_view SHADER_MODEL_VERTEX = "shader_model_vert_glsl";
-    constexpr std::string_view SHADER_MODEL_FRAGMENT = "shader_model_frag_glsl";
-    constexpr std::string_view SHADER_STENCIL_OUTLINE_FRAGMENT = "shader_stencil_outline_frag_glsl";
     constexpr std::string_view SHADER_PARTICLES_COMPUTE = "shader_particles_cs_glsl";
-    constexpr std::string_view SHADER_PATHTRACER_COMPUTE = "shader_pathtracer_cs_glsl";
     constexpr std::string_view SHADER_PARTICLES_VERTEX = "shader_particles_vert_glsl";
     constexpr std::string_view SHADER_PARTICLES_FRAGMENT = "shader_particles_frag_glsl";
     constexpr std::string_view SHADER_OIT_RESOLVE_FRAGMENT = "shader_oit_resolve_frag_glsl";
@@ -84,8 +76,6 @@ namespace JSONKeys
     constexpr std::string_view SHADER_SHADOW_VERTEX = "shader_shadow_vert_glsl";
     constexpr std::string_view SHADER_SHADOW_GEOMETRY = "shader_shadow_geom_glsl";
     constexpr std::string_view SHADER_SHADOW_FRAGMENT = "shader_shadow_frag_glsl";
-    constexpr std::string_view SHADER_PATHTRACER_OUTPUT_FRAGMENT = "shader_pathtracer_output_frag_glsl";
-    constexpr std::string_view SHADER_PATHTRACER_TONEMAP_FRAGMENT = "shader_pathtracer_tonemap_frag_glsl";
     constexpr std::string_view STYLIZED_CHARACTER_GLTF2_MODEL = "stylized_character_gltf2";
     constexpr std::string_view SOUND_GENERATE = "generate_ogg";
     constexpr std::string_view SOUND_SELECT = "select_ogg";
@@ -150,6 +140,7 @@ public:
     explicit ResourceLoader()
         : mShouldExit(false), mPendingWorkCount(0), mTotalWorkItems(0), mConfigMappings({{JSONKeys::BALL_NORMAL, Textures::ID::BALL_NORMAL},
                                                                                          {JSONKeys::CHARACTER_IMAGE, Textures::ID::CHARACTER},
+                                                                                         {JSONKeys::FAA_LOGO, Textures::ID::FAA_LOGO},
                                                                                          {JSONKeys::LEVEL_DEFAULTS, Textures::ID::LEVEL_TWO},
                                                                                          {JSONKeys::CHARACTERS_SPRITE_SHEET, Textures::ID::CHARACTER_SPRITE_SHEET},
                                                                                          {JSONKeys::SPLASH_IMAGE, Textures::ID::SPLASH_TITLE_IMAGE},
@@ -743,10 +734,12 @@ void LoadingState::loadLevels() noexcept
     {
         using mazes::configurator;
 
-        std::vector<configurator> levelConfigs;
-        levelConfigs.push_back(configurator().rows(20).columns(20));
-        levels.load(Levels::ID::LEVEL_ONE, std::cref(levelConfigs), false);
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Levels loaded successfully");
+        std::vector<configurator> gameplayLevelConfigs;
+        gameplayLevelConfigs.push_back(configurator().rows(20).columns(20));
+        levels.load(Levels::ID::LEVEL_ONE, std::cref(gameplayLevelConfigs), false);
+
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "LoadingState: Loaded gameplay maze (20x20)");
     }
     catch (const std::exception &e)
     {
@@ -854,20 +847,6 @@ void LoadingState::loadShaders() noexcept
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: OIT resolve shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_OIT_RESOLVE, std::move(oitResolveShader));
 
-        auto pathTracerOutputShader = std::make_unique<Shader>();
-        pathTracerOutputShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SCREEN_VERTEX));
-        pathTracerOutputShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_PATHTRACER_OUTPUT_FRAGMENT));
-        pathTracerOutputShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PATH_TRACER_OUTPUT", pathTracerOutputShader->getProgramHandle());
-        shaders.insert(Shaders::ID::GLSL_PATH_TRACER_OUTPUT, std::move(pathTracerOutputShader));
-
-        auto pathTracerTonemapShader = std::make_unique<Shader>();
-        pathTracerTonemapShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SCREEN_VERTEX));
-        pathTracerTonemapShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_PATHTRACER_TONEMAP_FRAGMENT));
-        pathTracerTonemapShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PATH_TRACER_TONEMAP", pathTracerTonemapShader->getProgramHandle());
-        shaders.insert(Shaders::ID::GLSL_PATH_TRACER_TONEMAP, std::move(pathTracerTonemapShader));
-
         // Load shadow volume shader for character shadow rendering (vertex + geometry + fragment)
         auto shadowShader = std::make_unique<Shader>();
         shadowShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SHADOW_VERTEX));
@@ -878,21 +857,14 @@ void LoadingState::loadShaders() noexcept
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Shadow shader compiled and linked");
         shaders.insert(Shaders::ID::GLSL_SHADOW_VOLUME, std::move(shadowShader));
 
-        // Load compute shader for path tracing
-        auto computeShader = std::make_unique<Shader>();
-        computeShader->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PATHTRACER_COMPUTE));
-        computeShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PATH_TRACER_COMPUTE", computeShader->getProgramHandle());
-
-        auto computeShader2 = std::make_unique<Shader>();
-        computeShader2->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PARTICLES_COMPUTE));
-        computeShader2->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PARTICLES_COMPUTE", computeShader2->getProgramHandle());
+        auto particlesComputeShader = std::make_unique<Shader>();
+        particlesComputeShader->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PARTICLES_COMPUTE));
+        particlesComputeShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PARTICLES_COMPUTE", particlesComputeShader->getProgramHandle());
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Compute shaders compiled and linked");
 
-        shaders.insert(Shaders::ID::GLSL_PATH_TRACER_COMPUTE, std::move(computeShader));
-        shaders.insert(Shaders::ID::GLSL_PARTICLES_COMPUTE, std::move(computeShader2));
+        shaders.insert(Shaders::ID::GLSL_PARTICLES_COMPUTE, std::move(particlesComputeShader));
 
         // Load billboard shader for character sprites (vertex + geometry + fragment)
         auto billboardShader = std::make_unique<Shader>();
@@ -905,54 +877,6 @@ void LoadingState::loadShaders() noexcept
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Billboard shader compiled and linked");
         // Insert billboard shader into manager
         shaders.insert(Shaders::ID::GLSL_BILLBOARD_SPRITE, std::move(billboardShader));
-
-        auto modelShader = std::make_unique<Shader>();
-        modelShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MODEL_VERTEX));
-        modelShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_MODEL_FRAGMENT));
-        modelShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_MODEL_WITH_SKINNING", modelShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Model shader compiled and linked");
-        shaders.insert(Shaders::ID::GLSL_MODEL_WITH_SKINNING, std::move(modelShader));
-
-        auto stencilOutlineShader = std::make_unique<Shader>();
-        stencilOutlineShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MODEL_VERTEX));
-        stencilOutlineShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_STENCIL_OUTLINE_FRAGMENT));
-        stencilOutlineShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_STENCIL_OUTLINE", stencilOutlineShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Stencil outline shader compiled and linked");
-        shaders.insert(Shaders::ID::GLSL_STENCIL_OUTLINE, std::move(stencilOutlineShader));
-        
-        auto outputShader = std::make_unique<Shader>();
-        outputShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SIMPLE_VERTEX));
-        outputShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_OUTPUT_FRAGMENT));
-        outputShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_OUTPUT_TEST", outputShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Output shader compiled and linked");
-        shaders.insert(Shaders::ID::GLSL_OUTPUT_TEST, std::move(outputShader));
-
-        auto toneShader = std::make_unique<Shader>();
-        toneShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SIMPLE_VERTEX));
-        toneShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_TONEMAP_FRAGMENT));
-        toneShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_TONE_TEST", toneShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Tone shader compiled and linked");
-        shaders.insert(Shaders::ID::GLSL_TONE_TEST, std::move(toneShader));
-
-        auto previewShader = std::make_unique<Shader>();
-        previewShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SIMPLE_VERTEX));
-        previewShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_PREVIEW_FRAGMENT));
-        previewShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PREVIEW_TEST", previewShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Preview shader compiled and linked");
-        shaders.insert(Shaders::ID::GLSL_PREVIEW_TEST, std::move(previewShader));
-
-        auto tileShader = std::make_unique<Shader>();
-        tileShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SIMPLE_VERTEX));
-        tileShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_TILE_FRAGMENT));
-        tileShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_TILE_SHADER", tileShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Tile shader compiled and linked");
-        shaders.insert(Shaders::ID::GLSL_TILE_TEST, std::move(tileShader));
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: All shaders loaded successfully");
     }
@@ -993,19 +917,33 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
 
     auto textureRequests = resourceLoader().getTextureLoadRequests();
 
-    try
+    // Load each texture file independently so one missing file does not abort
+    // the rest of the load (including the mandatory procedural textures below).
+    for (const auto &request : textureRequests)
     {
-        for (const auto &request : textureRequests)
+        try
         {
             textures.load(request.id, std::string_view(request.path), 0u);
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loaded texture: %s for ID: %d", request.path.c_str(), static_cast<int>(request.id));
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loaded texture: %s for ID: %d",
+                        request.path.c_str(), static_cast<int>(request.id));
         }
+        catch (const std::exception &e)
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "LoadingState: Skipping texture (file unavailable) id=%d path=%s: %s",
+                        static_cast<int>(request.id), request.path.c_str(), e.what());
+        }
+    }
 
+    // Procedural / render-target textures must always be created — GameState
+    // asserts their presence in the TextureManager at startup.
+    try
+    {
         loadProceduralTextures();
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load procedural textures: %s\n", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to create procedural textures: %s\n", e.what());
     }
 }
 
@@ -1105,12 +1043,6 @@ void LoadingState::loadProceduralTextures() const noexcept
             }
         };
 
-        textures.load(Textures::ID::PATH_TRACER_ACCUM, 512, 512, {}, 0);
-        textures.load(Textures::ID::PATH_TRACER_OUTPUT, 512, 512, {}, 0);
-        textures.load(Textures::ID::PATH_TRACER_STAGE, 512, 512, {}, 0);
-        textures.load(Textures::ID::PATH_TRACER_DISPLAY, 512, 512, {}, 0);
-        textures.load(Textures::ID::PATH_TRACER_PREVIEW_ACCUM, 256, 256, {}, 0);
-        textures.load(Textures::ID::PATH_TRACER_PREVIEW_OUTPUT, 256, 256, {}, 0);
         textures.load(Textures::ID::NOISE2D, 256, 256, generator, 2);
 
         // Seed manager-owned render targets used by GameState.

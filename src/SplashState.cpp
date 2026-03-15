@@ -32,7 +32,7 @@ SplashState::SplashState(StateStack &stack, Context context)
     
     try
     {
-        mSplashTexture = &getContext().getTextureManager()->get(Textures::ID::SPLASH_TITLE_IMAGE);
+        mSplashTexture = &getContext().getTextureManager()->get(Textures::ID::FAA_LOGO);
     }
     catch (const std::exception &e)
     {

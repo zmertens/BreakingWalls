@@ -182,7 +182,10 @@ template <typename Resource, typename Identifier>
 Resource &ResourceManager<Resource, Identifier>::get(Identifier id)
 {
     auto found = mResourceMap.find(id);
-    assert(found != mResourceMap.cend());
+    if (found == mResourceMap.cend()) {
+        throw std::runtime_error("ResourceManager::get - resource id " +
+                                 std::to_string(static_cast<int>(id)) + " not found");
+    }
 
     return *found->second;
 }
@@ -191,7 +194,10 @@ template <typename Resource, typename Identifier>
 const Resource &ResourceManager<Resource, Identifier>::get(Identifier id) const
 {
     auto found = mResourceMap.find(id);
-    assert(found != mResourceMap.cend());
+    if (found == mResourceMap.cend()) {
+        throw std::runtime_error("ResourceManager::get - resource id " +
+                                 std::to_string(static_cast<int>(id)) + " not found");
+    }
 
     return *found->second;
 }

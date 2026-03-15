@@ -2,32 +2,24 @@
 #define GAME_STATE_HPP
 
 #include "Camera.hpp"
+#include "GLTFModel.hpp"
 #include "State.hpp"
 #include "World.hpp"
-#include "VoronoiPlanet.hpp"
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
 #include <cstddef>
-#include <random>
 #include <memory>
+#include <random>
+#include <string>
 #include <vector>
 
 class MusicPlayer;
-class PathTraceScene;
-class SceneRenderer;
 class Shader;
 class StateStack;
 class SoundPlayer;
 class Texture;
-
-/// Rendering mode selection
-enum class RenderMode : int
-{
-    COMPUTE = 0, // Existing compute-shader path tracer
-    FRAGMENT = 1 // Fragment-shader path tracer (GLSLPT-style)
-};
 
 union SDL_Event;
 struct SDL_Joystick;
@@ -62,20 +54,12 @@ public:
     /// Get render scale relative to window size
     float getRenderScale() const noexcept;
 
-    [[nodiscard]] bool isVoronoiPlanetComplete() const noexcept { return mVoronoiPlanet.isPlanetComplete(); }
-
 private:
- /// Initialize GPU graphics resources for compute shader rendering
-    void initializeGraphicsResources() noexcept;
-
     /// Recompute internal render resolution from current window size
     void updateRenderResolution() noexcept;
 
     /// Check and handle window resize events
     void handleWindowResize() noexcept;
-
-    /// Create textures for path tracing (accumulation + display)
-    void createPathTracerTextures() noexcept;
 
     /// Create or resize composite render targets for billboard blending
     void createCompositeTargets() noexcept;
@@ -92,29 +76,36 @@ private:
     /// Render reflected player character on ground plane
     void renderPlayerReflection() const noexcept;
 
-    /// Render using compute shaders (path tracing)
-    void renderWithComputeShaders() const noexcept;
 
-    /// Render using fragment-shader path tracer (GLSLPT-style)
-    void renderWithFragmentShaders() const noexcept;
+    /// Initialize standalone raster shaders/buffers for pure maze rendering.
+    void initializeRasterMazeResources() noexcept;
 
-    /// Synchronise BreakingWalls Camera → PTCamera each frame
-    void syncPathTraceCamera() noexcept;
+    /// Build static 3D maze mesh (with per-vertex colors) from MazeBuilder data.
+    void buildRasterMazeGeometry() noexcept;
 
-    /// Place gameplay camera at a stable Cornell framing for fragment mode.
-    void frameFragmentCornellCamera() noexcept;
+    /// Recompute min/max bird's-eye zoom distance from maze bounds and window size.
+    void updateRasterBirdsEyeZoomLimits() noexcept;
 
-    /// Build a hardcoded test scene for the fragment path tracer
-    void buildPathTraceScene() noexcept;
+    /// Apply locked bird's-eye camera transform from current zoom distance.
+    void applyRasterBirdsEyeCamera() noexcept;
 
-    /// Composite billboard and path traced scene
-    void renderCompositeScene() const noexcept;
+    /// Render sky + maze using the pure raster pipeline.
+    void renderRasterMaze() const noexcept;
 
-    /// Resolve weighted-blended OIT buffers and blend into billboard texture
-    void resolveOITToBillboardTarget() const noexcept;
-
-    /// Render player character (third-person mode only)
+    /// Render player character billboard on the raster maze
     void renderPlayerCharacter() const noexcept;
+
+    /// Render scoring billboards (pickup values) using ImGui
+    void renderScoreBillboards() const noexcept;
+
+    /// Render pickup spheres as colored orbs in the maze
+    void renderPickupSpheres() const noexcept;
+
+    /// Apply motion blur effect using the compute pipeline
+    void renderMotionBlur() const noexcept;
+
+    /// Initialize motion blur compute resources
+    void initializeMotionBlur() noexcept;
 
     /// Ensure movement particle resources are initialized
     void initializeWalkParticles() noexcept;
@@ -143,6 +134,13 @@ private:
     /// Apply joystick left-stick horizontal movement as strafe.
     void updateJoystickInput(float dt) noexcept;
 
+    /// Push the player out of any overlapping maze wall AABBs (circle vs AABB, XZ plane).
+    void resolvePlayerWallCollisions(glm::vec3 &pos) const noexcept;
+
+    /// Apply birds-eye top-down XZ movement from keyboard, mouse, and touch.
+    /// relMouseX/Y must be pre-read from SDL_GetRelativeMouseState before calling handleRealtimeInput.
+    void handleBirdsEyeInput(float dt, float relMouseX, float relMouseY) noexcept;
+
     /// Trigger a short haptic rumble pulse (used for input testing).
     void triggerHapticTest(float strength, float seconds) noexcept;
 
@@ -159,43 +157,18 @@ private:
 
     // Shader references from context
     Shader *mDisplayShader{nullptr};
-    Shader *mComputeShader{nullptr};
-    Shader *mPathTracerOutputShader{nullptr};
-    Shader *mPathTracerTonemapShader{nullptr};
     Shader *mCompositeShader{nullptr};
     Shader *mOITResolveShader{nullptr};
-    Shader *mSkinnedModelShader{nullptr};
-    Shader *mStencilOutlineShader{nullptr};
     Shader *mWalkParticlesComputeShader{nullptr};
     Shader *mWalkParticlesRenderShader{nullptr};
     Shader *mShadowShader{nullptr};  // Shadow volume + stencil rendering
-    Shader *mVoronoiShader{nullptr}; // Voronoi planet shader
 
-    // Fragment-shader path tracer (GLSLPT-style)
-    std::unique_ptr<PathTraceScene> mPathTraceScene;
-    std::unique_ptr<SceneRenderer> mSceneRenderer;
-    RenderMode mRenderMode{RenderMode::COMPUTE};
-    std::unique_ptr<Shader> mVoronoiShaderOwned;
-    VoronoiPlanet mVoronoiPlanet;
-    // SSBOs for Voronoi cell data (for compute shader)
-    GLuint mVoronoiCellColorSSBO{0};
-    GLuint mVoronoiCellSeedSSBO{0};
-    GLuint mVoronoiCellPaintedSSBO{0};
-
-    Texture *mAccumTex{nullptr};
-    Texture *mPathTraceOutputTex{nullptr};
-    Texture *mPathTraceStageTex{nullptr};
     Texture *mDisplayTex{nullptr};
-    Texture *mPreviewAccumTex{nullptr};
-    Texture *mPreviewOutputTex{nullptr};
     Texture *mNoiseTexture{nullptr};
     Texture *mTestAlbedoTexture{nullptr};
 
     // GPU resources
-    GLuint mShapeSSBO{0};  // Shader Storage Buffer Object for spheres
-    GLuint mTriangleSSBO{0};
-    GLuint mVAO{0};        // Vertex Array Object for fullscreen quad
-    GLuint mPathTracePostFBO{0};
+    GLuint mVAO{0}; // Vertex Array Object for fullscreen quad
     GLuint mBillboardFBO{0};
     Texture *mBillboardColorTex{nullptr};
     GLuint mBillboardDepthRbo{0};
@@ -206,25 +179,25 @@ private:
     GLuint mWalkParticlesVAO{0};
     GLuint mWalkParticlesPosSSBO{0};
     GLuint mWalkParticlesVelSSBO{0};
-    
+
     // Shadow rendering resources
-    GLuint mShadowFBO{0};              // Shadow render target
-    Texture *mShadowTexture{nullptr};  // Shadow map texture
-    GLuint mShadowVAO{0};              // Shadow quad VAO
-    GLuint mShadowVBO{0};              // Shadow quad VBO
+    GLuint mShadowFBO{0};             // Shadow render target
+    Texture *mShadowTexture{nullptr}; // Shadow map texture
+    GLuint mShadowVAO{0};             // Shadow quad VAO
+    GLuint mShadowVBO{0};             // Shadow quad VBO
     bool mShadowsInitialized{false};
 
     // Reflection rendering resources
-    GLuint mReflectionFBO{0};          // Reflection render target
+    GLuint mReflectionFBO{0};              // Reflection render target
     Texture *mReflectionColorTex{nullptr}; // Reflection color texture
-    GLuint mReflectionDepthRbo{0};     // Reflection depth buffer
+    GLuint mReflectionDepthRbo{0};         // Reflection depth buffer
     bool mReflectionsInitialized{false};
     bool mOITInitialized{false};
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
     mutable uint32_t mCurrentTileIndex{0};
-    uint32_t mSamplesPerBatch{5};
+    uint32_t mSamplesPerBatch{12};
     uint32_t mTotalBatches{250};
 
     // Camera movement tracking for accumulation reset
@@ -240,18 +213,8 @@ private:
     int mPreviewRenderWidth{640};
     int mPreviewRenderHeight{360};
 
-    mutable std::size_t mShapeSSBOCapacityBytes{0};
-    mutable std::size_t mTriangleSSBOCapacityBytes{0};
-
-    static constexpr std::size_t kTargetRenderPixels = 1600ull * 900ull;
-    static constexpr float kMinRenderScale = 0.82f;
-
-    bool mStencilOutlineEnabled{true};
-    bool mStencilOutlinePulseEnabled{false};
-    float mStencilOutlineWidth{0.05f};
-    float mStencilOutlinePulseSpeed{2.4f};
-    float mStencilOutlinePulseAmount{0.28f};
-    glm::vec3 mStencilOutlineColor{0.38f, 0.94f, 1.0f};
+    static constexpr std::size_t kTargetRenderPixels = 960ull * 540ull;
+    static constexpr float kMinRenderScale = 0.60f;
 
     mutable float mModelAnimTimeSeconds{0.0f};
     mutable float mWalkParticlesTime{0.0f};
@@ -267,7 +230,48 @@ private:
     float mJoystickDeadzone{0.22f};
     float mJoystickStrafeSpeed{55.0f};
 
+    // Touch-screen state for top-down directional movement
+    bool mTouchActive{false};
+    glm::vec2 mTouchLastPos{0.0f};
+    glm::vec2 mTouchDelta{0.0f};
+
     bool mGameIsPaused{true};
+
+    std::unique_ptr<Shader> mRasterMazeShader;
+    std::unique_ptr<Shader> mRasterSkyShader;
+    std::unique_ptr<Shader> mSkinnedCharacterShader;
+    GLuint mRasterMazeVAO{0};
+    GLuint mRasterMazeVBO{0};
+    GLsizei mRasterMazeVertexCount{0};
+    glm::vec3 mRasterMazeCenter{0.0f};
+    float mRasterMazeWidth{1.0f};
+    float mRasterMazeDepth{1.0f};
+    float mRasterMazeTopY{1.0f};
+    float mRasterBirdsEyeDistance{10.0f};
+    float mRasterBirdsEyeMinDistance{4.0f};
+    float mRasterBirdsEyeMaxDistance{20.0f};
+
+    // XZ axis-aligned bounding boxes of every maze wall, packed as (minX, minZ, maxX, maxZ).
+    // Built once by buildRasterMazeGeometry() and used for player collision each frame.
+    std::vector<glm::vec4> mMazeWallAABBs;
+
+    // Pickup sphere rendering (cached GPU buffers)
+    GLuint mPickupVAO{0};
+    GLuint mPickupVBO{0};
+    GLsizei mPickupVertexCount{0};
+    mutable bool mPickupsDirty{true};
+
+    // Motion blur resources
+    GLuint mMotionBlurFBO{0};
+    GLuint mMotionBlurTex{0};
+    GLuint mPrevFrameTex{0};
+    std::unique_ptr<Shader> mMotionBlurShader;
+    bool mMotionBlurInitialized{false};
+
+    // Score display
+    mutable std::vector<std::pair<glm::vec3, int>> mActiveScorePopups;   // position, value
+    mutable std::vector<float> mScorePopupTimers;
+    mutable int mLastDisplayedScore{0};
 };
 
 #endif // GAME_STATE_HPP

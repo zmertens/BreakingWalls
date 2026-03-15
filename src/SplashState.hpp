@@ -1,14 +1,7 @@
 #ifndef SPLASH_STATE_HPP
 #define SPLASH_STATE_HPP
 
-#include "Camera.hpp"
-#include "Shader.hpp"
 #include "State.hpp"
-#include "World.hpp"
-
-#include <glad/glad.h>
-
-#include <glm/glm.hpp>
 
 class Font;
 class Texture;

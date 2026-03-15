@@ -77,6 +77,10 @@ public:
     /// Set player's 3D position
     void setPosition(const glm::vec3 &position) noexcept;
 
+    /// Set player's 3D position without ground-plane clamping.
+    /// Used by special scene framing modes (e.g., Cornell preview).
+    void setPositionUnconstrained(const glm::vec3 &position) noexcept;
+
     /// Configure spherical gravity and surface anchoring for planet gameplay
     void configureSphericalGravity(bool enabled, const glm::vec3 &planetCenter, float planetRadius) noexcept;
 
@@ -90,6 +94,10 @@ public:
     void setFacingDirection(float yawDegrees) noexcept { mFacingDirection = yawDegrees; mAnimator.setRotation(mFacingDirection); }
 
     /// Get surface normal (up direction) where player is standing
+    /// Freeze player in place - handleRealtimeInput becomes a no-op.
+    void setFrozen(bool frozen) noexcept { mFrozen = frozen; }
+    [[nodiscard]] bool isFrozen() const noexcept { return mFrozen; }
+
     [[nodiscard]] glm::vec3 getSurfaceNormal() const noexcept { return mSurfaceNormal; }
     
     /// Set surface normal (up direction) for spherical surface alignment
@@ -118,6 +126,7 @@ private:
     std::map<Action, std::function<void(Camera &, float)>> mCameraActions;
     bool mIsActive;
     bool mIsOnGround;
+    bool mFrozen{false};  ///< When true, handleRealtimeInput is a no-op (Cornell view mode).
 
     // Animation system
     CharacterAnimator mAnimator;

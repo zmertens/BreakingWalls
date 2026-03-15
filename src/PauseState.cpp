@@ -9,7 +9,6 @@
 #include "MusicPlayer.hpp"
 #include "ResourceIdentifiers.hpp"
 #include "ResourceManager.hpp"
-#include "VoronoiPlanet.hpp"
 #include "StateStack.hpp"
 #include "GameState.hpp"
 
@@ -47,11 +46,6 @@ PauseState::PauseState(StateStack &stack, Context context)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Failed to load font: %s", e.what());
         mFont = nullptr;
-    }
-
-    if (auto *game = getStack().peekState<GameState *>(); game != nullptr)
-    {
-        mPlanetComplete = game->isVoronoiPlanetComplete();
     }
 }
 
@@ -156,11 +150,6 @@ void PauseState::draw() const noexcept
 
 bool PauseState::update(float dt, unsigned int subSteps) noexcept
 {
-    if (auto *game = getStack().peekState<GameState *>(); game != nullptr)
-    {
-        mPlanetComplete = game->isVoronoiPlanetComplete();
-    }
-
     switch (mSelectedMenuItem)
     {
     case static_cast<unsigned int>(States::ID::DONE):

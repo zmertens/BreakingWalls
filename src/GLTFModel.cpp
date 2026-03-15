@@ -706,6 +706,24 @@ void GLTFModel::extractRayTraceTriangles(std::vector<RayTraceTriangle> &outTrian
 
     const std::vector<glm::mat4> boneTransforms = computeBoneTransforms(animationTimeSeconds);
 
+    std::size_t totalTriangleCount = 0;
+    for (const CpuMeshData &mesh : mCpuMeshes)
+    {
+        totalTriangleCount += mesh.indices.size() / 3;
+    }
+
+    if (totalTriangleCount == 0)
+    {
+        return;
+    }
+
+    const bool sampleAllTriangles = (totalTriangleCount <= maxTriangles);
+    const std::size_t sampleStride = sampleAllTriangles
+        ? 1
+        : std::max<std::size_t>(1, (totalTriangleCount + maxTriangles - 1) / maxTriangles);
+
+    std::size_t globalTriangleOrdinal = 0;
+
     for (const CpuMeshData &mesh : mCpuMeshes)
     {
         const glm::mat4 meshModel = model * (mesh.usesSkinning ? glm::mat4(1.0f) : mesh.nodeTransform);
@@ -716,6 +734,14 @@ void GLTFModel::extractRayTraceTriangles(std::vector<RayTraceTriangle> &outTrian
             if (outTriangles.size() >= maxTriangles)
             {
                 return;
+            }
+
+            const bool takeTriangle = sampleAllTriangles || ((globalTriangleOrdinal % sampleStride) == 0);
+            ++globalTriangleOrdinal;
+
+            if (!takeTriangle)
+            {
+                continue;
             }
 
             const std::uint32_t i0 = mesh.indices[triIndex * 3 + 0];

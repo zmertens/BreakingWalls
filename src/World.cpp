@@ -237,6 +237,9 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord &coord) const no
         result.cells = parseMazeCells(mazeStr, coord, result.spawnPosition, result.hasSpawnPosition);
 
         buildMazeWallSpheres(result.cells, result.spheres);
+
+        // Generate pickup spheres at cells where distance % 5 == 0
+        buildPickupSpheres(result.cells, result.pickupSpheres, coord);
     }
     catch (const std::exception &e)
     {
@@ -325,6 +328,12 @@ void World::processCompletedChunks() noexcept
                 mLoadedChunks.insert(coord);
                 mChunkSphereIndices[coord] = sphereIndices;
                 mPersistentSphereCount += sphereIndices.size();
+
+                // Integrate pickup spheres from the work item
+                for (auto &pickup : workItem.pickupSpheres)
+                {
+                    mPickupSpheres.push_back(pickup);
+                }
             }
             catch (const std::exception &e)
             {
@@ -372,6 +381,13 @@ void World::destroyWorld()
     // Shutdown worker pool FIRST - this clears all pending work
     shutdownWorkerPool();
 
+    // Destroy player body before other bodies
+    if (b2Body_IsValid(mPlayerBodyId))
+    {
+        b2DestroyBody(mPlayerBodyId);
+        mPlayerBodyId = b2_nullBodyId;
+    }
+
     // Destroy all physics bodies BEFORE destroying world
     // Do this in reverse order to be safe
     for (auto it = mSphereBodyIds.rbegin(); it != mSphereBodyIds.rend(); ++it)
@@ -417,7 +433,9 @@ void World::destroyWorld()
     mChunkSphereIndices.clear();
     mLoadedChunks.clear();
     mWallBreakQueue.clear();
+    mPickupSpheres.clear();
     mPersistentSphereCount = 0;
+    mScore = 0;
 }
 
 void World::initPathTracerScene() noexcept
@@ -933,7 +951,9 @@ void World::buildMazeWallSpheres(const std::vector<MazeCell> &cells, std::vector
     constexpr float kWallRadius = 1.45f;
     constexpr float kWallSpacing = 2.2f;
 
-    auto appendSegment = [&](float x0, float z0, float x1, float z1, const glm::vec3 &baseColor)
+    auto appendSegment = [&](float x0, float z0, float x1, float z1, const glm::vec3 &baseColor,
+                             Material::MaterialType matType = MaterialType::LAMBERTIAN,
+                             float fuzz = 0.0f, float ior = 1.5f)
     {
         auto toRunnerArc = [this](float x, float z) noexcept -> glm::vec2
         {
@@ -966,9 +986,9 @@ void World::buildMazeWallSpheres(const std::vector<MazeCell> &cells, std::vector
                 glm::vec3(x, 0.0f, z),
                 kWallRadius,
                 baseColor,
-                MaterialType::LAMBERTIAN,
-                0.0f,
-                1.5f);
+                matType,
+                fuzz,
+                ior);
             outSpheres.back().setTextureBlend(0.0f);
         }
     };
@@ -986,32 +1006,37 @@ void World::buildMazeWallSpheres(const std::vector<MazeCell> &cells, std::vector
             ? glm::vec3(0.14f, 0.16f, 0.20f)
             : glm::vec3(0.23f, 0.25f, 0.30f);
 
+        // Assign material type based on distance for reflection/refraction
+        const Material::MaterialType matType = getMaterialForDistance(cell.distance);
+        const float fuzz = (matType == Material::MaterialType::METAL) ? 0.1f : 0.0f;
+        const float ior = (matType == Material::MaterialType::DIELECTRIC) ? 1.52f : 1.5f;
+
         if (cell.wallNorth)
         {
             appendSegment(cell.worldX - halfCell, cell.worldZ - halfCell,
                           cell.worldX + halfCell, cell.worldZ - halfCell,
-                          wallColor);
+                          wallColor, matType, fuzz, ior);
         }
 
         if (cell.wallWest)
         {
             appendSegment(cell.worldX - halfCell, cell.worldZ - halfCell,
                           cell.worldX - halfCell, cell.worldZ + halfCell,
-                          wallColor);
+                          wallColor, matType, fuzz, ior);
         }
 
         if (cell.col == (MAZE_COLS - 1) && cell.wallEast)
         {
             appendSegment(cell.worldX + halfCell, cell.worldZ - halfCell,
                           cell.worldX + halfCell, cell.worldZ + halfCell,
-                          wallColor);
+                          wallColor, matType, fuzz, ior);
         }
 
         if (cell.row == (MAZE_ROWS - 1) && cell.wallSouth)
         {
             appendSegment(cell.worldX - halfCell, cell.worldZ + halfCell,
                           cell.worldX + halfCell, cell.worldZ + halfCell,
-                          wallColor);
+                          wallColor, matType, fuzz, ior);
         }
     }
 }
@@ -1020,13 +1045,14 @@ Material::MaterialType World::getMaterialForDistance(int distance) const noexcep
 {
     using MaterialType = Material::MaterialType;
 
-    if (distance % 4 == 0 && distance != 0)
+    // Enhanced material assignment for reflection/refraction effects
+    if (distance % 3 == 0 && distance != 0)
     {
-        return MaterialType::METAL;
+        return MaterialType::METAL;  // Reflective walls
     }
-    else if (distance % 6 == 0 && distance != 0)
+    else if (distance % 5 == 0 && distance != 0)
     {
-        return MaterialType::DIELECTRIC;
+        return MaterialType::DIELECTRIC;  // Refractive/glass walls
     }
     else
     {
@@ -1045,7 +1071,7 @@ Material::MaterialType World::getMaterialForDistance(int distance) const noexcep
 
 void World::renderPlayerCharacter(const Player &player, const Camera &camera) const noexcept
 {
-    // Only render in third-person mode
+    // Only render in third-person mode (billboard fallback for non-GLTF views)
     if (camera.getMode() != CameraMode::THIRD_PERSON)
     {
         return;
@@ -1302,4 +1328,109 @@ glm::vec2 World::projectFromSphere(const glm::vec3 &spherePos) const noexcept
     
     // Keep Z component as-is (forward/back strafe dimension)
     return glm::vec2(arcLength, spherePos.z);
+}
+
+void World::buildPickupSpheres(const std::vector<MazeCell> &cells, std::vector<PickupSphere> &outPickups, const ChunkCoord &coord) const noexcept
+{
+    // Seed RNG deterministically per chunk
+    const std::size_t coordHash =
+        (static_cast<std::size_t>(coord.x) * 73856093u) ^
+        (static_cast<std::size_t>(coord.z) * 19349663u);
+    std::mt19937 rng(static_cast<uint32_t>(coordHash ^ 0xDEADBEEFu));
+    std::uniform_int_distribution<int> valueDist(-25, 40);
+
+    for (const MazeCell &cell : cells)
+    {
+        // Use the distance map: cells with distance divisible by 5 get a pickup sphere
+        if (cell.distance > 0 && cell.distance % 5 == 0)
+        {
+            // Use the sphere center position as the pickup location
+            // Convert from maze 2D coordinates to world position
+            float toRunnerArcX = cell.worldX + 60.0f;
+            float centeredZ = cell.worldZ - (CHUNK_SIZE * 0.5f);
+            float lateralScale = (2.0f * std::max(8.0f, 35.0f)) / CHUNK_SIZE;
+            float lateralArc = centeredZ * lateralScale;
+
+            PickupSphere pickup;
+            pickup.position = glm::vec3(toRunnerArcX, 1.5f, lateralArc);
+            pickup.value = valueDist(rng);
+            pickup.collected = false;
+            outPickups.push_back(pickup);
+        }
+    }
+}
+
+int World::collectNearbyPickups(const glm::vec3 &playerPos, float collectRadius) noexcept
+{
+    int totalPoints = 0;
+    const float radiusSq = collectRadius * collectRadius;
+
+    for (auto &pickup : mPickupSpheres)
+    {
+        if (pickup.collected)
+            continue;
+
+        const glm::vec3 diff = pickup.position - playerPos;
+        const float distSq = glm::dot(diff, diff);
+
+        if (distSq < radiusSq)
+        {
+            pickup.collected = true;
+            totalPoints += pickup.value;
+            mScore += pickup.value;
+        }
+    }
+
+    return totalPoints;
+}
+
+void World::createPlayerBody(const glm::vec3 &position) noexcept
+{
+    if (!b2World_IsValid(mWorldId))
+        return;
+
+    // Destroy existing player body if present
+    if (b2Body_IsValid(mPlayerBodyId))
+    {
+        b2DestroyBody(mPlayerBodyId);
+        mPlayerBodyId = b2_nullBodyId;
+    }
+
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_dynamicBody;
+    bodyDef.position = {position.x, position.z};
+    bodyDef.linearDamping = 2.0f;
+    bodyDef.fixedRotation = true;
+
+    mPlayerBodyId = b2CreateBody(mWorldId, &bodyDef);
+
+    if (b2Body_IsValid(mPlayerBodyId))
+    {
+        b2ShapeDef shapeDef = b2DefaultShapeDef();
+        shapeDef.density = 1.0f;
+        shapeDef.enableContactEvents = true;
+
+        b2Circle circle = {{0.0f, 0.0f}, 1.0f};
+        b2CreateCircleShape(mPlayerBodyId, &shapeDef, &circle);
+    }
+}
+
+void World::applyPlayerJumpImpulse(float impulse) noexcept
+{
+    if (b2Body_IsValid(mPlayerBodyId))
+    {
+        // Apply upward impulse in 2D (mapped to forward in the game)
+        b2Vec2 imp = {0.0f, impulse};
+        b2Body_ApplyLinearImpulseToCenter(mPlayerBodyId, imp, true);
+    }
+}
+
+glm::vec2 World::getPlayerVelocity() const noexcept
+{
+    if (b2Body_IsValid(mPlayerBodyId))
+    {
+        b2Vec2 vel = b2Body_GetLinearVelocity(mPlayerBodyId);
+        return glm::vec2(vel.x, vel.y);
+    }
+    return glm::vec2(0.0f);
 }

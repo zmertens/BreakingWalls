@@ -121,9 +121,6 @@ void MenuState::draw() const noexcept
             case MenuTab::PARTICLE_SCENE:
                 drawParticleSceneTab();
                 break;
-            case MenuTab::STENCILS:
-                drawStencilsTab();
-                break;
             default:
                 drawNavigationTab();
                 break;
@@ -133,39 +130,46 @@ void MenuState::draw() const noexcept
 
         ImGui::SameLine();
 
-        if (ImGui::BeginChild("MenuParticlePreview", ImVec2(0.0f, 0.0f), true))
+        if (ImGui::BeginChild("MenuRightPane", ImVec2(rightWidth, 0.0f), true))
         {
-            const ImVec2 imageSize = ImGui::GetContentRegionAvail();
-            constexpr float kCinematicAspect = 2.39f;
-            const float containerWidth = std::max(1.0f, imageSize.x);
-            const float containerHeight = std::max(1.0f, imageSize.y);
-
-            float drawWidth = containerWidth;
-            float drawHeight = drawWidth / kCinematicAspect;
-
-            if (drawHeight > containerHeight)
+            if (mActiveTab == MenuTab::SETTINGS)
             {
-                drawHeight = containerHeight;
-                drawWidth = drawHeight * kCinematicAspect;
+                drawSettingsPreviewPanel();
             }
-
-            drawWidth = std::max(1.0f, drawWidth);
-            drawHeight = std::max(1.0f, drawHeight);
-
-            ensureParticleRenderTarget(static_cast<int>(drawWidth), static_cast<int>(drawHeight));
-            renderParticleScene();
-
-            if (mParticlesRenderTexture != 0 && imageSize.x > 1.0f && imageSize.y > 1.0f)
+            else
             {
-                const float offsetX = (containerWidth - drawWidth) * 0.5f;
-                const float offsetY = (containerHeight - drawHeight) * 0.5f;
-                ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offsetX, ImGui::GetCursorPosY() + offsetY));
+                const ImVec2 imageSize = ImGui::GetContentRegionAvail();
+                constexpr float kCinematicAspect = 2.39f;
+                const float containerWidth = std::max(1.0f, imageSize.x);
+                const float containerHeight = std::max(1.0f, imageSize.y);
 
-                ImGui::Image(
-                    static_cast<ImTextureID>(mParticlesRenderTexture),
-                    ImVec2(drawWidth, drawHeight),
-                    ImVec2(0.0f, 1.0f),
-                    ImVec2(1.0f, 0.0f));
+                float drawWidth = containerWidth;
+                float drawHeight = drawWidth / kCinematicAspect;
+
+                if (drawHeight > containerHeight)
+                {
+                    drawHeight = containerHeight;
+                    drawWidth = drawHeight * kCinematicAspect;
+                }
+
+                drawWidth = std::max(1.0f, drawWidth);
+                drawHeight = std::max(1.0f, drawHeight);
+
+                ensureParticleRenderTarget(static_cast<int>(drawWidth), static_cast<int>(drawHeight));
+                renderParticleScene();
+
+                if (mParticlesRenderTexture != 0 && imageSize.x > 1.0f && imageSize.y > 1.0f)
+                {
+                    const float offsetX = (containerWidth - drawWidth) * 0.5f;
+                    const float offsetY = (containerHeight - drawHeight) * 0.5f;
+                    ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offsetX, ImGui::GetCursorPosY() + offsetY));
+
+                    ImGui::Image(
+                        static_cast<ImTextureID>(mParticlesRenderTexture),
+                        ImVec2(drawWidth, drawHeight),
+                        ImVec2(0.0f, 1.0f),
+                        ImVec2(1.0f, 0.0f));
+                }
             }
         }
         ImGui::EndChild();
@@ -244,10 +248,6 @@ bool MenuState::update(float dt, unsigned int subSteps) noexcept
 
     case MenuItem::PARTICLE_SCENE:
         mActiveTab = MenuTab::PARTICLE_SCENE;
-        break;
-
-    case MenuItem::STENCILS:
-        mActiveTab = MenuTab::STENCILS;
         break;
 
     case MenuItem::SPLASH:
@@ -347,6 +347,7 @@ void MenuState::initializeSettingsUiFromOptions() const noexcept
         const auto &opts = optionsManager->get(GUIOptions::ID::DE_FACTO);
         mSettingsUi.masterVolume = opts.getMasterVolume();
         mSettingsUi.musicVolume = opts.getMusicVolume();
+        mSettingsUi.renderQuality = opts.getRenderQuality();
         mSettingsUi.sfxVolume = opts.getSfxVolume();
         mSettingsUi.vsync = opts.getVsync();
         mSettingsUi.fullscreen = opts.getFullscreen();
@@ -354,32 +355,6 @@ void MenuState::initializeSettingsUiFromOptions() const noexcept
         mSettingsUi.enableMusic = opts.getEnableMusic();
         mSettingsUi.enableSound = opts.getEnableSound();
         mSettingsUi.showDebugOverlay = opts.getShowDebugOverlay();
-        mSettingsUi.stencilOutlineEnabled = opts.getStencilOutlineEnabled();
-        mSettingsUi.stencilOutlineWidth = opts.getStencilOutlineWidth();
-        mSettingsUi.stencilOutlinePulseEnabled = opts.getStencilOutlinePulseEnabled();
-        mSettingsUi.stencilOutlinePulseSpeed = opts.getStencilOutlinePulseSpeed();
-        mSettingsUi.stencilOutlinePulseAmount = opts.getStencilOutlinePulseAmount();
-        mSettingsUi.stencilOutlineColor = glm::vec3(
-            opts.getStencilOutlineColorR(),
-            opts.getStencilOutlineColorG(),
-            opts.getStencilOutlineColorB());
-        mSettingsUi.arcadeModeEnabled = opts.getArcadeModeEnabled();
-        mSettingsUi.runnerSpeed = opts.getRunnerSpeed();
-        mSettingsUi.runnerStrafeLimit = opts.getRunnerStrafeLimit();
-        mSettingsUi.runnerStartingPoints = opts.getRunnerStartingPoints();
-        mSettingsUi.runnerPickupMinValue = opts.getRunnerPickupMinValue();
-        mSettingsUi.runnerPickupMaxValue = opts.getRunnerPickupMaxValue();
-        mSettingsUi.runnerPickupSpacing = opts.getRunnerPickupSpacing();
-        mSettingsUi.runnerObstaclePenalty = opts.getRunnerObstaclePenalty();
-        mSettingsUi.runnerCollisionCooldown = opts.getRunnerCollisionCooldown();
-        mSettingsUi.motionBlurBracket1Points = opts.getMotionBlurBracket1Points();
-        mSettingsUi.motionBlurBracket2Points = opts.getMotionBlurBracket2Points();
-        mSettingsUi.motionBlurBracket3Points = opts.getMotionBlurBracket3Points();
-        mSettingsUi.motionBlurBracket4Points = opts.getMotionBlurBracket4Points();
-        mSettingsUi.motionBlurBracket1Boost = opts.getMotionBlurBracket1Boost();
-        mSettingsUi.motionBlurBracket2Boost = opts.getMotionBlurBracket2Boost();
-        mSettingsUi.motionBlurBracket3Boost = opts.getMotionBlurBracket3Boost();
-        mSettingsUi.motionBlurBracket4Boost = opts.getMotionBlurBracket4Boost();
     }
     catch (const std::exception &)
     {
@@ -400,7 +375,7 @@ void MenuState::drawNavigationTab() const noexcept
     ImGui::Spacing();
 
     const array<string, static_cast<size_t>(MenuItem::COUNT)> menuItems = {
-        "Resume", "Just run endlessly", "Multiplayer Game", "Settings", "Particle Scene", "Stencils", "Return to Splash Screen", "Quit"};
+        "Resume", "Just run endlessly", "Multiplayer Game", "Settings", "Particle Scene", "Return to Splash Screen", "Quit"};
 
     const auto active = static_cast<size_t>(getContext().getPlayer()->isActive());
     for (size_t i{static_cast<size_t>(active ? 0 : 1)}; i < menuItems.size(); ++i)
@@ -445,12 +420,6 @@ void MenuState::drawNavigationTab() const noexcept
             return;
         }
 
-        if (mSelectedMenuItem == MenuItem::STENCILS)
-        {
-            mActiveTab = MenuTab::STENCILS;
-            return;
-        }
-
         mConfirmedMenuItem = mSelectedMenuItem;
         mPendingMenuAction = true;
         mShowMainMenu = false;
@@ -481,33 +450,6 @@ void MenuState::drawParticleSceneTab() const noexcept
     }
 }
 
-void MenuState::drawStencilsTab() const noexcept
-{
-    ImGui::TextUnformatted("Stencils");
-    ImGui::Separator();
-    ImGui::TextWrapped("Tune player stencil outline visibility and appearance in real-time.");
-    ImGui::Spacing();
-
-    ImGui::Checkbox("Enable Player Outline", &mSettingsUi.stencilOutlineEnabled);
-    ImGui::SliderFloat("Outline Width", &mSettingsUi.stencilOutlineWidth, 0.0f, 0.20f, "%.3f");
-    ImGui::Checkbox("Pulse Outline", &mSettingsUi.stencilOutlinePulseEnabled);
-    ImGui::SliderFloat("Pulse Speed", &mSettingsUi.stencilOutlinePulseSpeed, 0.2f, 10.0f, "%.2f");
-    ImGui::SliderFloat("Pulse Amount", &mSettingsUi.stencilOutlinePulseAmount, 0.0f, 0.8f, "%.2f");
-    ImGui::ColorPicker3("Outline Color", &mSettingsUi.stencilOutlineColor.x, ImGuiColorEditFlags_PickerHueWheel);
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    if (ImGui::Button("Apply Stencil Settings", ImVec2(190.0f, 36.0f)))
-    {
-        applySettingsFromUi();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Back to Navigation", ImVec2(170.0f, 36.0f)))
-    {
-        mActiveTab = MenuTab::NAVIGATION;
-    }
-}
-
 void MenuState::drawSettingsTab() const noexcept
 {
     ImGui::TextUnformatted("Settings");
@@ -518,6 +460,7 @@ void MenuState::drawSettingsTab() const noexcept
     ImGui::SliderFloat("Master Volume", &mSettingsUi.masterVolume, 0.0f, 100.0f, "%.0f%%");
     ImGui::SliderFloat("Music Volume", &mSettingsUi.musicVolume, 0.0f, 100.0f, "%.0f%%");
     ImGui::SliderFloat("SFX Volume", &mSettingsUi.sfxVolume, 0.0f, 100.0f, "%.0f%%");
+    ImGui::SliderFloat("Render Quality", &mSettingsUi.renderQuality, 0.50f, 2.00f, "%.2fx");
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -529,56 +472,7 @@ void MenuState::drawSettingsTab() const noexcept
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::TextUnformatted("Gameplay");
-    ImGui::Checkbox("Enable Arcade Runner", &mSettingsUi.arcadeModeEnabled);
     ImGui::Checkbox("Show Debug Overlay", &mSettingsUi.showDebugOverlay);
-    ImGui::SliderFloat("Runner Speed", &mSettingsUi.runnerSpeed, 5.0f, 100.0f, "%.1f");
-    ImGui::SliderFloat("Strafe Limit", &mSettingsUi.runnerStrafeLimit, 5.0f, 100.0f, "%.1f");
-    ImGui::SliderInt("Starting Points", &mSettingsUi.runnerStartingPoints, 1, 500);
-    ImGui::SliderInt("Pickup Min Value", &mSettingsUi.runnerPickupMinValue, -100, 0);
-    ImGui::SliderInt("Pickup Max Value", &mSettingsUi.runnerPickupMaxValue, 1, 150);
-    ImGui::SliderFloat("Pickup Spacing", &mSettingsUi.runnerPickupSpacing, 4.0f, 50.0f, "%.1f");
-    ImGui::SliderInt("Obstacle Penalty", &mSettingsUi.runnerObstaclePenalty, 1, 200);
-    ImGui::SliderFloat("Collision Cooldown", &mSettingsUi.runnerCollisionCooldown, 0.05f, 2.0f, "%.2f s");
-
-    ImGui::Spacing();
-    ImGui::TextUnformatted("Motion Blur Score Brackets");
-    ImGui::SliderInt("Blur Bracket 1 Points", &mSettingsUi.motionBlurBracket1Points, 0, 3000);
-    ImGui::SliderInt("Blur Bracket 2 Points", &mSettingsUi.motionBlurBracket2Points, 0, 3000);
-    ImGui::SliderInt("Blur Bracket 3 Points", &mSettingsUi.motionBlurBracket3Points, 0, 3000);
-    ImGui::SliderInt("Blur Bracket 4 Points", &mSettingsUi.motionBlurBracket4Points, 0, 3000);
-    ImGui::SliderFloat("Blur Bracket 1 Boost", &mSettingsUi.motionBlurBracket1Boost, 0.0f, 1.0f, "%.2f");
-    ImGui::SliderFloat("Blur Bracket 2 Boost", &mSettingsUi.motionBlurBracket2Boost, 0.0f, 1.0f, "%.2f");
-    ImGui::SliderFloat("Blur Bracket 3 Boost", &mSettingsUi.motionBlurBracket3Boost, 0.0f, 1.0f, "%.2f");
-    ImGui::SliderFloat("Blur Bracket 4 Boost", &mSettingsUi.motionBlurBracket4Boost, 0.0f, 1.0f, "%.2f");
-
-    if (mSettingsUi.runnerPickupMinValue > mSettingsUi.runnerPickupMaxValue)
-    {
-        mSettingsUi.runnerPickupMinValue = mSettingsUi.runnerPickupMaxValue;
-    }
-    if (mSettingsUi.motionBlurBracket2Points < mSettingsUi.motionBlurBracket1Points)
-    {
-        mSettingsUi.motionBlurBracket2Points = mSettingsUi.motionBlurBracket1Points;
-    }
-    if (mSettingsUi.motionBlurBracket3Points < mSettingsUi.motionBlurBracket2Points)
-    {
-        mSettingsUi.motionBlurBracket3Points = mSettingsUi.motionBlurBracket2Points;
-    }
-    if (mSettingsUi.motionBlurBracket4Points < mSettingsUi.motionBlurBracket3Points)
-    {
-        mSettingsUi.motionBlurBracket4Points = mSettingsUi.motionBlurBracket3Points;
-    }
-    if (mSettingsUi.motionBlurBracket2Boost < mSettingsUi.motionBlurBracket1Boost)
-    {
-        mSettingsUi.motionBlurBracket2Boost = mSettingsUi.motionBlurBracket1Boost;
-    }
-    if (mSettingsUi.motionBlurBracket3Boost < mSettingsUi.motionBlurBracket2Boost)
-    {
-        mSettingsUi.motionBlurBracket3Boost = mSettingsUi.motionBlurBracket2Boost;
-    }
-    if (mSettingsUi.motionBlurBracket4Boost < mSettingsUi.motionBlurBracket3Boost)
-    {
-        mSettingsUi.motionBlurBracket4Boost = mSettingsUi.motionBlurBracket3Boost;
-    }
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -618,10 +512,42 @@ void MenuState::drawParticleControls() const noexcept
     ImGui::SliderFloat("Attractor Size", &mAttractorPointSize, 2.0f, 14.0f, "%.1f");
 }
 
+void MenuState::drawSettingsPreviewPanel() const noexcept
+{
+    ImGui::TextUnformatted("Settings Preview");
+    ImGui::Separator();
+
+    const float master = std::clamp(mSettingsUi.masterVolume / 100.0f, 0.0f, 1.0f);
+    const float music = std::clamp(mSettingsUi.musicVolume / 100.0f, 0.0f, 1.0f);
+    const float sfx = std::clamp(mSettingsUi.sfxVolume / 100.0f, 0.0f, 1.0f);
+    const float qualityNorm = std::clamp((mSettingsUi.renderQuality - 0.5f) / 1.5f, 0.0f, 1.0f);
+
+    ImGui::Text("Audio Mix");
+    ImGui::ProgressBar(master, ImVec2(-1.0f, 0.0f), "Master");
+    ImGui::ProgressBar(music, ImVec2(-1.0f, 0.0f), "Music");
+    ImGui::ProgressBar(sfx, ImVec2(-1.0f, 0.0f), "SFX");
+
+    ImGui::Spacing();
+    ImGui::Text("Render Quality");
+    ImGui::ProgressBar(qualityNorm, ImVec2(-1.0f, 0.0f), "Quality");
+    ImGui::Text("Current: %.2fx", mSettingsUi.renderQuality);
+
+    ImGui::Spacing();
+    ImGui::Text("Graphics Flags");
+    ImGui::BulletText("VSync: %s", mSettingsUi.vsync ? "ON" : "OFF");
+    ImGui::BulletText("Fullscreen: %s", mSettingsUi.fullscreen ? "ON" : "OFF");
+    ImGui::BulletText("Anti-Aliasing: %s", mSettingsUi.antialiasing ? "ON" : "OFF");
+
+    ImGui::Spacing();
+    ImGui::TextWrapped(
+        "This preview reflects the values in the Settings panel. Use Apply Settings to persist them to Options.");
+}
+
 void MenuState::resetSettingsToDefaults() const noexcept
 {
     mSettingsUi.masterVolume = 100.0f;
     mSettingsUi.musicVolume = 80.0f;
+    mSettingsUi.renderQuality = 1.0f;
     mSettingsUi.sfxVolume = 90.0f;
     mSettingsUi.vsync = true;
     mSettingsUi.fullscreen = false;
@@ -629,29 +555,6 @@ void MenuState::resetSettingsToDefaults() const noexcept
     mSettingsUi.enableMusic = true;
     mSettingsUi.enableSound = true;
     mSettingsUi.showDebugOverlay = false;
-    mSettingsUi.stencilOutlineEnabled = true;
-    mSettingsUi.stencilOutlineWidth = 0.05f;
-    mSettingsUi.stencilOutlinePulseEnabled = false;
-    mSettingsUi.stencilOutlinePulseSpeed = 2.4f;
-    mSettingsUi.stencilOutlinePulseAmount = 0.28f;
-    mSettingsUi.stencilOutlineColor = glm::vec3(0.38f, 0.94f, 1.0f);
-    mSettingsUi.arcadeModeEnabled = true;
-    mSettingsUi.runnerSpeed = 30.0f;
-    mSettingsUi.runnerStrafeLimit = 35.0f;
-    mSettingsUi.runnerStartingPoints = 100;
-    mSettingsUi.runnerPickupMinValue = -25;
-    mSettingsUi.runnerPickupMaxValue = 40;
-    mSettingsUi.runnerPickupSpacing = 18.0f;
-    mSettingsUi.runnerObstaclePenalty = 25;
-    mSettingsUi.runnerCollisionCooldown = 0.40f;
-    mSettingsUi.motionBlurBracket1Points = 300;
-    mSettingsUi.motionBlurBracket2Points = 500;
-    mSettingsUi.motionBlurBracket3Points = 800;
-    mSettingsUi.motionBlurBracket4Points = 1200;
-    mSettingsUi.motionBlurBracket1Boost = 0.10f;
-    mSettingsUi.motionBlurBracket2Boost = 0.18f;
-    mSettingsUi.motionBlurBracket3Boost = 0.28f;
-    mSettingsUi.motionBlurBracket4Boost = 0.38f;
 }
 
 void MenuState::applySettingsFromUi() const noexcept
@@ -662,37 +565,11 @@ void MenuState::applySettingsFromUi() const noexcept
         .withEnableSound(mSettingsUi.enableSound)
         .withFullscreen(mSettingsUi.fullscreen)
         .withShowDebugOverlay(mSettingsUi.showDebugOverlay)
-        .withStencilOutlineEnabled(mSettingsUi.stencilOutlineEnabled)
-        .withStencilOutlinePulseEnabled(mSettingsUi.stencilOutlinePulseEnabled)
-        .withStencilOutlineWidth(mSettingsUi.stencilOutlineWidth)
-        .withStencilOutlinePulse(
-            mSettingsUi.stencilOutlinePulseSpeed,
-            mSettingsUi.stencilOutlinePulseAmount)
-        .withStencilOutlineColor(
-            mSettingsUi.stencilOutlineColor.r,
-            mSettingsUi.stencilOutlineColor.g,
-            mSettingsUi.stencilOutlineColor.b)
         .withVsync(mSettingsUi.vsync)
         .withMasterVolume(mSettingsUi.masterVolume)
         .withMusicVolume(mSettingsUi.musicVolume)
-        .withSfxVolume(mSettingsUi.sfxVolume)
-        .withArcadeModeEnabled(mSettingsUi.arcadeModeEnabled)
-        .withRunnerSpeed(mSettingsUi.runnerSpeed)
-        .withRunnerStrafeLimit(mSettingsUi.runnerStrafeLimit)
-        .withRunnerStartingPoints(mSettingsUi.runnerStartingPoints)
-        .withRunnerPickupMinValue(mSettingsUi.runnerPickupMinValue)
-        .withRunnerPickupMaxValue(mSettingsUi.runnerPickupMaxValue)
-        .withRunnerPickupSpacing(mSettingsUi.runnerPickupSpacing)
-        .withRunnerObstaclePenalty(mSettingsUi.runnerObstaclePenalty)
-        .withRunnerCollisionCooldown(mSettingsUi.runnerCollisionCooldown)
-        .withMotionBlurBracket1Points(mSettingsUi.motionBlurBracket1Points)
-        .withMotionBlurBracket2Points(mSettingsUi.motionBlurBracket2Points)
-        .withMotionBlurBracket3Points(mSettingsUi.motionBlurBracket3Points)
-        .withMotionBlurBracket4Points(mSettingsUi.motionBlurBracket4Points)
-        .withMotionBlurBracket1Boost(mSettingsUi.motionBlurBracket1Boost)
-        .withMotionBlurBracket2Boost(mSettingsUi.motionBlurBracket2Boost)
-        .withMotionBlurBracket3Boost(mSettingsUi.motionBlurBracket3Boost)
-        .withMotionBlurBracket4Boost(mSettingsUi.motionBlurBracket4Boost);
+        .withRenderQuality(mSettingsUi.renderQuality)
+        .withSfxVolume(mSettingsUi.sfxVolume);
 
     applySettings(options);
 }
@@ -754,40 +631,14 @@ void MenuState::applySettings(const Options &options) const noexcept
             auto &opts = optionsManager->get(GUIOptions::ID::DE_FACTO);
             opts.withMasterVolume(options.getMasterVolume())
                 .withMusicVolume(options.getMusicVolume())
+                .withRenderQuality(options.getRenderQuality())
                 .withSfxVolume(options.getSfxVolume())
                 .withVsync(options.getVsync())
                 .withFullscreen(options.getFullscreen())
                 .withAntiAliasing(options.getAntiAliasing())
                 .withEnableMusic(options.getEnableMusic())
                 .withEnableSound(options.getEnableSound())
-                .withShowDebugOverlay(options.getShowDebugOverlay())
-                .withStencilOutlineEnabled(options.getStencilOutlineEnabled())
-                .withStencilOutlinePulseEnabled(options.getStencilOutlinePulseEnabled())
-                .withStencilOutlineWidth(options.getStencilOutlineWidth())
-                .withStencilOutlinePulse(
-                    options.getStencilOutlinePulseSpeed(),
-                    options.getStencilOutlinePulseAmount())
-                .withStencilOutlineColor(
-                    options.getStencilOutlineColorR(),
-                    options.getStencilOutlineColorG(),
-                    options.getStencilOutlineColorB())
-                .withArcadeModeEnabled(options.getArcadeModeEnabled())
-                .withRunnerSpeed(options.getRunnerSpeed())
-                .withRunnerStrafeLimit(options.getRunnerStrafeLimit())
-                .withRunnerStartingPoints(options.getRunnerStartingPoints())
-                .withRunnerPickupMinValue(options.getRunnerPickupMinValue())
-                .withRunnerPickupMaxValue(options.getRunnerPickupMaxValue())
-                .withRunnerPickupSpacing(options.getRunnerPickupSpacing())
-                .withRunnerObstaclePenalty(options.getRunnerObstaclePenalty())
-                .withRunnerCollisionCooldown(options.getRunnerCollisionCooldown())
-                .withMotionBlurBracket1Points(options.getMotionBlurBracket1Points())
-                .withMotionBlurBracket2Points(options.getMotionBlurBracket2Points())
-                .withMotionBlurBracket3Points(options.getMotionBlurBracket3Points())
-                .withMotionBlurBracket4Points(options.getMotionBlurBracket4Points())
-                .withMotionBlurBracket1Boost(options.getMotionBlurBracket1Boost())
-                .withMotionBlurBracket2Boost(options.getMotionBlurBracket2Boost())
-                .withMotionBlurBracket3Boost(options.getMotionBlurBracket3Boost())
-                .withMotionBlurBracket4Boost(options.getMotionBlurBracket4Boost());
+                .withShowDebugOverlay(options.getShowDebugOverlay());
         }
         catch (const std::exception &)
         {
