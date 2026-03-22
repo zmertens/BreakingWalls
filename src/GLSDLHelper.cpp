@@ -1,6 +1,7 @@
 #include "GLSDLHelper.hpp"
 
 #include "Animation.hpp"
+#include "buildinfo.h"
 #include "Shader.hpp"
 
 #include <SDL3/SDL.h>
@@ -52,7 +53,7 @@ namespace
                 if (closedHandles > 16)
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
-                                "SDLHelper::destroyAndQuit() - Stopping repeated closes for joystick ID %d after %d handles",
+                                "Stopping repeated closes for joystick ID %d after %d handles",
                                 static_cast<int>(joystickID), closedHandles);
                     break;
                 }
@@ -62,7 +63,7 @@ namespace
 
             if (closedHandles > 0)
             {
-                SDL_Log("SDLHelper::destroyAndQuit() - Closed %d open joystick handle(s) for instance ID %d",
+                SDL_Log("Closed %d open joystick handle(s) for instance ID %d",
                         closedHandles, static_cast<int>(joystickID));
             }
         }
@@ -97,7 +98,7 @@ namespace
                 if (closedHandles > 16)
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
-                                "SDLHelper::destroyAndQuit() - Stopping repeated closes for gamepad ID %d after %d handles",
+                                "Stopping repeated closes for gamepad ID %d after %d handles",
                                 static_cast<int>(gamepadID), closedHandles);
                     break;
                 }
@@ -107,7 +108,7 @@ namespace
 
             if (closedHandles > 0)
             {
-                SDL_Log("SDLHelper::destroyAndQuit() - Closed %d open gamepad handle(s) for instance ID %d",
+                SDL_Log("Closed %d open gamepad handle(s) for instance ID %d",
                         closedHandles, static_cast<int>(gamepadID));
             }
         }
@@ -235,7 +236,7 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 
     auto initFunc = [this, title, width, height]()
     {
-        if (!SDL_SetAppMetadata("Breaking Walls with physics", title.data(),
+        if (!SDL_SetAppMetadata("Breaking Walls", bw::buildinfo::Version.data(),
                                 "c++;cozy;game;simulation;physics"))
         {
             return;
@@ -246,8 +247,8 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, title.data());
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Flips And Ale");
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "MIT License");
-        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "csv");
-        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, title.data());
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "game");
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, bw::buildinfo::Version.data());
 
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
@@ -267,21 +268,21 @@ void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
             return;
         }
 
-        this->mGLContext = SDL_GL_CreateContext(this->mWindow);
+        this->mGLContext = SDL_GL_CreateContext(mWindow.value());
         if (!this->mGLContext)
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
-            SDL_DestroyWindow(this->mWindow);
+            SDL_DestroyWindow(mWindow.value());
             return;
         }
 
-        SDL_GL_MakeCurrent(this->mWindow, this->mGLContext);
+        SDL_GL_MakeCurrent(mWindow.value(), mGLContext.value());
 
         if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to initialize GLAD\n");
-            SDL_GL_DestroyContext(this->mGLContext);
-            SDL_DestroyWindow(this->mWindow);
+            SDL_GL_DestroyContext(mGLContext.value());
+            SDL_DestroyWindow(mWindow.value());
             return;
         }
 
@@ -358,30 +359,30 @@ void GLSDLHelper::destroyAndQuit() noexcept
     // Cleanup billboard rendering resources
     cleanupBillboardRendering();
 
-    if (!this->mWindow && !this->mGLContext)
+    if (!this->getWindow() && !this->getGLContext())
     {
-        SDL_Log("SDLHelper::destroyAndQuit() - Already destroyed, skipping\n");
+        SDL_Log("Already destroyed, skipping\n");
         return;
     }
 
     if (mGLContext)
     {
-        SDL_Log("SDLHelper::destroyAndQuit() - Destroying OpenGL context\n");
-        SDL_GL_DestroyContext(mGLContext);
-        mGLContext = nullptr;
+        SDL_Log("Destroying OpenGL context\n");
+        SDL_GL_DestroyContext(mGLContext.value());
+        mGLContext = std::nullopt;
     }
 
     if (mWindow)
     {
-        SDL_Log("SDLHelper::destroyAndQuit() - Destroying window with pointer value: %p\n", static_cast<void *>(mWindow));
-        SDL_DestroyWindow(mWindow);
-        mWindow = nullptr;
+        SDL_Log("Destroying window with pointer value: %p\n", static_cast<void *>(mWindow.value()));
+        SDL_DestroyWindow(mWindow.value());
+        mWindow = std::nullopt;
     }
 
     if (SDL_WasInit(0) != 0)
     {
-        SDL_Log("SDLHelper::destroyAndQuit() - Shutdown diagnostics begin");
-        SDL_Log("SDLHelper::destroyAndQuit() - SDL_WasInit(VIDEO)=%d AUDIO=%d JOYSTICK=%d GAMEPAD=%d HAPTIC=%d EVENTS=%d",
+        SDL_Log("Shutdown diagnostics begin");
+        SDL_Log("SDL_WasInit(VIDEO)=%d AUDIO=%d JOYSTICK=%d GAMEPAD=%d HAPTIC=%d EVENTS=%d",
                 SDL_WasInit(SDL_INIT_VIDEO) != 0,
                 SDL_WasInit(SDL_INIT_AUDIO) != 0,
                 SDL_WasInit(SDL_INIT_JOYSTICK) != 0,
@@ -391,25 +392,25 @@ void GLSDLHelper::destroyAndQuit() noexcept
 
         if (SDL_Cursor *cursor = SDL_GetCursor(); cursor != nullptr)
         {
-            SDL_Log("SDLHelper::destroyAndQuit() - Current SDL cursor handle before quit: %p", static_cast<void *>(cursor));
+            SDL_Log("Current SDL cursor handle before quit: %p", static_cast<void *>(cursor));
         }
         else
         {
-            SDL_Log("SDLHelper::destroyAndQuit() - No custom SDL cursor set before quit");
+            SDL_Log("No custom SDL cursor set before quit");
         }
 
         if (SDL_Cursor *cursor = SDL_GetCursor(); cursor != nullptr)
         {
             SDL_SetCursor(nullptr);
             SDL_DestroyCursor(cursor);
-            SDL_Log("SDLHelper::destroyAndQuit() - Destroyed active SDL cursor handle before quit");
+            SDL_Log("Destroyed active SDL cursor handle before quit");
         }
 
         closeAllOpenJoysticks();
         closeAllOpenGamepads();
         SDL_QuitSubSystem(SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK);
 
-        SDL_Log("SDLHelper::destroyAndQuit() - Calling SDL_Quit()\n");
+        SDL_Log("Calling SDL_Quit()\n");
         SDL_Quit();
     }
 }
@@ -442,7 +443,7 @@ void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) no
     if (bufferSize <= 0)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
-                    "GLSDLHelper::allocateSSBOBuffer called with non-positive size: %lld",
+                    "allocateSSBOBuffer called with non-positive size: %lld",
                     static_cast<long long>(bufferSize));
         return;
     }
@@ -452,7 +453,7 @@ void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) no
     if (boundBuffer == 0)
     {
         SDL_LogError(SDL_LOG_CATEGORY_RENDER,
-                     "GLSDLHelper::allocateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound");
+                     "allocateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound");
         return;
     }
 
@@ -461,7 +462,7 @@ void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) no
     if (maxBlockSize > 0 && static_cast<GLint64>(bufferSize) > maxBlockSize)
     {
         SDL_LogError(SDL_LOG_CATEGORY_RENDER,
-                     "GLSDLHelper::allocateSSBOBuffer size %lld exceeds GL_MAX_SHADER_STORAGE_BLOCK_SIZE %lld",
+                     "allocateSSBOBuffer size %lld exceeds GL_MAX_SHADER_STORAGE_BLOCK_SIZE %lld",
                      static_cast<long long>(bufferSize),
                      static_cast<long long>(maxBlockSize));
         return;
@@ -473,7 +474,7 @@ void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) no
     if (err != GL_NO_ERROR)
     {
         SDL_LogError(SDL_LOG_CATEGORY_RENDER,
-                     "GLSDLHelper::allocateSSBOBuffer glBufferData failed (buffer=%d size=%lld err=0x%x)",
+                     "allocateSSBOBuffer glBufferData failed (buffer=%d size=%lld err=0x%x)",
                      boundBuffer,
                      static_cast<long long>(bufferSize),
                      static_cast<unsigned int>(err));
@@ -485,7 +486,7 @@ void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void 
     if (size <= 0)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
-                    "GLSDLHelper::updateSSBOBuffer called with non-positive size: %lld",
+                    "updateSSBOBuffer called with non-positive size: %lld",
                     static_cast<long long>(size));
         return;
     }
@@ -495,7 +496,7 @@ void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void 
     if (boundBuffer == 0)
     {
         SDL_LogError(SDL_LOG_CATEGORY_RENDER,
-                     "GLSDLHelper::updateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound");
+                     "updateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound");
         return;
     }
 
@@ -505,7 +506,7 @@ void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void 
     if (err != GL_NO_ERROR)
     {
         SDL_LogError(SDL_LOG_CATEGORY_RENDER,
-                     "GLSDLHelper::updateSSBOBuffer glBufferSubData failed (buffer=%d offset=%lld size=%lld err=0x%x)",
+                     "updateSSBOBuffer glBufferSubData failed (buffer=%d offset=%lld size=%lld err=0x%x)",
                      boundBuffer,
                      static_cast<long long>(offset),
                      static_cast<long long>(size),
@@ -543,7 +544,6 @@ void GLSDLHelper::deleteTexture(GLuint &texture) noexcept
 // ============================================================================
 // Billboard sprite rendering (geometry shader point sprites)
 // ============================================================================
-
 void GLSDLHelper::initializeBillboardRendering() noexcept
 {
     if (sBillboardInitialized)

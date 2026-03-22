@@ -2,6 +2,7 @@
 #define GLSDL_HELPER_HPP
 
 #include <mutex>
+#include <optional>
 #include <string_view>
 
 #include <glad/glad.h>
@@ -16,12 +17,12 @@ class Shader;
 class GLSDLHelper
 {
 public:
-    SDL_GLContext mGLContext{};
-    SDL_Window *mWindow{nullptr};
-
     void init(std::string_view title, int width, int height) noexcept;
 
     void destroyAndQuit() noexcept;
+
+    [[nodiscard]] SDL_Window *getWindow() const noexcept { return mWindow.value_or(nullptr); }
+    [[nodiscard]] SDL_GLContext getGLContext() const noexcept { return mGLContext.value_or(nullptr); }
 
     // Static helper functions for common OpenGL operations
 
@@ -118,6 +119,9 @@ public:
 
 private:
     std::once_flag mInitializedFlag;
+
+    std::optional<SDL_GLContext> mGLContext;
+    std::optional<SDL_Window *> mWindow;
 
     // Billboard sprite rendering resources
     static GLuint sBillboardVAO;

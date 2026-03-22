@@ -10,7 +10,6 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>
-#include <memory>
 #include <random>
 #include <string>
 #include <vector>
@@ -38,18 +37,14 @@ public:
     bool handleEvent(const SDL_Event &event) noexcept override;
 
     /// Get reference to World (for multiplayer remote player rendering)
-    World &getWorld() noexcept { return mWorld; }
-    const World &getWorld() const noexcept { return mWorld; }
-
-    /// Get reference to Camera (for multiplayer rendering)
-    Camera &getCamera() noexcept { return mCamera; }
-    const Camera &getCamera() const noexcept { return mCamera; }
+    World &getWorld() noexcept;
+    const World &getWorld() const noexcept;
 
     /// Get current window dimensions (display output size)
-    glm::ivec2 getWindowDimensions() const noexcept { return {mWindowWidth, mWindowHeight}; }
+    glm::ivec2 getWindowDimensions() const noexcept;
 
     /// Get internal path tracer render dimensions (compute workload size)
-    glm::ivec2 getRenderDimensions() const noexcept { return {mRenderWidth, mRenderHeight}; }
+    glm::ivec2 getRenderDimensions() const noexcept;
 
     /// Get render scale relative to window size
     float getRenderScale() const noexcept;
@@ -61,57 +56,23 @@ private:
     /// Check and handle window resize events
     void handleWindowResize() noexcept;
 
-    /// Create or resize composite render targets for billboard blending
-    void createCompositeTargets() noexcept;
-
-    /// Initialize shadow rendering resources (FBO, textures, shaders)
-    void initializeShadowResources() noexcept;
-
-    /// Render character shadow to shadow map with soft-shadow blur
-    void renderCharacterShadow() const noexcept;
-
-    /// Initialize player reflection rendering resources
-    void initializeReflectionResources() noexcept;
-
-    /// Render reflected player character on ground plane
-    void renderPlayerReflection() const noexcept;
-
-
-    /// Initialize standalone raster shaders/buffers for pure maze rendering.
-    void initializeRasterMazeResources() noexcept;
-
-    /// Build static 3D maze mesh (with per-vertex colors) from MazeBuilder data.
-    void buildRasterMazeGeometry() noexcept;
-
     /// Recompute min/max bird's-eye zoom distance from maze bounds and window size.
     void updateRasterBirdsEyeZoomLimits() noexcept;
 
     /// Apply locked bird's-eye camera transform from current zoom distance.
     void applyRasterBirdsEyeCamera() noexcept;
 
-    /// Render sky + maze using the pure raster pipeline.
-    void renderRasterMaze() const noexcept;
-
-    /// Render player character billboard on the raster maze
-    void renderPlayerCharacter() const noexcept;
+    /// Render gradient highlight on the tile currently under the player.
+    void renderPlayerTileGradientHighlight() const noexcept;
 
     /// Render scoring billboards (pickup values) using ImGui
     void renderScoreBillboards() const noexcept;
-
-    /// Render pickup spheres as colored orbs in the maze
-    void renderPickupSpheres() const noexcept;
 
     /// Apply motion blur effect using the compute pipeline
     void renderMotionBlur() const noexcept;
 
     /// Initialize motion blur compute resources
     void initializeMotionBlur() noexcept;
-
-    /// Ensure movement particle resources are initialized
-    void initializeWalkParticles() noexcept;
-
-    /// Render compute-driven particles around the player while walking
-    void renderWalkParticles() const noexcept;
 
     /// Check if camera moved and reset accumulation if needed
     bool checkCameraMovement() const noexcept;
@@ -144,55 +105,31 @@ private:
     /// Trigger a short haptic rumble pulse (used for input testing).
     void triggerHapticTest(float strength, float seconds) noexcept;
 
-    World mWorld;    // Manages both 2D physics and 3D sphere scene
-    Player &mPlayer; // Restored for camera input handling
+    World mWorld;
+    Player &mPlayer;
 
     // Music player reference for game music
     MusicPlayer *mGameMusic{nullptr};
     SoundPlayer *mSoundPlayer{nullptr};
 
-    // Path tracer camera (for 3D scene navigation)
-    // Supports both first-person and third-person modes
     Camera mCamera;
 
-    // Shader references from context
+    // Shader references from context (post-process / UI only)
     Shader *mDisplayShader{nullptr};
     Shader *mCompositeShader{nullptr};
+    Shader *mHighlightTileShader{nullptr};
     Shader *mOITResolveShader{nullptr};
-    Shader *mWalkParticlesComputeShader{nullptr};
-    Shader *mWalkParticlesRenderShader{nullptr};
-    Shader *mShadowShader{nullptr};  // Shadow volume + stencil rendering
+    Shader *mMotionBlurShader{nullptr};
 
     Texture *mDisplayTex{nullptr};
     Texture *mNoiseTexture{nullptr};
     Texture *mTestAlbedoTexture{nullptr};
+    Texture *mMotionBlurTex{nullptr};
+    Texture *mPrevFrameTex{nullptr};
 
-    // GPU resources
-    GLuint mVAO{0}; // Vertex Array Object for fullscreen quad
-    GLuint mBillboardFBO{0};
-    Texture *mBillboardColorTex{nullptr};
-    GLuint mBillboardDepthRbo{0};
-    GLuint mOITFBO{0};
-    Texture *mOITAccumTex{nullptr};
-    Texture *mOITRevealTex{nullptr};
-    GLuint mOITDepthRbo{0};
-    GLuint mWalkParticlesVAO{0};
-    GLuint mWalkParticlesPosSSBO{0};
-    GLuint mWalkParticlesVelSSBO{0};
-
-    // Shadow rendering resources
-    GLuint mShadowFBO{0};             // Shadow render target
-    Texture *mShadowTexture{nullptr}; // Shadow map texture
-    GLuint mShadowVAO{0};             // Shadow quad VAO
-    GLuint mShadowVBO{0};             // Shadow quad VBO
-    bool mShadowsInitialized{false};
-
-    // Reflection rendering resources
-    GLuint mReflectionFBO{0};              // Reflection render target
-    Texture *mReflectionColorTex{nullptr}; // Reflection color texture
-    GLuint mReflectionDepthRbo{0};         // Reflection depth buffer
-    bool mReflectionsInitialized{false};
-    bool mOITInitialized{false};
+    // VAO/FBO managers needed for post-process (motion blur)
+    VAOManager *mVAOManager{nullptr};
+    FBOManager *mFBOManager{nullptr};
 
     // Progressive rendering state
     mutable uint32_t mCurrentBatch{0};
@@ -217,12 +154,9 @@ private:
     static constexpr float kMinRenderScale = 0.60f;
 
     mutable float mModelAnimTimeSeconds{0.0f};
-    mutable float mWalkParticlesTime{0.0f};
-    mutable bool mWalkParticlesInitialized{false};
     mutable bool mHasLastFxPosition{false};
     mutable glm::vec3 mLastFxPlayerPosition{0.0f};
     mutable float mPlayerPlanarSpeedForFx{0.0f};
-    mutable GLuint mWalkParticleCount{1600};
 
     SDL_Joystick *mJoystick{nullptr};
     bool mJoystickRumbleSupported{false};
@@ -237,35 +171,11 @@ private:
 
     bool mGameIsPaused{true};
 
-    std::unique_ptr<Shader> mRasterMazeShader;
-    std::unique_ptr<Shader> mRasterSkyShader;
-    std::unique_ptr<Shader> mSkinnedCharacterShader;
-    GLuint mRasterMazeVAO{0};
-    GLuint mRasterMazeVBO{0};
-    GLsizei mRasterMazeVertexCount{0};
-    glm::vec3 mRasterMazeCenter{0.0f};
-    float mRasterMazeWidth{1.0f};
-    float mRasterMazeDepth{1.0f};
-    float mRasterMazeTopY{1.0f};
     float mRasterBirdsEyeDistance{10.0f};
     float mRasterBirdsEyeMinDistance{4.0f};
     float mRasterBirdsEyeMaxDistance{20.0f};
 
-    // XZ axis-aligned bounding boxes of every maze wall, packed as (minX, minZ, maxX, maxZ).
-    // Built once by buildRasterMazeGeometry() and used for player collision each frame.
-    std::vector<glm::vec4> mMazeWallAABBs;
-
-    // Pickup sphere rendering (cached GPU buffers)
-    GLuint mPickupVAO{0};
-    GLuint mPickupVBO{0};
-    GLsizei mPickupVertexCount{0};
-    mutable bool mPickupsDirty{true};
-
     // Motion blur resources
-    GLuint mMotionBlurFBO{0};
-    GLuint mMotionBlurTex{0};
-    GLuint mPrevFrameTex{0};
-    std::unique_ptr<Shader> mMotionBlurShader;
     bool mMotionBlurInitialized{false};
 
     // Score display

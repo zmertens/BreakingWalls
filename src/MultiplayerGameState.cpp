@@ -105,31 +105,6 @@ void MultiplayerGameState::draw() const noexcept
             {
                 renderPlayers(mRemotePlayers);
             }
-
-            if (mOfflineAIMode)
-            {
-                for (const auto &[name, sim] : mOfflineBots)
-                {
-                    if (!sim.active)
-                    {
-                        continue;
-                    }
-
-                    const auto &state = sim.renderState;
-                    if (!state.initialized)
-                    {
-                        continue;
-                    }
-
-                    auto &world = mLocalGame->getWorld();
-                    const auto &camera = mLocalGame->getCamera();
-                    world.renderCharacterFromState(
-                        state.position,
-                        state.facing,
-                        state.animator.getCurrentFrame(),
-                        camera);
-                }
-            }
         }
     }
 
@@ -333,22 +308,6 @@ void MultiplayerGameState::renderPlayers(const std::unordered_map<std::string, R
     }
 
     auto &world = mLocalGame->getWorld();
-    const auto &camera = mLocalGame->getCamera();
-
-    for (const auto &[playerName, remoteState] : players)
-    {
-        if (!remoteState.initialized)
-        {
-            continue;
-        }
-
-        AnimationRect frame = remoteState.animator.getCurrentFrame();
-        world.renderCharacterFromState(
-            remoteState.position,
-            remoteState.facing,
-            frame,
-            camera);
-    }
 }
 
 bool MultiplayerGameState::handleEvent(const SDL_Event &event) noexcept

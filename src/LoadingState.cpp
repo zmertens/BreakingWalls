@@ -46,7 +46,7 @@ extern "C"
 // Resource Keys
 namespace JSONKeys
 {
-    constexpr std::string_view CHARACTER_IMAGE = "character_default_image";
+    constexpr std::string_view CURSOR_ICON = "cursor_icon";
     constexpr std::string_view CHARACTERS_SPRITE_SHEET = "characters_spritesheet";
     constexpr std::string_view BALL_NORMAL = "ball_normal";
     constexpr std::string_view ENEMY_HITPOINTS_DEFAULT = "enemy_hitpoints_default";
@@ -67,6 +67,14 @@ namespace JSONKeys
     constexpr std::string_view SHADER_BILLBOARD_GEOMETRY = "shader_billboard_geom_glsl";
     constexpr std::string_view SHADER_COMPOSITE_VERTEX = "shader_composite_vert_glsl";
     constexpr std::string_view SHADER_COMPOSITE_FRAGMENT = "shader_composite_frag_glsl";
+    constexpr std::string_view SHADER_HIGHLIGHT_TILE_VERTEX = "shader_highlight_tile_vert_glsl";
+    constexpr std::string_view SHADER_HIGHLIGHT_TILE_FRAGMENT = "shader_highlight_tile_frag_glsl";
+    constexpr std::string_view SHADER_GOAL_PATH_VERTEX = "shader_goal_path_vert_glsl";
+    constexpr std::string_view SHADER_GOAL_PATH_FRAGMENT = "shader_goal_path_frag_glsl";
+    constexpr std::string_view SHADER_MAZE_VERTEX = "shader_maze_vert_glsl";
+    constexpr std::string_view SHADER_MAZE_FRAGMENT = "shader_maze_frag_glsl";
+    constexpr std::string_view SHADER_MOTION_BLUR_VERTEX = "shader_motion_blur_vert_glsl";
+    constexpr std::string_view SHADER_MOTION_BLUR_FRAGMENT = "shader_motion_blur_frag_glsl";
     constexpr std::string_view SHADER_PARTICLES_COMPUTE = "shader_particles_cs_glsl";
     constexpr std::string_view SHADER_PARTICLES_VERTEX = "shader_particles_vert_glsl";
     constexpr std::string_view SHADER_PARTICLES_FRAGMENT = "shader_particles_frag_glsl";
@@ -76,6 +84,10 @@ namespace JSONKeys
     constexpr std::string_view SHADER_SHADOW_VERTEX = "shader_shadow_vert_glsl";
     constexpr std::string_view SHADER_SHADOW_GEOMETRY = "shader_shadow_geom_glsl";
     constexpr std::string_view SHADER_SHADOW_FRAGMENT = "shader_shadow_frag_glsl";
+    constexpr std::string_view SHADER_SKINNED_VERTEX = "shader_skinned_vert_glsl";
+    constexpr std::string_view SHADER_SKINNED_FRAGMENT = "shader_skinned_frag_glsl";
+    constexpr std::string_view SHADER_SKY_VERTEX = "shader_sky_vert_glsl";
+    constexpr std::string_view SHADER_SKY_FRAGMENT = "shader_sky_frag_glsl";
     constexpr std::string_view STYLIZED_CHARACTER_GLTF2_MODEL = "stylized_character_gltf2";
     constexpr std::string_view SOUND_GENERATE = "generate_ogg";
     constexpr std::string_view SOUND_SELECT = "select_ogg";
@@ -139,7 +151,6 @@ public:
 
     explicit ResourceLoader()
         : mShouldExit(false), mPendingWorkCount(0), mTotalWorkItems(0), mConfigMappings({{JSONKeys::BALL_NORMAL, Textures::ID::BALL_NORMAL},
-                                                                                         {JSONKeys::CHARACTER_IMAGE, Textures::ID::CHARACTER},
                                                                                          {JSONKeys::FAA_LOGO, Textures::ID::FAA_LOGO},
                                                                                          {JSONKeys::LEVEL_DEFAULTS, Textures::ID::LEVEL_TWO},
                                                                                          {JSONKeys::CHARACTERS_SPRITE_SHEET, Textures::ID::CHARACTER_SPRITE_SHEET},
@@ -632,6 +643,9 @@ void LoadingState::loadResources() noexcept
         loadFonts();
         loadLevels();
         loadShaders();
+        loadVAOs();
+        loadFBOs();
+        loadVBOs();
         loadNetworkConfig();
     }
 }
@@ -817,7 +831,6 @@ void LoadingState::loadShaders() noexcept
         displayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SCREEN_FRAGMENT));
         displayShader->linkProgram();
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_FULLSCREEN_QUAD", displayShader->getProgramHandle());
-
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Display shader compiled and linked");
 
         // Insert display shader into manager (using vertex ID as the combined shader program ID)
@@ -861,9 +874,7 @@ void LoadingState::loadShaders() noexcept
         particlesComputeShader->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PARTICLES_COMPUTE));
         particlesComputeShader->linkProgram();
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PARTICLES_COMPUTE", particlesComputeShader->getProgramHandle());
-
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Compute shaders compiled and linked");
-
         shaders.insert(Shaders::ID::GLSL_PARTICLES_COMPUTE, std::move(particlesComputeShader));
 
         // Load billboard shader for character sprites (vertex + geometry + fragment)
@@ -873,16 +884,152 @@ void LoadingState::loadShaders() noexcept
         billboardShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_BILLBOARD_FRAGMENT));
         billboardShader->linkProgram();
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_BILLBOARD_SPRITE", billboardShader->getProgramHandle());
-
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Billboard shader compiled and linked");
-        // Insert billboard shader into manager
         shaders.insert(Shaders::ID::GLSL_BILLBOARD_SPRITE, std::move(billboardShader));
+
+        auto skinnedShader = std::make_unique<Shader>();
+        skinnedShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SKINNED_VERTEX));
+        skinnedShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SKINNED_FRAGMENT));
+        skinnedShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_SKINNED_MODEL", skinnedShader->getProgramHandle());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Skinned shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_SKINNED_MODEL, std::move(skinnedShader));
+
+        auto goalPathShader = std::make_unique<Shader>();
+        goalPathShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_GOAL_PATH_VERTEX));
+        goalPathShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_GOAL_PATH_FRAGMENT));
+        goalPathShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_GOAL_PATH_STENCIL", goalPathShader->getProgramHandle());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Goal path shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_GOAL_PATH_STENCIL, std::move(goalPathShader));
+
+        auto highlightTileShader = std::make_unique<Shader>();
+        highlightTileShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_HIGHLIGHT_TILE_VERTEX));
+        highlightTileShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_HIGHLIGHT_TILE_FRAGMENT));
+        highlightTileShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_HIGHLIGHT_TILE", highlightTileShader->getProgramHandle());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Highlight tile shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_HIGHLIGHT_TILE, std::move(highlightTileShader));
+
+        auto mazeShader = std::make_unique<Shader>();
+        mazeShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MAZE_VERTEX));
+        mazeShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_MAZE_FRAGMENT));
+        mazeShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_MAZE", mazeShader->getProgramHandle());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Maze shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_MAZE, std::move(mazeShader));
+
+        auto motionBlurShader = std::make_unique<Shader>();
+        motionBlurShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MOTION_BLUR_VERTEX));
+        motionBlurShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_MOTION_BLUR_FRAGMENT));
+        motionBlurShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_MOTION_BLUR", motionBlurShader->getProgramHandle());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Motion blur shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_MOTION_BLUR, std::move(motionBlurShader));
+
+        auto skyShader = std::make_unique<Shader>();
+        skyShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SKY_VERTEX));
+        skyShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SKY_FRAGMENT));
+        skyShader->linkProgram();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_SKY", skyShader->getProgramHandle());
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Sky shader compiled and linked");
+        shaders.insert(Shaders::ID::GLSL_SKY, std::move(skyShader));
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: All shaders loaded successfully");
     }
     catch (const std::exception &e)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Shader initialization failed: %s", e.what());
+    }
+}
+
+void LoadingState::loadVAOs() noexcept
+{
+    auto *vaoManager = getContext().getVAOManager();
+    if (!vaoManager)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: VAOManager not available in context");
+        return;
+    }
+
+    try
+    {
+        // The filename argument is unused by VertexArrayObject::loadFromFile;
+        // it simply calls glGenVertexArrays to allocate the VAO name.
+        vaoManager->load(VAOs::ID::FULLSCREEN_QUAD, "fullscreen_quad");
+        vaoManager->load(VAOs::ID::SHADOW_QUAD, "shadow_quad");
+        vaoManager->load(VAOs::ID::WALK_PARTICLES, "walk_particles");
+        vaoManager->load(VAOs::ID::RASTER_MAZE, "raster_maze");
+        vaoManager->load(VAOs::ID::GOAL_PATH, "goal_path");
+        vaoManager->load(VAOs::ID::PLAYER_TILE_HIGHLIGHT, "player_tile_highlight");
+        vaoManager->load(VAOs::ID::PICKUP_SPHERES, "pickup_spheres");
+
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loaded %d VAOs",
+                    static_cast<int>(VAOs::ID::TOTAL_IDS));
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: VAO loading failed: %s", e.what());
+    }
+}
+
+void LoadingState::loadFBOs() noexcept
+{
+    auto *fboManager = getContext().getFBOManager();
+    if (!fboManager)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: FBOManager not available in context");
+        return;
+    }
+
+    try
+    {
+        fboManager->load(FBOs::ID::BILLBOARD, "billboard");
+        fboManager->get(FBOs::ID::BILLBOARD).createRenderbuffer();
+
+        fboManager->load(FBOs::ID::OIT, "oit");
+        fboManager->get(FBOs::ID::OIT).createRenderbuffer();
+
+        fboManager->load(FBOs::ID::SHADOW, "shadow");
+
+        fboManager->load(FBOs::ID::REFLECTION, "reflection");
+        fboManager->get(FBOs::ID::REFLECTION).createRenderbuffer();
+
+        fboManager->load(FBOs::ID::MOTION_BLUR, "motion_blur");
+
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loaded %d FBOs",
+                    static_cast<int>(FBOs::ID::TOTAL_IDS));
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: FBO loading failed: %s", e.what());
+    }
+}
+
+void LoadingState::loadVBOs() noexcept
+{
+    auto *vboManager = getContext().getVBOManager();
+    if (!vboManager)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: VBOManager not available in context");
+        return;
+    }
+
+    try
+    {
+        vboManager->load(VBOs::ID::SHADOW, "shadow");
+        vboManager->load(VBOs::ID::WALK_PARTICLES_POS_SSBO, "walk_particles_pos");
+        vboManager->load(VBOs::ID::WALK_PARTICLES_VEL_SSBO, "walk_particles_vel");
+        vboManager->load(VBOs::ID::RASTER_MAZE, "raster_maze");
+        vboManager->load(VBOs::ID::GOAL_PATH, "goal_path");
+        vboManager->load(VBOs::ID::PICKUP, "pickup");
+
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loaded %d VBOs",
+                    static_cast<int>(VBOs::ID::TOTAL_IDS));
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: VBO loading failed: %s", e.what());
     }
 }
 
@@ -988,7 +1135,7 @@ void LoadingState::loadCursor(const std::unordered_map<std::string, std::string>
     auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
 
     const string cursorImagePath = JSONUtils::getResourcePath(
-        std::string(JSONKeys::CHARACTER_IMAGE), resources, resourcePathPrefix);
+        std::string(JSONKeys::CURSOR_ICON), resources, resourcePathPrefix);
 
     if (cursorImagePath.empty())
     {
@@ -996,7 +1143,7 @@ void LoadingState::loadCursor(const std::unordered_map<std::string, std::string>
         return;
     }
 
-    SDL_Surface *cursorSurface = SDL_LoadBMP(cursorImagePath.c_str());
+    SDL_Surface *cursorSurface = SDL_LoadPNG(cursorImagePath.c_str());
     if (cursorSurface == nullptr)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Failed to load cursor image: %s - %s",
@@ -1070,6 +1217,14 @@ void LoadingState::loadProceduralTextures() const noexcept
 
         textures.load(Textures::ID::RUNNER_BREAK_PLANE, 1, 1, {}, 0);
         textures.get(Textures::ID::RUNNER_BREAK_PLANE)
+            .loadRenderTarget(1, 1, Texture::RenderTargetFormat::RGBA16F, 0);
+
+        textures.load(Textures::ID::MOTION_BLUR_COLOR, 1, 1, {}, 0);
+        textures.get(Textures::ID::MOTION_BLUR_COLOR)
+            .loadRenderTarget(1, 1, Texture::RenderTargetFormat::RGBA16F, 0);
+
+        textures.load(Textures::ID::PREV_FRAME, 1, 1, {}, 0);
+        textures.get(Textures::ID::PREV_FRAME)
             .loadRenderTarget(1, 1, Texture::RenderTargetFormat::RGBA16F, 0);
     }
     catch (const std::exception &e)

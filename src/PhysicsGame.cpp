@@ -51,13 +51,14 @@ namespace
     void configureGlobalLogging() noexcept
     {
         static std::once_flag configured;
-        std::call_once(configured, []() {
+        std::call_once(configured, []()
+                       {
 #if defined(BREAKING_WALLS_DEBUG)
-            SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
+                           SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
 #else
-            SDL_SetLogPriorities(SDL_LOG_PRIORITY_CRITICAL);
+                           SDL_SetLogPriorities(SDL_LOG_PRIORITY_CRITICAL);
 #endif
-        });
+                       });
     }
 }
 
@@ -79,6 +80,9 @@ struct PhysicsGame::PhysicsGameImpl
     std::unique_ptr<SoundPlayer> mSounds;
     ShaderManager mShaders;
     TextureManager mTextures;
+    VAOManager mVAOs;
+    FBOManager mFBOs;
+    VBOManager mVBOs;
 
     // FPS smoothing variables
     mutable double mFPSUpdateTimer = 0.0;
@@ -94,21 +98,36 @@ struct PhysicsGame::PhysicsGameImpl
     {
         configureGlobalLogging();
         initSDL();
-        if (!mGLSDLHelper.mWindow)
+        if (!mGLSDLHelper.getWindow())
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL mRenderWindow - cannot continue");
             // Don't initialize further objects if SDL failed
             return;
         }
 
-        mRenderWindow = std::make_unique<RenderWindow>(mGLSDLHelper.mWindow);
+        mRenderWindow = std::make_unique<RenderWindow>(mGLSDLHelper.getWindow());
         mSounds = std::make_unique<SoundPlayer>(mSoundBuffers);
 
         initDearImGui();
         initOptions();
 
         mStateStack = std::make_unique<StateStack>(
-            State::Context().withRenderWindow(*mRenderWindow).withFontManager(mFonts).withLevelsManager(mLevels).withModelsManager(mModels).withMusicManager(mMusic).withOptionsManager(mOptions).withSoundBufferManager(mSoundBuffers).withSoundPlayer(*mSounds).withShaderManager(mShaders).withTextureManager(mTextures).withPlayer(mPlayer1).withHttpClient(mHttpClient));
+            State::Context()
+                .withRenderWindow(*mRenderWindow)
+                .withFontManager(mFonts)
+                .withLevelsManager(mLevels)
+                .withModelsManager(mModels)
+                .withMusicManager(mMusic)
+                .withOptionsManager(mOptions)
+                .withSoundBufferManager(mSoundBuffers)
+                .withSoundPlayer(*mSounds)
+                .withShaderManager(mShaders)
+                .withTextureManager(mTextures)
+                .withVAOManager(mVAOs)
+                .withFBOManager(mFBOs)
+                .withVBOManager(mVBOs)
+                .withPlayer(mPlayer1)
+                .withHttpClient(mHttpClient));
 
         registerStates();
 
@@ -117,7 +136,7 @@ struct PhysicsGame::PhysicsGameImpl
 
     ~PhysicsGameImpl()
     {
-        if (auto &&sdl = mGLSDLHelper; sdl.mWindow)
+        if (auto &&sdl = mGLSDLHelper; sdl.getWindow())
         {
             if (mStateStack)
             {
@@ -131,6 +150,9 @@ struct PhysicsGame::PhysicsGameImpl
             mSounds.reset();
             mShaders.clear();
             mTextures.clear();
+            mVAOs.clear();
+            mFBOs.clear();
+            mVBOs.clear();
 
             ImGui_ImplOpenGL3_Shutdown();
             ImGui_ImplSDL3_Shutdown();
@@ -158,7 +180,7 @@ struct PhysicsGame::PhysicsGameImpl
         ImGui::StyleColorsDark();
 
         // Initialize ImGui SDL3 and OpenGL3 backends
-        ImGui_ImplSDL3_InitForOpenGL(mGLSDLHelper.mWindow, mGLSDLHelper.mGLContext);
+        ImGui_ImplSDL3_InitForOpenGL(mGLSDLHelper.getWindow(), mGLSDLHelper.getGLContext());
         ImGui_ImplOpenGL3_Init("#version 430");
     }
 
@@ -218,7 +240,7 @@ struct PhysicsGame::PhysicsGameImpl
 
         // Clear, draw, and present (like SFML)
         mRenderWindow->clear();
-        
+
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();

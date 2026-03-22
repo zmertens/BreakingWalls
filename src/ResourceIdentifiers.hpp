@@ -66,10 +66,16 @@ namespace Shaders
         GLSL_COMPOSITE_SCENE = 1,
         GLSL_FULLSCREEN_QUAD = 2,
         GLSL_FULLSCREEN_QUAD_MVP = 3,
-        GLSL_PARTICLES_COMPUTE = 4,
-        GLSL_SHADOW_VOLUME = 5,
-        GLSL_OIT_RESOLVE = 6,
-        GLSL_TOTAL_SHADERS = 7
+        GLSL_GOAL_PATH_STENCIL = 4,
+        GLSL_HIGHLIGHT_TILE = 5,
+        GLSL_MAZE = 6,
+        GLSL_MOTION_BLUR = 7,
+        GLSL_PARTICLES_COMPUTE = 8,
+        GLSL_SHADOW_VOLUME = 9,
+        GLSL_SKINNED_MODEL = 10,
+        GLSL_SKY = 11,
+        GLSL_OIT_RESOLVE = 12,
+        GLSL_TOTAL_SHADERS = 13
     };
 }
 
@@ -81,6 +87,48 @@ namespace SoundEffect
         WHITE_NOISE = 1,
         SELECT = 2,
         THROW = 3
+    };
+}
+
+namespace VAOs
+{
+    enum class ID : unsigned int
+    {
+        FULLSCREEN_QUAD = 0,
+        SHADOW_QUAD = 1,
+        WALK_PARTICLES = 2,
+        RASTER_MAZE = 3,
+        GOAL_PATH = 4,
+        PLAYER_TILE_HIGHLIGHT = 5,
+        PICKUP_SPHERES = 6,
+        TOTAL_IDS = 7
+    };
+}
+
+namespace FBOs
+{
+    enum class ID : unsigned int
+    {
+        BILLBOARD = 0,
+        OIT = 1,
+        SHADOW = 2,
+        REFLECTION = 3,
+        MOTION_BLUR = 4,
+        TOTAL_IDS = 5
+    };
+}
+
+namespace VBOs
+{
+    enum class ID : unsigned int
+    {
+        SHADOW = 0,
+        WALK_PARTICLES_POS_SSBO = 1,
+        WALK_PARTICLES_VEL_SSBO = 2,
+        RASTER_MAZE = 3,
+        GOAL_PATH = 4,
+        PICKUP = 5,
+        TOTAL_IDS = 6
     };
 }
 
@@ -110,16 +158,21 @@ namespace Textures
         SHADOW_MAP = 19,
         REFLECTION_COLOR = 20,
         RUNNER_BREAK_PLANE = 21,
-        TOTAL_IDS = 22
+        MOTION_BLUR_COLOR = 22,
+        PREV_FRAME = 23,
+        TOTAL_IDS = 24
     };
 }
 
 class Font;
+class FramebufferObject;
 class GLTFModel;
 class Level;
 class MusicPlayer;
 class Shader;
 class Texture;
+class VertexArrayObject;
+class VertexBufferObject;
 
 struct Options;
 
@@ -135,5 +188,8 @@ typedef ResourceManager<MusicPlayer, Music::ID> MusicManager;
 typedef ResourceManager<Shader, Shaders::ID> ShaderManager;
 typedef ResourceManager<sf::SoundBuffer, SoundEffect::ID> SoundBufferManager;
 typedef ResourceManager<Texture, Textures::ID> TextureManager;
+typedef ResourceManager<VertexArrayObject, VAOs::ID> VAOManager;
+typedef ResourceManager<FramebufferObject, FBOs::ID> FBOManager;
+typedef ResourceManager<VertexBufferObject, VBOs::ID> VBOManager;
 
 #endif // RESOURCE_IDENTIFIERS_HPP

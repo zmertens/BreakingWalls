@@ -18,7 +18,6 @@
 #include <MazeBuilder/configurator.h>
 
 class StateStack;
-class VoronoiPlanet;
 
 union SDL_Event;
 
@@ -40,9 +39,11 @@ public:
         [[nodiscard]] SoundPlayer *getSoundPlayer() const noexcept { return mSounds.value_or(nullptr); }
         [[nodiscard]] ShaderManager *getShaderManager() const noexcept { return mShaders.value_or(nullptr); }
         [[nodiscard]] TextureManager *getTextureManager() const noexcept { return mTextures.value_or(nullptr); }
+        [[nodiscard]] VAOManager *getVAOManager() const noexcept { return mVAOs.value_or(nullptr); }
+        [[nodiscard]] FBOManager *getFBOManager() const noexcept { return mFBOs.value_or(nullptr); }
+        [[nodiscard]] VBOManager *getVBOManager() const noexcept { return mVBOs.value_or(nullptr); }
         [[nodiscard]] Player *getPlayer() const noexcept { return mPlayer.value_or(nullptr); }
         [[nodiscard]] HttpClient *getHttpClient() const noexcept { return mHttpClient.value_or(nullptr); }
-        [[nodiscard]] VoronoiPlanet *getVoronoiPlanet() const noexcept { return mVoronoiPlanet.value_or(nullptr); }
 
         Context &withRenderWindow(RenderWindow &window)
         {
@@ -104,6 +105,24 @@ public:
             return *this;
         }
 
+        Context &withVAOManager(VAOManager &vaos)
+        {
+            mVAOs = &vaos;
+            return *this;
+        }
+
+        Context &withFBOManager(FBOManager &fbos)
+        {
+            mFBOs = &fbos;
+            return *this;
+        }
+
+        Context &withVBOManager(VBOManager &vbos)
+        {
+            mVBOs = &vbos;
+            return *this;
+        }
+
         Context &withPlayer(Player &player)
         {
             mPlayer = &player;
@@ -113,12 +132,6 @@ public:
         Context &withHttpClient(HttpClient &httpClient)
         {
             mHttpClient = &httpClient;
-            return *this;
-        }
-
-        Context &withVoronoiPlanet(VoronoiPlanet &planet)
-        {
-            mVoronoiPlanet = &planet;
             return *this;
         }
 
@@ -133,9 +146,11 @@ public:
         std::optional<SoundPlayer *> mSounds;
         std::optional<ShaderManager *> mShaders;
         std::optional<TextureManager *> mTextures;
+        std::optional<VAOManager *> mVAOs;
+        std::optional<FBOManager *> mFBOs;
+        std::optional<VBOManager *> mVBOs;
         std::optional<Player *> mPlayer;
         std::optional<HttpClient *> mHttpClient;
-        std::optional<VoronoiPlanet *> mVoronoiPlanet;
     }; // Context struct
 
     explicit State(StateStack &stack, Context context);

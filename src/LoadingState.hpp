@@ -42,6 +42,9 @@ private:
     void loadLevels() noexcept;
     void loadModels() noexcept;
     void loadShaders() noexcept;
+    void loadVAOs() noexcept;
+    void loadFBOs() noexcept;
+    void loadVBOs() noexcept;
     void loadNetworkConfig() noexcept;
 
     void setCompletion(float percent) noexcept;

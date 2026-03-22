@@ -24,7 +24,7 @@ endif()
 # Get SDL
 set(SDL_SHARED FALSE CACHE BOOL "Build a SDL shared library (if available)")
 set(SDL_STATIC TRUE CACHE BOOL "Build a SDL static library (if available)")
-FetchGitRepo(SDL https://github.com/libsdl-org/SDL.git release-3.2.10)
+FetchGitRepo(SDL https://github.com/libsdl-org/SDL.git release-3.4.2)
 set_property(DIRECTORY "${CMAKE_BINARY_DIR}/_deps/sdl-src" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
 # Get SFML with Emscripten-specific settings
@@ -66,7 +66,6 @@ FetchGitRepo(MazeBuilder ${MAZE_BUILDER_REPO_URL} ${MAZE_BUILDER_GIT_TAG})
 
 set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/Animation.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/BVH.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Camera.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Font.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GameState.cpp
@@ -93,6 +92,9 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/StateStack.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Texture.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/FramebufferObject.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/VertexArrayObject.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/VertexBufferObject.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/World.cpp)
 
 set(DEAR_IMGUI_DEP_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../deps/dearimgui)

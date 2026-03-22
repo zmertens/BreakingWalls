@@ -18,6 +18,9 @@
 #include <dearimgui/imgui.h>
 
 #include "GLTFModel.hpp"
+#include "FramebufferObject.hpp"
+#include "VertexArrayObject.hpp"
+#include "VertexBufferObject.hpp"
 
 namespace mazes
 {
@@ -58,7 +61,8 @@ public:
 
     void clear() noexcept
     {
-        if constexpr (std::is_same_v<Resource, Shader>)
+        if constexpr (std::is_same_v<Resource, Shader> || std::is_same_v<Resource, VertexArrayObject>
+                      || std::is_same_v<Resource, FramebufferObject> || std::is_same_v<Resource, VertexBufferObject>)
         {
             for (auto &[_, res] : mResourceMap)
             {

@@ -2,15 +2,27 @@
 
 #include "Animation.hpp"
 #include "Camera.hpp"
+#include "GLSDLHelper.hpp"
+#include "GLTFModel.hpp"
 #include "JSONUtils.hpp"
 #include "Level.hpp"
 #include "Material.hpp"
+#include "Player.hpp"
 #include "RenderWindow.hpp"
 #include "ResourceManager.hpp"
+#include "Shader.hpp"
 #include "Sphere.hpp"
 #include "Texture.hpp"
+#include "VertexArrayObject.hpp"
+#include "FramebufferObject.hpp"
+#include "VertexBufferObject.hpp"
 
 #include <MazeBuilder/maze_builder.h>
+#include <MazeBuilder/colored_grid.h>
+#include <MazeBuilder/cell.h>
+#include <MazeBuilder/dfs.h>
+#include <MazeBuilder/grid_operations.h>
+#include <MazeBuilder/randomizer.h>
 
 #include <box2d/box2d.h>
 
@@ -34,6 +46,46 @@ namespace
 {
     constexpr std::uintptr_t kBodyTagSphereBase = 10;
     constexpr std::uintptr_t kBodyTagMazeWall = 4;
+
+    // Raster maze geometry constants
+    constexpr float kPlayerShadowCenterYOffset = 1.4175f;
+    constexpr float kCharacterModelYOffset = 0.25f;
+
+    constexpr unsigned int kSimpleMazeRows = 20u;
+    constexpr unsigned int kSimpleMazeCols = 20u;
+    constexpr unsigned int kSimpleMazeLevels = 3u;
+    constexpr float kSimpleCellSize = 2.4f;
+    constexpr float kSimpleWallHeight = 1.8f;
+    constexpr float kSimpleWallThickness = 0.20f;
+    constexpr float kSimpleLevelSpacing = 2.7f;
+    constexpr float kSimpleFloorY = 0.0f;
+    constexpr float kBoundarySpriteHeight = 3.6f;
+    constexpr float kBoundarySpriteWidth = 2.1f;
+    constexpr int kBoundaryAnimFrameCount = 9;
+    constexpr int kBoundaryTileSizePx = 128;
+    constexpr float kBoundaryAnimFps = 10.0f;
+    constexpr int kBoundaryFloatingSpriteCount = 5;
+    constexpr float kGoalPathLineYOffset = 0.045f;
+
+    struct RasterVertex
+    {
+        glm::vec3 position;
+        glm::vec3 color;
+    };
+
+    glm::vec3 computeSunDirection(float /*timeSeconds*/) noexcept
+    {
+        return glm::normalize(glm::vec3(-1.0f, -0.125f, 0.0f));
+    }
+
+    glm::vec3 packedRGBToLinear(std::uint32_t packed)
+    {
+        const float r = static_cast<float>((packed >> 16) & 0xFFu) / 255.0f;
+        const float g = static_cast<float>((packed >> 8) & 0xFFu) / 255.0f;
+        const float b = static_cast<float>(packed & 0xFFu) / 255.0f;
+        const glm::vec3 srgb(r, g, b);
+        return glm::pow(srgb, glm::vec3(2.2f));
+    }
 
     float randomFloat(float low, float high)
     {
@@ -369,6 +421,1088 @@ void World::update(float dt)
 void World::draw() const noexcept
 {
 
+}
+
+// ============================================================================
+// Scene rendering implementation (moved from GameState)
+// ============================================================================
+
+void World::initRendering(VAOManager *vaos, FBOManager *fbos, VBOManager *vbos,
+                          ModelsManager *models, int windowWidth, int windowHeight,
+                          const Player &player) noexcept
+{
+    mVAOManager = vaos;
+    mFBOManager = fbos;
+    mVBOManager = vbos;
+    mModelsManager = models;
+
+    try
+    {
+        mMazeShader = &mShaders.get(Shaders::ID::GLSL_MAZE);
+        mSkyShader = &mShaders.get(Shaders::ID::GLSL_SKY);
+        mGoalPathStencilShader = &mShaders.get(Shaders::ID::GLSL_GOAL_PATH_STENCIL);
+        mBoundarySpriteShader = &mShaders.get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
+        mShadowShader = &mShaders.get(Shaders::ID::GLSL_SHADOW_VOLUME);
+        mSkinnedCharacterShader = &mShaders.get(Shaders::ID::GLSL_SKINNED_MODEL);
+        mWalkParticlesComputeShader = &mShaders.get(Shaders::ID::GLSL_PARTICLES_COMPUTE);
+        mWalkParticlesRenderShader = &mShaders.get(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World::initRendering: Failed to get shaders: %s", e.what());
+        return;
+    }
+
+    try
+    {
+        mBillboardColorTex = &mTextures.get(Textures::ID::BILLBOARD_COLOR);
+        mOITAccumTex = &mTextures.get(Textures::ID::OIT_ACCUM);
+        mOITRevealTex = &mTextures.get(Textures::ID::OIT_REVEAL);
+        mShadowTexture = &mTextures.get(Textures::ID::SHADOW_MAP);
+        mReflectionColorTex = &mTextures.get(Textures::ID::REFLECTION_COLOR);
+    }
+    catch (const std::exception &e)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World::initRendering: Failed to get textures: %s", e.what());
+        return;
+    }
+
+    initializeWalkParticles(player);
+    mRenderInitialized = true;
+}
+
+void World::drawScene(const Camera &camera, const Player &player,
+                      int windowWidth, int windowHeight,
+                      float modelAnimTime, float playerPlanarSpeed) const noexcept
+{
+    if (!mRenderInitialized)
+        return;
+
+    renderRasterMaze(camera, player, windowWidth, windowHeight);
+    renderGoalPathStencil(camera, windowWidth, windowHeight);
+    renderBoundaryCharacterBillboards(camera, windowWidth, windowHeight);
+    renderPickupSpheres(camera, windowWidth, windowHeight);
+    renderPlayerCharacterModel(camera, player, windowWidth, windowHeight, modelAnimTime);
+    renderWalkParticles(camera, player, windowWidth, windowHeight, playerPlanarSpeed);
+}
+
+void World::createCompositeTargets(int windowWidth, int windowHeight) noexcept
+{
+    if (windowWidth <= 0 || windowHeight <= 0)
+        return;
+
+    if (!mBillboardColorTex || !mOITAccumTex || !mOITRevealTex)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Composite textures not initialized in manager");
+        return;
+    }
+
+    if (!mBillboardColorTex->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate billboard texture");
+        return;
+    }
+
+    auto &billboardFBO = mFBOManager->get(FBOs::ID::BILLBOARD);
+    billboardFBO.bindRenderbuffer();
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, windowWidth, windowHeight);
+
+    billboardFBO.bind();
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mBillboardColorTex->get(), 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, billboardFBO.getRenderbuffer());
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Billboard framebuffer incomplete");
+
+    if (!mOITAccumTex->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate OIT accum texture");
+        return;
+    }
+
+    if (!mOITRevealTex->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::R16F, 0))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate OIT reveal texture");
+        return;
+    }
+
+    auto &oitFBO = mFBOManager->get(FBOs::ID::OIT);
+    oitFBO.bindRenderbuffer();
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, windowWidth, windowHeight);
+
+    oitFBO.bind();
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mOITAccumTex->get(), 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, mOITRevealTex->get(), 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, oitFBO.getRenderbuffer());
+    constexpr GLenum oitDrawBuffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    glDrawBuffers(2, oitDrawBuffers);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        mOITInitialized = false;
+    else
+        mOITInitialized = true;
+
+    FramebufferObject::unbind();
+    glDrawBuffer(GL_BACK);
+    glReadBuffer(GL_BACK);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    FramebufferObject::unbindRenderbuffer();
+}
+
+void World::initializeShadowResources(int windowWidth, int windowHeight) noexcept
+{
+    if (windowWidth <= 0 || windowHeight <= 0)
+        return;
+
+    if (!mShadowTexture)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "World: Shadow texture not initialized in manager");
+        return;
+    }
+
+    if (!mShadowTexture->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate shadow texture");
+        return;
+    }
+
+    auto &shadowFBO = mFBOManager->get(FBOs::ID::SHADOW);
+    shadowFBO.bind();
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mShadowTexture->get(), 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Shadow framebuffer incomplete");
+
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    if (mVAOManager && mVBOManager)
+    {
+        auto &shadowVBO = mVBOManager->get(VBOs::ID::SHADOW);
+        mVAOManager->get(VAOs::ID::SHADOW_QUAD).bind();
+        shadowVBO.bind(GL_ARRAY_BUFFER);
+
+        float point = 0.0f;
+        glBufferData(GL_ARRAY_BUFFER, sizeof(float), &point, GL_STATIC_DRAW);
+
+        VertexBufferObject::unbind(GL_ARRAY_BUFFER);
+        VertexArrayObject::unbind();
+    }
+
+    FramebufferObject::unbind();
+    glDrawBuffer(GL_BACK);
+    glReadBuffer(GL_BACK);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    mShadowsInitialized = true;
+}
+
+void World::initializeReflectionResources(int windowWidth, int windowHeight) noexcept
+{
+    if (windowWidth <= 0 || windowHeight <= 0)
+        return;
+
+    FramebufferObject::unbind();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    FramebufferObject::unbindRenderbuffer();
+
+    if (!mReflectionColorTex)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "World: Reflection texture not initialized in manager");
+        return;
+    }
+
+    if (!mReflectionColorTex->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate reflection texture");
+        return;
+    }
+
+    auto &reflectionFBO = mFBOManager->get(FBOs::ID::REFLECTION);
+    reflectionFBO.bindRenderbuffer();
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, windowWidth, windowHeight);
+
+    reflectionFBO.bind();
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mReflectionColorTex->get(), 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, reflectionFBO.getRenderbuffer());
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (fboStatus != GL_FRAMEBUFFER_COMPLETE)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Reflection framebuffer incomplete: 0x%x", fboStatus);
+        return;
+    }
+
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    FramebufferObject::unbind();
+    glDrawBuffer(GL_BACK);
+    glReadBuffer(GL_BACK);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    FramebufferObject::unbindRenderbuffer();
+
+    mReflectionsInitialized = true;
+}
+
+void World::initializeWalkParticles(const Player &player) noexcept
+{
+    if (mWalkParticlesInitialized)
+        return;
+
+    if (!mWalkParticlesComputeShader || !mWalkParticlesRenderShader || mWalkParticleCount == 0)
+        return;
+
+    std::vector<GLfloat> initPos;
+    std::vector<GLfloat> initVel;
+    initPos.reserve(static_cast<std::size_t>(mWalkParticleCount) * 4u);
+    initVel.reserve(static_cast<std::size_t>(mWalkParticleCount) * 4u);
+
+    const glm::vec3 playerPos = player.getPosition();
+    const glm::vec3 anchor = playerPos + glm::vec3(0.0f, 1.0f, 0.0f);
+
+    for (GLuint i = 0; i < mWalkParticleCount; ++i)
+    {
+        const float t = static_cast<float>(i) * 0.0618f;
+        const float u = static_cast<float>(i % 37u) / 37.0f;
+        const float radius = 0.15f + 0.95f * u;
+        const float x = anchor.x + std::cos(t * 6.28318f) * radius;
+        const float z = anchor.z + std::sin(t * 6.28318f) * radius;
+        const float y = anchor.y + (static_cast<float>(i % 17u) / 17.0f) * 0.75f;
+
+        initPos.push_back(x);
+        initPos.push_back(y);
+        initPos.push_back(z);
+        initPos.push_back(1.0f);
+
+        initVel.push_back(0.0f);
+        initVel.push_back(0.0f);
+        initVel.push_back(0.0f);
+        initVel.push_back(0.0f);
+    }
+
+    const GLsizeiptr bufferSize = static_cast<GLsizeiptr>(static_cast<std::size_t>(mWalkParticleCount) * 4u * sizeof(GLfloat));
+
+    auto &posSSBO = mVBOManager->get(VBOs::ID::WALK_PARTICLES_POS_SSBO);
+    posSSBO.bind(GL_SHADER_STORAGE_BUFFER);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, initPos.data(), GL_DYNAMIC_DRAW);
+
+    auto &velSSBO = mVBOManager->get(VBOs::ID::WALK_PARTICLES_VEL_SSBO);
+    velSSBO.bind(GL_SHADER_STORAGE_BUFFER);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, bufferSize, initVel.data(), GL_DYNAMIC_DRAW);
+
+    if (mVAOManager)
+    {
+        mVAOManager->get(VAOs::ID::WALK_PARTICLES).bind();
+        posSSBO.bind(GL_ARRAY_BUFFER);
+        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
+        glEnableVertexAttribArray(0);
+        VertexArrayObject::unbind();
+    }
+
+    VertexBufferObject::unbind(GL_ARRAY_BUFFER);
+    VertexBufferObject::unbind(GL_SHADER_STORAGE_BUFFER);
+
+    mWalkParticlesInitialized = true;
+}
+
+void World::buildMazeGeometry(const Player & /*player*/) noexcept
+{
+    std::vector<RasterVertex> vertices;
+    vertices.reserve(50000);
+    std::vector<glm::vec3> goalPathLines;
+    goalPathLines.reserve(4000);
+    mMazeWallAABBs.clear();
+    mMazeCellGradientColors.assign(static_cast<std::size_t>(kSimpleMazeRows) * static_cast<std::size_t>(kSimpleMazeCols), glm::vec3(0.5f, 0.8f, 0.6f));
+
+    auto pushTri = [&vertices](const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c, const glm::vec3 &color)
+    {
+        vertices.push_back({a, color});
+        vertices.push_back({b, color});
+        vertices.push_back({c, color});
+    };
+
+    auto pushQuad = [&pushTri](const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c, const glm::vec3 &d, const glm::vec3 &color)
+    {
+        pushTri(a, b, c, color);
+        pushTri(a, c, d, color);
+    };
+
+    auto pushBox = [&pushQuad](const glm::vec3 &center, const glm::vec3 &size, const glm::vec3 &color)
+    {
+        const glm::vec3 h = 0.5f * size;
+        const glm::vec3 p000 = center + glm::vec3(-h.x, -h.y, -h.z);
+        const glm::vec3 p001 = center + glm::vec3(-h.x, -h.y, h.z);
+        const glm::vec3 p010 = center + glm::vec3(-h.x, h.y, -h.z);
+        const glm::vec3 p011 = center + glm::vec3(-h.x, h.y, h.z);
+        const glm::vec3 p100 = center + glm::vec3(h.x, -h.y, -h.z);
+        const glm::vec3 p101 = center + glm::vec3(h.x, -h.y, h.z);
+        const glm::vec3 p110 = center + glm::vec3(h.x, h.y, -h.z);
+        const glm::vec3 p111 = center + glm::vec3(h.x, h.y, h.z);
+
+        pushQuad(p001, p101, p111, p011, color);
+        pushQuad(p100, p000, p010, p110, color);
+        pushQuad(p000, p001, p011, p010, color);
+        pushQuad(p101, p100, p110, p111, color);
+        pushQuad(p010, p011, p111, p110, color);
+        pushQuad(p000, p100, p101, p001, color);
+    };
+
+    auto mazeGrid = std::make_unique<mazes::colored_grid>(kSimpleMazeRows, kSimpleMazeCols, 1u);
+    mazes::randomizer rng{};
+    rng.seed(rng(0u, 4'200'000u));
+    mazes::dfs dfsAlgo{};
+    dfsAlgo.run(mazeGrid.get(), rng);
+    mazeGrid->initialize_distance_coloring(0, mazeGrid->operations().num_cells() - 1);
+
+    const float mazeWidth = static_cast<float>(kSimpleMazeCols) * kSimpleCellSize;
+    const float mazeDepth = static_cast<float>(kSimpleMazeRows) * kSimpleCellSize;
+    const glm::vec3 mazeOrigin(-mazeWidth * 0.5f, kSimpleFloorY, -mazeDepth * 0.5f);
+    const glm::vec3 mazeCenter(0.0f, kSimpleFloorY + 0.5f * (kSimpleMazeLevels - 1u) * kSimpleLevelSpacing, 0.0f);
+    const float mazeTopY = kSimpleFloorY + static_cast<float>(kSimpleMazeLevels - 1u) * kSimpleLevelSpacing + kSimpleWallHeight;
+
+    auto &&gridOps = mazeGrid->operations();
+    for (unsigned int level = 0u; level < kSimpleMazeLevels; ++level)
+    {
+        const float levelBaseY = kSimpleFloorY + static_cast<float>(level) * kSimpleLevelSpacing;
+
+        for (unsigned int row = 0u; row < kSimpleMazeRows; ++row)
+        {
+            for (unsigned int col = 0u; col < kSimpleMazeCols; ++col)
+            {
+                const int idx = static_cast<int>(row * kSimpleMazeCols + col);
+                const auto cellPtr = gridOps.search(idx);
+                if (!cellPtr)
+                    continue;
+
+                const float cx = mazeOrigin.x + (static_cast<float>(col) + 0.5f) * kSimpleCellSize;
+                const float cz = mazeOrigin.z + (static_cast<float>(row) + 0.5f) * kSimpleCellSize;
+
+                glm::vec3 tileColor = packedRGBToLinear(mazeGrid->background_color_for(cellPtr));
+                mMazeCellGradientColors[static_cast<std::size_t>(idx)] = tileColor;
+                const float levelTint = 0.88f + 0.12f *
+                                                    (kSimpleMazeLevels > 1u ? static_cast<float>(level) / static_cast<float>(kSimpleMazeLevels - 1u) : 0.0f);
+                tileColor *= levelTint;
+
+                const float y = levelBaseY + 0.01f;
+                const glm::vec3 a(cx - 0.5f * kSimpleCellSize, y, cz - 0.5f * kSimpleCellSize);
+                const glm::vec3 b(cx + 0.5f * kSimpleCellSize, y, cz - 0.5f * kSimpleCellSize);
+                const glm::vec3 c(cx + 0.5f * kSimpleCellSize, y, cz + 0.5f * kSimpleCellSize);
+                const glm::vec3 d(cx - 0.5f * kSimpleCellSize, y, cz + 0.5f * kSimpleCellSize);
+                pushQuad(a, b, c, d, tileColor);
+
+                {
+                    const float py = levelBaseY + kGoalPathLineYOffset;
+                    const float x0 = cx - 0.5f * kSimpleCellSize;
+                    const float x1 = cx + 0.5f * kSimpleCellSize;
+                    const float z0 = cz - 0.5f * kSimpleCellSize;
+                    const float z1 = cz + 0.5f * kSimpleCellSize;
+
+                    const auto northCell = gridOps.get_north(cellPtr);
+                    const auto southCell = gridOps.get_south(cellPtr);
+                    const auto westCell = gridOps.get_west(cellPtr);
+                    const auto eastCell = gridOps.get_east(cellPtr);
+
+                    const bool northLinked = northCell && cellPtr->is_linked(northCell);
+                    const bool southLinked = southCell && cellPtr->is_linked(southCell);
+                    const bool westLinked = westCell && cellPtr->is_linked(westCell);
+                    const bool eastLinked = eastCell && cellPtr->is_linked(eastCell);
+
+                    if (!northCell && !northLinked)
+                    {
+                        goalPathLines.emplace_back(x0, py, z0);
+                        goalPathLines.emplace_back(x1, py, z0);
+                    }
+                    if (!southLinked)
+                    {
+                        goalPathLines.emplace_back(x0, py, z1);
+                        goalPathLines.emplace_back(x1, py, z1);
+                    }
+                    if (!westCell && !westLinked)
+                    {
+                        goalPathLines.emplace_back(x0, py, z0);
+                        goalPathLines.emplace_back(x0, py, z1);
+                    }
+                    if (!eastLinked)
+                    {
+                        goalPathLines.emplace_back(x1, py, z0);
+                        goalPathLines.emplace_back(x1, py, z1);
+                    }
+                }
+
+                const glm::vec3 wallColor(0.22f, 0.07f, 0.34f);
+
+                int dist = static_cast<int>(std::abs(static_cast<int>(row) - static_cast<int>(kSimpleMazeRows / 2u))) +
+                           static_cast<int>(std::abs(static_cast<int>(col) - static_cast<int>(kSimpleMazeCols / 2u)));
+
+                glm::vec3 actualWallColor = wallColor;
+                if (dist > 0 && dist % 3 == 0)
+                    actualWallColor = glm::vec3(0.45f, 0.40f, 0.55f);
+                else if (dist > 0 && dist % 5 == 0)
+                    actualWallColor = glm::vec3(0.18f, 0.30f, 0.55f);
+
+                const auto east = gridOps.get_east(cellPtr);
+                if (!(east && cellPtr->is_linked(east)))
+                {
+                    pushBox(glm::vec3(cx + 0.5f * kSimpleCellSize, levelBaseY + 0.5f * kSimpleWallHeight, cz),
+                            glm::vec3(kSimpleWallThickness, kSimpleWallHeight, kSimpleCellSize + kSimpleWallThickness),
+                            actualWallColor);
+                    if (level == 0u)
+                    {
+                        const float hw = kSimpleWallThickness * 0.5f;
+                        const float hz = (kSimpleCellSize + kSimpleWallThickness) * 0.5f;
+                        mMazeWallAABBs.emplace_back(cx + 0.5f * kSimpleCellSize - hw, cz - hz,
+                                                    cx + 0.5f * kSimpleCellSize + hw, cz + hz);
+                    }
+                }
+
+                const auto south = gridOps.get_south(cellPtr);
+                if (!(south && cellPtr->is_linked(south)))
+                {
+                    pushBox(glm::vec3(cx, levelBaseY + 0.5f * kSimpleWallHeight, cz + 0.5f * kSimpleCellSize),
+                            glm::vec3(kSimpleCellSize + kSimpleWallThickness, kSimpleWallHeight, kSimpleWallThickness),
+                            actualWallColor);
+                    if (level == 0u)
+                    {
+                        const float hx = (kSimpleCellSize + kSimpleWallThickness) * 0.5f;
+                        const float hw = kSimpleWallThickness * 0.5f;
+                        mMazeWallAABBs.emplace_back(cx - hx, cz + 0.5f * kSimpleCellSize - hw,
+                                                    cx + hx, cz + 0.5f * kSimpleCellSize + hw);
+                    }
+                }
+
+                if (col == 0u)
+                {
+                    pushBox(glm::vec3(cx - 0.5f * kSimpleCellSize, levelBaseY + 0.5f * kSimpleWallHeight, cz),
+                            glm::vec3(kSimpleWallThickness, kSimpleWallHeight, kSimpleCellSize + kSimpleWallThickness),
+                            actualWallColor);
+                    if (level == 0u)
+                    {
+                        const float hw = kSimpleWallThickness * 0.5f;
+                        const float hz = (kSimpleCellSize + kSimpleWallThickness) * 0.5f;
+                        mMazeWallAABBs.emplace_back(cx - 0.5f * kSimpleCellSize - hw, cz - hz,
+                                                    cx - 0.5f * kSimpleCellSize + hw, cz + hz);
+                    }
+                }
+
+                if (row == 0u)
+                {
+                    pushBox(glm::vec3(cx, levelBaseY + 0.5f * kSimpleWallHeight, cz - 0.5f * kSimpleCellSize),
+                            glm::vec3(kSimpleCellSize + kSimpleWallThickness, kSimpleWallHeight, kSimpleWallThickness),
+                            actualWallColor);
+                    if (level == 0u)
+                    {
+                        const float hx = (kSimpleCellSize + kSimpleWallThickness) * 0.5f;
+                        const float hw = kSimpleWallThickness * 0.5f;
+                        mMazeWallAABBs.emplace_back(cx - hx, cz - 0.5f * kSimpleCellSize - hw,
+                                                    cx + hx, cz - 0.5f * kSimpleCellSize + hw);
+                    }
+                }
+            }
+        }
+    }
+
+    // Floating boundary sprite anchors
+    {
+        mBoundarySprites.clear();
+        mBoundarySprites.reserve(static_cast<std::size_t>(kBoundaryFloatingSpriteCount));
+
+        std::mt19937 spriteRng{std::random_device{}()};
+        std::uniform_real_distribution<float> xDist(mazeOrigin.x - 6.0f, mazeOrigin.x + mazeWidth + 6.0f);
+        std::uniform_real_distribution<float> zDist(mazeOrigin.z - 10.0f, mazeOrigin.z + mazeDepth + 10.0f);
+        std::uniform_real_distribution<float> yDist(mazeTopY + 5.0f, mazeTopY + 16.0f);
+        std::uniform_real_distribution<float> phaseDist(0.0f, static_cast<float>(kBoundaryAnimFrameCount));
+        std::uniform_real_distribution<float> scaleDist(1.45f, 2.15f);
+
+        for (int i = 0; i < kBoundaryFloatingSpriteCount; ++i)
+        {
+            mBoundarySprites.push_back(BoundarySpriteData{
+                glm::vec3(xDist(spriteRng), yDist(spriteRng), zDist(spriteRng)),
+                phaseDist(spriteRng),
+                scaleDist(spriteRng)});
+        }
+    }
+
+    const glm::vec3 floorCol(0.18f, 0.13f, 0.28f);
+    const float floorY = kSimpleFloorY;
+    pushQuad(glm::vec3(-2400.0f, floorY, -2400.0f),
+             glm::vec3(2400.0f, floorY, -2400.0f),
+             glm::vec3(2400.0f, floorY, 2400.0f),
+             glm::vec3(-2400.0f, floorY, 2400.0f),
+             floorCol);
+
+    mVAOManager->get(VAOs::ID::RASTER_MAZE).bind();
+    mVBOManager->get(VBOs::ID::RASTER_MAZE).bind(GL_ARRAY_BUFFER);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(vertices.size() * sizeof(RasterVertex)),
+                 vertices.data(),
+                 GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RasterVertex), reinterpret_cast<void *>(offsetof(RasterVertex, position)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(RasterVertex), reinterpret_cast<void *>(offsetof(RasterVertex, color)));
+    VertexArrayObject::unbind();
+
+    mRasterMazeVertexCount = static_cast<GLsizei>(vertices.size());
+
+    mVAOManager->get(VAOs::ID::GOAL_PATH).bind();
+    mVBOManager->get(VBOs::ID::GOAL_PATH).bind(GL_ARRAY_BUFFER);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(goalPathLines.size() * sizeof(glm::vec3)),
+                 goalPathLines.data(),
+                 GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), reinterpret_cast<void *>(0));
+    VertexArrayObject::unbind();
+    VertexBufferObject::unbind(GL_ARRAY_BUFFER);
+    mGoalPathVertexCount = static_cast<GLsizei>(goalPathLines.size());
+
+    mRasterMazeCenter = mazeCenter;
+    mRasterMazeWidth = mazeWidth;
+    mRasterMazeDepth = mazeDepth;
+    mRasterMazeTopY = mazeTopY;
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "World: Raster maze built - rows=%u cols=%u levels=%u vertices=%d",
+                kSimpleMazeRows, kSimpleMazeCols, kSimpleMazeLevels, mRasterMazeVertexCount);
+}
+
+void World::renderRasterMaze(const Camera &camera, const Player &player,
+                             int windowWidth, int windowHeight) const noexcept
+{
+    FramebufferObject::unbind();
+    glViewport(0, 0, windowWidth, windowHeight);
+
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    mSkyShader->bind();
+    mVAOManager->get(VAOs::ID::FULLSCREEN_QUAD).bind();
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+
+    const float aspectRatio = static_cast<float>(std::max(1, windowWidth)) / static_cast<float>(std::max(1, windowHeight));
+    const glm::mat4 mvp = camera.getPerspective(aspectRatio) * camera.getLookAt();
+    mMazeShader->bind();
+    mMazeShader->setUniform("uMVP", mvp);
+    mMazeShader->setUniform("uTime", static_cast<float>(SDL_GetTicks()) * 0.001f);
+
+    const float mazeOriginX = mRasterMazeCenter.x - 0.5f * mRasterMazeWidth;
+    const float mazeOriginZ = mRasterMazeCenter.z - 0.5f * mRasterMazeDepth;
+    const glm::vec3 playerPos = player.getPosition();
+    const int highlightCol = static_cast<int>(std::floor((playerPos.x - mazeOriginX) / kSimpleCellSize));
+    const int highlightRow = static_cast<int>(std::floor((playerPos.z - mazeOriginZ) / kSimpleCellSize));
+    mMazeShader->setUniform("uPlayerXZ", glm::vec2(playerPos.x, playerPos.z));
+    mMazeShader->setUniform("uMazeOriginXZ", glm::vec2(mazeOriginX, mazeOriginZ));
+    mMazeShader->setUniform("uCellSize", kSimpleCellSize);
+    if (highlightRow >= 0 && highlightRow < static_cast<int>(kSimpleMazeRows) &&
+        highlightCol >= 0 && highlightCol < static_cast<int>(kSimpleMazeCols))
+    {
+        mMazeShader->setUniform("uHighlightEnabled", 1);
+    }
+    else
+    {
+        mMazeShader->setUniform("uHighlightEnabled", 0);
+    }
+
+    const Texture *spriteSheet = getCharacterSpriteSheet();
+    if (spriteSheet && spriteSheet->get() != 0)
+    {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, spriteSheet->get());
+        mMazeShader->setUniform("uSpriteSheet", 0);
+        mMazeShader->setUniform("uHasTexture", 1);
+    }
+    else
+    {
+        mMazeShader->setUniform("uHasTexture", 0);
+    }
+
+    mVAOManager->get(VAOs::ID::RASTER_MAZE).bind();
+    glDrawArrays(GL_TRIANGLES, 0, mRasterMazeVertexCount);
+}
+
+void World::renderGoalPathStencil(const Camera &camera,
+                                  int windowWidth, int windowHeight) const noexcept
+{
+    const float aspectRatio = static_cast<float>(std::max(1, windowWidth)) /
+                              static_cast<float>(std::max(1, windowHeight));
+    const glm::mat4 mvp = camera.getPerspective(aspectRatio) * camera.getLookAt();
+    const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
+
+    GLboolean stencilWasEnabled = glIsEnabled(GL_STENCIL_TEST);
+    GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
+    GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+    GLfloat prevLineWidth = 1.0f;
+    glGetFloatv(GL_LINE_WIDTH, &prevLineWidth);
+
+    glEnable(GL_STENCIL_TEST);
+    glClear(GL_STENCIL_BUFFER_BIT);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_BLEND);
+
+    glStencilMask(0xFF);
+    glStencilFunc(GL_ALWAYS, 1, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+
+    mGoalPathStencilShader->bind();
+    mGoalPathStencilShader->setUniform("uMVP", mvp);
+    mGoalPathStencilShader->setUniform("uColor", glm::vec3(0.72f, 1.0f, 0.84f));
+    mGoalPathStencilShader->setUniform("uIntensity", 1.0f);
+    mGoalPathStencilShader->setUniform("uTime", now);
+    mVAOManager->get(VAOs::ID::GOAL_PATH).bind();
+    glLineWidth(3.0f);
+    glDrawArrays(GL_LINES, 0, mGoalPathVertexCount);
+
+    glStencilMask(0x00);
+    glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    mGoalPathStencilShader->setUniform("uColor", glm::vec3(0.70f, 1.0f, 0.90f));
+    mGoalPathStencilShader->setUniform("uIntensity", 0.52f);
+    glLineWidth(7.0f);
+    glDrawArrays(GL_LINES, 0, mGoalPathVertexCount);
+
+    VertexArrayObject::unbind();
+    glLineWidth(prevLineWidth);
+    glStencilMask(0xFF);
+    glStencilFunc(GL_ALWAYS, 0, 0xFF);
+    glDepthMask(GL_TRUE);
+
+    if (!stencilWasEnabled)
+        glDisable(GL_STENCIL_TEST);
+    if (!blendWasEnabled)
+        glDisable(GL_BLEND);
+    if (depthWasEnabled)
+        glEnable(GL_DEPTH_TEST);
+    else
+        glDisable(GL_DEPTH_TEST);
+}
+
+void World::renderBoundaryCharacterBillboards(const Camera &camera,
+                                              int windowWidth, int windowHeight) const noexcept
+{
+    if (!mBoundarySpriteShader || !mBoundarySpriteShader->isLinked() ||
+        mBoundarySprites.empty())
+        return;
+
+    const Texture *spriteSheet = getCharacterSpriteSheet();
+    if (!spriteSheet || spriteSheet->get() == 0)
+        return;
+
+    const int texW = std::max(1, spriteSheet->getWidth());
+    const int texH = std::max(1, spriteSheet->getHeight());
+    const int rows = std::max(1, texH / kBoundaryTileSizePx);
+
+    const float aspectRatio = static_cast<float>(std::max(1, windowWidth)) /
+                              static_cast<float>(std::max(1, windowHeight));
+    const glm::mat4 view = camera.getLookAt();
+    const glm::mat4 proj = camera.getPerspective(aspectRatio);
+
+    GLboolean wasBlendEnabled = GL_FALSE;
+    GLboolean wasCullEnabled = GL_FALSE;
+    glGetBooleanv(GL_BLEND, &wasBlendEnabled);
+    glGetBooleanv(GL_CULL_FACE, &wasCullEnabled);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+
+    glDrawBuffer(GL_BACK);
+
+    const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
+
+    for (const auto &sprite : mBoundarySprites)
+    {
+        const int frame = static_cast<int>(std::floor(now * kBoundaryAnimFps + sprite.phaseOffset)) % std::max(1, kBoundaryAnimFrameCount);
+        const int clampedFrame = std::clamp(frame, 0, rows - 1);
+        const int rowFromBottom = rows - 1 - clampedFrame;
+
+        const float tileU = static_cast<float>(kBoundaryTileSizePx) / static_cast<float>(texW);
+        const float tileV = static_cast<float>(kBoundaryTileSizePx) / static_cast<float>(texH);
+        const float vMin = static_cast<float>(rowFromBottom) * tileV;
+
+        const glm::vec4 uvRect(0.0f, vMin, tileU, vMin + tileV);
+        const float effectiveScale = std::max(sprite.scale, 0.1f);
+        const glm::vec2 halfSizeXY(kBoundarySpriteWidth * effectiveScale * 0.5f,
+                                   kBoundarySpriteHeight * effectiveScale * 0.5f);
+
+        GLSDLHelper::renderBillboardSpriteUV(
+            *mBoundarySpriteShader,
+            spriteSheet->get(),
+            uvRect,
+            sprite.center,
+            0.0f,
+            view,
+            proj,
+            glm::vec4(1.0f),
+            false,
+            false,
+            false,
+            halfSizeXY);
+    }
+
+    if (!wasBlendEnabled)
+        glDisable(GL_BLEND);
+    if (wasCullEnabled)
+        glEnable(GL_CULL_FACE);
+}
+
+void World::renderPickupSpheres(const Camera &camera,
+                                int windowWidth, int windowHeight) const noexcept
+{
+    if (mPickupSpheres.empty())
+        return;
+
+    // Configure pickup VAO vertex attributes on first use
+    if (mPickupVertexCount == 0 && mVAOManager && mVBOManager)
+    {
+        mVAOManager->get(VAOs::ID::PICKUP_SPHERES).bind();
+        mVBOManager->get(VBOs::ID::PICKUP).bind(GL_ARRAY_BUFFER);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RasterVertex),
+                              reinterpret_cast<void *>(offsetof(RasterVertex, position)));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(RasterVertex),
+                              reinterpret_cast<void *>(offsetof(RasterVertex, color)));
+        VertexArrayObject::unbind();
+        mPickupsDirty = true;
+    }
+
+    if (mPickupsDirty)
+    {
+        std::vector<RasterVertex> pickupVerts;
+        pickupVerts.reserve(mPickupSpheres.size() * 36);
+
+        auto pushQuad = [&pickupVerts](const glm::vec3 &a, const glm::vec3 &b,
+                                       const glm::vec3 &c, const glm::vec3 &d,
+                                       const glm::vec3 &color)
+        {
+            pickupVerts.push_back({a, color});
+            pickupVerts.push_back({b, color});
+            pickupVerts.push_back({c, color});
+            pickupVerts.push_back({a, color});
+            pickupVerts.push_back({c, color});
+            pickupVerts.push_back({d, color});
+        };
+
+        for (const auto &pickup : mPickupSpheres)
+        {
+            if (pickup.collected)
+                continue;
+
+            const glm::vec3 &pos = pickup.position;
+
+            glm::vec3 color;
+            if (pickup.value > 0)
+                color = glm::vec3(0.15f, 0.85f, 0.25f);
+            else if (pickup.value < 0)
+                color = glm::vec3(0.90f, 0.15f, 0.15f);
+            else
+                color = glm::vec3(0.90f, 0.85f, 0.15f);
+
+            const float h = 0.4f;
+            const glm::vec3 p000 = pos + glm::vec3(-h, -h, -h);
+            const glm::vec3 p001 = pos + glm::vec3(-h, -h, h);
+            const glm::vec3 p010 = pos + glm::vec3(-h, h, -h);
+            const glm::vec3 p011 = pos + glm::vec3(-h, h, h);
+            const glm::vec3 p100 = pos + glm::vec3(h, -h, -h);
+            const glm::vec3 p101 = pos + glm::vec3(h, -h, h);
+            const glm::vec3 p110 = pos + glm::vec3(h, h, -h);
+            const glm::vec3 p111 = pos + glm::vec3(h, h, h);
+
+            pushQuad(p001, p101, p111, p011, color);
+            pushQuad(p100, p000, p010, p110, color * 0.8f);
+            pushQuad(p000, p001, p011, p010, color * 0.9f);
+            pushQuad(p101, p100, p110, p111, color * 0.85f);
+            pushQuad(p010, p011, p111, p110, color * 1.1f);
+            pushQuad(p000, p100, p101, p001, color * 0.7f);
+        }
+
+        mVBOManager->get(VBOs::ID::PICKUP).bind(GL_ARRAY_BUFFER);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(pickupVerts.size() * sizeof(RasterVertex)),
+                     pickupVerts.data(), GL_DYNAMIC_DRAW);
+        const_cast<World *>(this)->mPickupVertexCount = static_cast<GLsizei>(pickupVerts.size());
+        mPickupsDirty = false;
+    }
+
+    if (mPickupVertexCount == 0)
+        return;
+
+    const float aspectRatio = static_cast<float>(std::max(1, windowWidth)) /
+                              static_cast<float>(std::max(1, windowHeight));
+    const glm::mat4 mvp = camera.getPerspective(aspectRatio) * camera.getLookAt();
+
+    glEnable(GL_DEPTH_TEST);
+    mMazeShader->bind();
+    mMazeShader->setUniform("uMVP", mvp);
+    mMazeShader->setUniform("uHasTexture", 0);
+    mVAOManager->get(VAOs::ID::PICKUP_SPHERES).bind();
+    glDrawArrays(GL_TRIANGLES, 0, mPickupVertexCount);
+}
+
+void World::renderPlayerCharacterModel(const Camera &camera, const Player &player,
+                                       int windowWidth, int windowHeight,
+                                       float modelAnimTime) const noexcept
+{
+    if (!mSkinnedCharacterShader || !mSkinnedCharacterShader->isLinked())
+        return;
+
+    if (!mModelsManager)
+        return;
+
+    GLTFModel *model = nullptr;
+    try
+    {
+        model = &mModelsManager->get(Models::ID::STYLIZED_CHARACTER);
+    }
+    catch (const std::exception &)
+    {
+        return;
+    }
+
+    if (!model || !model->isLoaded())
+        return;
+
+    const float aspectRatio = static_cast<float>(std::max(1, windowWidth)) /
+                              static_cast<float>(std::max(1, windowHeight));
+    const glm::mat4 view = camera.getLookAt();
+    const glm::mat4 proj = camera.getPerspective(aspectRatio);
+
+    const glm::vec3 playerPos = player.getPosition() + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f);
+    const float facingDeg = player.getFacingDirection();
+
+    glm::mat4 modelMat = glm::translate(glm::mat4(1.0f), playerPos);
+    modelMat = glm::rotate(modelMat, glm::radians(facingDeg), glm::vec3(0.0f, 1.0f, 0.0f));
+    modelMat = glm::scale(modelMat, glm::vec3(1.0f));
+
+    GLboolean prevDepthTest = GL_FALSE;
+    GLboolean prevCullFace = GL_FALSE;
+    GLboolean prevBlend = GL_FALSE;
+    GLint prevDepthFunc = GL_LESS;
+    glGetBooleanv(GL_DEPTH_TEST, &prevDepthTest);
+    glGetBooleanv(GL_CULL_FACE, &prevCullFace);
+    glGetBooleanv(GL_BLEND, &prevBlend);
+    glGetIntegerv(GL_DEPTH_FUNC, &prevDepthFunc);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
+    mSkinnedCharacterShader->bind();
+    mSkinnedCharacterShader->setUniform("uCameraPos", camera.getPosition());
+    mSkinnedCharacterShader->setUniform("uTime", static_cast<float>(SDL_GetTicks()) * 0.001f);
+
+    // Contact shadow
+    {
+        glm::mat4 shadowMat = glm::translate(glm::mat4(1.0f), glm::vec3(playerPos.x, kSimpleFloorY + 0.03f, playerPos.z));
+        shadowMat = glm::rotate(shadowMat, glm::radians(facingDeg), glm::vec3(0.0f, 1.0f, 0.0f));
+        shadowMat = glm::scale(shadowMat, glm::vec3(1.03f, 0.02f, 1.03f));
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        glDisable(GL_CULL_FACE);
+
+        mSkinnedCharacterShader->setUniform("uShadowPass", 1);
+        model->render(*mSkinnedCharacterShader, shadowMat, view, proj, modelAnimTime);
+
+        glDepthMask(GL_TRUE);
+        if (prevCullFace)
+            glEnable(GL_CULL_FACE);
+        else
+            glDisable(GL_CULL_FACE);
+    }
+
+    mSkinnedCharacterShader->setUniform("uShadowPass", 0);
+    model->render(*mSkinnedCharacterShader, modelMat, view, proj, modelAnimTime);
+
+    if (!prevDepthTest)
+        glDisable(GL_DEPTH_TEST);
+    else
+        glDepthFunc(static_cast<GLenum>(prevDepthFunc));
+    if (!prevCullFace)
+        glDisable(GL_CULL_FACE);
+    if (!prevBlend)
+        glDisable(GL_BLEND);
+}
+
+void World::renderWalkParticles(const Camera &camera, const Player &player,
+                                int windowWidth, int windowHeight,
+                                float playerPlanarSpeed) const noexcept
+{
+    if (!mWalkParticlesInitialized || !mWalkParticlesComputeShader || !mWalkParticlesRenderShader || mWalkParticleCount == 0)
+        return;
+
+    if (!mWalkParticlesComputeShader->isLinked())
+        return;
+
+    if (playerPlanarSpeed < 1.0f)
+        return;
+
+    const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
+    const float dt = (mWalkParticlesTime <= 0.0f) ? 0.0f : std::min(0.03f, now - mWalkParticlesTime);
+    mWalkParticlesTime = now;
+
+    const glm::vec3 playerPos = player.getPosition();
+    const glm::vec3 footCenter = playerPos + glm::vec3(0.0f, 1.0f, 0.0f);
+    const glm::vec3 attractor1 = footCenter + glm::vec3(-0.65f, 0.1f, 0.0f);
+    const glm::vec3 attractor2 = footCenter + glm::vec3(0.65f, 0.1f, 0.0f);
+
+    const float particleMass = 0.35f;
+    const float gravityScale = 1.0f;
+    const float pointSize = 2.6f;
+    const float particleAlpha = 0.22f;
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mVBOManager->get(VBOs::ID::WALK_PARTICLES_POS_SSBO).get());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mVBOManager->get(VBOs::ID::WALK_PARTICLES_VEL_SSBO).get());
+
+    mWalkParticlesComputeShader->bind();
+    mWalkParticlesComputeShader->setUniform("BlackHolePos1", attractor1);
+    mWalkParticlesComputeShader->setUniform("BlackHolePos2", attractor2);
+    mWalkParticlesComputeShader->setUniform("Gravity1", 210.0f * gravityScale);
+    mWalkParticlesComputeShader->setUniform("Gravity2", 210.0f * gravityScale);
+    mWalkParticlesComputeShader->setUniform("ParticleInvMass", 1.0f / std::max(0.05f, particleMass));
+    mWalkParticlesComputeShader->setUniform("DeltaT", std::max(0.0001f, dt * 0.8f));
+    mWalkParticlesComputeShader->setUniform("MaxDist", 4.5f);
+    mWalkParticlesComputeShader->setUniform("ParticleCount", mWalkParticleCount);
+
+    const GLuint groupsX = (mWalkParticleCount + 999u) / 1000u;
+    glDispatchCompute(groupsX, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+
+    const int safeHeight = std::max(1, windowHeight);
+    const float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(safeHeight);
+    const glm::mat4 mvp = camera.getPerspective(aspectRatio) * camera.getLookAt();
+
+    GLboolean blendEnabled = GL_FALSE;
+    glGetBooleanv(GL_BLEND, &blendEnabled);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glPointSize(pointSize);
+
+    mWalkParticlesRenderShader->bind();
+    mWalkParticlesRenderShader->setUniform("MVP", mvp);
+    mWalkParticlesRenderShader->setUniform("Color", glm::vec4(0.46f, 0.30f, 0.17f, std::clamp(particleAlpha, 0.0f, 1.0f)));
+    mVAOManager->get(VAOs::ID::WALK_PARTICLES).bind();
+    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(mWalkParticleCount));
+
+    VertexArrayObject::unbind();
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    glDepthMask(GL_TRUE);
+    if (!blendEnabled)
+        glDisable(GL_BLEND);
+}
+
+void World::renderCharacterShadow(const Camera &camera, const Player &player,
+                                  int windowWidth, int windowHeight) const noexcept
+{
+    if (!mShadowsInitialized || !mShadowShader || !mFBOManager || !mShadowTexture || mShadowTexture->get() == 0)
+        return;
+
+    if (camera.getMode() != CameraMode::THIRD_PERSON)
+        return;
+
+    mFBOManager->get(FBOs::ID::SHADOW).bind();
+    glViewport(0, 0, windowWidth, windowHeight);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+    glm::mat4 view = camera.getLookAt();
+    glm::mat4 projection = camera.getPerspective(aspectRatio);
+    const float timeSeconds = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+    const glm::vec3 lightDir = computeSunDirection(timeSeconds);
+    const float groundY = mGroundPlane.getPoint().y;
+
+    mShadowShader->bind();
+    mShadowShader->setUniform("uViewMatrix", view);
+    mShadowShader->setUniform("uProjectionMatrix", projection);
+    mShadowShader->setUniform("uLightDir", lightDir);
+    mShadowShader->setUniform("uGroundY", groundY);
+    mShadowShader->setUniform("uSphereCenter", glm::vec3(0.0f, 0.0f, 0.0f));
+    mShadowShader->setUniform("uSphereRadius", 50.0f);
+
+    mVAOManager->get(VAOs::ID::SHADOW_QUAD).bind();
+
+    auto drawBillboardShadow = [this](const glm::vec3 &spritePos, float billboardHalfSize)
+    {
+        mShadowShader->setUniform("uSpritePos", spritePos);
+        mShadowShader->setUniform("uSpriteHalfSize", billboardHalfSize);
+        glDrawArrays(GL_POINTS, 0, 1);
+    };
+
+    drawBillboardShadow(player.getPosition() + glm::vec3(0.0f, kPlayerShadowCenterYOffset, 0.0f), 3.0f);
+
+    VertexArrayObject::unbind();
+    glDisable(GL_BLEND);
+    FramebufferObject::unbind();
+}
+
+void World::renderPlayerReflection(const Camera &camera, const Player &player,
+                                   int windowWidth, int windowHeight) const noexcept
+{
+    if (!mReflectionsInitialized || !mFBOManager || !mReflectionColorTex || mReflectionColorTex->get() == 0)
+        return;
+
+    auto &reflFBO = mFBOManager->get(FBOs::ID::REFLECTION);
+    reflFBO.bind();
+    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    FramebufferObject::unbind();
+
+    if (fboStatus != GL_FRAMEBUFFER_COMPLETE)
+        return;
+
+    glBindTexture(GL_TEXTURE_2D, mReflectionColorTex->get());
+    GLint texWidth = 0, texHeight = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texWidth);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glFlush();
+
+    reflFBO.bind();
+    glViewport(0, 0, windowWidth, windowHeight);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+
+    const int safeHeight = std::max(windowHeight, 1);
+    const float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(safeHeight);
+    const float groundY = mGroundPlane.getPoint().y;
+    const glm::vec3 modelPos = player.getPosition() + glm::vec3(0.0f, kCharacterModelYOffset, 0.0f);
+    glm::vec3 reflectedModelPos = modelPos;
+    reflectedModelPos.y = (2.0f * groundY) - modelPos.y;
+    (void)reflectedModelPos;
+    (void)aspectRatio;
+
+    glFlush();
+    FramebufferObject::unbind();
 }
 
 void World::handleEvent(const SDL_Event &event)
@@ -1058,235 +2192,6 @@ Material::MaterialType World::getMaterialForDistance(int distance) const noexcep
     {
         return MaterialType::LAMBERTIAN;
     }
-}
-
-// ============================================================================
-// Character rendering for third-person mode
-// ============================================================================
-
-#include "Player.hpp"
-#include "Camera.hpp"
-#include "GLSDLHelper.hpp"
-#include "Shader.hpp"
-
-void World::renderPlayerCharacter(const Player &player, const Camera &camera) const noexcept
-{
-    // Only render in third-person mode (billboard fallback for non-GLTF views)
-    if (camera.getMode() != CameraMode::THIRD_PERSON)
-    {
-        return;
-    }
-
-    // Get the character sprite sheet texture
-    const Texture *spriteSheet = getCharacterSpriteSheet();
-    if (!spriteSheet || spriteSheet->get() == 0)
-    {
-        static bool loggedOnce = false;
-        if (!loggedOnce)
-        {
-            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "World: Character sprite sheet not loaded (ID: %d)",
-                        static_cast<int>(Textures::ID::CHARACTER_SPRITE_SHEET));
-            loggedOnce = true;
-        }
-        return;
-    }
-
-    // Get billboard shader
-    Shader *billboardShader = nullptr;
-    try
-    {
-        billboardShader = &mShaders.get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
-    }
-    catch (const std::exception &e)
-    {
-        static bool loggedOnce = false;
-        if (!loggedOnce)
-        {
-            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "World: Billboard shader not available: %s", e.what());
-            loggedOnce = true;
-        }
-        return;
-    }
-
-    // Get animation frame from player
-    AnimationRect frame = player.getCurrentAnimationFrame();
-
-    // Get player position - this is where the character sprite will be rendered
-    glm::vec3 playerPos = player.getPosition();
-
-    // Offset the billboard slightly in front of the player position
-    // so it's visible when camera is looking at player
-    // The camera looks at mFollowTarget + (0,1,0), so render at same position
-
-    // Billboard half-size (character size in world units)
-    float halfSize = 3.0f;
-
-    // Get window dimensions from SDL
-    int windowWidth = 1280;
-    int windowHeight = 720;
-    SDL_Window *sdlWindow = mWindow.getSDLWindow();
-    if (sdlWindow)
-    {
-        SDL_GetWindowSize(sdlWindow, &windowWidth, &windowHeight);
-    }
-
-    // Get view and projection matrices from camera
-    float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
-    glm::mat4 viewMatrix = camera.getLookAt();
-    glm::mat4 projMatrix = camera.getPerspective(aspectRatio);
-
-    // Render the character as a billboard sprite using geometry shader
-    GLSDLHelper::renderBillboardSprite(
-        *billboardShader,
-        spriteSheet->get(),
-        frame,
-        playerPos,
-        halfSize,
-        viewMatrix,
-        projMatrix,
-        spriteSheet->getWidth(),
-        spriteSheet->getHeight());
-}
-
-void World::renderCharacterFromState(const glm::vec3 &position, float facing,
-                                     const AnimationRect &frame,
-                                     const Camera &camera,
-                                     bool useWorldAxes,
-                                     const glm::vec3 &rightAxisWS,
-                                     const glm::vec3 &upAxisWS,
-                                     bool doubleSided) const noexcept
-{
-    // Only render in third-person mode (or always for remote players)
-    // For remote players, we always want to render them
-
-    // Get the character sprite sheet texture
-    const Texture *spriteSheet = getCharacterSpriteSheet();
-    if (!spriteSheet || spriteSheet->get() == 0)
-    {
-        return;
-    }
-
-    // Get billboard shader
-    Shader *billboardShader = nullptr;
-    try
-    {
-        billboardShader = &mShaders.get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
-    }
-    catch (const std::exception &)
-    {
-        return;
-    }
-
-    // Billboard half-size
-    float halfSize = 3.0f;
-
-    // Get window dimensions
-    int windowWidth = 1280;
-    int windowHeight = 720;
-    SDL_Window *sdlWindow = mWindow.getSDLWindow();
-    if (sdlWindow)
-    {
-        SDL_GetWindowSize(sdlWindow, &windowWidth, &windowHeight);
-    }
-
-    // Get view and projection matrices from camera
-    float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
-    glm::mat4 viewMatrix = camera.getLookAt();
-    glm::mat4 projMatrix = camera.getPerspective(aspectRatio);
-
-    const float sheetWidth = static_cast<float>(std::max(1, spriteSheet->getWidth()));
-    const float sheetHeight = static_cast<float>(std::max(1, spriteSheet->getHeight()));
-    const float uMin = static_cast<float>(frame.left) / sheetWidth;
-    const float vMin = static_cast<float>(frame.top) / sheetHeight;
-    const float uMax = static_cast<float>(frame.left + frame.width) / sheetWidth;
-    const float vMax = static_cast<float>(frame.top + frame.height) / sheetHeight;
-
-    const bool flipX = (facing >= 90.0f);
-
-    GLSDLHelper::renderBillboardSpriteUV(
-        *billboardShader,
-        spriteSheet->get(),
-        glm::vec4(uMin, vMin, uMax, vMax),
-        position,
-        halfSize,
-        viewMatrix,
-        projMatrix,
-        glm::vec4(1.0f),
-        flipX,
-        true,
-        false,
-        glm::vec2(0.0f),
-        useWorldAxes,
-        rightAxisWS,
-        upAxisWS,
-        doubleSided);
-}
-
-void World::renderTexturedBillboard(const glm::vec3 &position,
-                                    float halfSize,
-                                    const glm::vec2 &halfSizeXY,
-                                    Textures::ID textureId,
-                                    bool useWorldAxes,
-                                    const glm::vec3 &rightAxisWS,
-                                    const glm::vec3 &upAxisWS,
-                                    bool doubleSided,
-                                    const Camera &camera) const noexcept
-{
-    const Texture *texture = nullptr;
-    try
-    {
-        texture = &mTextures.get(textureId);
-    }
-    catch (const std::exception &)
-    {
-        return;
-    }
-
-    if (!texture || texture->get() == 0)
-    {
-        return;
-    }
-
-    Shader *billboardShader = nullptr;
-    try
-    {
-        billboardShader = &mShaders.get(Shaders::ID::GLSL_BILLBOARD_SPRITE);
-    }
-    catch (const std::exception &)
-    {
-        return;
-    }
-
-    int windowWidth = 1280;
-    int windowHeight = 720;
-    SDL_Window *sdlWindow = mWindow.getSDLWindow();
-    if (sdlWindow)
-    {
-        SDL_GetWindowSize(sdlWindow, &windowWidth, &windowHeight);
-    }
-
-    const int safeHeight = std::max(1, windowHeight);
-    const float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(safeHeight);
-    const glm::mat4 viewMatrix = camera.getLookAt();
-    const glm::mat4 projMatrix = camera.getPerspective(aspectRatio);
-
-    GLSDLHelper::renderBillboardSpriteUV(
-        *billboardShader,
-        texture->get(),
-        glm::vec4(0.0f, 0.0f, 1.0f, 1.0f),
-        position,
-        halfSize,
-        viewMatrix,
-        projMatrix,
-        glm::vec4(1.0f),
-        false,
-        false,
-        false,
-        halfSizeXY,
-        useWorldAxes,
-        rightAxisWS,
-        upAxisWS,
-        doubleSided);
 }
 
 const Texture *World::getCharacterSpriteSheet() const noexcept

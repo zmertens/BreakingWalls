@@ -21,11 +21,18 @@
 #include "Animation.hpp"
 #include "Plane.hpp"
 
+#include <glad/glad.h>
+
 class Camera;
+class FramebufferObject;
+class GLTFModel;
 class Player;
 class RenderWindow;
 class Shader;
 class Sphere;
+class Texture;
+class VertexArrayObject;
+class VertexBufferObject;
 
 union SDL_Event;
 
@@ -60,19 +67,6 @@ public:
     /// @param player Player with animation state
     /// @param camera Camera for view/projection matrices
     void renderPlayerCharacter(const Player &player, const Camera &camera) const noexcept;
-
-    /// Render a character from raw state data (for remote players)
-    /// @param position World position of character
-    /// @param facing Facing direction in degrees
-    /// @param frame Animation frame to render
-    /// @param camera Camera for view/projection matrices
-    void renderCharacterFromState(const glm::vec3 &position, float facing,
-                                  const AnimationRect &frame,
-                                  const Camera &camera,
-                                  bool useWorldAxes = false,
-                                  const glm::vec3 &rightAxisWS = glm::vec3(1.0f, 0.0f, 0.0f),
-                                  const glm::vec3 &upAxisWS = glm::vec3(0.0f, 1.0f, 0.0f),
-                                  bool doubleSided = false) const noexcept;
 
     /// Render a textured billboard quad from a full texture
     /// @param position World position of billboard center
@@ -132,8 +126,63 @@ public:
     /// Get player body velocity for motion blur
     [[nodiscard]] glm::vec2 getPlayerVelocity() const noexcept;
 
+    // ========================================================================
+    // Scene rendering (delegated from GameState)
+    // ========================================================================
+
+    /// Set up GPU rendering resources (called once from GameState constructor)
+    void initRendering(VAOManager *vaos, FBOManager *fbos, VBOManager *vbos,
+                       ModelsManager *models, int windowWidth, int windowHeight,
+                       const Player &player) noexcept;
+
+    /// Draw the complete 3D scene (maze, characters, particles, shadows, etc.)
+    void drawScene(const Camera &camera, const Player &player,
+                   int windowWidth, int windowHeight,
+                   float modelAnimTime, float playerPlanarSpeed) const noexcept;
+
+    /// Build static maze geometry and upload to GPU
+    void buildMazeGeometry(const Player &player) noexcept;
+
+    /// Mark pickup vertex buffer as dirty (needs rebuild)
+    void markPickupsDirty() noexcept { mPickupsDirty = true; }
+
+    // Getters for data that GameState still needs
+    [[nodiscard]] const std::vector<glm::vec4> &getMazeWallAABBs() const noexcept { return mMazeWallAABBs; }
+    [[nodiscard]] const std::vector<glm::vec3> &getMazeCellGradientColors() const noexcept { return mMazeCellGradientColors; }
+    [[nodiscard]] glm::vec3 getRasterMazeCenter() const noexcept { return mRasterMazeCenter; }
+    [[nodiscard]] float getRasterMazeWidth() const noexcept { return mRasterMazeWidth; }
+    [[nodiscard]] float getRasterMazeDepth() const noexcept { return mRasterMazeDepth; }
+    [[nodiscard]] float getRasterMazeTopY() const noexcept { return mRasterMazeTopY; }
+
 private:
     void initPathTracerScene() noexcept;
+
+    // ========================================================================
+    // Scene rendering helpers (moved from GameState)
+    // ========================================================================
+    void createCompositeTargets(int windowWidth, int windowHeight) noexcept;
+    void initializeShadowResources(int windowWidth, int windowHeight) noexcept;
+    void initializeReflectionResources(int windowWidth, int windowHeight) noexcept;
+    void initializeWalkParticles(const Player &player) noexcept;
+
+    void renderRasterMaze(const Camera &camera, const Player &player,
+                          int windowWidth, int windowHeight) const noexcept;
+    void renderGoalPathStencil(const Camera &camera,
+                               int windowWidth, int windowHeight) const noexcept;
+    void renderBoundaryCharacterBillboards(const Camera &camera,
+                                           int windowWidth, int windowHeight) const noexcept;
+    void renderPickupSpheres(const Camera &camera,
+                             int windowWidth, int windowHeight) const noexcept;
+    void renderPlayerCharacterModel(const Camera &camera, const Player &player,
+                                    int windowWidth, int windowHeight,
+                                    float modelAnimTime) const noexcept;
+    void renderWalkParticles(const Camera &camera, const Player &player,
+                             int windowWidth, int windowHeight,
+                             float playerPlanarSpeed) const noexcept;
+    void renderCharacterShadow(const Camera &camera, const Player &player,
+                               int windowWidth, int windowHeight) const noexcept;
+    void renderPlayerReflection(const Camera &camera, const Player &player,
+                                int windowWidth, int windowHeight) const noexcept;
     
     // Sphere physics coordinate transformation
     glm::vec3 projectOntoSphere(glm::vec2 flatPos) const noexcept;
@@ -265,6 +314,58 @@ private:
 
     // Player physics body
     b2BodyId mPlayerBodyId{b2_nullBodyId};
+
+    // ========================================================================
+    // Scene rendering state (moved from GameState)
+    // ========================================================================
+    VAOManager *mVAOManager{nullptr};
+    FBOManager *mFBOManager{nullptr};
+    VBOManager *mVBOManager{nullptr};
+    ModelsManager *mModelsManager{nullptr};
+
+    Shader *mMazeShader{nullptr};
+    Shader *mSkyShader{nullptr};
+    Shader *mGoalPathStencilShader{nullptr};
+    Shader *mBoundarySpriteShader{nullptr};
+    Shader *mShadowShader{nullptr};
+    Shader *mSkinnedCharacterShader{nullptr};
+    Shader *mWalkParticlesComputeShader{nullptr};
+    Shader *mWalkParticlesRenderShader{nullptr};
+
+    Texture *mBillboardColorTex{nullptr};
+    Texture *mOITAccumTex{nullptr};
+    Texture *mOITRevealTex{nullptr};
+    Texture *mShadowTexture{nullptr};
+    Texture *mReflectionColorTex{nullptr};
+
+    bool mShadowsInitialized{false};
+    bool mReflectionsInitialized{false};
+    bool mOITInitialized{false};
+    bool mRenderInitialized{false};
+
+    GLsizei mRasterMazeVertexCount{0};
+    glm::vec3 mRasterMazeCenter{0.0f};
+    float mRasterMazeWidth{1.0f};
+    float mRasterMazeDepth{1.0f};
+    float mRasterMazeTopY{1.0f};
+    GLsizei mGoalPathVertexCount{0};
+    GLsizei mPickupVertexCount{0};
+    mutable bool mPickupsDirty{true};
+
+    std::vector<glm::vec4> mMazeWallAABBs;
+    std::vector<glm::vec3> mMazeCellGradientColors;
+
+    struct BoundarySpriteData
+    {
+        glm::vec3 center;
+        float phaseOffset;
+        float scale;
+    };
+    std::vector<BoundarySpriteData> mBoundarySprites;
+
+    mutable float mWalkParticlesTime{0.0f};
+    mutable bool mWalkParticlesInitialized{false};
+    mutable GLuint mWalkParticleCount{1600};
 };
 
 #endif // WORLD_HPP
