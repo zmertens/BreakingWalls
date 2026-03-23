@@ -132,7 +132,7 @@ endif()
 
 target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<OR:$<STREQUAL:$<CONFIG>,Debug>,$<STREQUAL:$<CONFIG>,RelWithDebInfo>>:${BREAKING_WALLS_DEBUG_DEF}>")
 target_compile_features(${BREAKING_WALLS_APP_NAME} PRIVATE cxx_std_20)
-target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE GLM_FORCE_RADIANS SDL_X11_XSCRNSAVER=OFF)
+target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE GLM_FORCE_RADIANS)
 
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/fonts> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/fonts>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/glad/include> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/glad/include>)
