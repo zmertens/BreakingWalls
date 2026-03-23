@@ -1,11 +1,8 @@
-![Sample](textures/icon3.bmp)
+# About Breaking Walls
 
-# Breaking Walls
-
-An endless runner with synthwave feels and cutting edge graphics.
+An endless runner with a synthwave theme and futuristic vibes.
 
   - Players interact with and dodge obstacles using deterministic physics
-  - Zen mode that includes **just running mode**.
   - Simple event handling (mouse, touch, keyboard) and haptic feedback
   - Spatialized sound effects
   - Break down the 4th wall and advance into evolving worlds with online gameplay
@@ -22,6 +19,8 @@ These exteneral dependencies are downloaded automatically with CMake and Git:
 - [SDL](https://libsdl.org)
 - [SFML](https://sfml-dev.org)
 
+
+### Example commands
 
 Clone the repository:
 `git clone https://github.com/zmertens/BreakingWalls.git --shallow-submodules`
