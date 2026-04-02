@@ -2,7 +2,7 @@
 
 #include <glad/glad.h>
 
-#include <SDL3/SDL.h>
+#include <iostream>
 
 #include <MazeBuilder/enums.h>
 
@@ -119,7 +119,7 @@ bool Texture::loadRenderTarget(const int width, const int height,
 {
     if (width <= 0 || height <= 0)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid render target size %dx%d\n", width, height);
+        std::cerr << "Invalid render target size " << width << "x" << height << "\n";
         return false;
     }
 
@@ -174,8 +174,7 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
 
     if (data == nullptr)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "stbi_load %s failed: %s\n",
-                     filepath.data(), stbi_failure_reason());
+        std::cerr << "stbi_load " << filepath.data() << " failed: " << stbi_failure_reason() << "\n";
         return false;
     }
 
@@ -199,8 +198,7 @@ bool Texture::loadFromFile(const std::string_view filepath, const std::uint32_t 
     // Check for OpenGL errors
     if (const GLenum error = glGetError(); error != GL_NO_ERROR)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error after loading %s: 0x%x\n",
-                     filepath.data(), error);
+        std::cerr << "OpenGL error after loading " << filepath.data() << ": 0x" << std::hex << error << std::dec << "\n";
         stbi_image_free(data);
         return false;
     }
@@ -251,7 +249,7 @@ bool Texture::loadFromMemory(const std::uint8_t *data, const int width, const in
 {
     if (data == nullptr || width <= 0 || height <= 0)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for loadFromMemory\n");
+        std::cerr << "Invalid parameters for loadFromMemory\n";
         return false;
     }
 
@@ -266,7 +264,7 @@ bool Texture::loadFromMemory(const std::uint8_t *data, const int width, const in
         rotated_buffer = rotate180(data, width, height);
         if (rotated_buffer.empty())
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create rotated texture copy\n");
+            std::cerr << "Failed to create rotated texture copy\n";
             return false;
         }
         upload_data = rotated_buffer.data();
@@ -294,7 +292,7 @@ bool Texture::loadFromMemory(const std::uint8_t *data, const int width, const in
     // Check for OpenGL errors
     if (const GLenum error = glGetError(); error != GL_NO_ERROR)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error after loading from memory: 0x%x\n", error);
+        std::cerr << "OpenGL error after loading from memory: 0x" << std::hex << error << std::dec << "\n";
         return false;
     }
 
@@ -309,16 +307,14 @@ bool Texture::updateFromMemory(const std::uint8_t *data, const int width, const 
 {
     if (data == nullptr || width <= 0 || height <= 0)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Invalid parameters for updateFromMemory\n");
+        std::cerr << "Invalid parameters for updateFromMemory\n";
         return false;
     }
 
     // Enforce size constraints
     if (width > MAX_TEXTURE_WIDTH || height > MAX_TEXTURE_HEIGHT)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                     "Texture dimensions %dx%d exceed maximum %dx%d\n",
-                     width, height, MAX_TEXTURE_WIDTH, MAX_TEXTURE_HEIGHT);
+        std::cerr << "Texture dimensions " << width << "x" << height << " exceed maximum " << MAX_TEXTURE_WIDTH << "x" << MAX_TEXTURE_HEIGHT << "\n";
         return false;
     }
 
@@ -339,7 +335,7 @@ bool Texture::updateFromMemory(const std::uint8_t *data, const int width, const 
         rotated_buffer = rotate180(data, width, height);
         if (rotated_buffer.empty())
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create rotated texture copy\n");
+            std::cerr << "Failed to create rotated texture copy\n";
             return false;
         }
         upload_data = rotated_buffer.data();
@@ -354,7 +350,7 @@ bool Texture::updateFromMemory(const std::uint8_t *data, const int width, const 
 
     if (const GLenum error = glGetError(); error != GL_NO_ERROR)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL error in updateFromMemory: 0x%x\n", error);
+        std::cerr << "OpenGL error in updateFromMemory: 0x" << std::hex << error << std::dec << "\n";
         return false;
     }
 

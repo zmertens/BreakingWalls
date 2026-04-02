@@ -1,6 +1,44 @@
 #ifndef RENDER_WINDOW_HPP
 #define RENDER_WINDOW_HPP
 
+namespace sf { class Window; }
+
+class RenderWindow
+{
+public:
+    explicit RenderWindow(sf::Window* window);
+
+    ~RenderWindow() = default;
+
+    RenderWindow(const RenderWindow&) = delete;
+    RenderWindow& operator=(const RenderWindow&) = delete;
+
+    RenderWindow(RenderWindow&&) = default;
+    RenderWindow& operator=(RenderWindow&&) = default;
+
+    void clear() const noexcept;
+    void display() const noexcept;
+
+    [[nodiscard]] bool isOpen() const noexcept;
+
+    void close() noexcept;
+
+    void setFullscreen(bool fullscreen) const noexcept;
+
+    [[nodiscard]] bool isFullscreen() const noexcept;
+
+    void setVsync(bool enabled) const noexcept;
+
+    [[nodiscard]] sf::Window* getSFMLWindow() const noexcept;
+
+private:
+    sf::Window* mWindow;
+    mutable bool mFullscreen{false};
+};
+
+#endif // RENDER_WINDOW_HPP
+
+
 struct SDL_Window;
 
 /// @brief SDL-based RenderWindow that mimics SFML's sf::RenderWindow interface

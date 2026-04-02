@@ -21,20 +21,14 @@ if(TARGET box2d)
     get_target_property(BOX2D_INCLUDE_DIRS box2d INTERFACE_INCLUDE_DIRECTORIES)
 endif()
 
-# Get SDL
-set(SDL_SHARED FALSE CACHE BOOL "Build a SDL shared library (if available)")
-set(SDL_STATIC TRUE CACHE BOOL "Build a SDL static library (if available)")
-FetchGitRepo(SDL https://github.com/libsdl-org/SDL.git release-3.4.2)
-set_property(DIRECTORY "${CMAKE_BINARY_DIR}/_deps/sdl-src" PROPERTY EXCLUDE_FROM_ALL TRUE)
-
 # Get SFML with Emscripten-specific settings
 set(SFML_REPO_URL "https://github.com/zmertens/SFML.git")
 set(SFML_GIT_TAG "sfml3_with_tls")
 message(STATUS "Fetching SFML from ${SFML_REPO_URL} at tag ${SFML_GIT_TAG}")
 set(SFML_BUILD_AUDIO ON)
 set(SFML_BUILD_NETWORK ON)
-set(SFML_BUILD_GRAPHICS OFF)
-set(SFML_BUILD_WINDOW OFF)
+set(SFML_BUILD_GRAPHICS ON)
+set(SFML_BUILD_WINDOW ON)
 set(SFML_USE_SYSTEM_DEPS OFF)
 # Disable SFML's internal thread finding since we provide our own
 set(SFML_DISABLE_FIND_THREADS ON)
@@ -84,7 +78,7 @@ set(BREAKING_WALLS_SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/Player.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/RenderWindow.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GLSDLHelper.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SDLAudioStream.cpp
+
     ${CMAKE_CURRENT_SOURCE_DIR}/Shader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SoundPlayer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Sphere.cpp
@@ -105,7 +99,7 @@ set(DEAR_IMGUI_SRC_FILES
     ${DEAR_IMGUI_DEP_PATH}/imgui_draw.cpp
     ${DEAR_IMGUI_DEP_PATH}/imgui_tables.cpp
     ${DEAR_IMGUI_DEP_PATH}/imgui_widgets.cpp
-    ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_sdl3.cpp
+    ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_sfml.cpp
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3.cpp)
 
 set(DEAR_IMGUI_HEADERS
@@ -115,7 +109,7 @@ set(DEAR_IMGUI_HEADERS
     ${DEAR_IMGUI_DEP_PATH}/imstb_rectpack.h
     ${DEAR_IMGUI_DEP_PATH}/imstb_textedit.h
     ${DEAR_IMGUI_DEP_PATH}/imstb_truetype.h
-    ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_sdl3.h
+    ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_sfml.h
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3.h
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3_loader.h)
 
@@ -141,7 +135,7 @@ target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFAC
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/dearimgui> $<BUILD_INTERFACE:${DEAR_IMGUI_DEP_PATH}>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:deps/stb> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/deps/stb>)
 
-target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} OpenGL::GL box2d::box2d MazeBuilder::MazeBuilder SDL3::SDL3 SFML::Audio SFML::Network assimp::assimp)
+target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE ${CMAKE_THREAD_LIBS_INIT} OpenGL::GL box2d::box2d MazeBuilder::MazeBuilder SFML::Graphics SFML::Window SFML::Audio SFML::Network assimp::assimp)
 message(INFO ": Configuring ${BREAKING_WALLS_APP_NAME} for Desktop platform")
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../audio" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
@@ -155,7 +149,7 @@ file(COPY "${CMAKE_SOURCE_DIR}/physics.json" DESTINATION "${CMAKE_CURRENT_BINARY
 if(WIN32)
     add_custom_command(
         TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3::SDL3-static> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
+        COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SFML::Window> $<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>
         VERBATIM
     )
     add_custom_command(

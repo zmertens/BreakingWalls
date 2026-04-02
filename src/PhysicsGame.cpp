@@ -9,6 +9,7 @@
 #include <cmath>
 #include <functional>
 #include <future>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -17,10 +18,10 @@
 #include <vector>
 #include <unordered_map>
 
-#include <SDL3/SDL.h>
+#include <SFML/Window.hpp>
 
 #include <dearimgui/imgui.h>
-#include <dearimgui/backends/imgui_impl_sdl3.h>
+#include <dearimgui/backends/imgui_impl_sfml.h>
 #include <dearimgui/backends/imgui_impl_opengl3.h>
 
 #include "Font.hpp"
@@ -45,22 +46,6 @@
 #include "State.hpp"
 #include "StateStack.hpp"
 #include "Texture.hpp"
-
-namespace
-{
-    void configureGlobalLogging() noexcept
-    {
-        static std::once_flag configured;
-        std::call_once(configured, []()
-                       {
-#if defined(BREAKING_WALLS_DEBUG)
-                           SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
-#else
-                           SDL_SetLogPriorities(SDL_LOG_PRIORITY_CRITICAL);
-#endif
-                       });
-    }
-}
 
 struct PhysicsGame::PhysicsGameImpl
 {
@@ -96,11 +81,10 @@ struct PhysicsGame::PhysicsGameImpl
     PhysicsGameImpl(std::string_view title, int w, int h, std::string_view resourcePath = "")
         : mWindowTitle{title}, mResourcePath{resourcePath}, INIT_WINDOW_W{w}, INIT_WINDOW_H{h}, mRenderWindow{nullptr}, mGLSDLHelper{}, mStateStack{nullptr}, mOptions{}, mSounds{nullptr}, mPlayer1{}, mHttpClient{}
     {
-        configureGlobalLogging();
         initSDL();
         if (!mGLSDLHelper.getWindow())
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL mRenderWindow - cannot continue");
+            std::cerr << "GLSDLHelper: Failed to create window - cannot continue\n";
             // Don't initialize further objects if SDL failed
             return;
         }
@@ -155,7 +139,7 @@ struct PhysicsGame::PhysicsGameImpl
             mVBOs.clear();
 
             ImGui_ImplOpenGL3_Shutdown();
-            ImGui_ImplSDL3_Shutdown();
+            ImGui_ImplSFML_Shutdown();
             ImGui::DestroyContext();
 
             sdl.destroyAndQuit();
@@ -180,7 +164,7 @@ struct PhysicsGame::PhysicsGameImpl
         ImGui::StyleColorsDark();
 
         // Initialize ImGui SDL3 and OpenGL3 backends
-        ImGui_ImplSDL3_InitForOpenGL(mGLSDLHelper.getWindow(), mGLSDLHelper.getGLContext());
+        ImGui_ImplSFML_Init(mGLSDLHelper.getWindow());
         ImGui_ImplOpenGL3_Init("#version 430");
     }
 
@@ -192,31 +176,19 @@ struct PhysicsGame::PhysicsGameImpl
 
     void processInput() const noexcept
     {
-        if (!mStateStack)
+        if (!mStateStack || !mGLSDLHelper.getWindow()) return;
+
+        while (auto event = mGLSDLHelper.getWindow()->pollEvent())
         {
-            return;
-        }
-
-        SDL_Event event;
-
-        while (SDL_PollEvent(&event))
-        {
-            // Let ImGui process the event first
-            ImGui_ImplSDL3_ProcessEvent(&event);
-
-            if (event.type == SDL_EVENT_QUIT)
+            ImGui_ImplSFML_ProcessEvent(*event);
+            if (event->is<sf::Event::Closed>())
             {
-                SDL_Log("SDL_EVENT_QUIT received - clearing state stack");
+                std::cout << "Window close requested\n";
                 mStateStack->clearStates();
-                // Don't process any more events after quit
                 return;
             }
-
-            // Only handle events if state stack is not empty
             if (!mStateStack->isEmpty())
-            {
-                mStateStack->handleEvent(event);
-            }
+                mStateStack->handleEvent(*event);
         }
     }
 
@@ -242,7 +214,7 @@ struct PhysicsGame::PhysicsGameImpl
         mRenderWindow->clear();
 
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
+        ImGui_ImplSFML_NewFrame();
         ImGui::NewFrame();
 
         mStateStack->draw();
@@ -352,14 +324,14 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomiz
     // Check if initialization succeeded before entering game loop
     if (!gamePtr->mRenderWindow || !gamePtr->mStateStack)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Game initialization failed - cannot run");
+        std::cerr << "Game initialization failed - cannot run\n";
         return false;
     }
 
-    auto previous = static_cast<double>(SDL_GetTicks());
+    sf::Clock gameClock; auto previousTime = gameClock.getElapsedTime();
     double accumulator = 0.0, currentTimeStep = 0.0;
 
-    SDL_Log("Entering game loop...");
+    std::cout << "Entering game loop...\n";
 
     // States already pushed in constructor - no need to push again
 
@@ -367,9 +339,9 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomiz
     {
         // Expected milliseconds per frame (16.67ms)
         static constexpr auto FIXED_TIME_STEP = 1000.0 / 60.0;
-        const auto current = static_cast<double>(SDL_GetTicks());
-        const auto elapsed = current - previous;
-        previous = current;
+        auto currentTime = gameClock.getElapsedTime();
+        const auto elapsed = static_cast<double>((currentTime - previousTime).asMilliseconds());
+        previousTime = currentTime;
         accumulator += elapsed;
 
         // Handle events and update physics at a fixed time step
@@ -386,7 +358,7 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomiz
             // Check if state stack became empty during update
             if (gamePtr->mStateStack->isEmpty())
             {
-                SDL_Log("State stack is empty after update - closing application");
+                std::cout << "State stack is empty after update - closing application\n";
                 gamePtr->mRenderWindow->close();
                 break;
             }
@@ -397,6 +369,6 @@ bool PhysicsGame::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomiz
         }
     }
 
-    SDL_Log("Exiting game loop...");
+    std::cout << "Exiting game loop...\n";
     return true;
 }

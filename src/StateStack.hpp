@@ -8,7 +8,7 @@
 
 #include "State.hpp"
 
-union SDL_Event;
+namespace sf { class Event; }
 
 class StateStack
 {
@@ -44,7 +44,7 @@ public:
 
     void draw() const noexcept;
 
-    void handleEvent(const SDL_Event &event) noexcept;
+    void handleEvent(const sf::Event &event) noexcept;
 
     void pushState(States::ID stateID);
 

@@ -3,8 +3,6 @@
 
 #include <box2d/box2d.h>
 
-#include <SDL3/SDL_rect.h>
-
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -34,7 +32,7 @@ class Texture;
 class VertexArrayObject;
 class VertexBufferObject;
 
-union SDL_Event;
+namespace sf { class Event; }
 
 class World final
 {
@@ -51,7 +49,7 @@ public:
     void update(float dt);
     void draw() const noexcept;
     void destroyWorld();
-    void handleEvent(const SDL_Event &event);
+    void handleEvent(const sf::Event &event);
 
     const std::vector<Sphere> &getSpheres() const noexcept { return mSpheres; }
     std::vector<Sphere> &getSpheres() noexcept { return mSpheres; }
@@ -259,7 +257,7 @@ private:
     b2WorldId mWorldId;
     b2BodyId mMazeWallsBodyId;
     bool mIsPanning;
-    SDL_FPoint mLastMousePosition;
+    glm::vec2 mLastMousePosition{0.0f};
 
     std::vector<Sphere> mSpheres;
     std::vector<b2BodyId> mSphereBodyIds;
