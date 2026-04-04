@@ -19,7 +19,7 @@
 
 class StateStack;
 
-union SDL_Event;
+namespace sf { class Event; }
 
 class State
 {
@@ -166,7 +166,7 @@ public:
 
     virtual void draw() const noexcept = 0;
     virtual bool update(float dt, unsigned int subSteps) noexcept = 0;
-    virtual bool handleEvent(const SDL_Event &event) noexcept = 0;
+    virtual bool handleEvent(const sf::Event &event) noexcept = 0;
 protected:
     void requestStackPush(States::ID stateID);
     void requestStackPop();

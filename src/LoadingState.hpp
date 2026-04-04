@@ -8,7 +8,7 @@
 #include "State.hpp"
 
 class StateStack;
-union SDL_Event;
+namespace sf { class Event; }
 namespace Textures
 {
     enum class ID : unsigned int;
@@ -22,7 +22,7 @@ public:
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
-    bool handleEvent(const SDL_Event &event) noexcept override;
+    bool handleEvent(const sf::Event &event) noexcept override;
 
     // Check if loading has completed
     bool isFinished() const noexcept;

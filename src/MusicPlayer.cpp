@@ -5,7 +5,7 @@
 #include <SFML/Audio.hpp>
 #include <SFML/Audio/Listener.hpp>
 
-#include <SDL3/SDL.h>
+#include <iostream>
 
 class MusicPlayer::Impl
 {
@@ -27,10 +27,8 @@ public:
         }
         else
         {
-            SDL_LogError(SDL_LOG_CATEGORY_AUDIO,
-                         "MusicPlayer: Failed to open: %s", filename.data());
-            SDL_LogError(SDL_LOG_CATEGORY_AUDIO,
-                         "MusicPlayer: This could mean: file not found, unsupported format, or corrupted file");
+            std::cerr << "MusicPlayer: Failed to open: " << filename.data() << "\n";
+            std::cerr << "MusicPlayer: This could mean: file not found, unsupported format, or corrupted file\n";
         }
         return false;
     }
@@ -41,12 +39,9 @@ public:
 
         if (auto status = mMusic.getStatus(); status != sf::Music::Status::Playing)
         {
-            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
-                        "MusicPlayer: ⚠ Music did not start playing!");
-            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
-                        "  Status: %d (expected 2 for Playing)", static_cast<int>(status));
-            SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
-                        "  Possible causes: audio device unavailable, audio system stopped, or file issue");
+            std::cerr << "MusicPlayer: Music did not start playing!\n";
+            std::cerr << "  Status: " << static_cast<int>(status) << " (expected 2 for Playing)\n";
+            std::cerr << "  Possible causes: audio device unavailable, audio system stopped, or file issue\n";
         }
     }
 
@@ -94,13 +89,12 @@ public:
 
     void print() const noexcept {
         auto status = mMusic.getStatus();
-        SDL_Log("MusicPlayer: Status: %s", status == sf::Music::Status::Playing ? "Playing" :
-                                    status == sf::Music::Status::Paused ? "Paused" : "Stopped");
-        SDL_Log("MusicPlayer: Looping? %s", mLoop ? "Yes" : "No");
-        SDL_Log("MusicPlayer: Volume: %.2f", mVolume);
-        SDL_Log("MusicPlayer: Duration: %.2f seconds", mMusic.getDuration().asSeconds());
-        SDL_Log("MusicPlayer: Channel count: %u", mMusic.getChannelCount());
-        SDL_Log("MusicPlayer: Sample rate: %u Hz", mMusic.getSampleRate());
+        std::cerr << "MusicPlayer: Status: " << (status == sf::Music::Status::Playing ? "Playing" : status == sf::Music::Status::Paused ? "Paused" : "Stopped") << "\n";
+        std::cerr << "MusicPlayer: Looping? " << (mLoop ? "Yes" : "No") << "\n";
+        std::cerr << "MusicPlayer: Volume: " << mVolume << "\n";
+        std::cerr << "MusicPlayer: Duration: " << mMusic.getDuration().asSeconds() << " seconds\n";
+        std::cerr << "MusicPlayer: Channel count: " << mMusic.getChannelCount() << "\n";
+        std::cerr << "MusicPlayer: Sample rate: " << mMusic.getSampleRate() << " Hz\n";
     }
 
 private:

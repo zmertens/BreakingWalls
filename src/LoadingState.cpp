@@ -1,6 +1,7 @@
 #include "LoadingState.hpp"
 
-#include <SDL3/SDL.h>
+#include <SFML/Window/Event.hpp>
+#include <iostream>
 
 #include <atomic>
 #include <algorithm>
@@ -99,11 +100,7 @@ namespace JSONKeys
 
 namespace
 {
-    SDL_Cursor *&activeAppCursor() noexcept
-    {
-        static SDL_Cursor *cursor = nullptr;
-        return cursor;
-    }
+
 
     /// @brief Represents a single resource loading work item
     struct ResourceWorkItem
@@ -192,7 +189,7 @@ public:
     {
         if (resourcePath.empty())
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Resource path is empty\n");
+            std::cerr << "Resource path is empty\n";
             return;
         }
 
@@ -215,7 +212,7 @@ public:
             }
             catch (const std::exception &e)
             {
-                SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to resolve absolute path: %s\n", e.what());
+                std::cerr << "Failed to resolve absolute path:\n";
                 absolutePath = std::string(resourcePath);
             }
         }
@@ -230,13 +227,13 @@ public:
         }
         catch (const std::exception &e)
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "ResourceLoader: Failed to load resources: %s\n", e.what());
+            std::cerr << "ResourceLoader: Failed to load resources:\n";
             return;
         }
 
         if (resources.empty())
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "ResourceLoader: No resources found in %s\n", absolutePath.c_str());
+            std::cerr << "ResourceLoader: No resources found in\n";
             return;
         }
 
@@ -399,7 +396,7 @@ private:
 
         if (!jh.from_array(value, levelConfigs))
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "ResourceLoader: Failed to parse level_defaults array\n");
+            std::cerr << "ResourceLoader: Failed to parse level_defaults array\n";
             return;
         }
 
@@ -427,8 +424,7 @@ private:
                         }
                         catch (...)
                         {
-                            SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                                         "ResourceLoader: Failed to parse %s from level config %zu\n", key.c_str(), i);
+                            std::cerr << "ResourceLoader: Failed to parse  from level config\n";
                         }
                     }
                     else if (key == "algo")
@@ -465,8 +461,7 @@ private:
             }
             catch (const std::exception &e)
             {
-                SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                             "ResourceLoader: Failed to create maze from config %zu: %s\n", i, e.what());
+                std::cerr << "ResourceLoader: Failed to create maze from config :\n";
             }
         }
 
@@ -554,7 +549,7 @@ LoadingState::LoadingState(StateStack &stack, Context context, std::string_view 
     }
     else
     {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: No resource path provided\n");
+        std::cerr << "LoadingState: No resource path provided\n";
         mHasFinished = true;
     }
 }
@@ -570,7 +565,7 @@ void LoadingState::draw() const noexcept
     ImVec2 screenSize = io.DisplaySize;
     float completion = resourceLoader().getCompletion();
     char buf[64];
-    SDL_snprintf(buf, sizeof(buf), "Resource loading progress: %.0f%%", completion * 100.0f);
+    snprintf(buf, sizeof(buf), "Resource loading progress: %.0f%%", completion * 100.0f);
 
     ImVec2 windowPos = ImVec2(10, screenSize.y - 50);
     ImVec2 windowSize = ImVec2(320, 40);
@@ -588,7 +583,7 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     {
         if (const auto resources = resourceLoader().getResources(); !resources.empty())
         {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loading complete! Loaded %zu resources.", resources.size());
+            std::cerr << "Loading complete! Loaded  resources.\n";
 
             // Now actually load the getTextureManager() from the worker-collected texture requests
             loadTexturesFromWorkerRequests();
@@ -607,13 +602,13 @@ bool LoadingState::update(float dt, unsigned int subSteps) noexcept
     if (!mHasFinished)
     {
         setCompletion(resourceLoader().getCompletion());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState::update - completion: %.0f%%", resourceLoader().getCompletion() * 100.f);
+        std::cerr << "LoadingState::update - completion: %%\n";
     }
 
     return true;
 }
 
-bool LoadingState::handleEvent(const SDL_Event &event) noexcept
+bool LoadingState::handleEvent(const sf::Event &event) noexcept
 {
     return true;
 }
@@ -626,7 +621,7 @@ void LoadingState::setCompletion(float percent) noexcept
     }
 
     // Update loading sprite or progress bar based on percent
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loading progress: %.0f%%", percent * 100.f);
+    std::cerr << "Loading progress: %%\n";
 }
 
 bool LoadingState::isFinished() const noexcept { return mHasFinished; }
@@ -635,7 +630,7 @@ bool LoadingState::isFinished() const noexcept { return mHasFinished; }
 /// @param resourcePath Path to the JSON resource configuration
 void LoadingState::loadResources() noexcept
 {
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loading resources from:\t%s", mResourcePath.c_str());
+    std::cerr << "Loading resources from:\t\n";
 
     if (resourceLoader().isDone())
     {
@@ -679,7 +674,7 @@ void LoadingState::loadAudio() noexcept
     // Use the same resource path prefix that was computed by the ResourceLoader
     auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState::loadAudio - resourcePathPrefix: %s", resourcePathPrefix.c_str());
+    std::cerr << "LoadingState::loadAudio - resourcePathPrefix:\n";
 
     try
     {
@@ -691,7 +686,7 @@ void LoadingState::loadAudio() noexcept
 
         if (loadingMusicPath.empty() || gameMenuRemixedMusicPath.empty())
         {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: music resource key not found in configuration\n");
+            std::cerr << "LoadingState: music resource key not found in configuration\n";
         }
         else
         {
@@ -705,13 +700,13 @@ void LoadingState::loadAudio() noexcept
                        std::string_view{gameMenuRemixedMusicPath},
                        options.get(GUIOptions::ID::DE_FACTO).getMusicVolume(), true);
 
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Music loaded successfully");
+            std::cerr << "LoadingState: Music loaded successfully\n";
             music.get(Music::ID::GAME_MUSIC).print();
         }
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load music: %s", e.what());
+        std::cerr << "LoadingState: Failed to load music:\n";
     }
 
     // Continue with existing sound effects loading...
@@ -719,7 +714,7 @@ void LoadingState::loadAudio() noexcept
 
     try
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loading sound effects...");
+        std::cerr << "LoadingState: Loading sound effects...\n";
         const auto resources = resourceLoader().getResources();
         const std::string generatePath = JSONUtils::getResourcePath(
             std::string(JSONKeys::SOUND_GENERATE), resources, resourcePathPrefix);
@@ -736,8 +731,7 @@ void LoadingState::loadAudio() noexcept
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                     "LoadingState: Failed to load sound effects: %s", e.what());
+        std::cerr << "LoadingState: Failed to load sound effects:\n";
     }
 }
 
@@ -752,12 +746,11 @@ void LoadingState::loadLevels() noexcept
         gameplayLevelConfigs.push_back(configurator().rows(20).columns(20));
         levels.load(Levels::ID::LEVEL_ONE, std::cref(gameplayLevelConfigs), false);
 
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "LoadingState: Loaded gameplay maze (20x20)");
+        std::cerr << "LoadingState: Loaded gameplay maze (20x20)\n";
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load levels: %s", e.what());
+        std::cerr << "LoadingState: Failed to load levels:\n";
     }
 }
 
@@ -773,14 +766,14 @@ void LoadingState::loadModels() noexcept
 
         if (modelPath.empty())
         {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: model resource key not found in configuration");
+            std::cerr << "LoadingState: model resource key not found in configuration\n";
         }
         else
         {
             models.load(Models::ID::STYLIZED_CHARACTER, modelPath);
 
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s", ("LoadingState: Found model path: " + modelPath).c_str());
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loading model into manager...");
+            std::cerr << "\n";
+            std::cerr << "LoadingState: Loading model into manager...\n";
 
             try
             {
@@ -792,23 +785,23 @@ void LoadingState::loadModels() noexcept
                 const size_t totalMeshBones = model.getTotalMeshBones();
                 const size_t animationCount = model.getAnimationNames().size();
 
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GLTFModel: loaded %s", modelPath.c_str());
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Meshes: %zu", meshCount);
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Bones (mapped): %zu", boneCount);
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Mesh-bones (raw): %zu", totalMeshBones);
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  Animations: %zu", animationCount);
+                std::cerr << "GLTFModel: loaded\n";
+                std::cerr << "Meshes:\n";
+                std::cerr << "Bones (mapped):\n";
+                std::cerr << "Mesh-bones (raw):\n";
+                std::cerr << "Animations:\n";
 
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Model verified in manager");
+                std::cerr << "LoadingState: Model verified in manager\n";
             }
             catch (const std::exception &e)
             {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Failed to verify model in manager: %s", e.what());
+                std::cerr << "LoadingState: Failed to verify model in manager:\n";
             }
         }
     }
     catch (const std::exception &e)
     {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Failed to load models: %s", e.what());
+        std::cerr << "LoadingState: Failed to load models:\n";
     }
 }
 
@@ -830,8 +823,8 @@ void LoadingState::loadShaders() noexcept
         displayShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SCREEN_VERTEX));
         displayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SCREEN_FRAGMENT));
         displayShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_FULLSCREEN_QUAD", displayShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Display shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_FULLSCREEN_QUAD\n";
+        std::cerr << "LoadingState: Display shader compiled and linked\n";
 
         // Insert display shader into manager (using vertex ID as the combined shader program ID)
         shaders.insert(Shaders::ID::GLSL_FULLSCREEN_QUAD, std::move(displayShader));
@@ -840,24 +833,24 @@ void LoadingState::loadShaders() noexcept
         particlesDisplayShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_PARTICLES_VERTEX));
         particlesDisplayShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_PARTICLES_FRAGMENT));
         particlesDisplayShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_FULLSCREEN_QUAD_MVP", particlesDisplayShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Particles display shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_FULLSCREEN_QUAD_MVP\n";
+        std::cerr << "LoadingState: Particles display shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_FULLSCREEN_QUAD_MVP, std::move(particlesDisplayShader));
 
         auto compositeShader = std::make_unique<Shader>();
         compositeShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_COMPOSITE_VERTEX));
         compositeShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_COMPOSITE_FRAGMENT));
         compositeShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_COMPOSITE_SCENE", compositeShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Composite shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_COMPOSITE_SCENE\n";
+        std::cerr << "LoadingState: Composite shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_COMPOSITE_SCENE, std::move(compositeShader));
 
         auto oitResolveShader = std::make_unique<Shader>();
         oitResolveShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_COMPOSITE_VERTEX));
         oitResolveShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_OIT_RESOLVE_FRAGMENT));
         oitResolveShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_OIT_RESOLVE", oitResolveShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: OIT resolve shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_OIT_RESOLVE\n";
+        std::cerr << "LoadingState: OIT resolve shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_OIT_RESOLVE, std::move(oitResolveShader));
 
         // Load shadow volume shader for character shadow rendering (vertex + geometry + fragment)
@@ -866,15 +859,15 @@ void LoadingState::loadShaders() noexcept
         shadowShader->compileAndAttachShader(Shader::ShaderType::GEOMETRY, shaderPath(JSONKeys::SHADER_SHADOW_GEOMETRY));
         shadowShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SHADOW_FRAGMENT));
         shadowShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_SHADOW_VOLUME", shadowShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Shadow shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_SHADOW_VOLUME\n";
+        std::cerr << "LoadingState: Shadow shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_SHADOW_VOLUME, std::move(shadowShader));
 
         auto particlesComputeShader = std::make_unique<Shader>();
         particlesComputeShader->compileAndAttachShader(Shader::ShaderType::COMPUTE, shaderPath(JSONKeys::SHADER_PARTICLES_COMPUTE));
         particlesComputeShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_PARTICLES_COMPUTE", particlesComputeShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Compute shaders compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_PARTICLES_COMPUTE\n";
+        std::cerr << "LoadingState: Compute shaders compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_PARTICLES_COMPUTE, std::move(particlesComputeShader));
 
         // Load billboard shader for character sprites (vertex + geometry + fragment)
@@ -883,63 +876,63 @@ void LoadingState::loadShaders() noexcept
         billboardShader->compileAndAttachShader(Shader::ShaderType::GEOMETRY, shaderPath(JSONKeys::SHADER_BILLBOARD_GEOMETRY));
         billboardShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_BILLBOARD_FRAGMENT));
         billboardShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_BILLBOARD_SPRITE", billboardShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Billboard shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_BILLBOARD_SPRITE\n";
+        std::cerr << "LoadingState: Billboard shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_BILLBOARD_SPRITE, std::move(billboardShader));
 
         auto skinnedShader = std::make_unique<Shader>();
         skinnedShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SKINNED_VERTEX));
         skinnedShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SKINNED_FRAGMENT));
         skinnedShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_SKINNED_MODEL", skinnedShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Skinned shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_SKINNED_MODEL\n";
+        std::cerr << "LoadingState: Skinned shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_SKINNED_MODEL, std::move(skinnedShader));
 
         auto goalPathShader = std::make_unique<Shader>();
         goalPathShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_GOAL_PATH_VERTEX));
         goalPathShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_GOAL_PATH_FRAGMENT));
         goalPathShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_GOAL_PATH_STENCIL", goalPathShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Goal path shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_GOAL_PATH_STENCIL\n";
+        std::cerr << "LoadingState: Goal path shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_GOAL_PATH_STENCIL, std::move(goalPathShader));
 
         auto highlightTileShader = std::make_unique<Shader>();
         highlightTileShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_HIGHLIGHT_TILE_VERTEX));
         highlightTileShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_HIGHLIGHT_TILE_FRAGMENT));
         highlightTileShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_HIGHLIGHT_TILE", highlightTileShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Highlight tile shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_HIGHLIGHT_TILE\n";
+        std::cerr << "LoadingState: Highlight tile shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_HIGHLIGHT_TILE, std::move(highlightTileShader));
 
         auto mazeShader = std::make_unique<Shader>();
         mazeShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MAZE_VERTEX));
         mazeShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_MAZE_FRAGMENT));
         mazeShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_MAZE", mazeShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Maze shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_MAZE\n";
+        std::cerr << "LoadingState: Maze shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_MAZE, std::move(mazeShader));
 
         auto motionBlurShader = std::make_unique<Shader>();
         motionBlurShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_MOTION_BLUR_VERTEX));
         motionBlurShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_MOTION_BLUR_FRAGMENT));
         motionBlurShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_MOTION_BLUR", motionBlurShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Motion blur shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_MOTION_BLUR\n";
+        std::cerr << "LoadingState: Motion blur shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_MOTION_BLUR, std::move(motionBlurShader));
 
         auto skyShader = std::make_unique<Shader>();
         skyShader->compileAndAttachShader(Shader::ShaderType::VERTEX, shaderPath(JSONKeys::SHADER_SKY_VERTEX));
         skyShader->compileAndAttachShader(Shader::ShaderType::FRAGMENT, shaderPath(JSONKeys::SHADER_SKY_FRAGMENT));
         skyShader->linkProgram();
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Program %u -> GLSL_SKY", skyShader->getProgramHandle());
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Sky shader compiled and linked");
+        std::cerr << "LoadingState: Program  -> GLSL_SKY\n";
+        std::cerr << "LoadingState: Sky shader compiled and linked\n";
         shaders.insert(Shaders::ID::GLSL_SKY, std::move(skyShader));
 
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: All shaders loaded successfully");
+        std::cerr << "LoadingState: All shaders loaded successfully\n";
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Shader initialization failed: %s", e.what());
+        std::cerr << "LoadingState: Shader initialization failed:\n";
     }
 }
 
@@ -948,7 +941,7 @@ void LoadingState::loadVAOs() noexcept
     auto *vaoManager = getContext().getVAOManager();
     if (!vaoManager)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: VAOManager not available in context");
+        std::cerr << "LoadingState: VAOManager not available in context\n";
         return;
     }
 
@@ -964,12 +957,11 @@ void LoadingState::loadVAOs() noexcept
         vaoManager->load(VAOs::ID::PLAYER_TILE_HIGHLIGHT, "player_tile_highlight");
         vaoManager->load(VAOs::ID::PICKUP_SPHERES, "pickup_spheres");
 
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loaded %d VAOs",
-                    static_cast<int>(VAOs::ID::TOTAL_IDS));
+        std::cerr << "LoadingState: Loaded  VAOs\n";
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: VAO loading failed: %s", e.what());
+        std::cerr << "LoadingState: VAO loading failed:\n";
     }
 }
 
@@ -978,7 +970,7 @@ void LoadingState::loadFBOs() noexcept
     auto *fboManager = getContext().getFBOManager();
     if (!fboManager)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: FBOManager not available in context");
+        std::cerr << "LoadingState: FBOManager not available in context\n";
         return;
     }
 
@@ -997,12 +989,11 @@ void LoadingState::loadFBOs() noexcept
 
         fboManager->load(FBOs::ID::MOTION_BLUR, "motion_blur");
 
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loaded %d FBOs",
-                    static_cast<int>(FBOs::ID::TOTAL_IDS));
+        std::cerr << "LoadingState: Loaded  FBOs\n";
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: FBO loading failed: %s", e.what());
+        std::cerr << "LoadingState: FBO loading failed:\n";
     }
 }
 
@@ -1011,7 +1002,7 @@ void LoadingState::loadVBOs() noexcept
     auto *vboManager = getContext().getVBOManager();
     if (!vboManager)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: VBOManager not available in context");
+        std::cerr << "LoadingState: VBOManager not available in context\n";
         return;
     }
 
@@ -1024,12 +1015,11 @@ void LoadingState::loadVBOs() noexcept
         vboManager->load(VBOs::ID::GOAL_PATH, "goal_path");
         vboManager->load(VBOs::ID::PICKUP, "pickup");
 
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Loaded %d VBOs",
-                    static_cast<int>(VBOs::ID::TOTAL_IDS));
+        std::cerr << "LoadingState: Loaded  VBOs\n";
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: VBO loading failed: %s", e.what());
+        std::cerr << "LoadingState: VBO loading failed:\n";
     }
 }
 
@@ -1044,17 +1034,17 @@ void LoadingState::loadNetworkConfig() noexcept
         const std::string url = JSONUtils::getResourceValue(std::string(JSONKeys::NETWORK_URL), resources);
         if (url.empty())
         {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: NETWORK_URL resource key not found in configuration");
+            std::cerr << "LoadingState: NETWORK_URL resource key not found in configuration\n";
         }
         else
         {
             httpClient.setServerURL(url);
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s", ("LoadingState: Found network URL: " + url).c_str());
+            std::cerr << "\n";
         }
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to load network configuration: %s", e.what());
+        std::cerr << "LoadingState: Failed to load network configuration:\n";
     }
 }
 
@@ -1071,14 +1061,11 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
         try
         {
             textures.load(request.id, std::string_view(request.path), 0u);
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loaded texture: %s for ID: %d",
-                        request.path.c_str(), static_cast<int>(request.id));
+            std::cerr << "Loaded texture:  for ID:\n";
         }
         catch (const std::exception &e)
         {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "LoadingState: Skipping texture (file unavailable) id=%d path=%s: %s",
-                        static_cast<int>(request.id), request.path.c_str(), e.what());
+            std::cerr << "LoadingState: Skipping texture (file unavailable) id= path=:\n";
         }
     }
 
@@ -1090,86 +1077,20 @@ void LoadingState::loadTexturesFromWorkerRequests() const noexcept
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Failed to create procedural textures: %s\n", e.what());
+        std::cerr << "LoadingState: Failed to create procedural textures:\n";
     }
 }
 
 void LoadingState::loadWindowIcon(const std::unordered_map<std::string, std::string> &resources) const noexcept
 {
-    using std::string;
-
-    // Use the same resource path prefix that was computed by the ResourceLoader
-    auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
-
-    const string windowIconPath = JSONUtils::getResourcePath(
-        std::string(JSONKeys::WINDOW_ICON), resources, resourcePathPrefix);
-
-    if (windowIconPath.empty())
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "LoadingState: Window icon resource not found in configuration");
-
-        return;
-    }
-
-    if (SDL_Surface *icon = SDL_LoadBMP(windowIconPath.c_str()); icon != nullptr)
-    {
-        if (auto *renderWindow = getContext().getRenderWindow(); renderWindow != nullptr)
-        {
-            SDL_SetWindowIcon(renderWindow->getSDLWindow(), icon);
-            SDL_DestroySurface(icon);
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loading window icon from:\t%s", windowIconPath.c_str());
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Window icon loaded successfully\n");
-        }
-    }
-    else
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load icon: %s - %s\n", windowIconPath.c_str(),
-                     SDL_GetError());
-    }
+    (void)resources;
+    // Window icon loading not supported with SFML3 backend; skipped.
 }
 
 void LoadingState::loadCursor(const std::unordered_map<std::string, std::string> &resources) noexcept
 {
-    using std::string;
-
-    auto resourcePathPrefix = resourceLoader().getResourcePathPrefix();
-
-    const string cursorImagePath = JSONUtils::getResourcePath(
-        std::string(JSONKeys::CURSOR_ICON), resources, resourcePathPrefix);
-
-    if (cursorImagePath.empty())
-    {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Cursor image resource not found in configuration");
-        return;
-    }
-
-    SDL_Surface *cursorSurface = SDL_LoadPNG(cursorImagePath.c_str());
-    if (cursorSurface == nullptr)
-    {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Failed to load cursor image: %s - %s",
-                    cursorImagePath.c_str(), SDL_GetError());
-        return;
-    }
-
-    SDL_Cursor *newCursor = SDL_CreateColorCursor(cursorSurface, 0, 0);
-    SDL_DestroySurface(cursorSurface);
-
-    if (newCursor == nullptr)
-    {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Failed to create cursor: %s", SDL_GetError());
-        return;
-    }
-
-    SDL_SetCursor(newCursor);
-
-    SDL_Cursor *&currentCursor = activeAppCursor();
-    if (currentCursor != nullptr)
-    {
-        SDL_DestroyCursor(currentCursor);
-    }
-
-    currentCursor = newCursor;
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "LoadingState: Cursor loaded from:\t%s", cursorImagePath.c_str());
+    (void)resources;
+    // Custom cursor loading not supported with SFML3 backend; skipped.
 }
 
 void LoadingState::loadProceduralTextures() const noexcept
@@ -1229,6 +1150,6 @@ void LoadingState::loadProceduralTextures() const noexcept
     }
     catch (const std::exception &e)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load procedural textures: %s\n", e.what());
+        std::cerr << "Failed to load procedural textures:\n";
     }
 }

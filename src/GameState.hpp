@@ -20,8 +20,7 @@ class StateStack;
 class SoundPlayer;
 class Texture;
 
-union SDL_Event;
-struct SDL_Joystick;
+namespace sf { class Event; }
 
 /// @brief Main game state managing physics, rendering, and input
 /// @details Orchestrates World updates, player input, and GPU-accelerated graphics pipeline
@@ -34,7 +33,7 @@ public:
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
-    bool handleEvent(const SDL_Event &event) noexcept override;
+    bool handleEvent(const sf::Event &event) noexcept override;
 
     /// Get reference to World (for multiplayer remote player rendering)
     World &getWorld() noexcept;
@@ -158,9 +157,10 @@ private:
     mutable glm::vec3 mLastFxPlayerPosition{0.0f};
     mutable float mPlayerPlanarSpeedForFx{0.0f};
 
-    SDL_Joystick *mJoystick{nullptr};
-    bool mJoystickRumbleSupported{false};
+    unsigned int mJoystickIndex{0};
+    bool mJoystickConnected{false};
     bool mCursorLocked{false};
+    glm::vec2 mLastMousePos{0.0f};
     float mJoystickDeadzone{0.22f};
     float mJoystickStrafeSpeed{55.0f};
 
