@@ -1,4 +1,4 @@
-/// @file main.cpp
+/// @file Main.cpp
 /// @brief AmazingSFML - 2D maze generation and visualization example
 /// @details Generates a 2D maze using the MazeBuilder library and visualizes it
 ///          using the SFML Graphics module.  Walls are drawn as the window background
@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <string>
 
 #include <SFML/Graphics.hpp>
@@ -52,7 +53,7 @@ int main()
     // ── Generate maze ───────────────────────────────────────────────
     auto grid = std::make_unique<mazes::colored_grid>(kMazeRows, kMazeCols, 1u);
     mazes::randomizer rng{};
-    rng.seed(rng(0u, 4'200'000u));
+    rng.seed(std::random_device{}());
     mazes::dfs algo{};
     algo.run(grid.get(), rng);
 
