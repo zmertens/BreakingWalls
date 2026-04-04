@@ -1,6 +1,6 @@
 #include "VertexBufferObject.hpp"
 
-#include <iostream>
+#include <SDL3/SDL.h>
 
 VertexBufferObject::VertexBufferObject() = default;
 
@@ -30,13 +30,13 @@ bool VertexBufferObject::loadFromFile(std::string_view /*unused*/)
 {
     if (mVBO != 0)
     {
-        std::cerr << "VertexBufferObject::loadFromFile - buffer already allocated (" << mVBO << ")\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "VertexBufferObject::loadFromFile - buffer already allocated (%u)", mVBO);
         return true;
     }
     glGenBuffers(1, &mVBO);
     if (mVBO == 0)
     {
-        std::cerr << "VertexBufferObject::loadFromFile - glGenBuffers failed\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "VertexBufferObject::loadFromFile - glGenBuffers failed");
         return false;
     }
     return true;

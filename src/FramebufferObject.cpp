@@ -1,6 +1,6 @@
 #include "FramebufferObject.hpp"
 
-#include <iostream>
+#include <SDL3/SDL.h>
 
 FramebufferObject::FramebufferObject() = default;
 
@@ -33,13 +33,13 @@ bool FramebufferObject::loadFromFile(std::string_view /*unused*/)
 {
     if (mFBO != 0)
     {
-        std::cerr << "FramebufferObject::loadFromFile - FBO already allocated (" << mFBO << ")\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "FramebufferObject::loadFromFile - FBO already allocated (%u)", mFBO);
         return true;
     }
     glGenFramebuffers(1, &mFBO);
     if (mFBO == 0)
     {
-        std::cerr << "FramebufferObject::loadFromFile - glGenFramebuffers failed\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "FramebufferObject::loadFromFile - glGenFramebuffers failed");
         return false;
     }
     return true;
@@ -59,13 +59,13 @@ void FramebufferObject::createRenderbuffer() noexcept
 {
     if (mRBO != 0)
     {
-        std::cerr << "FramebufferObject::createRenderbuffer - RBO already allocated (" << mRBO << ")\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "FramebufferObject::createRenderbuffer - RBO already allocated (%u)", mRBO);
         return;
     }
     glGenRenderbuffers(1, &mRBO);
     if (mRBO == 0)
     {
-        std::cerr << "FramebufferObject::createRenderbuffer - glGenRenderbuffers failed\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "FramebufferObject::createRenderbuffer - glGenRenderbuffers failed");
     }
 }
 

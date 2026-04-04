@@ -7,8 +7,7 @@
 
 #include "Animation.hpp"
 
-#include <SFML/Window/Keyboard.hpp>
-namespace sf { class Event; }
+union SDL_Event;
 
 class Camera;
 class World;
@@ -43,11 +42,11 @@ public:
 
     explicit Player();
 
-    void handleEvent(const sf::Event &event, Camera &camera);
+    void handleEvent(const SDL_Event &event, Camera &camera);
     void handleRealtimeInput(Camera &camera, float dt);
 
-    void assignKey(Action action, sf::Keyboard::Key key);
-    [[nodiscard]] sf::Keyboard::Key getAssignedKey(Action action) const;
+    void assignKey(Action action, std::uint32_t key);
+    [[nodiscard]] std::uint32_t getAssignedKey(Action action) const;
 
     void setGroundContact(bool contact);
     bool hasGroundContact() const;
@@ -123,7 +122,7 @@ private:
     // Update animation state based on current movement flags
     void updateAnimationState();
 
-    std::map<sf::Keyboard::Key, Action> mKeyBinding;
+    std::map<std::uint32_t, Action> mKeyBinding;
     std::map<Action, std::function<void(Camera &, float)>> mCameraActions;
     bool mIsActive;
     bool mIsOnGround;

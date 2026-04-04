@@ -1,10 +1,10 @@
 #include "GLSDLHelper.hpp"
 
 #include "Animation.hpp"
+#include "buildinfo.h"
 #include "Shader.hpp"
 
-#include <SFML/Window.hpp>
-#include <iostream>
+#include <SDL3/SDL.h>
 
 #include <string>
 
@@ -21,6 +21,101 @@ bool GLSDLHelper::sBillboardOITPass = false;
 
 namespace
 {
+    void configureSDLInputHints() noexcept
+    {
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM, "0");
+    }
+
+    void closeAllOpenJoysticks() noexcept
+    {
+        int joystickCount = 0;
+        SDL_JoystickID *joystickIDs = SDL_GetJoysticks(&joystickCount);
+        if (!joystickIDs || joystickCount <= 0)
+        {
+            if (joystickIDs)
+            {
+                SDL_free(joystickIDs);
+            }
+            return;
+        }
+
+        for (int i = 0; i < joystickCount; ++i)
+        {
+            const SDL_JoystickID joystickID = joystickIDs[i];
+            int closedHandles = 0;
+
+            SDL_Joystick *joystick = SDL_GetJoystickFromID(joystickID);
+            while (joystick != nullptr)
+            {
+                SDL_CloseJoystick(joystick);
+                ++closedHandles;
+
+                if (closedHandles > 16)
+                {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
+                                "Stopping repeated closes for joystick ID %d after %d handles",
+                                static_cast<int>(joystickID), closedHandles);
+                    break;
+                }
+
+                joystick = SDL_GetJoystickFromID(joystickID);
+            }
+
+            if (closedHandles > 0)
+            {
+                SDL_Log("Closed %d open joystick handle(s) for instance ID %d",
+                        closedHandles, static_cast<int>(joystickID));
+            }
+        }
+
+        SDL_free(joystickIDs);
+    }
+
+    void closeAllOpenGamepads() noexcept
+    {
+        int gamepadCount = 0;
+        SDL_JoystickID *gamepadIDs = SDL_GetGamepads(&gamepadCount);
+        if (!gamepadIDs || gamepadCount <= 0)
+        {
+            if (gamepadIDs)
+            {
+                SDL_free(gamepadIDs);
+            }
+            return;
+        }
+
+        for (int i = 0; i < gamepadCount; ++i)
+        {
+            const SDL_JoystickID gamepadID = gamepadIDs[i];
+            int closedHandles = 0;
+
+            SDL_Gamepad *gamepad = SDL_GetGamepadFromID(gamepadID);
+            while (gamepad != nullptr)
+            {
+                SDL_CloseGamepad(gamepad);
+                ++closedHandles;
+
+                if (closedHandles > 16)
+                {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
+                                "Stopping repeated closes for gamepad ID %d after %d handles",
+                                static_cast<int>(gamepadID), closedHandles);
+                    break;
+                }
+
+                gamepad = SDL_GetGamepadFromID(gamepadID);
+            }
+
+            if (closedHandles > 0)
+            {
+                SDL_Log("Closed %d open gamepad handle(s) for instance ID %d",
+                        closedHandles, static_cast<int>(gamepadID));
+            }
+        }
+
+        SDL_free(gamepadIDs);
+    }
+
     bool checkForOpenGLError(const std::string &file, int line)
     {
         bool error = false;
@@ -50,7 +145,9 @@ namespace
                 message = "Unknown error";
             }
 
-            std::cerr << "OpenGL error in file " << file << " at line " << line << ", error message: " << message << "\n";
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "OpenGL error in file %s at line %d, error message: %s\n",
+                         file.c_str(), line, message.c_str());
             glErr = glGetError();
             error = true;
         }
@@ -126,72 +223,195 @@ namespace
             return;
         }
 
-        std::cerr << "OpenGL - Source: " << sourceStr << ", Type: " << typeStr << ", Severity: " << severityStr << ", Message: " << message << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
+                     "OpenGL - Source: %s, Type: %s, Severity: %s, Message: %s\n",
+                     sourceStr.c_str(), typeStr.c_str(), severityStr.c_str(), message);
     }
 
 } // anonymous namespace
 
 void GLSDLHelper::init(std::string_view title, int width, int height) noexcept
 {
+    configureSDLInputHints();
+
     auto initFunc = [this, title, width, height]()
     {
-        sf::ContextSettings settings;
-        settings.depthBits = 24;
-        settings.stencilBits = 8;
-        settings.antialiasingLevel = 0;
-        settings.majorVersion = 4;
-        settings.minorVersion = 3;
-        settings.attributeFlags = sf::ContextSettings::Core;
-#if defined(BREAKING_WALLS_DEBUG)
-        settings.attributeFlags |= sf::ContextSettings::Debug;
-#endif
-
-        auto* window = new sf::Window(
-            sf::VideoMode(sf::Vector2u(static_cast<unsigned int>(width), static_cast<unsigned int>(height))),
-            std::string(title),
-            sf::Style::Default,
-            sf::State::Windowed,
-            settings
-        );
-
-        window->setActive(true);
-
-        if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(sf::Context::getFunction)))
+        if (!SDL_SetAppMetadata("Breaking Walls", bw::buildinfo::Version.data(),
+                                "c++;cozy;game;simulation;physics"))
         {
-            std::cerr << "GLSDLHelper: Failed to initialize GLAD\n";
-            delete window;
             return;
         }
 
-        window->setVerticalSyncEnabled(true);
-        this->mWindow = window;
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, title.data());
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, title.data());
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, title.data());
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Flips And Ale");
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "MIT License");
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "game");
+        SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, bw::buildinfo::Version.data());
+
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+#if defined(BREAKING_WALLS_DEBUG)
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+#endif
+
+        this->mWindow = SDL_CreateWindow(title.data(), width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_INPUT_FOCUS);
+
+        if (!this->mWindow)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_CreateWindow failed: %s\n", SDL_GetError());
+            return;
+        }
+
+        this->mGLContext = SDL_GL_CreateContext(mWindow.value());
+        if (!this->mGLContext)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+            SDL_DestroyWindow(mWindow.value());
+            return;
+        }
+
+        SDL_GL_MakeCurrent(mWindow.value(), mGLContext.value());
+
+        if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to initialize GLAD\n");
+            SDL_GL_DestroyContext(mGLContext.value());
+            SDL_DestroyWindow(mWindow.value());
+            return;
+        }
+
+        SDL_GL_SetSwapInterval(1);
 
 #if defined(BREAKING_WALLS_DEBUG)
         glDebugMessageCallback(debugCallbackForOpenGL, nullptr);
         glEnable(GL_DEBUG_OUTPUT);
         glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-        std::cerr << "GLSDLHelper: OpenGL and SFML window initialized successfully.\n";
-        std::cerr << "OpenGL Version: " << glGetString(GL_VERSION) << "\n";
-        std::cerr << "OpenGL Renderer: " << glGetString(GL_RENDERER) << "\n";
+        SDL_Log("OpenGL and SDL initialized successfully.");
+        SDL_Log("OpenGL Version: %s\n", glGetString(GL_VERSION));
+        SDL_Log("OpenGL Renderer: %s\n", glGetString(GL_RENDERER));
 #endif
     };
 
-    std::call_once(mInitializedFlag, initFunc);
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC))
+    {
+        std::call_once(mInitializedFlag, initFunc);
+
+        // Verify audio subsystem initialized successfully
+        if (SDL_WasInit(SDL_INIT_AUDIO))
+        {
+            SDL_Log("SDL Audio subsystem initialized successfully");
+
+            // Log available audio drivers
+            int numDrivers = SDL_GetNumAudioDrivers();
+            SDL_Log("Available audio drivers: %d", numDrivers);
+            for (int i = 0; i < numDrivers; ++i)
+            {
+                SDL_Log("  [%d] %s", i, SDL_GetAudioDriver(i));
+            }
+
+            // Log current audio driver
+            if (const auto *currentDriver = SDL_GetCurrentAudioDriver())
+            {
+                SDL_Log("Current audio driver: %s", currentDriver);
+            }
+            else
+            {
+                SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "No audio driver initialized");
+            }
+        }
+        else
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "SDL Audio subsystem failed to initialize");
+        }
+
+        if (SDL_WasInit(SDL_INIT_JOYSTICK))
+        {
+            SDL_Log("SDL Joystick subsystem initialized successfully");
+        }
+        else
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_INPUT, "SDL Joystick subsystem failed to initialize");
+        }
+
+        if (SDL_WasInit(SDL_INIT_HAPTIC))
+        {
+            SDL_Log("SDL Haptic subsystem initialized successfully");
+        }
+        else
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_INPUT, "SDL Haptic subsystem failed to initialize");
+        }
+    }
+    else
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_Init failed: %s\n", SDL_GetError());
+    }
 }
 
 void GLSDLHelper::destroyAndQuit() noexcept
 {
+    // Cleanup billboard rendering resources
     cleanupBillboardRendering();
 
-    if (!this->getWindow())
+    if (!this->getWindow() && !this->getGLContext())
     {
+        SDL_Log("Already destroyed, skipping\n");
         return;
+    }
+
+    if (mGLContext)
+    {
+        SDL_Log("Destroying OpenGL context\n");
+        SDL_GL_DestroyContext(mGLContext.value());
+        mGLContext = std::nullopt;
     }
 
     if (mWindow)
     {
-        delete mWindow.value();
+        SDL_Log("Destroying window with pointer value: %p\n", static_cast<void *>(mWindow.value()));
+        SDL_DestroyWindow(mWindow.value());
         mWindow = std::nullopt;
+    }
+
+    if (SDL_WasInit(0) != 0)
+    {
+        SDL_Log("Shutdown diagnostics begin");
+        SDL_Log("SDL_WasInit(VIDEO)=%d AUDIO=%d JOYSTICK=%d GAMEPAD=%d HAPTIC=%d EVENTS=%d",
+                SDL_WasInit(SDL_INIT_VIDEO) != 0,
+                SDL_WasInit(SDL_INIT_AUDIO) != 0,
+                SDL_WasInit(SDL_INIT_JOYSTICK) != 0,
+                SDL_WasInit(SDL_INIT_GAMEPAD) != 0,
+                SDL_WasInit(SDL_INIT_HAPTIC) != 0,
+                SDL_WasInit(SDL_INIT_EVENTS) != 0);
+
+        if (SDL_Cursor *cursor = SDL_GetCursor(); cursor != nullptr)
+        {
+            SDL_Log("Current SDL cursor handle before quit: %p", static_cast<void *>(cursor));
+        }
+        else
+        {
+            SDL_Log("No custom SDL cursor set before quit");
+        }
+
+        if (SDL_Cursor *cursor = SDL_GetCursor(); cursor != nullptr)
+        {
+            SDL_SetCursor(nullptr);
+            SDL_DestroyCursor(cursor);
+            SDL_Log("Destroyed active SDL cursor handle before quit");
+        }
+
+        closeAllOpenJoysticks();
+        closeAllOpenGamepads();
+        SDL_QuitSubSystem(SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK);
+
+        SDL_Log("Calling SDL_Quit()\n");
+        SDL_Quit();
     }
 }
 
@@ -222,7 +442,9 @@ void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) no
 {
     if (bufferSize <= 0)
     {
-        std::cerr << "allocateSSBOBuffer called with non-positive size: " << static_cast<long long>(bufferSize) << "\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                    "allocateSSBOBuffer called with non-positive size: %lld",
+                    static_cast<long long>(bufferSize));
         return;
     }
 
@@ -230,7 +452,8 @@ void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) no
     glGetIntegerv(GL_SHADER_STORAGE_BUFFER_BINDING, &boundBuffer);
     if (boundBuffer == 0)
     {
-        std::cerr << "allocateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "allocateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound");
         return;
     }
 
@@ -238,7 +461,10 @@ void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) no
     glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &maxBlockSize);
     if (maxBlockSize > 0 && static_cast<GLint64>(bufferSize) > maxBlockSize)
     {
-        std::cerr << "allocateSSBOBuffer size " << static_cast<long long>(bufferSize) << " exceeds GL_MAX_SHADER_STORAGE_BLOCK_SIZE " << static_cast<long long>(maxBlockSize) << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "allocateSSBOBuffer size %lld exceeds GL_MAX_SHADER_STORAGE_BLOCK_SIZE %lld",
+                     static_cast<long long>(bufferSize),
+                     static_cast<long long>(maxBlockSize));
         return;
     }
 
@@ -247,7 +473,11 @@ void GLSDLHelper::allocateSSBOBuffer(GLsizeiptr bufferSize, const void *data) no
     const GLenum err = glGetError();
     if (err != GL_NO_ERROR)
     {
-        std::cerr << "allocateSSBOBuffer glBufferData failed (buffer=" << boundBuffer << " size=" << static_cast<long long>(bufferSize) << " err=0x" << std::hex << static_cast<unsigned int>(err) << std::dec << ")\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "allocateSSBOBuffer glBufferData failed (buffer=%d size=%lld err=0x%x)",
+                     boundBuffer,
+                     static_cast<long long>(bufferSize),
+                     static_cast<unsigned int>(err));
     }
 }
 
@@ -255,7 +485,9 @@ void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void 
 {
     if (size <= 0)
     {
-        std::cerr << "updateSSBOBuffer called with non-positive size: " << static_cast<long long>(size) << "\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                    "updateSSBOBuffer called with non-positive size: %lld",
+                    static_cast<long long>(size));
         return;
     }
 
@@ -263,7 +495,8 @@ void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void 
     glGetIntegerv(GL_SHADER_STORAGE_BUFFER_BINDING, &boundBuffer);
     if (boundBuffer == 0)
     {
-        std::cerr << "updateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "updateSSBOBuffer called with no GL_SHADER_STORAGE_BUFFER bound");
         return;
     }
 
@@ -272,7 +505,12 @@ void GLSDLHelper::updateSSBOBuffer(GLintptr offset, GLsizeiptr size, const void 
     const GLenum err = glGetError();
     if (err != GL_NO_ERROR)
     {
-        std::cerr << "updateSSBOBuffer glBufferSubData failed (buffer=" << boundBuffer << " offset=" << static_cast<long long>(offset) << " size=" << static_cast<long long>(size) << " err=0x" << std::hex << static_cast<unsigned int>(err) << std::dec << ")\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+                     "updateSSBOBuffer glBufferSubData failed (buffer=%d offset=%lld size=%lld err=0x%x)",
+                     boundBuffer,
+                     static_cast<long long>(offset),
+                     static_cast<long long>(size),
+                     static_cast<unsigned int>(err));
     }
 }
 
@@ -373,7 +611,7 @@ void GLSDLHelper::renderBillboardSprite(
 
     if (textureId == 0)
     {
-        std::cerr << "Billboard: Invalid texture ID\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "Billboard: Invalid texture ID");
         return;
     }
 

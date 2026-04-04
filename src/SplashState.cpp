@@ -1,10 +1,6 @@
 #include "SplashState.hpp"
 
-#include <SFML/Window.hpp>
-#include <SFML/Window/Event.hpp>
-#include <iostream>
-#include <chrono>
-#include <cmath>
+#include <SDL3/SDL.h>
 
 #include <cmath>
 
@@ -30,7 +26,7 @@ SplashState::SplashState(StateStack &stack, Context context)
     }
     catch(const std::exception& e)
     {
-        std::cerr << "SplashState: Failed to get SoundPlayer from context: " << e.what() << "\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SplashState: Failed to get SoundPlayer from context: %s", e.what());
         mWhiteNoise = nullptr;
     }
     
@@ -40,7 +36,7 @@ SplashState::SplashState(StateStack &stack, Context context)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "SplashState: Failed to load splash texture: " << e.what() << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SplashState: Failed to load splash texture: %s", e.what());
         mSplashTexture = nullptr;
     }
 
@@ -56,7 +52,7 @@ SplashState::SplashState(StateStack &stack, Context context)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "SplashState: Failed to load font: " << e.what() << "\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SplashState: Failed to load font: %s", e.what());
         mFont = nullptr;
     }
 }
@@ -105,9 +101,8 @@ void SplashState::draw() const noexcept
     ImGui::PopStyleVar(2);
 
     // Flashing prompt box near center
-    static auto startTime = std::chrono::steady_clock::now();
-    float time = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
-    float alpha = 0.5f + 0.5f * std::sin(time * 3.0f);
+    float time = static_cast<float>(SDL_GetTicks()) / 1000.0f;
+    float alpha = 0.5f + 0.5f * SDL_sin(time * 3.0f);
     // keep it between 0.5 and 1.0
     alpha = 0.5f + 0.5f * alpha;
 
@@ -139,10 +134,11 @@ bool SplashState::update(float dt, unsigned int subSteps) noexcept
     return true;
 }
 
-bool SplashState::handleEvent(const sf::Event &event) noexcept
+bool SplashState::handleEvent(const SDL_Event &event) noexcept
 {
     // Any key press or mouse click transitions to menu
-    if (event.is<sf::Event::KeyPressed>() || event.is<sf::Event::MouseButtonPressed>())
+    if (event.type == SDL_EVENT_KEY_DOWN ||
+        event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
     {
         // Only allow transition if loading is complete
         if (!isLoadingComplete())
@@ -150,7 +146,7 @@ bool SplashState::handleEvent(const sf::Event &event) noexcept
             return true;
         }
 
-        std::cerr << "SplashState: Input received, transitioning to MenuState...\n";
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SplashState: Input received, transitioning to MenuState...");
         if (mWhiteNoise && mWhiteNoise->isEnabled())
         {
             mWhiteNoise->stop(SoundEffect::ID::WHITE_NOISE);

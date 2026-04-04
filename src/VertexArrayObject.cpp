@@ -1,6 +1,6 @@
 #include "VertexArrayObject.hpp"
 
-#include <iostream>
+#include <SDL3/SDL.h>
 
 VertexArrayObject::VertexArrayObject() = default;
 
@@ -30,13 +30,13 @@ bool VertexArrayObject::loadFromFile(std::string_view /*unused*/)
 {
     if (mVAO != 0)
     {
-        std::cerr << "VertexArrayObject::loadFromFile - VAO already allocated (" << mVAO << ")\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "VertexArrayObject::loadFromFile - VAO already allocated (%u)", mVAO);
         return true;
     }
     glGenVertexArrays(1, &mVAO);
     if (mVAO == 0)
     {
-        std::cerr << "VertexArrayObject::loadFromFile - glGenVertexArrays failed\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "VertexArrayObject::loadFromFile - glGenVertexArrays failed");
         return false;
     }
     return true;

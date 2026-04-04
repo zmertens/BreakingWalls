@@ -7,7 +7,7 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 
-#include <iostream>
+#include <SDL3/SDL_log.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -385,7 +385,10 @@ bool GLTFModel::readFile(std::string_view filename)
 
     if (!mScene || !mScene->mRootNode || mScene->mNumMeshes == 0)
     {
-        std::cerr << "GLTFModel: failed to load '" << filename << "': " << mImporter->GetErrorString() << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "GLTFModel: failed to load '%s': %s",
+                     filename.data(),
+                     mImporter->GetErrorString());
         mScene = nullptr;
         return false;
     }
@@ -598,12 +601,13 @@ bool GLTFModel::readFile(std::string_view filename)
     {
         mPreferredAnimationIndex = 0;
         bestScore = 0.0f;
-        std::cerr << "GLTFModel: no positive-scored animation clip found, falling back to index 0\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "GLTFModel: no positive-scored animation clip found, falling back to index 0");
     }
 
     if (mMeshes.empty())
     {
-        std::cerr << "GLTFModel: no renderable meshes found in '" << filename << "'\n";
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GLTFModel: no renderable meshes found in '%s'", filename.data());
         mScene = nullptr;
         return false;
     }
@@ -651,7 +655,10 @@ void GLTFModel::render(Shader &shader,
             static bool loggedBoneClampWarning = false;
             if (!loggedBoneClampWarning)
             {
-                std::cerr << "GLTFModel: clipping " << transforms.size() << " bones to shader limit " << kMaxShaderBones << "; raster skinning may be incomplete\n";
+                SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                            "GLTFModel: clipping %zu bones to shader limit %u; raster skinning may be incomplete",
+                            transforms.size(),
+                            static_cast<unsigned int>(kMaxShaderBones));
                 loggedBoneClampWarning = true;
             }
         }

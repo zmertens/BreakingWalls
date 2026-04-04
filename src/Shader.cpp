@@ -1,6 +1,6 @@
 #include "Shader.hpp"
 
-#include <iostream>
+#include <SDL3/SDL_log.h>
 
 #include <cstring>
 #include <fstream>
@@ -28,7 +28,7 @@ void Shader::compileAndAttachShader(ShaderType shaderType, const std::string &fi
     }
     catch (const std::ifstream::failure &e)
     {
-        std::cerr << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: " << filename << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: %s", filename.c_str());
         return;
     }
 
@@ -93,7 +93,7 @@ void Shader::recompileWithDefines(const std::string &defines)
         }
         catch (const std::ifstream::failure &e)
         {
-            std::cerr << "ERROR::SHADER::RECOMPILE_READ: " << filename << "\n";
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ERROR::SHADER::RECOMPILE_READ: %s", filename.c_str());
             continue;
         }
 
@@ -138,7 +138,7 @@ void Shader::linkProgram()
     if (!success)
     {
         glGetProgramInfoLog(mProgram, 512, nullptr, infoLog);
-        std::cerr << "Program link failed: " << infoLog << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Program link failed: %s\n", infoLog);
     }
 }
 
@@ -402,7 +402,7 @@ std::string Shader::resolveIncludes(const std::string &source, const std::string
             }
             else
             {
-                std::cerr << "ERROR: Could not open include file: " << fullPath << "\n";
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ERROR: Could not open include file: %s", fullPath.c_str());
                 result += line + '\n';
             }
             continue;
@@ -432,7 +432,7 @@ GLuint Shader::compile(ShaderType shaderType, const std::string &shaderCode)
     if (!success)
     {
         glGetShaderInfoLog(shaderId, 512, nullptr, infoLog);
-        std::cerr << mFileNames.at(shaderType) << " -- Shader Compilation Failed: " << infoLog << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s -- Shader Compilation Failed: %s", mFileNames.at(shaderType).c_str(), infoLog);
         return 0;
     }
 
@@ -458,7 +458,7 @@ GLuint Shader::compile(ShaderType shaderType, const GLchar *shaderCode)
     if (!success)
     {
         glGetShaderInfoLog(shaderId, 512, nullptr, infoLog);
-        std::cerr << mFileNames.at(shaderType) << " -- Shader Compilation Failed: " << infoLog << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s -- Shader Compilation Failed: %s", mFileNames.at(shaderType).c_str(), infoLog);
         return 0;
     }
 
@@ -498,7 +498,7 @@ GLint Shader::getUniformLocation(const std::string &str)
             std::string key = std::to_string(mProgram) + ":" + str;
             if (warnedUniforms.find(key) == warnedUniforms.end())
             {
-                std::cerr << str << " does not exist in the shader (program " << mProgram << ")\n";
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s does not exist in the shader (program %d)", str.c_str(), mProgram);
                 warnedUniforms.insert(key);
             }
         }

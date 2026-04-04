@@ -1,21 +1,24 @@
 #ifndef RENDER_WINDOW_HPP
 #define RENDER_WINDOW_HPP
 
-namespace sf { class Window; }
+struct SDL_Window;
 
-/// @brief SFML-based RenderWindow wrapping sf::Window with OpenGL rendering
+/// @brief SDL-based RenderWindow that mimics SFML's sf::RenderWindow interface
 class RenderWindow
 {
 public:
-    explicit RenderWindow(sf::Window* window);
+    explicit RenderWindow(SDL_Window *window);
 
     ~RenderWindow() = default;
 
-    RenderWindow(const RenderWindow&) = delete;
-    RenderWindow& operator=(const RenderWindow&) = delete;
+    // Delete copy constructor and copy assignment operator
+    // because RenderWindow contains std::unique_ptr which is not copyable
+    RenderWindow(const RenderWindow &) = delete;
+    RenderWindow &operator=(const RenderWindow &) = delete;
 
-    RenderWindow(RenderWindow&&) = default;
-    RenderWindow& operator=(RenderWindow&&) = default;
+    // Allow move constructor and move assignment operator
+    RenderWindow(RenderWindow &&) = default;
+    RenderWindow &operator=(RenderWindow &&) = default;
 
     /// @brief Clear the render target
     void clear() const noexcept;
@@ -33,11 +36,11 @@ public:
 
     void setVsync(bool enabled) const noexcept;
 
-    [[nodiscard]] sf::Window* getSFMLWindow() const noexcept;
+    /// @brief Get the SDL window for direct access
+    [[nodiscard]] SDL_Window *getSDLWindow() const noexcept;
 
 private:
-    sf::Window* mWindow;
-    mutable bool mFullscreen{false};
+    SDL_Window *mWindow;
 };
 
 #endif // RENDER_WINDOW_HPP

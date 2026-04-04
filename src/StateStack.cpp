@@ -2,8 +2,7 @@
 
 #include <glad/glad.h>
 
-#include <SFML/Window/Event.hpp>
-#include <iostream>
+#include <SDL3/SDL.h>
 
 #include <stdexcept>
 
@@ -33,6 +32,7 @@ void StateStack::draw() const noexcept
 {
     if (mStack.empty())
     {
+        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "StateStack::draw called on empty stack");
         return;
     }
 
@@ -43,7 +43,7 @@ void StateStack::draw() const noexcept
     }
 }
 
-void StateStack::handleEvent(const sf::Event &event) noexcept
+void StateStack::handleEvent(const SDL_Event &event) noexcept
 {
     // Process events for existing states (skip if empty)
     if (!mStack.empty())
@@ -105,7 +105,9 @@ void StateStack::applyPendingChanges()
             }
             catch (const std::exception &e)
             {
-                std::cerr << "StateStack::applyPendingChanges - Failed to create state: " << e.what() << "\n";
+                SDL_LogError(SDL_LOG_CATEGORY_ERROR,
+                             "StateStack::applyPendingChanges - Failed to create state: %s",
+                             e.what());
             }
             break;
         case Action::POP:
@@ -115,7 +117,8 @@ void StateStack::applyPendingChanges()
             }
             else
             {
-                std::cerr << "StateStack::applyPendingChanges - Attempted to pop from empty stack\n";
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "StateStack::applyPendingChanges - Attempted to pop from empty stack");
             }
             break;
         case Action::CLEAR:
