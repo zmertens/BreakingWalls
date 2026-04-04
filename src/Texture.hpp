@@ -5,6 +5,8 @@
 #include <functional>
 #include <string_view>
 
+struct SDL_Window;
+
 /// @file Texture.hpp
 /// @brief Texture class for OpenGL 3 textures
 /// @details This class wraps OpenGL texture operations

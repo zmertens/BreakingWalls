@@ -2,9 +2,7 @@
 
 #include <dearimgui/imgui.h>
 
-#include <SFML/Window.hpp>
-#include <SFML/Window/Event.hpp>
-#include <iostream>
+#include <SDL3/SDL.h>
 
 #include "Font.hpp"
 #include "MenuState.hpp"
@@ -19,12 +17,12 @@ PauseState::PauseState(StateStack &stack, Context context)
 {
     if (auto *renderWindow = getContext().getRenderWindow(); renderWindow != nullptr)
     {
-        if (sf::Window *window = renderWindow->getSFMLWindow(); window != nullptr)
+        if (SDL_Window *window = renderWindow->getSDLWindow(); window != nullptr)
         {
-            window->setMouseCursorGrabbed(false);
-            window->setMouseCursorVisible(true);
+            SDL_SetWindowRelativeMouseMode(window, false);
         }
     }
+    SDL_ShowCursor();
 
     try
     {
@@ -36,7 +34,7 @@ PauseState::PauseState(StateStack &stack, Context context)
     }
     catch(const std::exception& e)
     {
-        std::cerr << "PauseState: Failed to access music player: " << e.what() << "\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Failed to access music player: %s", e.what());
         mMusic = nullptr;
     }
     
@@ -46,7 +44,7 @@ PauseState::PauseState(StateStack &stack, Context context)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "PauseState: Failed to load font: " << e.what() << "\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Failed to load font: %s", e.what());
         mFont = nullptr;
     }
 }
@@ -155,24 +153,24 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
     switch (mSelectedMenuItem)
     {
     case static_cast<unsigned int>(States::ID::DONE):
-        std::cerr << "PauseState: Exiting game...\n";
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Exiting game...");
         requestStateClear();
         requestStackPush(States::ID::SPLASH);
         break;
     case static_cast<unsigned int>(States::ID::GAME):
-        std::cerr << "PauseState: Resuming/Starting game...\n";
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Resuming/Starting game...");
         if (auto *renderWindow = getContext().getRenderWindow(); renderWindow != nullptr)
         {
-            if (sf::Window *window = renderWindow->getSFMLWindow(); window != nullptr)
+            if (SDL_Window *window = renderWindow->getSDLWindow(); window != nullptr)
             {
-                window->setMouseCursorGrabbed(true);
-                window->setMouseCursorVisible(false);
+                SDL_SetWindowRelativeMouseMode(window, true);
             }
         }
+        SDL_HideCursor();
         if (mPlanetComplete)
         {
             // Start new game by popping pause state AND game state, then pushing a fresh game state
-            std::cerr << "PauseState: Planet complete! Starting new game...\n";
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Planet complete! Starting new game...");
             requestStackPop();  // Pop PauseState
             requestStackPop();  // Pop current GameState
             requestStackPush(States::ID::GAME);  // Push fresh GameState
@@ -184,7 +182,7 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
         }
         break;
     case static_cast<unsigned int>(States::ID::MENU):
-        std::cerr << "PauseState: Menu selected, entering MenuState\n";
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Menu selected, entering MenuState");
         if (mMusic && mMusic->isPlaying())
         {
             mMusic->stop();
@@ -199,14 +197,15 @@ bool PauseState::update(float dt, unsigned int subSteps) noexcept
     return false;
 }
 
-bool PauseState::handleEvent(const sf::Event &event) noexcept
+bool PauseState::handleEvent(const SDL_Event &event) noexcept
 {
 
-    if (const auto* e = event.getIf<sf::Event::KeyPressed>())
+    if (event.type == SDL_EVENT_KEY_DOWN)
     {
-        if (e->code == sf::Keyboard::Key::Escape)
+        if (event.key.scancode == SDL_SCANCODE_ESCAPE)
         {
-            std::cerr << "PauseState: Escape Key pressed, returning to previous state\n";
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PauseState: Escape Key pressed, returning to previous state");
+
             mSelectedMenuItem = static_cast<unsigned int>(States::ID::GAME);
         }
     }

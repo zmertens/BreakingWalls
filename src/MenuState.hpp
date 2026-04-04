@@ -22,7 +22,7 @@ public:
 
     void draw() const noexcept override;
     bool update(float dt, unsigned int subSteps) noexcept override;
-    bool handleEvent(const sf::Event &event) noexcept override;
+    bool handleEvent(const SDL_Event &event) noexcept override;
 
 private:
     enum class MenuTab : unsigned int

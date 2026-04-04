@@ -26,9 +26,7 @@
 
 #include <box2d/box2d.h>
 
-#include <SFML/Window/Event.hpp>
-#include <iostream>
-#include <chrono>
+#include <SDL3/SDL.h>
 
 #include <SFML/Network.hpp>
 
@@ -46,12 +44,6 @@
 
 namespace
 {
-    float getTimeSecs() noexcept
-    {
-        static auto start = std::chrono::steady_clock::now();
-        return std::chrono::duration<float>(std::chrono::steady_clock::now() - start).count();
-    }
-
     constexpr std::uintptr_t kBodyTagSphereBase = 10;
     constexpr std::uintptr_t kBodyTagMazeWall = 4;
 
@@ -225,12 +217,14 @@ void World::shutdownWorkerPool() noexcept
                 auto status = worker.wait_for(std::chrono::seconds(5));
                 if (status == std::future_status::timeout)
                 {
-                    std::cerr << "Worker thread  timed out waiting for shutdown\n";
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                "Worker thread %zu timed out waiting for shutdown", i);
                 }
             }
             catch (const std::exception &e)
             {
-                std::cerr << "Worker thread  shutdown exception:\n";
+                SDL_LogError(SDL_LOG_CATEGORY_ERROR,
+                             "Worker thread %zu shutdown exception: %s", i, e.what());
             }
         }
     }
@@ -286,7 +280,8 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord &coord) const no
         std::string mazeStr = generateMazeForChunk(coord);
         if (mazeStr.empty())
         {
-            std::cerr << "Worker: Empty maze for chunk (, )\n";
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Worker: Empty maze for chunk (%d, %d)", coord.x, coord.z);
             return result;
         }
 
@@ -300,7 +295,9 @@ World::ChunkWorkItem World::generateChunkAsync(const ChunkCoord &coord) const no
     }
     catch (const std::exception &e)
     {
-        std::cerr << "Worker: Exception generating chunk (, ):\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR,
+                     "Worker: Exception generating chunk (%d, %d): %s",
+                     coord.x, coord.z, e.what());
     }
 
     return result;
@@ -392,7 +389,9 @@ void World::processCompletedChunks() noexcept
             }
             catch (const std::exception &e)
             {
-                std::cerr << "World: Exception integrating chunk (, ):\n";
+                SDL_LogError(SDL_LOG_CATEGORY_ERROR,
+                             "World: Exception integrating chunk (%d, %d): %s",
+                             coord.x, coord.z, e.what());
             }
 
             it = mPendingChunks.erase(it);
@@ -450,7 +449,7 @@ void World::initRendering(VAOManager *vaos, FBOManager *fbos, VBOManager *vbos,
     }
     catch (const std::exception &e)
     {
-        std::cerr << "World::initRendering: Failed to get shaders:\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World::initRendering: Failed to get shaders: %s", e.what());
         return;
     }
 
@@ -464,7 +463,7 @@ void World::initRendering(VAOManager *vaos, FBOManager *fbos, VBOManager *vbos,
     }
     catch (const std::exception &e)
     {
-        std::cerr << "World::initRendering: Failed to get textures:\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World::initRendering: Failed to get textures: %s", e.what());
         return;
     }
 
@@ -494,13 +493,13 @@ void World::createCompositeTargets(int windowWidth, int windowHeight) noexcept
 
     if (!mBillboardColorTex || !mOITAccumTex || !mOITRevealTex)
     {
-        std::cerr << "World: Composite textures not initialized in manager\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Composite textures not initialized in manager");
         return;
     }
 
     if (!mBillboardColorTex->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
     {
-        std::cerr << "World: Failed to allocate billboard texture\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate billboard texture");
         return;
     }
 
@@ -515,17 +514,17 @@ void World::createCompositeTargets(int windowWidth, int windowHeight) noexcept
     glReadBuffer(GL_COLOR_ATTACHMENT0);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "World: Billboard framebuffer incomplete\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Billboard framebuffer incomplete");
 
     if (!mOITAccumTex->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
     {
-        std::cerr << "World: Failed to allocate OIT accum texture\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate OIT accum texture");
         return;
     }
 
     if (!mOITRevealTex->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::R16F, 0))
     {
-        std::cerr << "World: Failed to allocate OIT reveal texture\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate OIT reveal texture");
         return;
     }
 
@@ -559,13 +558,13 @@ void World::initializeShadowResources(int windowWidth, int windowHeight) noexcep
 
     if (!mShadowTexture)
     {
-        std::cerr << "World: Shadow texture not initialized in manager\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "World: Shadow texture not initialized in manager");
         return;
     }
 
     if (!mShadowTexture->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
     {
-        std::cerr << "World: Failed to allocate shadow texture\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate shadow texture");
         return;
     }
 
@@ -576,7 +575,7 @@ void World::initializeShadowResources(int windowWidth, int windowHeight) noexcep
     glReadBuffer(GL_COLOR_ATTACHMENT0);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "World: Shadow framebuffer incomplete\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Shadow framebuffer incomplete");
 
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -613,13 +612,13 @@ void World::initializeReflectionResources(int windowWidth, int windowHeight) noe
 
     if (!mReflectionColorTex)
     {
-        std::cerr << "World: Reflection texture not initialized in manager\n";
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "World: Reflection texture not initialized in manager");
         return;
     }
 
     if (!mReflectionColorTex->loadRenderTarget(windowWidth, windowHeight, Texture::RenderTargetFormat::RGBA16F, 0))
     {
-        std::cerr << "World: Failed to allocate reflection texture\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to allocate reflection texture");
         return;
     }
 
@@ -636,7 +635,7 @@ void World::initializeReflectionResources(int windowWidth, int windowHeight) noe
     GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (fboStatus != GL_FRAMEBUFFER_COMPLETE)
     {
-        std::cerr << "World: Reflection framebuffer incomplete: 0x\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Reflection framebuffer incomplete: 0x%x", fboStatus);
         return;
     }
 
@@ -970,7 +969,9 @@ void World::buildMazeGeometry(const Player & /*player*/) noexcept
     mRasterMazeDepth = mazeDepth;
     mRasterMazeTopY = mazeTopY;
 
-    std::cerr << "World: Raster maze built - rows= cols= levels= vertices=\n";
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "World: Raster maze built - rows=%u cols=%u levels=%u vertices=%d",
+                kSimpleMazeRows, kSimpleMazeCols, kSimpleMazeLevels, mRasterMazeVertexCount);
 }
 
 void World::renderRasterMaze(const Camera &camera, const Player &player,
@@ -993,7 +994,7 @@ void World::renderRasterMaze(const Camera &camera, const Player &player,
     const glm::mat4 mvp = camera.getPerspective(aspectRatio) * camera.getLookAt();
     mMazeShader->bind();
     mMazeShader->setUniform("uMVP", mvp);
-    mMazeShader->setUniform("uTime", getTimeSecs());
+    mMazeShader->setUniform("uTime", static_cast<float>(SDL_GetTicks()) * 0.001f);
 
     const float mazeOriginX = mRasterMazeCenter.x - 0.5f * mRasterMazeWidth;
     const float mazeOriginZ = mRasterMazeCenter.z - 0.5f * mRasterMazeDepth;
@@ -1036,7 +1037,7 @@ void World::renderGoalPathStencil(const Camera &camera,
     const float aspectRatio = static_cast<float>(std::max(1, windowWidth)) /
                               static_cast<float>(std::max(1, windowHeight));
     const glm::mat4 mvp = camera.getPerspective(aspectRatio) * camera.getLookAt();
-    const float now = getTimeSecs();
+    const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
 
     GLboolean stencilWasEnabled = glIsEnabled(GL_STENCIL_TEST);
     GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
@@ -1122,7 +1123,7 @@ void World::renderBoundaryCharacterBillboards(const Camera &camera,
 
     glDrawBuffer(GL_BACK);
 
-    const float now = getTimeSecs();
+    const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
 
     for (const auto &sprite : mBoundarySprites)
     {
@@ -1306,7 +1307,7 @@ void World::renderPlayerCharacterModel(const Camera &camera, const Player &playe
 
     mSkinnedCharacterShader->bind();
     mSkinnedCharacterShader->setUniform("uCameraPos", camera.getPosition());
-    mSkinnedCharacterShader->setUniform("uTime", getTimeSecs());
+    mSkinnedCharacterShader->setUniform("uTime", static_cast<float>(SDL_GetTicks()) * 0.001f);
 
     // Contact shadow
     {
@@ -1355,7 +1356,7 @@ void World::renderWalkParticles(const Camera &camera, const Player &player,
     if (playerPlanarSpeed < 1.0f)
         return;
 
-    const float now = getTimeSecs();
+    const float now = static_cast<float>(SDL_GetTicks()) * 0.001f;
     const float dt = (mWalkParticlesTime <= 0.0f) ? 0.0f : std::min(0.03f, now - mWalkParticlesTime);
     mWalkParticlesTime = now;
 
@@ -1504,7 +1505,7 @@ void World::renderPlayerReflection(const Camera &camera, const Player &player,
     FramebufferObject::unbind();
 }
 
-void World::handleEvent(const sf::Event &event)
+void World::handleEvent(const SDL_Event &event)
 {
     
 }
@@ -1533,7 +1534,7 @@ void World::destroyWorld()
             }
             catch (const std::exception &e)
             {
-                std::cerr << "Error destroying body:\n";
+                SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Error destroying body: %s", e.what());
             }
             catch (...)
             {
@@ -1552,11 +1553,11 @@ void World::destroyWorld()
         }
         catch (const std::exception &e)
         {
-            std::cerr << "Error destroying physics world:\n";
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Error destroying physics world: %s", e.what());
         }
         catch (...)
         {
-            std::cerr << "Unknown error destroying physics world\n";
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Unknown error destroying physics world");
         }
         mWorldId = b2_nullWorldId;
     }
@@ -1582,7 +1583,7 @@ void World::initPathTracerScene() noexcept
 
     if (!b2World_IsValid(mWorldId))
     {
-        std::cerr << "World: Cannot init path tracer - physics world invalid\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Cannot init path tracer - physics world invalid");
         return;
     }
 }
@@ -1901,7 +1902,7 @@ std::string World::generateMazeForChunk(const ChunkCoord &coord) const noexcept
     }
     catch (const std::exception &e)
     {
-        std::cerr << "World: Failed to generate maze:\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "World: Failed to generate maze: %s", e.what());
         return "";
     }
 }
@@ -1914,7 +1915,7 @@ std::vector<World::MazeCell> World::parseMazeCells(const std::string &mazeStr, c
 
     if (mazeStr.empty())
     {
-        std::cerr << "World: Empty maze string for chunk (, )\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "World: Empty maze string for chunk (%d, %d)", coord.x, coord.z);
         return cells;
     }
 

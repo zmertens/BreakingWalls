@@ -12,6 +12,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(BREAKING_WALLS_APP_NAME "breakingwalls")
 
+# Automatically define BREAKING_WALLS_DEBUG for Debug and RelWithDebInfo builds
+add_compile_definitions(
+    $<$<CONFIG:Debug>:BREAKING_WALLS_DEBUG>
+    $<$<CONFIG:RelWithDebInfo>:BREAKING_WALLS_DEBUG>
+)
+
+set(BREAKING_WALLS_DEMO_DEF "BREAKING_WALLS_DEMO")
+option(BREAKING_WALLS_DEMO_DEF "Define BREAKING_WALLS_DEMO macro" OFF)
+
 include(NoInSourceBuilds)
 
 add_subdirectory(src bin)
@@ -32,6 +41,14 @@ if (WIN32)
     )
 endif()
 
+install(FILES "${CMAKE_SOURCE_DIR}/scripts/breakingwalls_run.bat" DESTINATION "${CMAKE_INSTALL_BINDIR}")   
+
+# Install assets
+install(DIRECTORY audio/ DESTINATION ${CMAKE_INSTALL_BINDIR}/audio)
+install(DIRECTORY models/ DESTINATION ${CMAKE_INSTALL_BINDIR}/models)
+install(DIRECTORY shaders/ DESTINATION ${CMAKE_INSTALL_BINDIR}/shaders)
+install(DIRECTORY textures/ DESTINATION ${CMAKE_INSTALL_BINDIR}/textures)
+install(FILES physics.json DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES LICENSE README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 # Enable CPack

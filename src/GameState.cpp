@@ -1,8 +1,6 @@
 #include "GameState.hpp"
 
-#include <SFML/Window.hpp>
-#include <SFML/Window/Event.hpp>
-#include <iostream>
+#include <SDL3/SDL.h>
 
 #include <dearimgui/imgui.h>
 
@@ -126,7 +124,7 @@ GameState::GameState(StateStack &stack, Context context)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "GameState: Failed to get shaders from context: " << e.what() << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get shaders from context: %s", e.what());
         mShadersInitialized = false;
     }
 
@@ -137,7 +135,7 @@ GameState::GameState(StateStack &stack, Context context)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "GameState: Failed to get SoundPlayer from context: " << e.what() << "\n";
+        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get SoundPlayer from context: %s", e.what());
     }
 
     auto &textures = *context.getTextureManager();
@@ -150,12 +148,16 @@ GameState::GameState(StateStack &stack, Context context)
         mPrevFrameTex = &textures.get(Textures::ID::PREV_FRAME);
         if (mTestAlbedoTexture)
         {
-            std::cerr << "GameState: Test albedo texture ready\n";
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "GameState: Test albedo texture (SDL_logo) ready id=%u size=%dx%d",
+                        mTestAlbedoTexture->get(),
+                        mTestAlbedoTexture->getWidth(),
+                        mTestAlbedoTexture->getHeight());
         }
     }
     catch (const std::exception &e)
     {
-        std::cerr << "GameState: Failed to get texture resources: " << e.what() << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: Failed to get texture resources: %s", e.what());
         mDisplayTex = nullptr;
         mNoiseTexture = nullptr;
         mTestAlbedoTexture = nullptr;
@@ -183,7 +185,7 @@ GameState::GameState(StateStack &stack, Context context)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "GameState: Failed to get game music: " << e.what() << "\n";
+        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "GameState: Failed to get game music: %s", e.what());
         mGameMusic = nullptr;
     }
 
@@ -191,14 +193,14 @@ GameState::GameState(StateStack &stack, Context context)
     mVAOManager = context.getVAOManager();
     if (!mVAOManager)
     {
-        std::cerr << "GameState: VAOManager not available in context\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: VAOManager not available in context");
     }
 
     // Get FBO manager from context
     mFBOManager = context.getFBOManager();
     if (!mFBOManager)
     {
-        std::cerr << "GameState: FBOManager not available in context\n";
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "GameState: FBOManager not available in context");
     }
 
     // Trigger initial chunk load to get maze spawn position
@@ -225,7 +227,8 @@ GameState::GameState(StateStack &stack, Context context)
     configureCursorLock(true);
     initializeJoystickAndHaptics();
 
-    std::cerr << "GameState: Camera spawned at\n";
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Camera spawned at:\t%.2f, %.2f, %.2f",
+                cameraSpawn.x, cameraSpawn.y, cameraSpawn.z);
 
     // Initialize camera tracking
     mLastCameraPosition = mCamera.getPosition();
@@ -238,11 +241,11 @@ GameState::GameState(StateStack &stack, Context context)
     {
         if (auto *window = getContext().getRenderWindow(); window != nullptr)
         {
-            if (sf::Window *sfWindow = window->getSFMLWindow(); sfWindow != nullptr)
+            if (SDL_Window *sdlWindow = window->getSDLWindow(); sdlWindow != nullptr)
             {
-                auto sz = sfWindow->getSize();
-                int width = static_cast<int>(sz.x);
-                int height = static_cast<int>(sz.y);
+                int width = 0;
+                int height = 0;
+                SDL_GetWindowSizeInPixels(sdlWindow, &width, &height);
                 if (width > 0 && height > 0)
                 {
                     mWindowWidth = width;
@@ -286,7 +289,7 @@ GameState::GameState(StateStack &stack, Context context)
             applyRasterBirdsEyeCamera();
         }
 
-        std::cerr << "GameState: Pure raster maze mode ready\n";
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Pure raster maze mode ready");
     }
 }
 
@@ -330,15 +333,15 @@ void GameState::handleWindowResize() noexcept
         return;
     }
 
-    sf::Window *sfWindow = window->getSFMLWindow();
-    if (!sfWindow)
+    SDL_Window *sdlWindow = window->getSDLWindow();
+    if (!sdlWindow)
     {
         return;
     }
 
-    auto sz = sfWindow->getSize();
-    int newW = static_cast<int>(sz.x);
-    int newH = static_cast<int>(sz.y);
+    int newW = 0;
+    int newH = 0;
+    SDL_GetWindowSizeInPixels(sdlWindow, &newW, &newH);
 
     if (newW <= 0 || newH <= 0 || (newW == mWindowWidth && newH == mWindowHeight))
     {
@@ -698,7 +701,7 @@ void GameState::cleanupResources() noexcept
     mCompositeShader = nullptr;
     mOITResolveShader = nullptr;
 
-    std::cerr << "GameState: OpenGL resources cleaned up\n";
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: OpenGL resources cleaned up");
 }
 
 void GameState::updateSounds() noexcept
@@ -742,7 +745,8 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
         {
             if (!mGameMusic->isPlaying())
             {
-                std::cerr << "GameState: Music stopped unexpectedly! Attempting restart...\n";
+                SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO,
+                            "GameState: Music stopped unexpectedly! Attempting restart...");
                 mGameMusic->play();
             }
         }
@@ -754,18 +758,7 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     // Pre-read relative mouse delta BEFORE handleRealtimeInput consumes the accumulator.
     // This lets handleBirdsEyeInput receive the actual mouse movement for this frame.
     float relMouseX = 0.0f, relMouseY = 0.0f;
-    if (mCursorLocked)
-    {
-        auto* sfWindow = getContext().getRenderWindow()->getSFMLWindow();
-        if (sfWindow)
-        {
-            auto curPos = sf::Mouse::getPosition(*sfWindow);
-            relMouseX = static_cast<float>(curPos.x) - mLastMousePos.x;
-            relMouseY = static_cast<float>(curPos.y) - mLastMousePos.y;
-            sf::Mouse::setPosition(sf::Vector2i(mWindowWidth / 2, mWindowHeight / 2), *sfWindow);
-            mLastMousePos = glm::vec2(mWindowWidth / 2, mWindowHeight / 2);
-        }
-    }
+    SDL_GetRelativeMouseState(&relMouseX, &relMouseY);
 
     // Run Player logic for gravity / animation state / jump – but discard the
     // camera-relative XZ position change it produces (broken for straight-down camera).
@@ -866,69 +859,81 @@ bool GameState::update(float dt, unsigned int subSteps) noexcept
     return true;
 }
 
-bool GameState::handleEvent(const sf::Event& event) noexcept
+bool GameState::handleEvent(const SDL_Event &event) noexcept
 {
-    if (event.is<sf::Event::Resized>())
+    // Handle window resize event with DPI-aware pixel detection.
+    if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
     {
         handleWindowResize();
     }
 
+    // World still handles mouse panning for the 2D view
     mWorld.handleEvent(event);
+
+    // Keep player event handling active for gameplay controls.
     mPlayer.handleEvent(event, mCamera);
 
-    if (const auto* e = event.getIf<sf::Event::KeyPressed>())
+    if (event.type == SDL_EVENT_KEY_DOWN)
     {
-        if (e->code == sf::Keyboard::Key::Escape)
+        if (event.key.scancode == SDL_SCANCODE_ESCAPE)
         {
             mGameIsPaused = true;
             requestStackPush(States::ID::PAUSE);
         }
-        if (e->code == sf::Keyboard::Key::Space)
+
+        // Jump with SPACE
+        if (event.key.scancode == SDL_SCANCODE_SPACE)
         {
+            // Apply jump impulse through Box2D physics
             mWorld.applyPlayerJumpImpulse(8.0f);
             mPlayer.jump();
+
             if (mSoundPlayer && !mGameIsPaused)
+            {
                 mSoundPlayer->play(SoundEffect::ID::SELECT, sf::Vector2f{mPlayer.getPosition().x, mPlayer.getPosition().z});
+            }
         }
-        if (e->code == sf::Keyboard::Key::R)
+
+        // Play sound when camera is reset (R key handled by Player now)
+        if (event.key.scancode == SDL_SCANCODE_R)
         {
             glm::vec3 resetPos = glm::vec3(0.0f, 50.0f, 200.0f);
             if (mSoundPlayer && !mGameIsPaused)
+            {
                 mSoundPlayer->play(SoundEffect::ID::GENERATE, sf::Vector2f{resetPos.x, resetPos.z});
-            std::cerr << "GameState: Camera reset to initial position\n";
+            }
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GameState: Camera reset to initial position");
         }
-        if (e->code == sf::Keyboard::Key::A)
+
+        // Test haptic pulse with A key while keeping A strafe behavior unchanged.
+        if (event.key.scancode == SDL_SCANCODE_A)
         {
             triggerHapticTest(0.65f, 0.08f);
         }
     }
 
-    if (const auto* e = event.getIf<sf::Event::MouseWheelScrolled>())
+    // Mouse wheel: bounded bird's-eye zoom
+    if (event.type == SDL_EVENT_MOUSE_WHEEL)
     {
-        if (e->wheel == sf::Mouse::Wheel::Vertical)
-        {
-            mRasterBirdsEyeDistance -= e->delta * kRasterZoomStep;
-            mRasterBirdsEyeDistance = glm::clamp(mRasterBirdsEyeDistance, mRasterBirdsEyeMinDistance, mRasterBirdsEyeMaxDistance);
-            applyRasterBirdsEyeCamera();
-        }
+        mRasterBirdsEyeDistance -= static_cast<float>(event.wheel.y) * kRasterZoomStep;
+        mRasterBirdsEyeDistance = glm::clamp(mRasterBirdsEyeDistance, mRasterBirdsEyeMinDistance, mRasterBirdsEyeMaxDistance);
+        applyRasterBirdsEyeCamera();
     }
 
-    if (const auto* e = event.getIf<sf::Event::TouchBegan>())
+    // Touch events: single-finger drag moves the player (normalised 0‥1 coordinates).
+    if (event.type == SDL_EVENT_FINGER_DOWN)
     {
         mTouchActive = true;
-        mTouchLastPos = glm::vec2(static_cast<float>(e->x), static_cast<float>(e->y));
+        mTouchLastPos = glm::vec2(event.tfinger.x, event.tfinger.y);
         mTouchDelta = glm::vec2(0.0f);
     }
-    else if (const auto* e = event.getIf<sf::Event::TouchMoved>())
+    else if (event.type == SDL_EVENT_FINGER_MOTION && mTouchActive)
     {
-        if (mTouchActive)
-        {
-            const glm::vec2 currentPos(static_cast<float>(e->x), static_cast<float>(e->y));
-            mTouchDelta += currentPos - mTouchLastPos;
-            mTouchLastPos = currentPos;
-        }
+        const glm::vec2 currentPos(event.tfinger.x, event.tfinger.y);
+        mTouchDelta += currentPos - mTouchLastPos;
+        mTouchLastPos = currentPos;
     }
-    else if (event.is<sf::Event::TouchEnded>())
+    else if (event.type == SDL_EVENT_FINGER_UP)
     {
         mTouchActive = false;
         mTouchDelta = glm::vec2(0.0f);
@@ -962,27 +967,41 @@ glm::ivec2 GameState::getRenderDimensions() const noexcept
 void GameState::configureCursorLock(bool enabled) noexcept
 {
     if (mCursorLocked == enabled)
+    {
         return;
+    }
 
-    auto* window = getContext().getRenderWindow();
+    auto *window = getContext().getRenderWindow();
     if (!window)
+    {
         return;
+    }
 
-    sf::Window* sfWindow = window->getSFMLWindow();
-    if (!sfWindow)
+    SDL_Window *sdlWindow = window->getSDLWindow();
+    if (!sdlWindow)
+    {
         return;
+    }
 
     if (enabled)
     {
-        sfWindow->setMouseCursorGrabbed(true);
-        sfWindow->setMouseCursorVisible(false);
-        sf::Mouse::setPosition(sf::Vector2i(mWindowWidth / 2, mWindowHeight / 2), *sfWindow);
-        mLastMousePos = glm::vec2(mWindowWidth / 2, mWindowHeight / 2);
+        // Enable relative mouse mode first
+        SDL_SetWindowRelativeMouseMode(sdlWindow, true);
+        SDL_HideCursor();
+
+        // Warp mouse to center (though not strictly necessary in relative mode)
+        SDL_WarpMouseInWindow(sdlWindow,
+                              static_cast<float>(mWindowWidth) * 0.5f,
+                              static_cast<float>(mWindowHeight) * 0.5f);
+
+        // Clear any accumulated relative motion state to prevent initial jump
+        float dummyX = 0.0f, dummyY = 0.0f;
+        SDL_GetRelativeMouseState(&dummyX, &dummyY);
     }
     else
     {
-        sfWindow->setMouseCursorGrabbed(false);
-        sfWindow->setMouseCursorVisible(true);
+        SDL_SetWindowRelativeMouseMode(sdlWindow, false);
+        SDL_ShowCursor();
     }
 
     mCursorLocked = enabled;
@@ -990,24 +1009,51 @@ void GameState::configureCursorLock(bool enabled) noexcept
 
 void GameState::initializeJoystickAndHaptics() noexcept
 {
-    if (mJoystickConnected) return;
-
-    sf::Joystick::update();
-    for (unsigned int i = 0; i < sf::Joystick::Count; ++i)
+    if (mJoystick)
     {
-        if (sf::Joystick::isConnected(i))
+        return;
+    }
+
+    int joystickCount = 0;
+    SDL_JoystickID *joysticks = SDL_GetJoysticks(&joystickCount);
+    if (!joysticks || joystickCount <= 0)
+    {
+        if (joysticks)
         {
-            mJoystickIndex = i;
-            mJoystickConnected = true;
-            std::cerr << "GameState: Joystick " << i << " connected\n";
-            return;
+            SDL_free(joysticks);
         }
+        return;
+    }
+
+    mJoystick = SDL_OpenJoystick(joysticks[0]);
+    SDL_free(joysticks);
+
+    if (!mJoystick)
+    {
+        SDL_LogWarn(SDL_LOG_CATEGORY_INPUT, "GameState: Unable to open joystick: %s", SDL_GetError());
+        return;
+    }
+
+    mJoystickRumbleSupported = SDL_RumbleJoystick(mJoystick, 0xFFFF, 0xFFFF, 1);
+    if (!mJoystickRumbleSupported)
+    {
+        SDL_LogInfo(SDL_LOG_CATEGORY_INPUT, "GameState: Joystick connected without rumble support");
+    }
+    else
+    {
+        SDL_RumbleJoystick(mJoystick, 0, 0, 0);
+        SDL_LogInfo(SDL_LOG_CATEGORY_INPUT, "GameState: Joystick and rumble initialized");
     }
 }
 
 void GameState::cleanupJoystickAndHaptics() noexcept
 {
-    mJoystickConnected = false;
+    if (mJoystick)
+    {
+        SDL_CloseJoystick(mJoystick);
+        mJoystick = nullptr;
+    }
+    mJoystickRumbleSupported = false;
 }
 
 void GameState::handleBirdsEyeInput(float dt, float relMouseX, float relMouseY) noexcept
@@ -1029,14 +1075,19 @@ void GameState::handleBirdsEyeInput(float dt, float relMouseX, float relMouseY) 
 
     // --- Keyboard (WASD + arrow keys) ---
     {
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up))
-            delta.z -= kKeyMoveSpeed * dt;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down))
-            delta.z += kKeyMoveSpeed * dt;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left))
-            delta.x -= kKeyMoveSpeed * dt;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right))
-            delta.x += kKeyMoveSpeed * dt;
+        int numKeys = 0;
+        const bool *keys = SDL_GetKeyboardState(&numKeys);
+        if (keys)
+        {
+            if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP])
+                delta.z -= kKeyMoveSpeed * dt;
+            if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN])
+                delta.z += kKeyMoveSpeed * dt;
+            if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])
+                delta.x -= kKeyMoveSpeed * dt;
+            if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT])
+                delta.x += kKeyMoveSpeed * dt;
+        }
     }
 
     // --- Relative mouse (cursor locked, so relX/Y accumulate freely) ---
@@ -1101,25 +1152,29 @@ void GameState::handleBirdsEyeInput(float dt, float relMouseX, float relMouseY) 
 
 void GameState::updateJoystickInput(float dt) noexcept
 {
-    if (!mJoystickConnected || dt <= 0.0f || mPlayer.isFrozen()) return;
-
-    sf::Joystick::update();
-    if (!sf::Joystick::isConnected(mJoystickIndex))
+    if (!mJoystick || dt <= 0.0f || mPlayer.isFrozen())
     {
-        mJoystickConnected = false;
         return;
     }
 
-    const float axisXNorm = std::clamp(sf::Joystick::getAxisPosition(mJoystickIndex, sf::Joystick::Axis::X) / 100.0f, -1.0f, 1.0f);
-    const float axisYNorm = std::clamp(sf::Joystick::getAxisPosition(mJoystickIndex, sf::Joystick::Axis::Y) / 100.0f, -1.0f, 1.0f);
+    constexpr int kLeftStickXAxis = 0;
+    constexpr int kLeftStickYAxis = 1;
+    const Sint16 axisXRaw = SDL_GetJoystickAxis(mJoystick, kLeftStickXAxis);
+    const Sint16 axisYRaw = SDL_GetJoystickAxis(mJoystick, kLeftStickYAxis);
+    const float axisXNorm = std::clamp(static_cast<float>(axisXRaw) / 32767.0f, -1.0f, 1.0f);
+    const float axisYNorm = std::clamp(static_cast<float>(axisYRaw) / 32767.0f, -1.0f, 1.0f);
 
+    // Apply radial deadzone and normalise both axes together.
     const float magnitude = std::sqrt(axisXNorm * axisXNorm + axisYNorm * axisYNorm);
-    if (magnitude <= mJoystickDeadzone) return;
+    if (magnitude <= mJoystickDeadzone)
+        return;
 
     const float scale = (magnitude - mJoystickDeadzone) / std::max(0.001f, 1.0f - mJoystickDeadzone);
     const float normX = (axisXNorm / magnitude) * std::clamp(scale, 0.0f, 1.0f) * mJoystickStrafeSpeed * dt;
     const float normZ = (axisYNorm / magnitude) * std::clamp(scale, 0.0f, 1.0f) * mJoystickStrafeSpeed * dt;
 
+    // Left-stick X → world +X (screen-right), left-stick Y → world +Z (screen-down).
+    // Substep to prevent tunneling through thin walls (same approach as mouse input).
     constexpr float kMaxSubstepDist = 0.07f;
     const float totalDist = std::sqrt(normX * normX + normZ * normZ);
     const int numSteps = std::max(1, static_cast<int>(std::ceil(totalDist / kMaxSubstepDist)));
@@ -1136,9 +1191,19 @@ void GameState::updateJoystickInput(float dt) noexcept
     mPlayer.setPosition(playerPos);
 }
 
-void GameState::triggerHapticTest([[maybe_unused]] float strength, [[maybe_unused]] float seconds) noexcept
+void GameState::triggerHapticTest(float strength, float seconds) noexcept
 {
-    // SFML does not support haptic feedback; no-op.
+    if (!mJoystick || !mJoystickRumbleSupported)
+    {
+        return;
+    }
+
+    const float clampedStrength = std::clamp(strength, 0.0f, 1.0f);
+    const Uint16 low = static_cast<Uint16>(clampedStrength * 65535.0f);
+    const Uint16 high = static_cast<Uint16>(clampedStrength * 65535.0f);
+    const Uint32 durationMs = static_cast<Uint32>(std::max(0.0f, seconds) * 1000.0f);
+
+    SDL_RumbleJoystick(mJoystick, low, high, durationMs);
 }
 
 float GameState::getRenderScale() const noexcept

@@ -2,8 +2,7 @@
 
 #include "Camera.hpp"
 
-#include <SFML/Window.hpp>
-#include <SFML/Window/Event.hpp>
+#include <SDL3/SDL.h>
 
 #include <glm/glm.hpp>
 
@@ -20,21 +19,21 @@ namespace
 
 Player::Player() : mIsActive(false), mIsOnGround(false)
 {
-    mKeyBinding[sf::Keyboard::Key::W] = Action::MOVE_FORWARD;
-    mKeyBinding[sf::Keyboard::Key::S] = Action::MOVE_BACKWARD;
-    mKeyBinding[sf::Keyboard::Key::A] = Action::MOVE_LEFT;
-    mKeyBinding[sf::Keyboard::Key::D] = Action::MOVE_RIGHT;
-    mKeyBinding[sf::Keyboard::Key::Space] = Action::JUMP;
+    mKeyBinding[SDL_SCANCODE_W] = Action::MOVE_FORWARD;
+    mKeyBinding[SDL_SCANCODE_S] = Action::MOVE_BACKWARD;
+    mKeyBinding[SDL_SCANCODE_A] = Action::MOVE_LEFT;
+    mKeyBinding[SDL_SCANCODE_D] = Action::MOVE_RIGHT;
+    mKeyBinding[SDL_SCANCODE_SPACE] = Action::JUMP;
 
     // Camera rotation controls (Arrow keys)
-    mKeyBinding[sf::Keyboard::Key::Left] = Action::ROTATE_LEFT;
-    mKeyBinding[sf::Keyboard::Key::Right] = Action::ROTATE_RIGHT;
-    mKeyBinding[sf::Keyboard::Key::Up] = Action::ROTATE_UP;
-    mKeyBinding[sf::Keyboard::Key::Down] = Action::ROTATE_DOWN;
+    mKeyBinding[SDL_SCANCODE_LEFT] = Action::ROTATE_LEFT;
+    mKeyBinding[SDL_SCANCODE_RIGHT] = Action::ROTATE_RIGHT;
+    mKeyBinding[SDL_SCANCODE_UP] = Action::ROTATE_UP;
+    mKeyBinding[SDL_SCANCODE_DOWN] = Action::ROTATE_DOWN;
 
     // Special actions (discrete events)
-    mKeyBinding[sf::Keyboard::Key::R] = Action::RESET_CAMERA;
-    mKeyBinding[sf::Keyboard::Key::V] = Action::TOGGLE_PERSPECTIVE;
+    mKeyBinding[SDL_SCANCODE_R] = Action::RESET_CAMERA;
+    mKeyBinding[SDL_SCANCODE_V] = Action::TOGGLE_PERSPECTIVE;
 
     initializeActions();
 
@@ -42,15 +41,19 @@ Player::Player() : mIsActive(false), mIsOnGround(false)
     initializeAnimator(0);
 }
 
-void Player::handleEvent(const sf::Event& event, Camera& camera)
+void Player::handleEvent(const SDL_Event &event, Camera &camera)
 {
-    if (const auto* e = event.getIf<sf::Event::KeyPressed>())
+    if (event.type == SDL_EVENT_KEY_DOWN)
     {
-        auto found = mKeyBinding.find(e->code);
+        auto found = mKeyBinding.find(event.key.scancode);
+
         if (found != mKeyBinding.cend() && !isRealtimeAction(found->second))
         {
-            if (auto actionIt = mCameraActions.find(found->second); actionIt != mCameraActions.cend())
+            // Execute discrete action immediately
+            if (auto actionIt =  mCameraActions.find(found->second); actionIt != mCameraActions.cend())
+            {
                 actionIt->second(camera, 0.0f);
+            }
         }
     }
 }
@@ -74,7 +77,10 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
     }
 
     int numKeys = 0;
-    (void)numKeys;
+    const auto *keyState = SDL_GetKeyboardState(&numKeys);
+
+    if (!keyState)
+        return;
 
     // Store previous position to calculate movement direction
     mPreviousPosition = mPosition;
@@ -91,7 +97,7 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
     {
         if (isRealtimeAction(pair.second))
         {
-        if (sf::Keyboard::isKeyPressed(pair.first))
+            if (pair.first < static_cast<std::uint32_t>(numKeys) && keyState[pair.first])
             {
                 auto actionIt = mCameraActions.find(pair.second);
                 if (actionIt != mCameraActions.cend())
@@ -127,9 +133,12 @@ void Player::handleRealtimeInput(Camera &camera, float dt)
 
     // Relative mouse strafing (cursor is hidden/center-locked by GameState)
     // Only apply mouse strafing when right mouse button is NOT held (to avoid conflict with camera rotation)
-    bool rightMouseHeld = sf::Mouse::isButtonPressed(sf::Mouse::Button::Right);
+    std::uint32_t mouseButtonState = SDL_GetMouseState(nullptr, nullptr);
+    bool rightMouseHeld = (mouseButtonState & SDL_BUTTON_RMASK) != 0;
+    
     float relMouseX = 0.0f;
     float relMouseY = 0.0f;
+    SDL_GetRelativeMouseState(&relMouseX, &relMouseY);
     
     if (!rightMouseHeld && std::abs(relMouseX) >= kMouseStrafeDeadzonePixels)
     {
@@ -556,7 +565,7 @@ void Player::jump() noexcept
     }
 }
 
-void Player::assignKey(Action action, sf::Keyboard::Key key)
+void Player::assignKey(Action action, std::uint32_t key)
 {
     // Remove all keys that already map to action
     for (auto it = mKeyBinding.begin(); it != mKeyBinding.end();)
@@ -571,7 +580,7 @@ void Player::assignKey(Action action, sf::Keyboard::Key key)
     mKeyBinding[key] = action;
 }
 
-sf::Keyboard::Key Player::getAssignedKey(Action action) const
+std::uint32_t Player::getAssignedKey(Action action) const
 {
     for (auto &pair : mKeyBinding)
     {
@@ -579,7 +588,7 @@ sf::Keyboard::Key Player::getAssignedKey(Action action) const
             return pair.first;
     }
 
-    return sf::Keyboard::Key::Unknown;
+    return SDL_SCANCODE_UNKNOWN;
 }
 
 void Player::setGroundContact(bool contact)

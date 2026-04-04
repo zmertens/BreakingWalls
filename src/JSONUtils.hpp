@@ -3,10 +3,11 @@
 
 #include <algorithm>
 #include <cctype>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <unordered_map>
+
+#include <SDL3/SDL.h>
 
 #include <MazeBuilder/args.h>
 #include <MazeBuilder/configurator.h>
@@ -244,7 +245,8 @@ private:
         }
         catch (...)
         {
-            std::cerr << "Failed to parse " << fieldName << " from: " << value << "\n";
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to parse %s from: %s\n",
+                         fieldName.c_str(), value.c_str());
             return std::nullopt;
         }
     }
