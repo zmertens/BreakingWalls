@@ -1,0 +1,52 @@
+-- audio.script
+-- Centralised audio manager.  Other scripts post messages here instead of
+-- calling sound.play() directly, so volume / mute state is managed centrally.
+
+local IS_MUTED = false
+
+function init(self)
+    self.bgm_playing = false
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == hash("play_bgm") then
+        if not self.bgm_playing and not IS_MUTED then
+            sound.play("#bgm", { delay = 0, gain = 0.7 })
+            self.bgm_playing = true
+        end
+
+    elseif message_id == hash("stop_bgm") then
+        sound.stop("#bgm")
+        self.bgm_playing = false
+
+    elseif message_id == hash("play_step") then
+        if not IS_MUTED then
+            sound.play("#step", { delay = 0, gain = 0.5 })
+        end
+
+    elseif message_id == hash("play_pickup") then
+        if not IS_MUTED then
+            sound.play("#pickup", { delay = 0, gain = 0.8 })
+        end
+
+    elseif message_id == hash("play_levelup") then
+        if not IS_MUTED then
+            sound.play("#levelup", { delay = 0, gain = 1.0 })
+        end
+
+    elseif message_id == hash("set_mute") then
+        IS_MUTED = message.mute
+        if IS_MUTED then
+            sound.stop("#bgm")
+            self.bgm_playing = false
+        elseif not self.bgm_playing then
+            sound.play("#bgm", { delay = 0, gain = 0.7 })
+            self.bgm_playing = true
+        end
+
+    elseif message_id == hash("set_gain") then
+        -- Forward gain change to the appropriate component
+        local comp = message.component or "bgm"
+        go.set("#" .. comp, "gain", message.gain or 1.0)
+    end
+end

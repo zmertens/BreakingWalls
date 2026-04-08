@@ -1,0 +1,86 @@
+animations {
+  id: "idle"
+  images {
+    image: "/assets/images/player_idle.png"
+  }
+  playback: PLAYBACK_NONE
+  fps: 0
+  flip_horizontal: 0
+  flip_vertical: 0
+}
+animations {
+  id: "walk_down"
+  images {
+    image: "/assets/images/player_idle.png"
+  }
+  images {
+    image: "/assets/images/player_walk1.png"
+  }
+  images {
+    image: "/assets/images/player_idle.png"
+  }
+  images {
+    image: "/assets/images/player_walk2.png"
+  }
+  playback: PLAYBACK_LOOP_FORWARD
+  fps: 8
+  flip_horizontal: 0
+  flip_vertical: 0
+}
+animations {
+  id: "walk_up"
+  images {
+    image: "/assets/images/player_idle.png"
+  }
+  images {
+    image: "/assets/images/player_walk3.png"
+  }
+  images {
+    image: "/assets/images/player_idle.png"
+  }
+  images {
+    image: "/assets/images/player_walk1.png"
+  }
+  playback: PLAYBACK_LOOP_FORWARD
+  fps: 8
+  flip_horizontal: 0
+  flip_vertical: 0
+}
+animations {
+  id: "walk_right"
+  images {
+    image: "/assets/images/player_idle.png"
+  }
+  images {
+    image: "/assets/images/player_walk1.png"
+  }
+  images {
+    image: "/assets/images/player_idle.png"
+  }
+  images {
+    image: "/assets/images/player_walk3.png"
+  }
+  playback: PLAYBACK_LOOP_FORWARD
+  fps: 8
+  flip_horizontal: 0
+  flip_vertical: 0
+}
+animations {
+  id: "walk_left"
+  images {
+    image: "/assets/images/player_idle.png"
+  }
+  images {
+    image: "/assets/images/player_walk2.png"
+  }
+  images {
+    image: "/assets/images/player_idle.png"
+  }
+  images {
+    image: "/assets/images/player_walk3.png"
+  }
+  playback: PLAYBACK_LOOP_FORWARD
+  fps: 8
+  flip_horizontal: 1
+  flip_vertical: 0
+}

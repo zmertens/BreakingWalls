@@ -1,0 +1,52 @@
+key_trigger {
+  input: KEY_UP
+  action: "move_up"
+}
+key_trigger {
+  input: KEY_DOWN
+  action: "move_down"
+}
+key_trigger {
+  input: KEY_LEFT
+  action: "move_left"
+}
+key_trigger {
+  input: KEY_RIGHT
+  action: "move_right"
+}
+key_trigger {
+  input: KEY_W
+  action: "move_up"
+}
+key_trigger {
+  input: KEY_S
+  action: "move_down"
+}
+key_trigger {
+  input: KEY_A
+  action: "move_left"
+}
+key_trigger {
+  input: KEY_D
+  action: "move_right"
+}
+key_trigger {
+  input: KEY_ESCAPE
+  action: "pause"
+}
+key_trigger {
+  input: KEY_ENTER
+  action: "confirm"
+}
+key_trigger {
+  input: KEY_SPACE
+  action: "confirm"
+}
+mouse_trigger {
+  input: MOUSE_BUTTON_LEFT
+  action: "click"
+}
+mouse_trigger {
+  input: MOUSE_BUTTON_RIGHT
+  action: "right_click"
+}

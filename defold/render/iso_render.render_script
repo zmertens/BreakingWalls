@@ -1,0 +1,79 @@
+-- iso_render.render_script
+-- Custom render pipeline for the isometric maze runner.
+--
+-- Pipeline:
+--   1. Clear colour + depth.
+--   2. Render world (tiles + sprites) with depth test, back-to-front
+--      z-sorting via predicate tag "tile".
+--   3. Render GUI on top.
+--   4. (Optional) post-process pass via screen-quad with screen.material.
+--
+-- Uniforms updated every frame so shaders can read the elapsed time.
+
+local POST_PROCESS_ENABLED = true   -- set false to skip the screen-quad pass
+
+function init(self)
+    -- Predicates
+    self.tile_pred  = render.predicate({ "tile" })
+    self.gui_pred   = render.predicate({ "gui" })
+
+    -- Projection matrices
+    self.proj       = vmath.matrix4_orthographic(0, 0, 0, 0, -1, 1)
+    self.view       = vmath.matrix4()
+
+    -- Time accumulator for shader uniforms
+    self.time       = 0.0
+
+    -- Screen-quad for post-process (created dynamically)
+    self.screen_quad_enabled = false   -- would require a model; see note below
+end
+
+function update(self, dt)
+    self.time = self.time + dt
+
+    local w = render.get_window_width()
+    local h = render.get_window_height()
+    if w == 0 or h == 0 then return end
+
+    -- ── Orthographic projection centred on (0,0) ─────────────────────────
+    local hw = w * 0.5
+    local hh = h * 0.5
+    self.proj = vmath.matrix4_orthographic(-hw, hw, -hh, hh, -1000, 1000)
+
+    -- ── 1. Clear ─────────────────────────────────────────────────────────
+    render.set_depth_mask(true)
+    render.clear({ [render.BUFFER_COLOR_BIT] = vmath.vector4(0.03, 0.0, 0.07, 1.0),
+                   [render.BUFFER_DEPTH_BIT] = 1.0 })
+
+    render.set_viewport(0, 0, w, h)
+    render.set_view(self.view)
+    render.set_projection(self.proj)
+
+    -- ── 2. World pass (tiles + sprites) ──────────────────────────────────
+    render.set_depth_mask(false)
+    render.disable_state(render.STATE_DEPTH_TEST)
+    render.enable_state(render.STATE_BLEND)
+    render.set_blend_func(render.BLEND_SRC_ALPHA, render.BLEND_ONE_MINUS_SRC_ALPHA)
+    render.disable_state(render.STATE_CULL_FACE)
+
+    -- Update per-frame shader constant: time (z-component of scanline_params)
+    local scan_const = render.constant_buffer()
+    scan_const.scanline_params = vmath.vector4(0.3, 150.0, self.time, 0.0)
+    render.draw(self.tile_pred, { constants = scan_const })
+
+    -- ── 3. GUI pass ───────────────────────────────────────────────────────
+    local gui_proj = vmath.matrix4_orthographic(0, w, 0, h, -1, 1)
+    render.set_projection(gui_proj)
+    render.draw(self.gui_pred)
+    render.draw_debug3d()
+end
+
+function on_message(self, message_id, message)
+    if message_id == hash("clear_color") then
+        self.clear_color = message.color
+    elseif message_id == hash("window_resized") then
+        -- Handled naturally by querying window size each frame
+    elseif message_id == hash("set_view_projection") then
+        self.view = message.view
+    end
+end

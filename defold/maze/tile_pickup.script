@@ -1,0 +1,19 @@
+-- tile_pickup.script – floating bob animation
+local BOB_SPEED  = 3.0
+local BOB_AMOUNT = 4.0   -- pixels
+
+function init(self)
+    self.t      = math.random() * math.pi * 2  -- random phase offset
+    self.base_y = go.get_position().y
+end
+
+function update(self, dt)
+    self.t = self.t + dt * BOB_SPEED
+    local pos = go.get_position()
+    pos.y = self.base_y + math.sin(self.t) * BOB_AMOUNT
+    go.set_position(pos)
+
+    -- Slow spin
+    local angle = self.t * 0.5
+    go.set_rotation(vmath.quat_rotation_z(angle))
+end

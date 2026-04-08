@@ -1,0 +1,12 @@
+images {
+  image: "/assets/images/ui_panel.png"
+  sprite_trim_mode: SPRITE_TRIM_MODE_OFF
+}
+images {
+  image: "/assets/images/ui_button.png"
+  sprite_trim_mode: SPRITE_TRIM_MODE_OFF
+}
+images {
+  image: "/assets/images/ui_button_hover.png"
+  sprite_trim_mode: SPRITE_TRIM_MODE_OFF
+}
