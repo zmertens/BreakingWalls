@@ -3,24 +3,26 @@
 -- The camera lives at a fixed Z offset above the world and slides
 -- toward the player each frame (lerp).
 
-local LERP_SPEED   = 5.0   -- smoothing factor (units / second)
-local CAMERA_Z     = 500   -- Z position (orthographic; ignored for depth but set for layering)
-local TARGET_ID    = nil   -- resolved on first update
+local LERP_SPEED   = 5.0   -- smoothing factor
+local CAMERA_Z     = 500   -- Z position (orthographic)
+local PLAYER_URL   = "/player"   -- fixed game object ID in main.collection
 
 function init(self)
-    self.target_pos = vmath.vector3(0, 0, CAMERA_Z)
+    self.target_pos  = vmath.vector3(0, 0, CAMERA_Z)
+    self.player_found = false
     -- Acquire camera focus so the renderer uses this camera
     msg.post("#camera", "acquire_camera_focus")
 end
 
 function update(self, dt)
-    -- Lazily resolve player ID (factory-spawned, so not known at init time)
-    if not TARGET_ID then
-        TARGET_ID = go.get_id("/player")
+    -- Use the fixed player URL
+    if not self.player_found then
+        local ok, _ = pcall(go.get_id, PLAYER_URL)
+        if ok then self.player_found = true end
     end
 
-    if TARGET_ID then
-        local player_pos = go.get_position(TARGET_ID)
+    if self.player_found then
+        local player_pos = go.get_position(PLAYER_URL)
         local desired    = vmath.vector3(player_pos.x, player_pos.y, CAMERA_Z)
         local current    = go.get_position()
         local new_pos    = vmath.lerp(LERP_SPEED * dt, current, desired)

@@ -101,8 +101,8 @@ instances {
   }
 }
 instances {
-  id: "player_factory"
-  prototype: "/main/player_factory.goc"
+  id: "player"
+  prototype: "/player/player.goc"
   position {
     x: 0.0
     y: 0.0
@@ -121,8 +121,8 @@ instances {
   }
 }
 instances {
-  id: "maze_factory"
-  prototype: "/main/maze_factory.goc"
+  id: "maze"
+  prototype: "/maze/maze.goc"
   position {
     x: 0.0
     y: 0.0

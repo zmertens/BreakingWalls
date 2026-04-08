@@ -6,8 +6,13 @@
 --   • world (x, y)    – isometric screen coordinates, computed from grid coords
 --
 -- The player moves one cell at a time; smooth movement is done with tweening.
+-- Fixed game-object URLs match the IDs defined in main.collection.
 
 local maze_gen = require("maze.maze_gen")
+
+local URL_MAZE       = "/maze#script"
+local URL_CONTROLLER = "/controller#script"
+local URL_AUDIO      = "/audio#script"
 
 -- ─── Isometric geometry (must match maze.script) ──────────────────────────
 local TILE_W = 64
@@ -56,7 +61,7 @@ function init(self)
     self.active       = false
     self.current_anim = hash("idle")
 
-    -- Cached maze grid reference (updated via message)
+    -- Cached maze grid reference (updated via message from maze.script)
     self.maze_grid  = nil
     self.maze_rows  = 15
     self.maze_cols  = 15
@@ -79,7 +84,7 @@ function update(self, dt)
 
             -- Report new world position to maze manager
             local wx, wy = grid_to_world(self.row, self.col)
-            msg.post("/maze/maze#script", "player_moved", { world_x = wx, world_y = wy })
+            msg.post(URL_MAZE, "player_moved", { world_x = wx, world_y = wy })
 
             _play_anim(self, hash("idle"))
         else
@@ -91,7 +96,7 @@ function update(self, dt)
         -- Footstep sound
         self.step_timer = self.step_timer - dt
         if self.step_timer <= 0 and self.moving then
-            msg.post("/main/audio#script", "play_step")
+            msg.post(URL_AUDIO, "play_step")
             self.step_timer = STEP_INTERVAL
         end
     end
@@ -120,6 +125,7 @@ function on_message(self, message_id, message, sender)
         _play_anim(self, hash("idle"))
 
     elseif message_id == hash("set_maze") then
+        -- Receive grid reference from maze.script for wall collision
         self.maze_grid = message.grid
         self.maze_rows = message.rows
         self.maze_cols = message.cols
@@ -133,17 +139,13 @@ end
 -- ─── Private helpers ──────────────────────────────────────────────────────
 
 function _try_move(self, dir)
-    if self.maze_grid == nil then
-        -- No grid yet; allow free movement (for testing)
-        self.target_row = self.row + maze_gen.DR[dir]
-        self.target_col = self.col + maze_gen.DC[dir]
-    else
+    if self.maze_grid then
         if not maze_gen.can_move(self.maze_grid, self.maze_rows, self.maze_cols,
                                   self.row, self.col, dir) then
             return  -- wall blocks movement
         end
-        self.target_row, self.target_col = maze_gen.neighbour(self.row, self.col, dir)
     end
+    self.target_row, self.target_col = maze_gen.neighbour(self.row, self.col, dir)
 
     self.facing   = dir
     self.from_x, self.from_y = grid_to_world(self.row, self.col)
@@ -163,7 +165,7 @@ function _set_position_immediate(self, row, col)
 end
 
 function _depth(row, col)
-    -- Higher row+col = drawn later (in front)
+    -- Higher row+col = drawn later (in front); shift by 0.5 so player is above tiles
     return (row + col) * 0.001 + 0.5
 end
 
