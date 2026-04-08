@@ -1,0 +1,20 @@
+// sprite.vp – Vertex program for animated sprites.
+// Supports UV offset/scale for sprite-sheet animation (passed via material constants).
+
+uniform highp mat4 view_proj;
+
+// Per-vertex attributes
+attribute highp vec4 position;
+attribute mediump vec2 texcoord0;
+attribute lowp    vec4 color;
+
+// Varyings
+varying mediump vec2 var_texcoord0;
+varying lowp    vec4 var_color;
+
+void main()
+{
+    gl_Position   = view_proj * vec4(position.xyz, 1.0);
+    var_texcoord0 = texcoord0;
+    var_color     = color;
+}

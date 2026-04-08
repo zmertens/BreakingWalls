@@ -1,0 +1,72 @@
+-- hud.gui_script
+-- Manages the in-game Heads-Up Display: score, level, lives, notifications.
+
+local NOTIF_DURATION = 2.5   -- seconds a notification stays on screen
+
+function init(self)
+    self.visible       = false
+    self.notif_timer   = 0
+    self.notif_active  = false
+    _set_visible(self, false)
+end
+
+function update(self, dt)
+    if not self.visible then return end
+
+    if self.notif_active then
+        self.notif_timer = self.notif_timer - dt
+        if self.notif_timer <= 0 then
+            gui.set_enabled(gui.get_node("notification_label"), false)
+            self.notif_active = false
+        else
+            -- Fade out in the last 0.5 s
+            local alpha = math.min(1.0, self.notif_timer / 0.5)
+            gui.set_color(gui.get_node("notification_label"),
+                vmath.vector4(0, 1, 1, alpha))
+        end
+    end
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == hash("show") then
+        _set_visible(self, true)
+
+    elseif message_id == hash("hide") then
+        _set_visible(self, false)
+
+    elseif message_id == hash("update_hud") then
+        if not self.visible then return end
+        gui.set_text(gui.get_node("score_label"), "Score: " .. (message.score or 0))
+        gui.set_text(gui.get_node("level_label"), "Level: " .. (message.level or 1))
+        gui.set_text(gui.get_node("lives_label"), "Lives: " .. (message.lives or 3))
+
+    elseif message_id == hash("show_level_up") then
+        _show_notification(self, "LEVEL " .. (message.level or 1) .. "!")
+
+    elseif message_id == hash("show_notification") then
+        _show_notification(self, message.text or "")
+    end
+end
+
+function _set_visible(self, v)
+    self.visible = v
+    gui.set_enabled(gui.get_node("top_panel"),          v)
+    gui.set_enabled(gui.get_node("score_label"),        v)
+    gui.set_enabled(gui.get_node("level_label"),        v)
+    gui.set_enabled(gui.get_node("lives_label"),        v)
+    gui.set_enabled(gui.get_node("notification_label"), false)
+    self.notif_active = false
+end
+
+function _show_notification(self, text)
+    local node = gui.get_node("notification_label")
+    gui.set_text(node, text)
+    gui.set_enabled(node, true)
+    gui.set_color(node, vmath.vector4(0, 1, 1, 1))
+    self.notif_timer  = NOTIF_DURATION
+    self.notif_active = true
+    -- Scale-in animation
+    gui.set_scale(node, vmath.vector3(0.1, 0.1, 1))
+    gui.animate(node, gui.PROP_SCALE, vmath.vector3(1, 1, 1),
+        gui.EASING_OUTBACK, 0.3, 0)
+end

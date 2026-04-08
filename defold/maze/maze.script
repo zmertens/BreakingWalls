@@ -1,0 +1,215 @@
+-- maze.script
+-- Manages an endless isometric maze:
+--   • Holds multiple "chunks" (each ROWS×COLS cells) in a ring buffer.
+--   • Spawns/destroys tile sprites as the player moves forward.
+--   • Uses the maze_gen module to generate each chunk procedurally.
+--   • Broadcasts "next_level" to the controller when the player exits.
+--   • Broadcasts "play_pickup" to audio when player steps on a pickup.
+--
+-- All communication uses fixed game-object URLs from main.collection.
+
+local maze_gen = require("maze.maze_gen")
+
+local URL_CONTROLLER = "/controller#script"
+local URL_PLAYER     = "/player#script"
+local URL_AUDIO      = "/audio#script"
+
+-- ─── Tile dimensions (isometric projection) ────────────────────────────────
+local TILE_W = 64    -- pixel width of one isometric floor diamond
+local TILE_H = 32    -- pixel height of one isometric floor diamond
+
+-- ─── Chunk dimensions ─────────────────────────────────────────────────────
+local ROWS           = 15
+local COLS           = 15
+local CHUNK_LOOKAHEAD = 1   -- generate this many extra chunks ahead
+
+-- ─── Z-sorting depth nudge ─────────────────────────────────────────────────
+local Z_FLOOR  = 0.0
+local Z_WALL   = 0.1
+local Z_PICKUP = 0.2
+local Z_EXIT   = 0.05
+
+-- Convert isometric grid (row, col) into screen (x, y, z) position.
+local function iso_pos(row, col, depth_z)
+    local sx = (col - row) * TILE_W * 0.5
+    local sy = (col + row) * TILE_H * 0.5
+    -- Z encodes draw-order: later (higher) row+col = drawn on top
+    local sz = depth_z + (row + col) * 0.001
+    return vmath.vector3(sx, sy, sz)
+end
+
+-- ─── State ────────────────────────────────────────────────────────────────
+
+function init(self)
+    self.active       = false
+    self.chunks       = {}     -- map from chunk_idx → chunk table
+    self.player_chunk = 0      -- current chunk the player is in
+    self.level        = 1
+    self.base_seed    = 0
+end
+
+function update(self, dt)
+    if not self.active then return end
+    _cull_old_chunks(self)
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == hash("generate") then
+        self.active    = true
+        self.level     = message.level or 1
+        self.base_seed = message.seed  or os.time()
+        _clear_all(self)
+        self.player_chunk = 0
+        -- Spawn first chunk + lookahead
+        for i = 0, CHUNK_LOOKAHEAD do
+            _spawn_chunk(self, i)
+        end
+        -- Send the grid to the player so wall collision works
+        _send_grid_to_player(self, 0)
+
+    elseif message_id == hash("set_active") then
+        self.active = message.active
+        if not message.active then
+            _clear_all(self)
+        end
+
+    elseif message_id == hash("player_moved") then
+        _update_player_position(self, message.world_x, message.world_y)
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Internal helpers
+-- ─────────────────────────────────────────────────────────────────────────
+
+function _spawn_chunk(self, idx)
+    local seed = self.base_seed + idx * 7919  -- different prime to vary chunks
+    local grid = maze_gen.create(ROWS, COLS)
+    maze_gen.generate(grid, ROWS, COLS, 1, 1, seed)
+    local exit_r, exit_c = maze_gen.decorate(grid, ROWS, COLS, 1, 1,
+                                              0.08 + self.level * 0.01)
+
+    -- Chunks are stacked vertically in iso-space
+    local chunk_offset_y = idx * (ROWS + COLS) * TILE_H * 0.5
+
+    local tiles = {}
+
+    for r = 1, ROWS do
+        for c = 1, COLS do
+            local cell = grid[r][c]
+
+            -- Floor
+            local fpos  = iso_pos(r, c, Z_FLOOR)
+            fpos.y      = fpos.y + chunk_offset_y
+            tiles[#tiles+1] = factory.create("#floor_factory", fpos)
+
+            -- Exit (special floor)
+            if cell.exit then
+                local epos  = iso_pos(r, c, Z_EXIT)
+                epos.y      = epos.y + chunk_offset_y
+                tiles[#tiles+1] = factory.create("#exit_factory", epos)
+            end
+
+            -- Pickup orb
+            if cell.pickup then
+                local ppos  = iso_pos(r, c, Z_PICKUP)
+                ppos.y      = ppos.y + chunk_offset_y + TILE_H * 0.5
+                tiles[#tiles+1] = factory.create("#pickup_factory", ppos)
+            end
+
+            -- North wall
+            if cell.walls[maze_gen.NORTH] then
+                local wpos  = iso_pos(r - 0.5, c, Z_WALL)
+                wpos.y      = wpos.y + chunk_offset_y
+                tiles[#tiles+1] = factory.create("#wall_factory", wpos)
+            end
+
+            -- West wall
+            if cell.walls[maze_gen.WEST] then
+                local wpos  = iso_pos(r, c - 0.5, Z_WALL)
+                wpos.y      = wpos.y + chunk_offset_y
+                tiles[#tiles+1] = factory.create("#wall_factory", wpos)
+            end
+        end
+    end
+
+    self.chunks[idx] = {
+        grid      = grid,
+        idx       = idx,
+        tiles     = tiles,
+        exit_r    = exit_r,
+        exit_c    = exit_c,
+        offset_y  = chunk_offset_y,
+    }
+end
+
+function _clear_all(self)
+    for _, chunk in pairs(self.chunks) do
+        for _, tid in ipairs(chunk.tiles) do
+            go.delete(tid)
+        end
+    end
+    self.chunks = {}
+end
+
+function _cull_old_chunks(self)
+    for idx, chunk in pairs(self.chunks) do
+        if idx < self.player_chunk - 1 then
+            for _, tid in ipairs(chunk.tiles) do
+                go.delete(tid)
+            end
+            self.chunks[idx] = nil
+        end
+    end
+end
+
+function _send_grid_to_player(self, chunk_idx)
+    local chunk = self.chunks[chunk_idx]
+    if chunk then
+        msg.post(URL_PLAYER, "set_maze", {
+            grid = chunk.grid,
+            rows = ROWS,
+            cols = COLS,
+        })
+    end
+end
+
+function _update_player_position(self, wx, wy)
+    -- Inverse isometric transform: find which chunk + cell contains (wx, wy)
+    for idx, chunk in pairs(self.chunks) do
+        local sy_local  = wy - chunk.offset_y
+        local c_minus_r = wx          / (TILE_W * 0.5)
+        local c_plus_r  = sy_local    / (TILE_H * 0.5)
+        local col       = math.floor((c_minus_r + c_plus_r) * 0.5 + 1.5)
+        local row       = math.floor((c_plus_r  - c_minus_r) * 0.5 + 1.5)
+
+        if row >= 1 and row <= ROWS and col >= 1 and col <= COLS then
+            -- Player is in this chunk
+            if idx ~= self.player_chunk then
+                self.player_chunk = idx
+                -- Ensure next chunk exists
+                local next_idx = idx + 1
+                if not self.chunks[next_idx] then
+                    _spawn_chunk(self, next_idx)
+                end
+                -- Update player's grid reference
+                _send_grid_to_player(self, idx)
+            end
+
+            -- Check for exit / pickup
+            local cell = chunk.grid[row][col]
+            if cell then
+                if cell.exit then
+                    cell.exit = false   -- consume
+                    msg.post(URL_CONTROLLER, "next_level")
+                end
+                if cell.pickup then
+                    cell.pickup = false  -- consume
+                    msg.post(URL_CONTROLLER, "add_score", { amount = 50 })
+                    msg.post(URL_AUDIO,      "play_pickup")
+                end
+            end
+            return
+        end
+    end
+end

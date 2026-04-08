@@ -1,0 +1,15 @@
+script: "/render/iso_render.render_script"
+render_resources {
+  name: "main_rt"
+  render_target {
+    parameters {
+      format: TEXTURE_FORMAT_RGBA
+      width: 0
+      height: 0
+      min_filter: FILTER_MODE_MIN_LINEAR
+      mag_filter: FILTER_MODE_MAG_LINEAR
+      u_wrap: WRAP_MODE_CLAMP_TO_EDGE
+      v_wrap: WRAP_MODE_CLAMP_TO_EDGE
+    }
+  }
+}

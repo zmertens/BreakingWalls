@@ -1,0 +1,16 @@
+images {
+  image: "/assets/images/tile_floor.png"
+  sprite_trim_mode: SPRITE_TRIM_MODE_OFF
+}
+images {
+  image: "/assets/images/tile_wall.png"
+  sprite_trim_mode: SPRITE_TRIM_MODE_OFF
+}
+images {
+  image: "/assets/images/tile_exit.png"
+  sprite_trim_mode: SPRITE_TRIM_MODE_OFF
+}
+images {
+  image: "/assets/images/tile_pickup.png"
+  sprite_trim_mode: SPRITE_TRIM_MODE_OFF
+}
