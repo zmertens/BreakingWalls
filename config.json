@@ -1,0 +1,73 @@
+{
+  "_comment": "jbreaking-walls configuration — all fields are documented below.",
+
+  "window_title":  "JBreaking Walls",
+  "window_width":  1280,
+  "window_height": 720,
+
+  "_target_fps_doc":   "Logical fixed-step rate used for physics. Rendering is uncapped (VSync).",
+  "target_fps": 60,
+
+  "_show_debug_overlay_doc": "Display FPS + frame-time overlay in the top-right corner.",
+  "show_debug_overlay": false,
+
+  "_runner_speed_doc": "Starting horizontal scroll speed in world-units/sec. 1 world-unit ≈ 1 tile.",
+  "runner_speed": 5.0,
+
+  "_runner_acceleration_doc": "Speed increase per second. Set to 0 to disable escalating difficulty.",
+  "runner_acceleration": 0.05,
+
+  "_runner_max_speed_doc": "Hard cap on horizontal speed. Prevents the game from becoming unplayable.",
+  "runner_max_speed": 25.0,
+
+  "_runner_jump_velocity_doc": "Upward velocity applied on jump input (world-units/sec). Larger = higher arc.",
+  "runner_jump_velocity": 14.0,
+
+  "_runner_gravity_doc": "Downward acceleration (negative = toward ground). Raise magnitude for snappier landings.",
+  "runner_gravity": -30.0,
+
+  "_runner_starting_points_doc": "Initial health/points. Obstacle hits drain this; reaching 0 ends the run.",
+  "runner_starting_points": 100,
+
+  "_score_per_meter_doc": "Points earned per world-unit of distance scrolled.",
+  "score_per_meter": 1.0,
+
+  "_score_multiplier_increment_doc": "How much the score multiplier grows at each milestone.",
+  "score_multiplier_increment": 0.25,
+
+  "_score_milestone_distance_doc": "Distance (world-units) between consecutive score milestones.",
+  "score_milestone_distance": 100.0,
+
+  "_score_milestone_bonus_doc": "Flat bonus points awarded when a milestone is reached.",
+  "score_milestone_bonus": 50,
+
+  "_runner_pickup_min_value_doc": "Lowest point value a pickup can carry. Negative = health drain (purple gem).",
+  "runner_pickup_min_value": -25,
+
+  "_runner_pickup_max_value_doc": "Highest point value a pickup can carry (gold gem).",
+  "runner_pickup_max_value": 40,
+
+  "_runner_pickup_spacing_doc": "Minimum world-unit gap between consecutive pickup spawn positions.",
+  "runner_pickup_spacing": 18.0,
+
+  "_runner_obstacle_penalty_doc": "Points subtracted from health on each obstacle collision.",
+  "runner_obstacle_penalty": 25,
+
+  "_runner_collision_cooldown_doc": "Seconds of invincibility granted after an obstacle hit (prevents double-hits).",
+  "runner_collision_cooldown": 0.4,
+
+  "_randomness_seed_doc": "RNG seed for world generation. 0 = use system clock (unique every run). Any other value = fully deterministic/repeatable run.",
+  "randomness_seed": 0,
+
+  "_randomness_obstacle_density_doc": "Probability [0.0–1.0] that a spawn slot is an obstacle. 0 = no obstacles, 1 = solid wall of obstacles.",
+  "randomness_obstacle_density": 0.35,
+
+  "_randomness_pickup_density_doc": "Probability [0.0–1.0] that a non-obstacle spawn slot contains a pickup. Remaining slots are empty.",
+  "randomness_pickup_density": 0.50,
+
+  "_shader_quad_vert_doc": "Classpath-relative path to the vertex shader for all game geometry.",
+  "shader_quad_vert": "shaders/quad.vert.glsl",
+
+  "_shader_quad_frag_doc": "Classpath-relative path to the fragment shader for all game geometry.",
+  "shader_quad_frag": "shaders/quad.frag.glsl"
+}

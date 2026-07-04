@@ -1,18 +1,36 @@
 # Configuration file for EditorConfig
 # More information is available under http://EditorConfig.org
 
-# Ignore any other files further up in the file system
+# Top-most EditorConfig file. Stops the IDE from looking further up the directory tree.
 root = true
 
-# Configuration for all files
+# Global rules for all file types
 [*]
-# Enforce Unix style line endings (\n only)
+charset = utf-8
 end_of_line = lf
-# Always end files with a blank line
 insert_final_newline = true
-# Force space characters for indentation
-indent_style = space
-# Always indent by 4 characters
-indent_size = 4
-# Remove whitespace characters at the end of line
 trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Java specific formatting overrides
+[*.java]
+indent_style = space
+indent_size = 4
+continuation_indent_size = 8
+max_line_length = 120
+
+# IntelliJ IDEA Specific Java formatting (Optional extension)
+[*.java]
+ij_java_blank_lines_after_imports = 1
+ij_java_blank_lines_before_package = 0
+ij_java_use_single_class_imports = true
+ij_java_doc_comment_leading_asterisks = true
+
+# Build tool definitions and manifest configurations
+[*.{xml,gradle,properties}]
+indent_size = 2
+
+# Documentation configurations
+[*.md]
+trim_trailing_whitespace = false
