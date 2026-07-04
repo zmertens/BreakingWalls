@@ -19,6 +19,9 @@
 *.tar.gz
 *.rar
 
+# Keep the Gradle wrapper jar
+!gradle/wrapper/gradle-wrapper.jar
+
 build/
 bin/
 .vscode
