@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'application'
+    id 'com.diffplug.spotless' version '6.25.0'
 }
 
 group   = 'com.jbreakingwalls'
@@ -41,6 +42,31 @@ ext {
 
 repositories {
     mavenCentral()
+}
+
+spotless {
+    encoding 'UTF-8'
+    lineEndings 'UNIX'
+
+    java {
+        target 'src/**/*.java'
+        trimTrailingWhitespace()
+        indentWithSpaces(4)
+        endWithNewline()
+        removeUnusedImports()
+    }
+
+    format('buildFiles') {
+        target '*.gradle', '**/*.gradle', '**/*.xml', '**/*.properties'
+        trimTrailingWhitespace()
+        indentWithSpaces(2)
+        endWithNewline()
+    }
+
+    format('markdown') {
+        target '*.md', '**/*.md'
+        endWithNewline()
+    }
 }
 
 dependencies {
