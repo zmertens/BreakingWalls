@@ -2,12 +2,14 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug jbreaking-walls",
-      "type": "java",
-      "request": "attach",
-      "hostName": "localhost",
-      "port": 5005,
-      "preLaunchTask": "[Gradle] Clean Build"
+      "name": "npm: [run dev]",
+      "command": "npm run dev",
+      "request": "launch",
+      "type": "node-terminal",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
     }
   ]
 }

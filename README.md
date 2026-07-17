@@ -1,26 +1,21 @@
 # About Breaking Walls
 
-An endless puzzle-game with a synthwave theme and futuristic vibes.
+An endless sidescrolling pointer game with a relaxing theme and futuristic vibes.
 
-  - Players interact with and discover paths and new levels
+  - Players highlight nodes and graphs
   - Simple event handling (mouse, touch, keyboard) and haptic feedback
   - Spatialized sound effects
-  - Break down the 4th wall and advance with bigger levels and paths and obstacles to overcome
+  - Break down the 4th wall and advance the canvas with evolving effects
+
+##  TODO's
+
+
 
 ## Configuration
 
-`Gradle` is used for project configuration and builds.
+`NPM` is used for project configuration and builds.
 
-These exteneral dependencies are downloaded automatically with Gradle:
-
-- [Gson](https://github.com/google/gson)
-- [imgui-java](https://github.com/SpaiR/imgui-java)
-- [JOML](https://github.com/JOML-CI/JOML)
-- [de.articdive:jnoise](https://github.com/Articdive/JNoise)
-- [lwjgl-openal](https://github.com/LWJGL/lwjgl3)
-- [lwjgl-opengl](https://github.com/LWJGL/lwjgl3)
-- [lwjgl-glfw](https://github.com/LWJGL/lwjgl3)
-- [lwjgl-stb](https://github.com/LWJGL/lwjgl3)
+These exteneral dependencies are downloaded automatically with NPM:
 
 ### Config file (`config.json`)
 
@@ -33,6 +28,7 @@ The config lives in the project root (next to `build.gradle`).  Every key is doc
 | `window_title` | `"JBreaking Walls"` | OS window title bar text |
 | `window_width` | `1280` | Initial width in pixels |
 | `window_height` | `720` | Initial height in pixels |
+| `window_icon` | `textures/icon.bmp` | Initial window icon as a BMP file |
 | `target_fps` | `60` | Fixed-step physics rate (Hz) |
 | `show_debug_overlay` | `false` | Top-right FPS / frame-time panel |
 |---|---|---|
@@ -70,13 +66,12 @@ The config lives in the project root (next to `build.gradle`).  Every key is doc
 Clone the repository:
 `git clone https://github.com/zmertens/BreakingWalls.git`
 
-Build the project on Windows:
-`gradlew.bat clean build`
+Build the project in Production mode:
+`npm run build`
 
-Run it: `gradlew.bat run --args="path\to\my-config.json"`
+Run it in debug mode: `npm run dev`
 
-Building a standalone fat JAR:
+Run the generated files directly:
 ```powershell
-.\gradlew jar;
-java -jar build\libs\jbreaking-walls-<Major>.<Minor>.<Patch>.jar
+python -m http.server .\dist\index.html
 ```
