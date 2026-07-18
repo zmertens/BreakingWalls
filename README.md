@@ -7,7 +7,7 @@ An endless sidescrolling pointer game with a relaxing theme and futuristic vibes
   - Spatialized sound effects
   - Break down the 4th wall and advance the canvas with evolving effects
 
-##  TODO's
+## TODO's
 
 
 

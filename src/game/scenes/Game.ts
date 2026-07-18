@@ -47,6 +47,7 @@ void main() {
 
 export class Game extends Phaser.Scene {
   private camera!: Phaser.Cameras.Scene2D.Camera
+  private shaderLayer!: Phaser.GameObjects.Shader
   private parallaxFar!: Phaser.GameObjects.TileSprite
   private parallaxNear!: Phaser.GameObjects.TileSprite
   private mazeBackdrop!: Phaser.GameObjects.TileSprite
@@ -55,7 +56,7 @@ export class Game extends Phaser.Scene {
   private revealedPathGraphics!: Phaser.GameObjects.Graphics
   private nodeGraphics!: Phaser.GameObjects.Graphics
   private pointerGlow!: Phaser.GameObjects.Graphics
-  private cursor!: Phaser.Physics.Arcade.Image
+  private cursor!: Phaser.Physics.Arcade.Sprite
   private droneLights: Phaser.Physics.Arcade.Image[] = []
   private statusText!: Phaser.GameObjects.Text
 
@@ -75,6 +76,7 @@ export class Game extends Phaser.Scene {
   private ambienceSound?: Phaser.Sound.BaseSound
   private stepSound?: Phaser.Sound.BaseSound
   private chunkSound?: Phaser.Sound.BaseSound
+  private cursorFacing: 'up' | 'down' | 'left' | 'right' = 'down'
 
   constructor() {
     super('Game')
@@ -85,7 +87,7 @@ export class Game extends Phaser.Scene {
     this.camera.setBackgroundColor(0x081420)
     this.camera.setBounds(0, 0, 120000, this.scale.height)
 
-    const shaderLayer = new Phaser.GameObjects.Shader(
+    this.shaderLayer = new Phaser.GameObjects.Shader(
       this,
       {
         name: 'calm-waves',
@@ -100,8 +102,8 @@ export class Game extends Phaser.Scene {
       this.scale.width,
       this.scale.height
     )
-    this.add.existing(shaderLayer)
-    shaderLayer.setScrollFactor(0).setDepth(0)
+    this.add.existing(this.shaderLayer)
+    this.shaderLayer.setScrollFactor(0).setDepth(0)
 
     this.parallaxFar = this.add
       .tileSprite(0, 0, this.scale.width, this.scale.height, 'maze-bg')
@@ -137,11 +139,11 @@ export class Game extends Phaser.Scene {
     this.nodeGraphics.setDepth(12)
     this.pointerGlow.setDepth(18)
 
-    this.cursor = this.physics.add.image(START_X, START_Y, 'bomb')
+    this.cursor = this.physics.add.sprite(START_X, START_Y, 'characters', 0)
     this.cursor.setAlpha(0.85)
-    this.cursor.setScale(0.22)
-    this.cursor.setTint(0x83f2ff)
+    this.cursor.setScale(0.24)
     this.cursor.setDepth(20)
+    this.cursor.play('character-idle-down')
     const cursorBody = this.cursor.body as Phaser.Physics.Arcade.Body | null
     if (cursorBody) {
       cursorBody.allowGravity = false
@@ -180,10 +182,25 @@ export class Game extends Phaser.Scene {
     this.setupAudio()
     this.setupAmbientPhysics()
     this.setupInput()
+    this.scale.on('resize', this.handleResize, this)
 
     this.events.once('shutdown', this.shutdown, this)
 
     void this.seedInitialPath()
+  }
+
+  private handleResize(gameSize: Phaser.Structs.Size): void {
+    const { width, height } = gameSize
+    this.camera.setBounds(0, 0, 120000, height)
+    this.physics.world.setBounds(0, 0, 120000, height)
+
+    this.shaderLayer.setPosition(width * 0.5, height * 0.5)
+    this.shaderLayer.setSize(width, height)
+    this.shaderLayer.setDisplaySize(width, height)
+
+    this.parallaxFar.setSize(width, height)
+    this.parallaxNear.setSize(width, height)
+    this.mazeBackdrop.setSize(width, height)
   }
 
   update(): void {
@@ -219,6 +236,7 @@ export class Game extends Phaser.Scene {
     if (body) {
       body.velocity.x += dx * 0.08
       body.velocity.y += dy * 0.08
+      this.updateCursorAnimation(body.velocity.x, body.velocity.y)
     }
 
     const followX = Math.max(0, this.cursor.x - this.scale.width * 0.35)
@@ -294,6 +312,35 @@ export class Game extends Phaser.Scene {
 
     this.pointerGlow.fillStyle(0xffffff, coreAlpha)
     this.pointerGlow.fillCircle(x, y, coreRadius)
+  }
+
+  private updateCursorAnimation(velocityX: number, velocityY: number): void {
+    const speed = Math.hypot(velocityX, velocityY)
+    const isMoving = speed > 8
+
+    if (Math.abs(velocityX) > Math.abs(velocityY)) {
+      this.cursorFacing = velocityX < 0 ? 'left' : 'right'
+    } else if (Math.abs(velocityY) > 1) {
+      this.cursorFacing = velocityY < 0 ? 'up' : 'down'
+    }
+
+    if (this.cursorFacing === 'left') {
+      this.cursor.setFlipX(true)
+    } else if (this.cursorFacing === 'right') {
+      this.cursor.setFlipX(false)
+    }
+
+    if (this.cursorFacing === 'up') {
+      this.cursor.anims.play(isMoving ? 'character-walk-up' : 'character-idle-up', true)
+      return
+    }
+
+    if (this.cursorFacing === 'down') {
+      this.cursor.anims.play(isMoving ? 'character-walk-down' : 'character-idle-down', true)
+      return
+    }
+
+    this.cursor.anims.play(isMoving ? 'character-walk-side' : 'character-idle-side', true)
   }
 
   private async seedInitialPath(): Promise<void> {
@@ -597,6 +644,7 @@ export class Game extends Phaser.Scene {
   }
 
   shutdown(): void {
+    this.scale.off('resize', this.handleResize, this)
     this.ambienceSound?.stop()
     this.ambienceSound?.destroy()
     this.stepSound?.destroy()

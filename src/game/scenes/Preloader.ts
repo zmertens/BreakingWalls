@@ -1,5 +1,23 @@
 import { Scene } from 'phaser'
 
+const CHARACTER_FRAME_SIZE = 128
+const CHARACTER_ROWS = 8
+const FRAMES_PER_COLOR = 9
+const PLAYER_COLOR_INDEX = 2
+
+function frameFromColumnMajorPosition(position: number): number {
+  const col = Math.floor(position / CHARACTER_ROWS)
+  const row = position % CHARACTER_ROWS
+  return row * CHARACTER_ROWS + col
+}
+
+function framesForColor(colorIndex: number): number[] {
+  const start = colorIndex * FRAMES_PER_COLOR
+  return Array.from({ length: FRAMES_PER_COLOR }, (_, i) =>
+    frameFromColumnMajorPosition(start + i)
+  )
+}
+
 export class Preloader extends Scene {
   constructor() {
     super('Preloader')
@@ -33,6 +51,10 @@ export class Preloader extends Scene {
       frameWidth: 192,
       frameHeight: 192,
     })
+    this.load.spritesheet('characters', 'spritesheet-characters-default.png', {
+      frameWidth: CHARACTER_FRAME_SIZE,
+      frameHeight: CHARACTER_FRAME_SIZE,
+    })
 
     this.load.audio('ambience', ['game-menu_remixed.mp3'])
     this.load.audio('path-step', ['sfx_select.ogg'])
@@ -40,10 +62,57 @@ export class Preloader extends Scene {
   }
 
   create() {
-    //  When all the assets have loaded, it's often worth creating global objects here that the rest of the game can use.
-    //  For example, you can define global animations here, so we can use them in other scenes.
+    const colorFrames = framesForColor(PLAYER_COLOR_INDEX)
 
-    //  Move to the MainMenu. You could also swap this for a Scene Transition, such as a camera fade.
+    // 9-frame layout per color: [down0, down1, down2, side0, side1, side2, up0, up1, up2]
+    this.anims.create({
+      key: 'character-idle-down',
+      frames: [{ key: 'characters', frame: colorFrames[1] }],
+      frameRate: 1,
+      repeat: -1,
+    })
+    this.anims.create({
+      key: 'character-walk-down',
+      frames: [colorFrames[0], colorFrames[1], colorFrames[2]].map((frame) => ({
+        key: 'characters',
+        frame,
+      })),
+      frameRate: 10,
+      repeat: -1,
+    })
+
+    this.anims.create({
+      key: 'character-idle-up',
+      frames: [{ key: 'characters', frame: colorFrames[7] }],
+      frameRate: 1,
+      repeat: -1,
+    })
+    this.anims.create({
+      key: 'character-walk-up',
+      frames: [colorFrames[6], colorFrames[7], colorFrames[8]].map((frame) => ({
+        key: 'characters',
+        frame,
+      })),
+      frameRate: 10,
+      repeat: -1,
+    })
+
+    this.anims.create({
+      key: 'character-idle-side',
+      frames: [{ key: 'characters', frame: colorFrames[4] }],
+      frameRate: 1,
+      repeat: -1,
+    })
+    this.anims.create({
+      key: 'character-walk-side',
+      frames: [colorFrames[3], colorFrames[4], colorFrames[5]].map((frame) => ({
+        key: 'characters',
+        frame,
+      })),
+      frameRate: 10,
+      repeat: -1,
+    })
+
     this.scene.start('MainMenu')
   }
 }
