@@ -19,25 +19,49 @@ function framesForColor(colorIndex: number): number[] {
 }
 
 export class Preloader extends Scene {
+  private backgroundImage!: Phaser.GameObjects.Image
+  private progressOutline!: Phaser.GameObjects.Rectangle
+  private progressBar!: Phaser.GameObjects.Rectangle
+  private progressValue = 0
+
   constructor() {
     super('Preloader')
   }
 
   init() {
-    //  We loaded this image in our Boot Scene, so we can display it here
-    this.add.image(512, 384, 'background')
+    this.backgroundImage = this.add.image(0, 0, 'background').setOrigin(0.5)
+    this.progressOutline = this.add
+      .rectangle(0, 0, 468, 32)
+      .setOrigin(0.5)
+      .setStrokeStyle(1, 0xffffff)
+    this.progressBar = this.add
+      .rectangle(0, 0, 4, 28, 0xffffff)
+      .setOrigin(0, 0.5)
 
-    //  A simple progress bar. This is the outline of the bar.
-    this.add.rectangle(512, 384, 468, 32).setStrokeStyle(1, 0xffffff)
-
-    //  This is the progress bar itself. It will increase in size from the left based on the % of progress.
-    const bar = this.add.rectangle(512 - 230, 384, 4, 28, 0xffffff)
+    this.layoutPreloader(this.scale.width, this.scale.height)
+    this.scale.on('resize', this.handleResize, this)
+    this.events.once('shutdown', () => {
+      this.scale.off('resize', this.handleResize, this)
+    })
 
     //  Use the 'progress' event emitted by the LoaderPlugin to update the loading bar
     this.load.on('progress', (progress: number) => {
-      //  Update the progress bar (our bar is 464px wide, so 100% = 464px)
-      bar.width = 4 + 460 * progress
+      this.progressValue = progress
+      this.progressBar.width = 4 + 460 * progress
     })
+  }
+
+  private handleResize(gameSize: Phaser.Structs.Size): void {
+    this.layoutPreloader(gameSize.width, gameSize.height)
+  }
+
+  private layoutPreloader(width: number, height: number): void {
+    this.backgroundImage.setPosition(width * 0.5, height * 0.5)
+    this.backgroundImage.setDisplaySize(width, height)
+
+    this.progressOutline.setPosition(width * 0.5, height * 0.5)
+    this.progressBar.setPosition(width * 0.5 - 230, height * 0.5)
+    this.progressBar.width = 4 + 460 * this.progressValue
   }
 
   preload() {
@@ -113,6 +137,7 @@ export class Preloader extends Scene {
       repeat: -1,
     })
 
+    this.scale.off('resize', this.handleResize, this)
     this.scene.start('MainMenu')
   }
 }

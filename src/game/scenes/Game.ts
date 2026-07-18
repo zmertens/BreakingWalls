@@ -57,6 +57,7 @@ export class Game extends Phaser.Scene {
   private nodeGraphics!: Phaser.GameObjects.Graphics
   private pointerGlow!: Phaser.GameObjects.Graphics
   private cursor!: Phaser.Physics.Arcade.Sprite
+  private instructionText!: Phaser.GameObjects.Text
   private droneLights: Phaser.Physics.Arcade.Image[] = []
   private statusText!: Phaser.GameObjects.Text
 
@@ -141,7 +142,6 @@ export class Game extends Phaser.Scene {
 
     this.cursor = this.physics.add.sprite(START_X, START_Y, 'characters', 0)
     this.cursor.setAlpha(0.85)
-    this.cursor.setScale(0.24)
     this.cursor.setDepth(20)
     this.cursor.play('character-idle-down')
     const cursorBody = this.cursor.body as Phaser.Physics.Arcade.Body | null
@@ -152,19 +152,14 @@ export class Game extends Phaser.Scene {
     this.cursor.setDrag(0.08)
     this.cursor.setMaxVelocity(300, 300)
 
-    this.add
-      .text(
-        18,
-        16,
-        'Trace the counting trail\nMove top-down, then left-right\nRelax: no score, just flow',
-        {
-          fontFamily: 'Verdana',
-          fontSize: 22,
-          color: '#e7f9ff',
-          stroke: '#11263a',
-          strokeThickness: 4,
-        }
-      )
+    this.instructionText = this.add
+      .text(18, 16, 'Trace the trail\n\nRelax: no rush, just flow', {
+        fontFamily: 'Verdana',
+        fontSize: 22,
+        color: '#e7f9ff',
+        stroke: '#11263a',
+        strokeThickness: 4,
+      })
       .setScrollFactor(0)
       .setDepth(30)
 
@@ -182,6 +177,7 @@ export class Game extends Phaser.Scene {
     this.setupAudio()
     this.setupAmbientPhysics()
     this.setupInput()
+    this.layoutHud(this.scale.height)
     this.scale.on('resize', this.handleResize, this)
 
     this.events.once('shutdown', this.shutdown, this)
@@ -201,6 +197,23 @@ export class Game extends Phaser.Scene {
     this.parallaxFar.setSize(width, height)
     this.parallaxNear.setSize(width, height)
     this.mazeBackdrop.setSize(width, height)
+    this.layoutHud(height)
+  }
+
+  private layoutHud(height: number): void {
+    const uiScale = Phaser.Math.Clamp(height / 768, 0.72, 1.35)
+    this.cursor.setScale(0.24 * uiScale)
+
+    this.instructionText.setPosition(18, 16)
+    this.instructionText.setFontSize(Math.round(22 * uiScale))
+    this.instructionText.setStroke(
+      '#11263a',
+      Math.max(2, Math.round(4 * uiScale))
+    )
+
+    this.statusText.setPosition(23, height - (18 + 18 * uiScale))
+    this.statusText.setFontSize(Math.round(18 * uiScale))
+    this.statusText.setStroke('#0c1f24', Math.max(2, Math.round(3 * uiScale)))
   }
 
   update(): void {
@@ -331,16 +344,25 @@ export class Game extends Phaser.Scene {
     }
 
     if (this.cursorFacing === 'up') {
-      this.cursor.anims.play(isMoving ? 'character-walk-up' : 'character-idle-up', true)
+      this.cursor.anims.play(
+        isMoving ? 'character-walk-up' : 'character-idle-up',
+        true
+      )
       return
     }
 
     if (this.cursorFacing === 'down') {
-      this.cursor.anims.play(isMoving ? 'character-walk-down' : 'character-idle-down', true)
+      this.cursor.anims.play(
+        isMoving ? 'character-walk-down' : 'character-idle-down',
+        true
+      )
       return
     }
 
-    this.cursor.anims.play(isMoving ? 'character-walk-side' : 'character-idle-side', true)
+    this.cursor.anims.play(
+      isMoving ? 'character-walk-side' : 'character-idle-side',
+      true
+    )
   }
 
   private async seedInitialPath(): Promise<void> {

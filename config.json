@@ -1,12 +1,12 @@
 {
   "_comment": "jbreaking-walls configuration — all fields are documented below.",
 
-  "window_title":  "Breaking Walls",
-  "window_width":  1280,
+  "window_title": "Breaking Walls",
+  "window_width": 1280,
   "window_height": 720,
-  "window_icon":   "textures/icon.bmp",
+  "window_icon": "textures/icon.bmp",
 
-  "_target_fps_doc":   "Logical fixed-step rate used for physics. Rendering is uncapped (VSync).",
+  "_target_fps_doc": "Logical fixed-step rate used for physics. Rendering is uncapped (VSync).",
   "target_fps": 60,
 
   "_show_debug_overlay_doc": "Display FPS + frame-time overlay in the top-right corner.",
@@ -64,7 +64,7 @@
   "randomness_obstacle_density": 0.35,
 
   "_randomness_pickup_density_doc": "Probability [0.0–1.0] that a non-obstacle spawn slot contains a pickup. Remaining slots are empty.",
-  "randomness_pickup_density": 0.50,
+  "randomness_pickup_density": 0.5,
 
   "_shader_quad_vert_doc": "Classpath-relative path to the vertex shader for all game geometry.",
   "shader_quad_vert": "shaders/quad.vert.glsl",
