@@ -153,7 +153,7 @@ export class Game extends Phaser.Scene {
     this.cursor.setMaxVelocity(300, 300)
 
     this.instructionText = this.add
-      .text(18, 16, 'Trace the trail\n\nRelax: no rush, just flow', {
+      .text(18, 16, 'Trace the trail, relax and flow', {
         fontFamily: 'Verdana',
         fontSize: 22,
         color: '#e7f9ff',
@@ -264,6 +264,8 @@ export class Game extends Phaser.Scene {
         })
       }
     }
+
+    this.instructionText.setAlpha(0.85 + Math.sin(this.time.now * 0.004) * 0.15);
   }
 
   private getMagneticTarget(

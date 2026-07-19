@@ -38,6 +38,25 @@ export class MainMenu extends Scene {
     })
   }
 
+  update(): void {
+    const now = this.time.now
+    const colorChangeInterval = 1000 // Change color every 1 second
+
+    if (now % colorChangeInterval < 16) {
+      this.changeBackgroundColor()
+    }
+
+    this.logo.setPosition(this.scale.width - this.scale.width * 0.25 + Math.sin(now * 0.002) * 10, this.scale.height * 0.25 + Math.cos(now * 0.002) * 10)
+  }
+
+  private changeBackgroundColor(): void {
+    this.background.setTint(Phaser.Display.Color.GetColor(
+      Phaser.Math.Between(0, 255),
+      Phaser.Math.Between(0, 255),
+      Phaser.Math.Between(0, 255)
+    ))
+  }
+
   private handleResize(gameSize: Phaser.Structs.Size): void {
     this.layoutMenu(gameSize.width, gameSize.height)
   }
@@ -48,8 +67,8 @@ export class MainMenu extends Scene {
     this.background.setPosition(width * 0.5, height * 0.5)
     this.background.setDisplaySize(width, height)
 
-    this.logo.setPosition(width * 0.5, height * 0.4)
-    this.logo.setScale(uiScale)
+    this.logo.setPosition(width - width * 0.25, height * 0.25)
+    this.logo.setScale(0.10 * uiScale)
 
     this.title.setPosition(width * 0.5, height * 0.68)
     this.title.setFontSize(Math.round(34 * uiScale))
