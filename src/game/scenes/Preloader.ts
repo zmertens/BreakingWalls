@@ -81,6 +81,7 @@ export class Preloader extends Scene {
     })
 
     this.load.audio('ambience', ['game-menu_remixed.mp3'])
+    this.load.audio('generate', ['generate.ogg'])
     this.load.audio('path-step', ['sfx_select.ogg'])
     this.load.audio('chunk-ready', ['sfx_throw.ogg'])
   }

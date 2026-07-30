@@ -20,6 +20,7 @@ const MAGNET_RADIUS = 170
 const MAGNET_MAX_STRENGTH = 0.68
 const GLOW_PULSE_SPEED = 0.0065
 const GLOW_PULSE_AMPLITUDE = 0.18
+const GENERATE_SOUND_THRESHOLD = 0.75
 
 const fragmentSource = `
 precision mediump float;
@@ -77,6 +78,7 @@ export class Game extends Phaser.Scene {
   private ambienceSound?: Phaser.Sound.BaseSound
   private stepSound?: Phaser.Sound.BaseSound
   private chunkSound?: Phaser.Sound.BaseSound
+  private generateSound?: Phaser.Sound.BaseSound
   private cursorFacing: 'up' | 'down' | 'left' | 'right' = 'down'
 
   constructor() {
@@ -388,6 +390,7 @@ export class Game extends Phaser.Scene {
     })
     this.stepSound = this.sound.add('path-step', { volume: 0.22 })
     this.chunkSound = this.sound.add('chunk-ready', { volume: 0.18 })
+    this.generateSound = this.sound.add('generate', { volume: 0.06 })
 
     if (this.ambienceSound) {
       this.ambienceSound.play()
@@ -431,6 +434,10 @@ export class Game extends Phaser.Scene {
   }
 
   private async appendChunk(): Promise<void> {
+    const shouldPlayGenerateCue =
+      this.pathNodes.length > 0 &&
+      this.getLitCount() / this.pathNodes.length >= GENERATE_SOUND_THRESHOLD
+
     const chunkStartX =
       this.pathNodes.length === 0
         ? START_X
@@ -469,6 +476,9 @@ export class Game extends Phaser.Scene {
     this.redrawWorld()
 
     this.chunkSound?.play()
+    if (shouldPlayGenerateCue) {
+      this.generateSound?.play()
+    }
     this.statusText.setText(
       `Lit ${this.getLitCount()} / ${this.pathNodes.length} nodes`
     )
@@ -673,6 +683,7 @@ export class Game extends Phaser.Scene {
     this.ambienceSound?.destroy()
     this.stepSound?.destroy()
     this.chunkSound?.destroy()
+    this.generateSound?.destroy()
 
     for (const light of this.droneLights) {
       light.destroy()
