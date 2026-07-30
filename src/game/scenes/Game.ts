@@ -21,6 +21,8 @@ const MAGNET_MAX_STRENGTH = 0.68
 const GLOW_PULSE_SPEED = 0.0065
 const GLOW_PULSE_AMPLITUDE = 0.18
 const GENERATE_SOUND_THRESHOLD = 0.75
+const GENERATE_CUE_ALPHA = 0.42
+const GENERATE_CUE_DURATION_MS = 160
 
 const fragmentSource = `
 precision mediump float;
@@ -46,9 +48,23 @@ void main() {
 }
 `
 
+const blinkFragmentSource = `
+precision mediump float;
+
+uniform sampler2D texture;
+uniform float blink_alpha;
+
+void main() {
+  vec3 tint = vec3(0.90, 1.0, 0.96);
+  vec4 pixel = vec4(tint * blink_alpha, blink_alpha);
+  gl_FragColor = pixel;
+}
+`
+
 export class Game extends Phaser.Scene {
   private camera!: Phaser.Cameras.Scene2D.Camera
   private shaderLayer!: Phaser.GameObjects.Shader
+  private transitionCueLayer!: Phaser.GameObjects.Shader
   private parallaxFar!: Phaser.GameObjects.TileSprite
   private parallaxNear!: Phaser.GameObjects.TileSprite
   private mazeBackdrop!: Phaser.GameObjects.TileSprite
@@ -79,6 +95,7 @@ export class Game extends Phaser.Scene {
   private stepSound?: Phaser.Sound.BaseSound
   private chunkSound?: Phaser.Sound.BaseSound
   private generateSound?: Phaser.Sound.BaseSound
+  private generateCueAlpha = 0
   private cursorFacing: 'up' | 'down' | 'left' | 'right' = 'down'
 
   constructor() {
@@ -107,6 +124,26 @@ export class Game extends Phaser.Scene {
     )
     this.add.existing(this.shaderLayer)
     this.shaderLayer.setScrollFactor(0).setDepth(0)
+
+    this.transitionCueLayer = new Phaser.GameObjects.Shader(
+      this,
+      {
+        name: 'maze-generate-cue',
+        fragmentSource: blinkFragmentSource,
+        setupUniforms: (setUniform: (name: string, value: unknown) => void) => {
+          setUniform('blink_alpha', this.generateCueAlpha)
+        },
+      },
+      this.scale.width * 0.5,
+      this.scale.height * 0.5,
+      this.scale.width,
+      this.scale.height
+    )
+    this.add.existing(this.transitionCueLayer)
+    this.transitionCueLayer
+      .setScrollFactor(0)
+      .setDepth(24)
+      .setBlendMode(Phaser.BlendModes.NORMAL)
 
     this.parallaxFar = this.add
       .tileSprite(0, 0, this.scale.width, this.scale.height, 'maze-bg')
@@ -195,6 +232,10 @@ export class Game extends Phaser.Scene {
     this.shaderLayer.setPosition(width * 0.5, height * 0.5)
     this.shaderLayer.setSize(width, height)
     this.shaderLayer.setDisplaySize(width, height)
+
+    this.transitionCueLayer.setPosition(width * 0.5, height * 0.5)
+    this.transitionCueLayer.setSize(width, height)
+    this.transitionCueLayer.setDisplaySize(width, height)
 
     this.parallaxFar.setSize(width, height)
     this.parallaxNear.setSize(width, height)
@@ -478,10 +519,27 @@ export class Game extends Phaser.Scene {
     this.chunkSound?.play()
     if (shouldPlayGenerateCue) {
       this.generateSound?.play()
+      this.playGenerateTransitionCue()
     }
     this.statusText.setText(
       `Lit ${this.getLitCount()} / ${this.pathNodes.length} nodes`
     )
+  }
+
+  private playGenerateTransitionCue(): void {
+    this.tweens.killTweensOf(this)
+    this.generateCueAlpha = 0
+
+    this.tweens.add({
+      targets: this,
+      generateCueAlpha: GENERATE_CUE_ALPHA,
+      duration: GENERATE_CUE_DURATION_MS,
+      ease: 'Sine.Out',
+      yoyo: true,
+      onComplete: () => {
+        this.generateCueAlpha = 0
+      },
+    })
   }
 
   private async getMazeOffsets(seed: number, width: number): Promise<number[]> {
