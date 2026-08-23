@@ -1,0 +1,50 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "build-ninja",
+            "displayName": "Build using Ninja Multi-Config",
+            "description": "Configure with MAZE_BUILDER_EXAMPLES=1 into build-ninja/",
+            "generator": "Ninja Multi-Config",
+            "binaryDir": "${sourceDir}/build-ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "build-wasmjs",
+            "generator": "Ninja Multi-Config",
+            "displayName": "Build with the Emscripten(EMSDK)",
+            "description": "Build with directory: build-wasmjs/",
+            "binaryDir": "${sourceDir}/build-wasmjs",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/../emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+            }
+        },
+        {
+            "name": "build-msvc",
+            "displayName": "Build using MSVC - Visual Studio Community 2022 Release - amd64",
+            "description": "Using compilers for Visual Studio 17 2022 (x64 architecture)",
+            "generator": "Visual Studio 17 2022",
+            "toolset": "host=x64",
+            "architecture": "x64",
+            "binaryDir": "${sourceDir}/build-msvc",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "build-msvc",
+            "displayName": "Visual Studio Community 2022 Release - amd64 - Release",
+            "configurePreset": "build-msvc",
+            "configuration": "Release"
+        }
+    ]
+}
