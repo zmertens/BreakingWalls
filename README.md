@@ -1,31 +1,32 @@
-# About Breaking Walls
+# Breaking Walls
 
-An endless sidescrolling pointer game with a relaxing theme and futuristic vibes.
+Breaking Walls is a system-level text processing tool with a full GUI/dashboard for building mazes and game levels.
 
-- Players highlight nodes and graphs
-- Simple event handling (mouse, touch)
-- Spatialized sound effects and 2d animations
+## About and Purpose
 
-## TODO's
+The goal of this project is to help game developers generate, manage, and preview maze-style levels in one place.
+It is designed for desktop use and also supports web-driven versions through Emscripten and WebAssembly.
 
-- Speed ups
+## Live Demo
+
+[Live Demo](https://your-demo-link-here)
+
+[Git Repo (bw-frontend)](https://github.com/zmertens/bw-frontend)
+
+## Build
+
+Build is handled with CMake.
+The project is written in C++ and versioned with Git.
+
+Typical local flow:
+
+1. Clone the repository.
+2. Configure the project with CMake.
+3. Build and run.
 
 ## Configuration
 
-`NPM` is used for project configuration and builds.
+Project settings can be adjusted in `config.json`.
+You can use this file to tune runtime behavior without changing source code.
 
-### Example commands
 
-Clone the repository:
-`git clone https://github.com/zmertens/BreakingWalls.git`
-
-Build the project in Production mode:
-`npm run build`
-
-Run it in debug mode: `npm run dev`
-
-Run the production files directly:
-
-```powershell
-python -m http.server -d .\dist\
-```

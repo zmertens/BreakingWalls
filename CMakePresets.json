@@ -4,7 +4,7 @@
         {
             "name": "build-ninja",
             "displayName": "Build using Ninja Multi-Config",
-            "description": "Configure with MAZE_BUILDER_EXAMPLES=1 into build-ninja/",
+            "description": "Configure with Clang settings into build-ninja/",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build-ninja",
             "cacheVariables": {
