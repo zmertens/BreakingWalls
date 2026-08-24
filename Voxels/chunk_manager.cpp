@@ -1,5 +1,6 @@
 // chunk_manager.cpp — chunk lifecycle, worker threads, collision, lighting, terrain
 #include "world.h"
+#include "world_defs.h"
 
 #include "db.h"
 #include "geometries.h"
@@ -24,11 +25,6 @@
 #include <vector>
 
 // Match defines in world.cpp
-#define CREATE_CHUNK_RADIUS 10
-#define RENDER_CHUNK_RADIUS 20
-#define BUILD_CHUNK_SIZE 32
-#define DELETE_CHUNK_RADIUS 14
-#define CHUNK_WORKERS_TOTAL 4
 
 // Macros used in light_fill / compute_chunk
 #define XZ_SIZE  (BUILD_CHUNK_SIZE * 3 + 2)

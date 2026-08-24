@@ -20,7 +20,7 @@ public:
     /// Returns true if an export is currently in progress (started but not yet ready).
     [[nodiscard]] bool is_running() const noexcept;
 
-    /// Returns true if the async export has finished (or no export was started).
+    /// Returns true if the async export has finished. Returns false if no export was started.
     [[nodiscard]] bool is_ready() const noexcept;
 
     /// Retrieve the result (waits if not yet done, caches it afterwards).

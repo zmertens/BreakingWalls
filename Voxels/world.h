@@ -25,7 +25,6 @@ namespace mazes
     class randomizer;
 }
 
-// Unified chunk: scene-graph hierarchy + voxel data in one flat struct.
 // Unified voxel chunk: spatial scene-graph node + terrain/light data.
 struct chunk
 {

@@ -11,6 +11,7 @@
 #include "resource_identifiers.h"
 #include "resource_manager.h"
 #include "sdl_gl_helper.h"
+#include "world_defs.h"
 #include "shader.h"
 
 #if defined(__EMSCRIPTEN__)
@@ -30,12 +31,6 @@
 #include <thread>
 
 // World configs
-#define CREATE_CHUNK_RADIUS 10
-#define RENDER_CHUNK_RADIUS 20
-#define BUILD_CHUNK_SIZE 32
-#define RENDER_SIGN_RADIUS 4
-#define DELETE_CHUNK_RADIUS 14
-#define CHUNK_WORKERS_TOTAL 4
 
 namespace
 {
