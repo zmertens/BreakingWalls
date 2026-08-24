@@ -51,12 +51,12 @@ jobs:
 
     # Build with Emscripten
     - name: Build with Emscripten
-      run: cmake --build ${{github.workspace}}/build-wasmjs --config ${{env.BUILD_TYPE}}
+      run: cmake --build build-wasmjs --config ${{env.BUILD_TYPE}}
 
     # Configure CMake for default build (without Emscripten)
     - name: Configure CMake for Default Build
       run: cmake --preset build-ninja
 
     - name: Build Default
-      run: cmake --build ${{github.workspace}}/build-ninja --config ${{env.BUILD_TYPE}}
+      run: cmake --build build-ninja --config ${{env.BUILD_TYPE}}
 
