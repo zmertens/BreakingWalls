@@ -2,11 +2,14 @@
 #define WORLD_H
 
 #include <array>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "bloom_pass.h"
@@ -15,105 +18,26 @@
 #include "sdl_gl_helper.h"
 #include "voxels_map.h"
 
-struct worker;
-struct worker_item;
-
 union SDL_Event;
-
-class attrib;
-class sdl_gl_helper;
 
 namespace mazes
 {
     class randomizer;
 }
 
-// Base class for all game objects that can interact in the world
-class scene_node
+// Unified chunk: scene-graph hierarchy + voxel data in one flat struct.
+// Unified voxel chunk: spatial scene-graph node + terrain/light data.
+struct chunk
 {
-public:
-    virtual ~scene_node() = default;
-
-    // Chunk-specific data
-    voxels_map map;
-    voxels_map lights;
-    sign_list signs;
-    int p;
-    int q;
-    int faces;
-    int sign_faces;
-    int dirty;
-    int miny;
-    int maxy;
-    std::uint32_t buffer;
-    std::uint32_t sign_buffer;
-
-    scene_node *parent;
-    std::vector<scene_node *> children;
-
-    // Spatial bounds (for quadtree nodes)
-    int bounds_min_x;
-    int bounds_min_z;
-    int bounds_max_x;
-    int bounds_max_z;
-
-    [[nodiscard]] Entity get_category() const noexcept
-    {
-        return m_category;
-    }
-
-    void set_category(const Entity category) noexcept
-    {
-        m_category = category;
-    }
-
-    // Check if this node or its children intersect with a 2D bounds (for frustum culling)
-    [[nodiscard]] bool intersects_bounds(const int min_x, const int min_z,
-                                         const int max_x, const int max_z) const noexcept
-    {
-        return !(bounds_max_x < min_x || bounds_min_x > max_x ||
-                 bounds_max_z < min_z || bounds_min_z > max_z);
-    }
-
-private:
-    Entity m_category;
-};
-
-// Phase 1 scaffolding for composition-first scene/chunk modeling.
-// These types are introduced without changing existing runtime behavior.
-struct scene_graph_node
-{
-    scene_graph_node *parent{nullptr};
-    std::vector<scene_graph_node *> children{};
-
+    // Spatial hierarchy
+    chunk *parent{nullptr};
+    std::vector<chunk *> children{};
     int bounds_min_x{0};
     int bounds_min_z{0};
     int bounds_max_x{0};
     int bounds_max_z{0};
 
-    [[nodiscard]] Entity get_category() const noexcept
-    {
-        return m_category;
-    }
-
-    void set_category(const Entity category) noexcept
-    {
-        m_category = category;
-    }
-
-    [[nodiscard]] bool intersects_bounds(const int min_x, const int min_z,
-                                         const int max_x, const int max_z) const noexcept
-    {
-        return !(bounds_max_x < min_x || bounds_min_x > max_x ||
-                 bounds_max_z < min_z || bounds_min_z > max_z);
-    }
-
-private:
-    Entity m_category{Entity::NONE};
-};
-
-struct chunk_data
-{
+    // Voxel data
     voxels_map map{};
     voxels_map lights{};
     sign_list signs{};
@@ -126,96 +50,46 @@ struct chunk_data
     int maxy{0};
     std::uint32_t buffer{0};
     std::uint32_t sign_buffer{0};
+
+    [[nodiscard]] Entity get_category() const noexcept { return m_category; }
+    void set_category(const Entity category) noexcept { m_category = category; }
+
+    [[nodiscard]] bool intersects_bounds(const int min_x, const int min_z,
+                                         const int max_x, const int max_z) const noexcept
+    {
+        return !(bounds_max_x < min_x || bounds_min_x > max_x ||
+                 bounds_max_z < min_z || bounds_min_z > max_z);
+    }
+
+private:
+    Entity m_category{Entity::NONE};
 };
 
-struct chunk
+// Worker state machine
+enum class WorkerState : int { IDLE = 0, BUSY = 1, DONE = 2 };
+
+struct worker_item
 {
-    scene_graph_node graph{};
-    chunk_data data{};
+    int p{};
+    int q{};
+    int load{};
+    voxels_map *block_maps[3][3]{};
+    voxels_map *light_maps[3][3]{};
+    int miny{};
+    int maxy{};
+    int faces{};
+    float *data{};
 };
 
-[[nodiscard]] inline scene_graph_node to_scene_graph_node(const scene_node &legacy)
+struct worker
 {
-    scene_graph_node out;
-    out.bounds_min_x = legacy.bounds_min_x;
-    out.bounds_min_z = legacy.bounds_min_z;
-    out.bounds_max_x = legacy.bounds_max_x;
-    out.bounds_max_z = legacy.bounds_max_z;
-    out.set_category(legacy.get_category());
-    return out;
-}
-
-[[nodiscard]] inline chunk_data to_chunk_data(const scene_node &legacy)
-{
-    chunk_data out;
-    out.map = legacy.map;
-    out.lights = legacy.lights;
-    out.signs = legacy.signs;
-    out.p = legacy.p;
-    out.q = legacy.q;
-    out.faces = legacy.faces;
-    out.sign_faces = legacy.sign_faces;
-    out.dirty = legacy.dirty;
-    out.miny = legacy.miny;
-    out.maxy = legacy.maxy;
-    out.buffer = legacy.buffer;
-    out.sign_buffer = legacy.sign_buffer;
-    return out;
-}
-
-struct chunk_view
-{
-    const scene_node *legacy{nullptr};
-
-    [[nodiscard]] bool valid() const noexcept
-    {
-        return legacy != nullptr;
-    }
-
-    [[nodiscard]] int p() const noexcept
-    {
-        return legacy->p;
-    }
-
-    [[nodiscard]] int q() const noexcept
-    {
-        return legacy->q;
-    }
-
-    [[nodiscard]] int miny() const noexcept
-    {
-        return legacy->miny;
-    }
-
-    [[nodiscard]] int maxy() const noexcept
-    {
-        return legacy->maxy;
-    }
-
-    [[nodiscard]] int faces() const noexcept
-    {
-        return legacy->faces;
-    }
-
-    [[nodiscard]] int sign_faces() const noexcept
-    {
-        return legacy->sign_faces;
-    }
-
-    [[nodiscard]] std::uint32_t buffer() const noexcept
-    {
-        return legacy->buffer;
-    }
-
-    [[nodiscard]] std::uint32_t sign_buffer() const noexcept
-    {
-        return legacy->sign_buffer;
-    }
-
-    [[nodiscard]] const voxels_map &map() const noexcept
-    {
-        return legacy->map;
-    }
+    int index{};
+    WorkerState state{WorkerState::IDLE};
+    std::thread thrd;
+    std::mutex mtx;
+    std::condition_variable cnd;
+    worker_item item;
+    bool should_stop{};
 };
 
 class world final
@@ -247,7 +121,17 @@ public:
     void draw_preview(std::uint32_t target_fbo, int target_width, int target_height) const noexcept;
 
     command_queue &get_command_queue() noexcept;
+
+    // Used by player for artifact export coordinates
+    [[nodiscard]] static int chunked(float x) noexcept;
+
 private:
+    // Internal geometry helper
+    struct ivec3 { int x; int y; int z; };
+    static ivec3 face_normal(int face) noexcept;
+    static ivec3 face_u_axis(int face) noexcept;
+    static ivec3 face_v_axis(int face) noexcept;
+
     void destroy_world();
 
     // Building helper methods
@@ -262,19 +146,13 @@ private:
 
     // Scene graph methods
     void build_scene();
-    void attach_chunk_to_layer(scene_node *chunk, int layer_index) noexcept;
-    void detach_chunk_from_layer(scene_node *chunk) noexcept;
-    void traverse_chunks(const std::function<void(scene_node *)> &callback) const noexcept;
-    void traverse_chunks_view(const std::function<void(const chunk_view &)> &callback) const noexcept;
-    void traverse_chunks_composed(const std::function<void(chunk)> &callback) const noexcept;
+    void attach_chunk_to_layer(chunk *c, int layer_index) noexcept;
+    void detach_chunk_from_layer(chunk *c) noexcept;
+    void traverse_chunks(const std::function<void(chunk *)> &callback) const noexcept;
     void traverse_chunks_in_bounds(int min_p, int min_q, int max_p, int max_q,
-                                   const std::function<void(scene_node *)> &callback) const noexcept;
-    void traverse_chunks_in_bounds_view(int min_p, int min_q, int max_p, int max_q,
-                                        const std::function<void(const chunk_view &)> &callback) const noexcept;
-    void traverse_chunks_in_bounds_composed(int min_p, int min_q, int max_p, int max_q,
-                                            const std::function<void(chunk)> &callback) const noexcept;
-    void insert_chunk_into_spatial_tree(scene_node *chunk) const noexcept;
-    static void remove_chunk_from_spatial_tree(scene_node *chunk) noexcept;
+                                   const std::function<void(chunk *)> &callback) const noexcept;
+    void insert_chunk_into_spatial_tree(chunk *c) const noexcept;
+    static void remove_chunk_from_spatial_tree(chunk *c) noexcept;
 
     // Worker functions
     bool worker_run(worker *w) const noexcept;
@@ -286,10 +164,8 @@ private:
     [[nodiscard]] float time_of_day() const noexcept;
     [[nodiscard]] float get_daylight() const noexcept;
 
-    [[nodiscard]] std::optional<scene_node *> find_chunk(int p, int q) const noexcept;
-    [[nodiscard]] std::optional<chunk_view> find_chunk_view(int p, int q) const noexcept;
-    [[nodiscard]] std::optional<chunk> find_chunk_composed(int p, int q) const noexcept;
-    static int chunk_distance(const scene_node *chunk, int p, int q) noexcept;
+    [[nodiscard]] std::optional<chunk *> find_chunk(int p, int q) const noexcept;
+    static int chunk_distance(const chunk *c, int p, int q) noexcept;
     bool chunk_visible(float planes[6][4], int p, int q, int miny, int maxy) const noexcept;
 
     [[nodiscard]] int highest_block(float x, float z) const noexcept;
@@ -302,23 +178,22 @@ private:
     [[nodiscard]] static bool player_intersects_block(int height, float x, float y, float z,
                                                       int hx, int hy, int hz) noexcept;
 
-    void dirty_chunk(scene_node *chunk) const noexcept;
+    void dirty_chunk(chunk *c) const noexcept;
     void update_dirty_chunks_async() const noexcept;
 
     static void occlusion(char neighbors[27], char lights[27], float shades[27],
                           float ao[6][4], float light[6][4]) noexcept;
     static void light_fill(char *opaque, char *light, int x, int y, int z, const int w, int force) noexcept;
-    bool has_lights(const scene_node *chunk) const noexcept;
+    bool has_lights(const chunk *c) const noexcept;
 
-    [[nodiscard]] static int chunked(float x) noexcept;
     static void compute_chunk(worker_item *item) noexcept;
 
-    static void generate_chunk(scene_node *chunk, const worker_item *item) noexcept;
-    void gen_chunk_buffer(scene_node *chunk) const noexcept;
+    static void generate_chunk(chunk *c, const worker_item *item) noexcept;
+    void gen_chunk_buffer(chunk *c) const noexcept;
 
     void load_chunk(const worker_item *item) const noexcept;
-    void init_chunk(scene_node *chunk, int p, int q) noexcept;
-    void create_chunk(scene_node *chunk, int p, int q) noexcept;
+    void init_chunk(chunk *c, int p, int q) noexcept;
+    void create_chunk(chunk *c, int p, int q) noexcept;
     void delete_chunks() noexcept;
     void delete_all_chunks() noexcept;
     void force_chunks(player *player) noexcept;
@@ -360,11 +235,16 @@ private:
     void render_plane() const noexcept;
 
     // Matrix setup helpers — bind shader program, upload projection matrix uniform.
-    // Each returns {viewport_width, viewport_height}.
     std::pair<int, int> begin_3d_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
     std::pair<int, int> begin_sky_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
     std::pair<int, int> begin_item_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
     std::pair<int, int> begin_2d_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
+
+    // Static GL attribute slots — initialized in world::init(), shared across all render methods.
+    static sdl_gl_helper::attrib s_block_attrib;
+    static sdl_gl_helper::attrib s_line_attrib;
+    static sdl_gl_helper::attrib s_text_attrib;
+    static sdl_gl_helper::attrib s_sky_attrib;
 
     enum class Layer
     {
@@ -396,8 +276,6 @@ private:
         bool has_data{false};
     } current_preview_data{};
 
-    static constexpr auto FORCE_DUE_TO_GRAVITY = -9.8f;
-
     const sdl_gl_helper *simple_direct_medialayer;
 
     font_manager &active_fonts;
@@ -405,7 +283,7 @@ private:
     texture_manager &world_textures;
 
     static constexpr auto MAX_CHUNKS = 8192;
-    std::array<std::array<scene_node *, MAX_CHUNKS>, static_cast<std::size_t>(Layer::LAYER_COUNT)> scene_graph_layers;
+    std::array<std::array<chunk *, MAX_CHUNKS>, static_cast<std::size_t>(Layer::LAYER_COUNT)> scene_graph_layers;
 
     std::size_t next_chunk_slot_in_view;
 

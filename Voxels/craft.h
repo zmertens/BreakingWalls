@@ -8,7 +8,7 @@
 #include <MazeBuilder/randomizer.h>
 #include <MazeBuilder/singleton_base.h>
 
-/// @brief Monolithic class to handle running a voxel engine
+/// @brief Top-level class that coordinates the voxel engine lifecycle and subsystems
 class craft final : mazes::singleton_base<craft> {
     friend class singleton_base;
 public:

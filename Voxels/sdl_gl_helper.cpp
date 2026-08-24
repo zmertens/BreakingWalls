@@ -553,7 +553,7 @@ int sdl_gl_helper::_gen_sign_buffer(float* data, const float x, const float y, c
     return count;
 }
 
-void sdl_gl_helper::gen_sign_buffer(scene_node* chunk) noexcept
+void sdl_gl_helper::gen_sign_buffer(chunk* chunk) noexcept
 {
     const sign_list* signs = &chunk->signs;
 
@@ -699,7 +699,7 @@ void sdl_gl_helper::draw_lines(const attrib* a, const std::uint32_t buffer, cons
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-void sdl_gl_helper::draw_chunk(const attrib* a, const scene_node* chunk) noexcept
+void sdl_gl_helper::draw_chunk(const attrib* a, const chunk* chunk) noexcept
 {
     draw_triangles_3d_ao(a, chunk->buffer, chunk->faces * 6);
 }
@@ -717,7 +717,7 @@ void sdl_gl_helper::draw_text(const attrib* a, const std::uint32_t buffer, const
     glDisable(GL_BLEND);
 }
 
-void sdl_gl_helper::draw_signs(const attrib* a, const scene_node* chunk) noexcept
+void sdl_gl_helper::draw_signs(const attrib* a, const chunk* chunk) noexcept
 {
     glDisable(GL_CULL_FACE);
     glEnable(GL_POLYGON_OFFSET_FILL);

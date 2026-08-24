@@ -23,98 +23,6 @@
 #include <MazeBuilder/configurator.h>
 #include <MazeBuilder/randomizer.h>
 
-namespace
-{
-    // Helper to convert block/voxel data to Wavefront OBJ format
-    std::string blocks_to_wavefront_obj(const std::vector<std::tuple<int, int, int, int>> &blocks) noexcept
-    {
-        if (blocks.empty())
-        {
-            return "";
-        }
-
-        const auto start_time = SDL_GetTicks();
-
-        std::ostringstream result;
-        // Pre-allocate buffer to reduce reallocations (estimate ~200 bytes per block)
-        result.rdbuf()->pubsetbuf(0, blocks.size() * 200);
-
-        // Write header
-        result << "# Maze Builder Export\n";
-        result << "# Generated from database\n";
-        result << "# Block count: " << blocks.size() << "\n\n";
-
-        // Cube vertex offsets (8 vertices per cube)
-        static constexpr float cube_vertices[8][3] = {
-            {-0.5f, -0.5f, -0.5f}, // 0
-            {0.5f, -0.5f, -0.5f},  // 1
-            {0.5f, 0.5f, -0.5f},   // 2
-            {-0.5f, 0.5f, -0.5f},  // 3
-            {-0.5f, -0.5f, 0.5f},  // 4
-            {0.5f, -0.5f, 0.5f},   // 5
-            {0.5f, 0.5f, 0.5f},    // 6
-            {-0.5f, 0.5f, 0.5f}    // 7
-        };
-
-        // Cube face indices (6 faces, 2 triangles each = 6 vertices per face)
-        // Faces: front, back, top, bottom, right, left
-        static constexpr int cube_faces[6][6] = {
-            {4, 5, 6, 4, 6, 7}, // front  (+Z)
-            {1, 0, 3, 1, 3, 2}, // back   (-Z)
-            {3, 7, 6, 3, 6, 2}, // top    (+Y)
-            {0, 1, 5, 0, 5, 4}, // bottom (-Y)
-            {1, 2, 6, 1, 6, 5}, // right  (+X)
-            {0, 4, 7, 0, 7, 3}  // left   (-X)
-        };
-
-        int vertex_count = 0;
-        int processed_blocks = 0;
-
-        // Generate vertices and faces for each block
-        for (const auto &[x, y, z, w] : blocks)
-        {
-            // Skip air blocks (w == 0)
-            if (w == 0)
-            {
-                continue;
-            }
-
-            // Progress logging for large exports (every 10,000 blocks)
-            if (++processed_blocks % 10000 == 0)
-            {
-                SDL_Log("OBJ export progress: %d / %zu blocks\n", processed_blocks, blocks.size());
-            }
-
-            // Write vertices for this cube
-            for (int v = 0; v < 8; ++v)
-            {
-                float vx = static_cast<float>(x) + cube_vertices[v][0];
-                float vy = static_cast<float>(y) + cube_vertices[v][1];
-                float vz = static_cast<float>(z) + cube_vertices[v][2];
-                result << "v " << vx << " " << vy << " " << vz << "\n";
-            }
-
-            // Write faces for this cube (all 6 faces)
-            for (int face = 0; face < 6; ++face)
-            {
-                const int base = vertex_count + 1;
-                result << "f " << base + cube_faces[face][0]
-                       << " " << base + cube_faces[face][1]
-                       << " " << base + cube_faces[face][2] << "\n"
-                       << "f " << base + cube_faces[face][3]
-                       << " " << base + cube_faces[face][4]
-                       << " " << base + cube_faces[face][5] << "\n";
-            }
-
-            vertex_count += 8;
-        }
-
-        const auto elapsed = SDL_GetTicks() - start_time;
-        SDL_Log("blocks_to_wavefront_obj: Generated OBJ with %d blocks in %lu ms\n", processed_blocks, elapsed);
-
-        return result.str();
-    }
-}
 
 constexpr auto DAY_LENGTH = 600;
 constexpr auto DEFAULT_FOV = 65.0f;
@@ -931,8 +839,7 @@ std::string player::artifacts() const noexcept
         return "";
     }
 
-    // Convert blocks to Wavefront OBJ format
-    return blocks_to_wavefront_obj(blocks);
+    return artifact_exporter::blocks_to_wavefront_obj(blocks);
 }
 
 bool player::is_download_ready() const noexcept
@@ -946,9 +853,8 @@ bool player::is_download_ready() const noexcept
 
 void player::start_async_artifact_export() noexcept
 {
-    // Don't start a new export if one is already running (future is valid and not ready)
-    if (artifact_export_fut.valid() &&
-        artifact_export_fut.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    // Don't start a new export if one is already running
+    if (m_exporter.is_running())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Artifact export already in progress\n");
         return;
@@ -959,10 +865,7 @@ void player::start_async_artifact_export() noexcept
     if (!db_is_enabled())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Database not enabled for artifacts export\n");
-        // Set future to a ready empty result so callers don't spin forever
-        std::promise<std::string> p;
-        p.set_value("");
-        artifact_export_fut = p.get_future();
+        m_exporter.start_async({});
         return;
     }
 
@@ -981,43 +884,26 @@ void player::start_async_artifact_export() noexcept
     if (blocks.empty())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No blocks found in database for export\n");
-        std::promise<std::string> p;
-        p.set_value("");
-        artifact_export_fut = p.get_future();
+        m_exporter.start_async({});
         return;
     }
 
-    artifact_cache_results.clear();
-
-    // Offload only the CPU-bound OBJ conversion to a background thread
-    artifact_export_fut = std::async(std::launch::async, [blocks = std::move(blocks)]() -> std::string
-                                     {
-        SDL_Log("Async export: Converting %zu blocks to OBJ format...\n", blocks.size());
-        return blocks_to_wavefront_obj(blocks); });
+    m_exporter.start_async(std::move(blocks));
 }
 
 bool player::is_artifact_export_ready() const noexcept
 {
-    return artifact_export_fut.valid() &&
-           artifact_export_fut.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    return m_exporter.is_ready();
 }
 
 std::string player::get_artifact_export_result() noexcept
 {
-    if (!is_artifact_export_ready())
+    if (!m_exporter.is_ready())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Artifact export not ready yet\n");
         return "";
     }
-
-    // Cache the result so we can return it multiple times
-    if (artifact_cache_results.empty())
-    {
-        artifact_cache_results = artifact_export_fut.get();
-        SDL_Log("Async export complete: %zu bytes\n", artifact_cache_results.size());
-    }
-
-    return artifact_cache_results;
+    return m_exporter.get_result();
 }
 
 // ============================================================================

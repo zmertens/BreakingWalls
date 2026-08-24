@@ -1774,10 +1774,6 @@ std::string craft::get_export_status() const noexcept
     {
         return "ready";
     }
-    // Distinguish "never started" vs "running" via the future validity heuristic:
-    // start_async_artifact_export clears artifact_cache_results before launching.
-    // If the cached result is empty and download flag is false we may be running.
-    // We surface this as "running" conservatively; the JS side tolerates either.
     return "idle";
 }
 
