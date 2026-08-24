@@ -480,6 +480,9 @@ private:
 
     [[nodiscard]] bool is_download_ready() const noexcept;
 
+    // Async artifact export
+    void start_async_artifact_export() noexcept;
+    [[nodiscard]] bool is_artifact_export_ready() const noexcept;
     [[nodiscard]] std::string get_artifact_export_result() noexcept;
 
     // CAD Helper Functions
