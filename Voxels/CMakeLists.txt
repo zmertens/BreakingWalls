@@ -37,8 +37,8 @@ set(CRAFT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/sdl_gl_helper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/shader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/texture.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/world.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/voxels_map.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/voxels_map.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/world.cpp)
 
 add_executable(${BREAKING_WALLS_APP_NAME} ${GLAD_SOURCES} ${NOISE_SOURCES} ${SQLITE3_SOURCES} ${DEAR_IMGUI_SRC_FILES} ${CRAFT_SOURCES})
 
@@ -60,22 +60,26 @@ FetchContent_MakeAvailable(SDL)
 set_property(DIRECTORY "${CMAKE_BINARY_DIR}/_deps/sdl-src" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
 # Get MazeBuilder
-FetchContent_Declare(MazeBuilder GIT_REPOSITORY https://github.com/zmertens/MazeBuilder.git GIT_TAG v8.6.2)
+FetchContent_Declare(MazeBuilder GIT_REPOSITORY https://github.com/zmertens/MazeBuilder.git GIT_TAG v8.6.3)
 FetchContent_MakeAvailable(MazeBuilder)
 
 target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE MazeBuilder::MazeBuilder SDL3::SDL3)
 
 if(EMSCRIPTEN)
-    message(INFO " Building ${BREAKING_WALLS_APP_NAME} for the Web!")
+    message(INFO ": Building ${BREAKING_WALLS_APP_NAME} for the Web!")
 
     set(EMSCRIPTEN_DEP_PATH ${CMAKE_SOURCE_DIR}/Extlibs/emscripten_local)
     target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:${EMSCRIPTEN_DEP_PATH}> $<BUILD_INTERFACE:${EMSCRIPTEN_DEP_PATH}>)
 
+    # Compile flags for atomics and bulk-memory features
+    target_compile_options(${BREAKING_WALLS_APP_NAME} PRIVATE "SHELL:-matomics -mbulk-memory")
+
     target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE
-            "SHELL:-pthread -s PTHREAD_POOL_SIZE=12"
+            "SHELL:-pthread -s PTHREAD_POOL_SIZE=12 -s ENVIRONMENT=web,worker"
             "SHELL:-s STACK_SIZE=5242880 -s DEFAULT_PTHREAD_STACK_SIZE=2097152"
             "SHELL:-s INITIAL_MEMORY=268435456 -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=1073741824"
             "SHELL:-s FULL_ES3=1 -s MAX_WEBGL_VERSION=2 -s MODULARIZE=1 -s EXPORT_ES6=1 -s WASM=1"
+            "SHELL:-matomics -mbulk-memory"
             "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/Extlibs/emscripten_local/shell_minimal.html"
             "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/Shaders@/Shaders"
             "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/Textures@/Textures")
@@ -86,8 +90,15 @@ if(EMSCRIPTEN)
 
     add_custom_command(TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_CURRENT_SOURCE_DIR}/Textures/favicon.ico"
+            "${CMAKE_SOURCE_DIR}/Textures/favicon.ico"
             "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/favicon.ico"
+        VERBATIM)
+
+
+    add_custom_command(TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_SOURCE_DIR}/secure_http_server.py"
+            "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/secure_http_server.py"
         VERBATIM)
 else()
 

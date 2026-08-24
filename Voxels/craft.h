@@ -40,6 +40,8 @@ public:
     void set_maze_columns(int cols) noexcept;
     void set_maze_algo(const std::string& algo) noexcept;  // e.g. "dfs", "binary_tree"
     void set_maze_seed(int seed) noexcept;
+
+    std::string get_version() const noexcept;
 private:
     struct craft_impl;
 

@@ -304,44 +304,44 @@ struct craft::craft_impl
             // shaders
             std::vector<std::tuple<ShaderIdentifier, std::string, std::string>> shader_programs{
                 {ShaderIdentifier::BLOCK_SHADER,
-                 "shaders/block_vertex.glsl",
-                 "shaders/block_fragment.glsl"},
+                 "Shaders/block_vertex.glsl",
+                 "Shaders/block_fragment.glsl"},
                 {ShaderIdentifier::LINE_SHADER,
-                 "shaders/line_vertex.glsl",
-                 "shaders/line_fragment.glsl"},
+                 "Shaders/line_vertex.glsl",
+                 "Shaders/line_fragment.glsl"},
                 {ShaderIdentifier::SKY_SHADER,
-                 "shaders/sky_vertex.glsl",
-                 "shaders/sky_fragment.glsl"},
+                 "Shaders/sky_vertex.glsl",
+                 "Shaders/sky_fragment.glsl"},
                 {ShaderIdentifier::TEXT_SHADER,
-                 "shaders/text_vertex.glsl",
-                 "shaders/text_fragment.glsl"},
+                 "Shaders/text_vertex.glsl",
+                 "Shaders/text_fragment.glsl"},
                 {ShaderIdentifier::BLOOM_BLUR_SHADER,
-                 "shaders/bloom_quad_vertex.glsl",
-                 "shaders/bloom_blur_fragment.glsl"},
+                 "Shaders/bloom_quad_vertex.glsl",
+                 "Shaders/bloom_blur_fragment.glsl"},
                 {ShaderIdentifier::BLOOM_COMPOSITE_SHADER,
-                 "shaders/bloom_quad_vertex.glsl",
-                 "shaders/bloom_composite_fragment.glsl"} };
+                 "Shaders/bloom_quad_vertex.glsl",
+                 "Shaders/bloom_composite_fragment.glsl"} };
 
 #if defined(__EMSCRIPTEN__)
             std::vector<std::tuple<ShaderIdentifier, std::string, std::string>> shader_gles_programs{
                 {ShaderIdentifier::BLOCK_SHADER,
-                 "shaders/es/block_vertex.es.glsl",
-                 "shaders/es/block_fragment.es.glsl"},
+                 "Shaders/es/block_vertex.es.glsl",
+                 "Shaders/es/block_fragment.es.glsl"},
                 {ShaderIdentifier::LINE_SHADER,
-                 "shaders/es/line_vertex.es.glsl",
-                 "shaders/es/line_fragment.es.glsl"},
+                 "Shaders/es/line_vertex.es.glsl",
+                 "Shaders/es/line_fragment.es.glsl"},
                 {ShaderIdentifier::SKY_SHADER,
-                 "shaders/es/sky_vertex.es.glsl",
-                 "shaders/es/sky_fragment.es.glsl"},
+                 "Shaders/es/sky_vertex.es.glsl",
+                 "Shaders/es/sky_fragment.es.glsl"},
                 {ShaderIdentifier::TEXT_SHADER,
-                 "shaders/es/text_vertex.es.glsl",
-                 "shaders/es/text_fragment.es.glsl"},
+                 "Shaders/es/text_vertex.es.glsl",
+                 "Shaders/es/text_fragment.es.glsl"},
                 {ShaderIdentifier::BLOOM_BLUR_SHADER,
-                 "shaders/es/bloom_quad_vertex.es.glsl",
-                 "shaders/es/bloom_blur_fragment.es.glsl"},
+                 "Shaders/es/bloom_quad_vertex.es.glsl",
+                 "Shaders/es/bloom_blur_fragment.es.glsl"},
                 {ShaderIdentifier::BLOOM_COMPOSITE_SHADER,
-                 "shaders/es/bloom_quad_vertex.es.glsl",
-                 "shaders/es/bloom_composite_fragment.es.glsl"} };
+                 "Shaders/es/bloom_quad_vertex.es.glsl",
+                 "Shaders/es/bloom_composite_fragment.es.glsl"} };
 
             for (const auto& [id, vertex_path, fragment_path] : shader_gles_programs)
 #else
@@ -357,11 +357,11 @@ struct craft::craft_impl
             }
 
             // textures
-            constexpr std::string_view atlas_path = "textures/atlas.png";
-            constexpr std::string_view bitmap_font_path = "textures/bitmap_font.png";
-            constexpr std::string_view window_icon_path = "textures/icon.bmp";
-            constexpr std::string_view signs_path = "textures/signs.png";
-            constexpr std::string_view sky_path = "textures/sky.png";
+            constexpr std::string_view atlas_path = "Textures/atlas.png";
+            constexpr std::string_view bitmap_font_path = "Textures/bitmap_font.png";
+            constexpr std::string_view window_icon_path = "Textures/icon.bmp";
+            constexpr std::string_view signs_path = "Textures/signs.png";
+            constexpr std::string_view sky_path = "Textures/sky.png";
 
             auto&& textures = ctx.ctx_textures;
 
@@ -1478,8 +1478,22 @@ struct craft::craft_impl
 #endif
     }
 
-    void render_FPS() const noexcept
+    void render_FPS(const double elapsed) const noexcept
     {
+        // Calculate instantaneous FPS and frame time from real render frame timing
+        const auto safe_elapsed = elapsed > 0.0 ? elapsed : 1.0;
+        const auto fps = static_cast<int>(1000.0 / safe_elapsed);
+        const auto frame_time = static_cast<float>(safe_elapsed);
+
+        // Update smoothed values periodically for display
+        fps_timer += safe_elapsed;
+        if (constexpr double FPS_UPDATE_INTERVAL = 250.0; fps_timer >= FPS_UPDATE_INTERVAL)
+        {
+            smoothed_fps_counter = fps;
+            fps_timer_smoothed = frame_time;
+            fps_timer = 0.0;
+        }
+
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 10.0f, 10.0f), ImGuiCond_Always,
             ImVec2(1.0f, 0.0f));
 
@@ -1548,22 +1562,10 @@ struct craft::craft_impl
 
     void update(const float delta_time, mazes::randomizer& rng) const noexcept
     {
-        // Calculate instantaneous FPS and frame time
-        const auto FPS = static_cast<int>(1.0 / (delta_time / 1000.0));
-        const auto frame_time = delta_time;
-
-        // Update smoothed values periodically for display
-        fps_timer += delta_time;
-        if (constexpr double FPS_UPDATE_INTERVAL = 250.0; fps_timer >= FPS_UPDATE_INTERVAL)
-        {
-            smoothed_fps_counter = FPS;
-            fps_timer_smoothed = frame_time;
-            fps_timer = 0.0;
-        }
         crafting_states->update(delta_time, std::ref(rng));
     }
 
-    void render() const noexcept
+    void render(const double elapsed) const noexcept
     {
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1577,7 +1579,7 @@ struct craft::craft_impl
 
         crafting_states->draw();
 
-        render_FPS();
+        render_FPS(elapsed);
 
         ImGui::PopFont();
         ImGui::Render();
@@ -1675,7 +1677,7 @@ bool craft::run([[maybe_unused]] mazes::grid_interface* g, mazes::randomizer& rn
             this->crafting_impl->update(FIXED_TIME_STEP, std::ref(rng));
         }
 
-        this->crafting_impl->render();
+        this->crafting_impl->render(elapsed);
 
         time_step = time_step >= 1000.0 ? 0.0 : time_step;
     } // EVENT LOOP
@@ -1819,7 +1821,10 @@ void craft::set_maze_seed(const int seed) noexcept
     this->crafting_impl->active_player._configs.maze().ensure_seed(static_cast<unsigned int>(seed));
 }
 
-
+std::string craft::get_version() const noexcept
+{
+    return mazes::buildinfo::VERSION + " - " + mazes::buildinfo::COMMIT_SHA;
+}
 
 
 

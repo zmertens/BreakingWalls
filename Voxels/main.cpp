@@ -13,7 +13,7 @@
 // Run the SDL app
 static constexpr auto WINDOW_WIDTH = 1200, WINDOW_HEIGHT = 800;
 
-constexpr auto TITLE{"Breaking Walls"};
+constexpr auto TITLE{ "Breaking Walls" };
 
 // Avoid function-local static initialization on wasm main thread.
 // Eager init sidesteps __cxa_guard_acquire/pthread_cond_wait warnings.
@@ -39,7 +39,7 @@ EMSCRIPTEN_BINDINGS(craft_module)
         .smart_ptr<std::shared_ptr<craft>>("std::shared_ptr<craft>")
         // craft(TITLE, width, height) – construction is handled by the global VOXEL_ENGINE;
         // JS should use Module.get() rather than constructing a second instance.
-        .constructor<const std::string &, int, int>()
+        .constructor<const std::string&, int, int>()
 
         // ── Legacy synchronous download path ─────────────────────────────────
         // inst.artifacts() → full Wavefront OBJ string; may block if called before ready.
@@ -68,9 +68,6 @@ EMSCRIPTEN_BINDINGS(craft_module)
         .function("set_maze_algo", &craft::set_maze_algo)
         // inst.set_maze_seed(n) → deterministic RNG seed; 0 = random.
         .function("set_maze_seed", &craft::set_maze_seed)
-
-        // ── Engine meta ───────────────────────────────────────────────────────
-        // inst.get_version() → MazeBuilder library version string (e.g. "8.2.1").
         .function("get_version", &craft::get_version);
 }
 #endif
@@ -85,8 +82,7 @@ int main()
         {
             throw std::runtime_error("Running Voxels app failed.");
         }
-    }
-    catch (std::exception &ex)
+    } catch (std::exception& ex)
     {
         std::cerr << ex.what() << std::endl;
     }
