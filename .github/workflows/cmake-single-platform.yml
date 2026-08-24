@@ -1,16 +1,62 @@
-name: Node.js CI
+# This starter workflow is for a CMake project running on a single platform.
+# There is a different starter workflow if you need cross-platform coverage.
+# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-multi-platform.yml
+name: CMake on a single platform
 
-on: [push]
+on:
+  push:
+    branches: [ "dev" ]
+  pull_request:
+    branches: [ "dev", "main" ]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
 
 jobs:
   build:
+    # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
+    # You can convert this to a matrix build if you need cross-platform coverage.
+    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-      - run: npm ci
-      - run: npm run build --if-present
+    - uses: actions/checkout@v3 
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mesa-common-dev mesa-utils libgl1-mesa-dev libx11-dev libxinerama-dev libxcursor-dev libxi-dev libxrandr-dev
+        sudo apt-get install -y libfreetype6-dev libudev-dev libopenal-dev libflac-dev libogg-dev libvorbis-dev
+        sudo apt-get install -y pkg-config libunwind-dev libunwind8 libclang-dev libclang-cpp-dev clang-format clang-tidy
+
+    # Step to download Emsdk
+    - name: Download Emsdk
+      uses: actions/checkout@v3
+      with:
+        repository: emscripten-core/emsdk
+        path: ${{github.workspace}}/emsdk
+
+    # Step to install and activate the latest Emscripten SDK
+    - name: Install Emscripten
+      run: |
+        cd ${{github.workspace}}/emsdk
+        ./emsdk install latest
+        ./emsdk activate latest
+        source ./emsdk_env.sh
+
+    # Configure CMake with Emscripten toolchain
+    - name: Configure CMake for Emscripten
+      run: cmake --preset build-wasmjs
+
+    # Build with Emscripten
+    - name: Build with Emscripten
+      run: cmake --build ${{github.workspace}}/build-wasmjs --config ${{env.BUILD_TYPE}}
+
+    # Configure CMake for default build (without Emscripten)
+    - name: Configure CMake for Default Build
+      run: cmake --preset build-ninja
+
+    - name: Build Default
+      run: cmake --build ${{github.workspace}}/build-ninja --config ${{env.BUILD_TYPE}}
+
