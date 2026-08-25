@@ -10,7 +10,7 @@
 #include <SDL3/SDL.h>
 
 class player;
-class scene_node;
+struct chunk;
 struct SDL_Window;
 
 class sdl_gl_helper
@@ -66,7 +66,7 @@ public:
     [[nodiscard]] static std::uint32_t gen_player_buffer(float x, float y, float z, float rx, float ry) noexcept;
     [[nodiscard]] static std::uint32_t gen_text_buffer(float x, float y, float n, std::string_view text) noexcept;
     [[nodiscard]] static int _gen_sign_buffer(float *data, float x, float y, float z, int face, std::string_view text) noexcept;
-    static void gen_sign_buffer(scene_node *chunk) noexcept;
+    static void gen_sign_buffer(chunk *chunk) noexcept;
     [[nodiscard]] static std::uint32_t gen_sky_buffer() noexcept;
 
     static void draw_triangles_3d_ao(const attrib *a, std::uint32_t buffer, int count) noexcept;
@@ -74,10 +74,10 @@ public:
     static void draw_triangles_3d(const attrib *a, std::uint32_t buffer, int count) noexcept;
     static void draw_triangles_2d(const attrib *a, std::uint32_t buffer, std::size_t count) noexcept;
     static void draw_lines(const attrib *a, std::uint32_t buffer, int components, int count) noexcept;
-    static void draw_chunk(const attrib *a, const scene_node *chunk) noexcept;
+    static void draw_chunk(const attrib *a, const chunk *chunk) noexcept;
     static void draw_item(const attrib *a, std::uint32_t buffer, int count) noexcept;
     static void draw_text(const attrib *a, std::uint32_t buffer, std::size_t length) noexcept;
-    static void draw_signs(const attrib *a, const scene_node *chunk) noexcept;
+    static void draw_signs(const attrib *a, const chunk *chunk) noexcept;
     static void draw_sign(const attrib *a, std::uint32_t buffer, int length) noexcept;
     static void draw_cube(const attrib *a, std::uint32_t buffer) noexcept;
     static void draw_plant(const attrib *a, std::uint32_t buffer) noexcept;

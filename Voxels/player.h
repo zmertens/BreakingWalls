@@ -17,6 +17,7 @@
 #include "db.h"
 #include "geometries.h"
 #include "item.h"
+#include "artifact_exporter.h"
 #include "voxels_map.h"
 
 class texture;
@@ -61,7 +62,7 @@ enum class PlayerAction
 
 union SDL_Event;
 
-class scene_node;
+
 class world;
 
 namespace mazes
@@ -273,162 +274,162 @@ public:
 
         bool artifacts_ready() const noexcept
         {
-            return opt_artifacts_ready.value_or(false);
+            return opt_artifacts_ready;
         }
 
         bool enable_grid_snap() const noexcept
         {
-            return opt_enable_grid_snap.value_or(false);
+            return opt_enable_grid_snap;
         }
 
         bool fullscreen() const noexcept
         {
-            return opt_fullscreen.value_or(false);
+            return opt_fullscreen;
         }
 
         bool invert_mouse() const noexcept
         {
-            return opt_invert_mouse.value_or(false);
+            return opt_invert_mouse;
         }
 
         bool show_grid_overlay() const noexcept
         {
-            return opt_show_grid_overlay.value_or(false);
+            return opt_show_grid_overlay;
         }
 
         bool show_heightmap() const noexcept
         {
-            return opt_show_heightmap.value_or(false);
+            return opt_show_heightmap;
         }
 
         bool show_crosshair_details() const noexcept
         {
-            return opt_show_crosshair_details.value_or(true);
+            return opt_show_crosshair_details;
         }
 
         bool show_maze_preview_2d_enabled() const noexcept
         {
-            return opt_show_maze_preview_2d_enabled.value_or(true);
+            return opt_show_maze_preview_2d_enabled;
         }
 
         bool show_maze_preview_ghost() const noexcept
         {
-            return opt_show_maze_preview_ghost.value_or(true);
+            return opt_show_maze_preview_ghost;
         }
 
         bool show_stats_window() const noexcept
         {
-            return opt_show_stats_window.value_or(true);
+            return opt_show_stats_window;
         }
 
         bool use_bloom_effect() const noexcept
         {
-            return opt_use_bloom_effect.value_or(true);
+            return opt_use_bloom_effect;
         }
 
         bool vsync() const noexcept
         {
-            return opt_vsync.value_or(true);
+            return opt_vsync;
         }
 
         CADTool active_cad_tool() const noexcept
         {
-            return opt_cad_tool.value_or(CADTool::NONE);
+            return opt_cad_tool;
         }
 
         float exposure_range() const noexcept
         {
-            return opt_exposure_range.value_or(0.45f);
+            return opt_exposure_range;
         }
 
         float fov() const noexcept
         {
-            return opt_fov.value_or(60.0f);
+            return opt_fov;
         }
 
         float grid_opacity() const noexcept
         {
-            return opt_grid_opacity.value_or(1.0f);
+            return opt_grid_opacity;
         }
 
         float gui_font_scale() const noexcept
         {
-            return opt_gui_font_scale.value_or(1.0f);
+            return opt_gui_font_scale;
         }
 
         int day_length() const noexcept
         {
-            return opt_day_length.value_or(600);
+            return opt_day_length;
         }
 
         int grid_spacing() const noexcept
         {
-            return opt_grid_spacing.value_or(8);
+            return opt_grid_spacing;
         }
 
         int ortho_scaling() const noexcept
         {
-            return static_cast<int>(opt_ortho_scaling.value_or(PlayerViewMode::FIXED_INT_FOR_ORTHO_SCALING));
+            return static_cast<int>(opt_ortho_scaling);
         }
 
         mazes::configurator maze() const noexcept
         {
-            return opt_maze.value_or(mazes::configurator{});
+            return opt_maze;
         }
 
         PlayerViewMode player_view_mode() const noexcept
         {
-            return opt_player_view_mode.value_or(PlayerViewMode::ISOMETRIC);
+            return opt_player_view_mode;
         }
 
         std::string tag() const noexcept
         {
-            return opt_tag.value_or("Put maze here");
+            return opt_tag;
         }
 
         std::uint64_t start_time() const noexcept
         {
-            return opt_start_time.value_or(0);
+            return opt_start_time;
         }
 
         std::uint64_t start_ticks() const noexcept
         {
-            return opt_start_ticks.value_or(0);
+            return opt_start_ticks;
         }
 
 private:
-        std::optional<bool> opt_artifacts_ready{false};
-        std::optional<bool> opt_enable_grid_snap{false};
-        std::optional<bool> opt_fullscreen{false};
-        std::optional<bool> opt_show_crosshair_details{true};
-        std::optional<bool> opt_invert_mouse{false};
-        std::optional<bool> opt_show_grid_overlay{false};
-        std::optional<bool> opt_show_heightmap{false};
-        std::optional<bool> opt_show_maze_preview_2d_enabled{true};
-        std::optional<bool> opt_show_maze_preview_ghost{true};
-        std::optional<bool> opt_show_stats_window{true};
-        std::optional<bool> opt_use_bloom_effect{true};
-        std::optional<bool> opt_vsync{false};
+        bool opt_artifacts_ready{false};
+        bool opt_enable_grid_snap{false};
+        bool opt_fullscreen{false};
+        bool opt_show_crosshair_details{true};
+        bool opt_invert_mouse{false};
+        bool opt_show_grid_overlay{false};
+        bool opt_show_heightmap{false};
+        bool opt_show_maze_preview_2d_enabled{true};
+        bool opt_show_maze_preview_ghost{true};
+        bool opt_show_stats_window{true};
+        bool opt_use_bloom_effect{true};
+        bool opt_vsync{false};
 
-        std::optional<CADTool> opt_cad_tool{CADTool::NONE};
+        CADTool opt_cad_tool{CADTool::NONE};
 
-        std::optional<float> opt_exposure_range{0.45f};
-        std::optional<float> opt_fov{60.0f};
-        std::optional<float> opt_grid_opacity{1.0f};
-        std::optional<float> opt_gui_font_scale{1.0f};
+        float opt_exposure_range{0.45f};
+        float opt_fov{60.0f};
+        float opt_grid_opacity{1.0f};
+        float opt_gui_font_scale{1.0f};
 
-        std::optional<int> opt_day_length{600};
-        std::optional<int> opt_grid_spacing{8};
+        int opt_day_length{600};
+        int opt_grid_spacing{8};
 
-        std::optional<mazes::configurator> opt_maze{};
+        mazes::configurator opt_maze{};
 
-        std::optional<PlayerViewMode> opt_ortho_scaling{PlayerViewMode::FIXED_INT_FOR_ORTHO_SCALING};
-        std::optional<PlayerViewMode> opt_player_view_mode{PlayerViewMode::ISOMETRIC};
+        PlayerViewMode opt_ortho_scaling{PlayerViewMode::FIXED_INT_FOR_ORTHO_SCALING};
+        PlayerViewMode opt_player_view_mode{PlayerViewMode::ISOMETRIC};
 
-        std::optional<std::string> opt_tag{"Put maze here"};
+        std::string opt_tag{"Put maze here"};
 
-        std::optional<std::uint64_t> opt_start_time{0};
-        std::optional<std::uint64_t> opt_start_ticks{0};
+        std::uint64_t opt_start_time{0};
+        std::uint64_t opt_start_ticks{0};
     } _configs{};
 
     explicit player();
@@ -539,9 +540,7 @@ private:
     std::uint64_t last_preview_request_time{0};
     bool auto_preview_pending{true};
 
-    // Async artifact export
-    std::future<std::string> artifact_export_fut;
-    std::string artifact_cache_results;
+    artifact_exporter m_exporter;
 };
 
 #endif // PLAYER_H

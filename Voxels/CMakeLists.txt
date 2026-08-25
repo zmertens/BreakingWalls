@@ -25,7 +25,9 @@ set(DEAR_IMGUI_HEADERS
     ${DEAR_IMGUI_DEP_PATH}/backends/imgui_impl_opengl3_loader.h)
 
 set(CRAFT_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/artifact_exporter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bloom_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/chunk_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/craft.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/db.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/font.cpp
@@ -38,7 +40,8 @@ set(CRAFT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/shader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/texture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/voxels_map.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/world.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/world.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/world_renderer.cpp)
 
 add_executable(${BREAKING_WALLS_APP_NAME} ${GLAD_SOURCES} ${NOISE_SOURCES} ${SQLITE3_SOURCES} ${DEAR_IMGUI_SRC_FILES} ${CRAFT_SOURCES})
 
