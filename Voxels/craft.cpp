@@ -1311,9 +1311,11 @@ struct craft::craft_impl
         {
             if (rebuild_world_requested)
             {
-                rebuild_world_requested = false;
-
-                return true;
+                if (auto* editor = get_stack().peek_state<editor_state*>(); editor != nullptr)
+                {
+                    editor->rebuild_world();
+                    rebuild_world_requested = false;
+                }
             }
             return false;
         }
@@ -1821,6 +1823,4 @@ std::string craft::get_version() const noexcept
 {
     return mazes::buildinfo::VERSION + " - " + mazes::buildinfo::COMMIT_SHA;
 }
-
-
 
