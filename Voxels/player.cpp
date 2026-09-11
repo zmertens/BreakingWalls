@@ -201,7 +201,15 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
     {
-        if (event.button.button == SDL_BUTTON_RIGHT)
+        if (event.button.button == SDL_BUTTON_LEFT)
+        {
+            if (const auto binding = player_commands.find(PlayerAction::DESTROY_BLOCK);
+                binding != player_commands.cend() && binding->second.action)
+            {
+                commands.push(binding->second);
+            }
+        }
+        else if (event.button.button == SDL_BUTTON_RIGHT)
         {
             if (const auto binding = player_commands.find(PlayerAction::BUILD_BLOCK);
                 binding != player_commands.cend() && binding->second.action)
@@ -745,7 +753,6 @@ bool player::request_preview_generation() noexcept
 
     try
     {
-
 #if defined(__EMSCRIPTEN__)
         // Web builds share the runtime_app singleton with rendering, so run preview
         // generation synchronously to avoid racing the GL/event loop.

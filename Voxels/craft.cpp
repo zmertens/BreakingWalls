@@ -465,6 +465,7 @@ struct craft::craft_impl
     {
         player& active_player;
         std::optional<world> current_voxel_world;
+        bool resources_loaded{ false };
 
     public:
         explicit editor_state(state_stack& stack, const context& _context)
@@ -505,7 +506,15 @@ struct craft::craft_impl
             // Initialize world only after loading state has finished
             if (!current_voxel_world.has_value())
             {
-                if (auto* s = stk.peek_state<loading_state*>(); s && s->resources_have_loaded())
+                if (!resources_loaded)
+                {
+                    if (auto* loading = stk.peek_state<loading_state*>(); loading && loading->resources_have_loaded())
+                    {
+                        resources_loaded = true;
+                    }
+                }
+
+                if (resources_loaded)
                 {
                     current_voxel_world.emplace(ctx.ctx_window, *ctx.ctx_fonts,
                         &active_player, *ctx.ctx_shaders, *ctx.ctx_textures,
@@ -587,13 +596,15 @@ struct craft::craft_impl
         std::vector<FontIdentifier> m_selectable_fonts;
         mutable std::size_t m_selected_font_index{ 0 };
         std::list<std::string> algo_list;
+        mutable std::string m_selected_algo;
         mutable std::string m_cached_artifacts;
         mutable bool m_export_in_progress{ false };
         mutable bool rebuild_world_requested{ false };
 
     public:
         explicit menu_state(state_stack& stack, const context& context)
-            : state{ stack, context }
+            : state{ stack, context },
+              m_selected_algo{ mazes::to_sv_from_algo(context.active_player->_configs.maze().algo_id()) }
         {
             m_selectable_fonts.reserve(static_cast<std::size_t>(FontIdentifier::TOTAL));
             std::ranges::for_each(
@@ -718,7 +729,7 @@ struct craft::craft_impl
                 const float btn_w = std::clamp(std::round(60.f * fs), 80.f, 170.f);
 
                 // ── Title bar row ──────────────────────────────────────────────
-                ImGui::TextColored(HEADER_COL, "  MazeBuilder Options");
+                ImGui::TextColored(HEADER_COL, "Options");
                 ImGui::SameLine(display.x - (btn_w * 2.f + sty.ItemSpacing.x + sty.WindowPadding.x));
                 ImGui::Separator();
 
@@ -942,8 +953,6 @@ struct craft::craft_impl
                         ImGui::Spacing();
 
                         auto&& maze_config = current_configs.maze();
-                        static std::string selected_algo;
-                        selected_algo = std::string{ mazes::to_sv_from_algo(maze_config.algo_id()) };
                         static int rows = static_cast<int>(maze_config.rows());
                         static int columns = static_cast<int>(maze_config.columns());
                         static int levels = static_cast<int>(maze_config.levels());
@@ -966,14 +975,13 @@ struct craft::craft_impl
                         ImGui::Separator();
                         if (constexpr ImGuiComboFlags combo_flags =
                             ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_WidthFitPreview;
-                            ImGui::BeginCombo("Algorithm", selected_algo.data(), combo_flags))
+                            ImGui::BeginCombo("Algorithm", m_selected_algo.c_str(), combo_flags))
                         {
                             for (const auto& itr : algo_list)
                             {
                                 if (ImGui::Selectable(std::string{ itr }.c_str()))
                                 {
-                                    maze_config.algo_id(mazes::to_algo_from_sv(itr));
-                                    selected_algo = itr;
+                                    m_selected_algo = itr;
                                 }
                             }
                             ImGui::EndCombo();
@@ -997,7 +1005,7 @@ struct craft::craft_impl
                         if (ImGui::Button("Apply Configs", ImVec2(btn_w * 2.f, btn_w * 0.5f)))
                         {
                             current_configs.maze(mazes::configurator{}
-                                .algo_id(mazes::to_algo_from_sv(selected_algo))
+                                .algo_id(mazes::to_algo_from_sv(m_selected_algo))
                                 .rows(static_cast<unsigned int>(rows))
                                 .columns(static_cast<unsigned int>(columns))
                                 .levels(static_cast<unsigned int>(levels))
@@ -1311,9 +1319,11 @@ struct craft::craft_impl
         {
             if (rebuild_world_requested)
             {
-                rebuild_world_requested = false;
-
-                return true;
+                if (auto* editor = get_stack().peek_state<editor_state*>(); editor != nullptr)
+                {
+                    editor->rebuild_world();
+                    rebuild_world_requested = false;
+                }
             }
             return false;
         }
@@ -1821,6 +1831,4 @@ std::string craft::get_version() const noexcept
 {
     return mazes::buildinfo::VERSION + " - " + mazes::buildinfo::COMMIT_SHA;
 }
-
-
 
