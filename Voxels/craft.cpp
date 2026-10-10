@@ -70,6 +70,12 @@ struct craft::craft_impl
     {
         start_SDL();
 
+        if (!simple_direct_medialayer.gl_context)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "No OpenGL context available; skipping ImGui setup (%s)\n", SDL_GetError());
+            return;
+        }
+
         setup_imgui();
 
         crafting_states = std::make_unique<state_stack>(state::context{
@@ -258,7 +264,7 @@ craft::~craft() = default;
 bool craft::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomizer &rng) const noexcept
 {
     auto &&app = *this->crafting_impl;
-    if (!app.simple_direct_medialayer.window)
+    if (!app.simple_direct_medialayer.window || !app.simple_direct_medialayer.gl_context || !app.crafting_states)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL did not initialize (%s)\n", SDL_GetError());
         return false;

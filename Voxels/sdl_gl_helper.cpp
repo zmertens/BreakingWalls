@@ -21,6 +21,11 @@ bool sdl_gl_helper::initialize(std::string_view title, int width, int height) no
             return false;
         }
 
+#if defined(__EMSCRIPTEN__)
+        // The canvas must be exposed to the module as "#canvas" (Module.canvas) before the runtime starts.
+        SDL_SetHint(SDL_HINT_EMSCRIPTEN_CANVAS_SELECTOR, "#canvas");
+#endif
+
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, title.data());
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "maze builder");
         SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "MIT License");
@@ -100,8 +105,9 @@ bool sdl_gl_helper::initialize(std::string_view title, int width, int height) no
         return false;
     }
 
-    std::call_once(m_initialized_flag, init_func);
-    return true;
+    bool ok = true;
+    std::call_once(m_initialized_flag, [&ok, &init_func]() { ok = init_func(); });
+    return ok && this->window && this->gl_context;
 }
 
 void sdl_gl_helper::destroy_and_quit() noexcept
