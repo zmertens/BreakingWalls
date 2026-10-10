@@ -10,31 +10,22 @@
 #include "item.h"
 #include "matrix.h"
 #include "texture.h"
-#include "world.h"
+#include "editor_world.h"
 
 #include <SDL3/SDL.h>
 
 #if defined(__EMSCRIPTEN__)
 #include <GLES3/gl3.h>
 #else
-#include <glad/glad.h>
+#include <glad/gl.h>
 #endif
 
-#include <MazeBuilder/configurator.h>
-#include <MazeBuilder/randomizer.h>
-
-
-constexpr auto DAY_LENGTH = 600;
-constexpr auto DEFAULT_FOV = 65.0f;
-constexpr auto DEFAULT_ORTHO = 0u;
-constexpr auto ORTHO_ENABLED_VAL = 64;
 constexpr auto SCROLL_THRESHOLD = 0.1f;
-constexpr auto ZOOM_FOV = 15.f;
 constexpr auto ORTHO_MIN_SCALE = 8;
 constexpr auto ORTHO_MAX_SCALE = 96;
 
 player::player()
-    : _is_active{true}, _is_on_ground{false}, _is_flying{false}, _is_auto_running{false}, my_name{"zm"}, player_buffer{}, current_item_index{0}, selected_font_index{0}, current_voxel_world{nullptr}, generate_maze_task{geometries::generate_maze_preview}
+    : _is_active{true}, _is_on_ground{false}, _is_flying{false}, _is_auto_running{false}, player_buffer{}, current_item_index{0}, selected_font_index{0}, current_world{nullptr}
 {
     // Movement key bindings
     assign_key(PlayerAction::MOVE_LEFT, SDL_SCANCODE_A);
@@ -48,35 +39,14 @@ player::player()
     assign_key(PlayerAction::FLY, SDL_SCANCODE_TAB);
     assign_key(PlayerAction::PLACE_LIGHT, SDL_SCANCODE_LCTRL);
     assign_key(PlayerAction::TAG_SIGN, SDL_SCANCODE_T);
-    assign_key(PlayerAction::PLACE_MAZE, SDL_SCANCODE_B);
-    assign_key(PlayerAction::PREVIEW_MAZE, SDL_SCANCODE_E);
+    assign_key(PlayerAction::PLACE_GHOST, SDL_SCANCODE_B);
+    assign_key(PlayerAction::PREVIEW_GHOST, SDL_SCANCODE_E);
     assign_key(PlayerAction::COPY_BLOCK, SDL_SCANCODE_C);
     assign_key(PlayerAction::CHANGE_PERSPECTIVE, SDL_SCANCODE_O);
     assign_key(PlayerAction::ZOOM_IN_ISO_VIEW, SDL_SCANCODE_EQUALS);
     assign_key(PlayerAction::ZOOM_OUT_ISO_VIEW, SDL_SCANCODE_MINUS);
 
-    auto &&c = _configs;
-    c.day_length(DAY_LENGTH);
-    c.start_time(DAY_LENGTH / 2 * 1000);
-    c.start_ticks(SDL_GetTicks());
-    c.fov(DEFAULT_FOV);
-    c.ortho_scaling(static_cast<int>(PlayerViewMode::FIXED_INT_FOR_ORTHO_SCALING));
-    c.invert_mouse(false);
-    c.tag("put maze here");
-    c.maze(mazes::configurator{}
-               .algo_id(mazes::algo::DFS)
-               .rows(10)
-               .columns(10)
-               .levels(3)
-               .seed(42u));
-
     initialize_actions();
-
-    // Set category for all player actions
-    for (auto &[_, category] : player_commands | std::views::values)
-    {
-        category = Entity::PICKUP;
-    }
 }
 
 void player::handle_event(const SDL_Event &event, command_queue &commands) noexcept
@@ -86,11 +56,9 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
         _is_active = false;
     }
 
-    auto &&c = _configs;
     if (event.type == SDL_EVENT_MOUSE_WHEEL)
     {
-        // Note: items array has 58 valid items (0-57), though array size is 64
-        constexpr std::int32_t MAX_ITEM_INDEX = 57;
+        constexpr std::int32_t MAX_ITEM_INDEX = item::TOTAL_ITEMS - 1;
 
         if (event.wheel.y > SCROLL_THRESHOLD)
         {
@@ -116,55 +84,56 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
                 current_item_index = 0; // Wrap to first item
             }
         }
-
-        current_voxel_world->current_preview_data = {};
-        auto_preview_pending = true;
     }
     if (event.type == SDL_EVENT_KEY_DOWN)
     {
-        // Handle CAD feature keys first (H, G, O, R)
         switch (event.key.scancode)
         {
         case SDL_SCANCODE_H:
-            toggle_crosshair_details();
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Hover Display: %s",
-                        _configs.show_crosshair_details() ? "ON" : "OFF");
+            this->configs.show_crosshair_details(!this->configs.show_crosshair_details());
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Hover Display [H]: %s",
+                        configs.show_crosshair_details() ? "ON" : "OFF");
             return;
-        case SDL_SCANCODE_G:
-            toggle_grid_overlay();
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Grid Overlay: %s",
-                        _configs.show_grid_overlay() ? "ON" : "OFF");
+        case SDL_SCANCODE_M:
+            this->configs.show_ghosts(!this->configs.show_ghosts());
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Preview Ghost [M]: %s",
+                        configs.show_ghosts() ? "ON" : "OFF");
             return;
         case SDL_SCANCODE_O:
-            cycle_ortho_view();
+        {
+            const char *view_name = "Perspective";
+            switch (configs.view_mode())
             {
-                const char *view_name = "Perspective";
-                switch (c.player_view_mode())
-                {
-                case PlayerViewMode::ISOMETRIC:
-                    view_name = "Isometric View";
-                    break;
-                default:
-                    break;
-                }
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "View Mode: %s", view_name);
+            case player_configs::ViewMode::ISOMETRIC:
+                configs.view_mode(player_configs::ViewMode::ORTHO).ortho_scaling(ORTHO_MIN_SCALE);
+                view_name = "Ortho View";
+                break;
+            case player_configs::ViewMode::ORTHO:
+                configs.view_mode(player_configs::ViewMode::PERSPECTIVE).ortho_scaling(0);
+                break;
+            case player_configs::ViewMode::PERSPECTIVE:
+                configs.view_mode(player_configs::ViewMode::ISOMETRIC).ortho_scaling(ORTHO_MIN_SCALE);
+                view_name = "Isometric View";
+                break;
             }
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "View Mode: %s", view_name);
             return;
+        }
         case SDL_SCANCODE_EQUALS:
         case SDL_SCANCODE_KP_PLUS:
-            if (c.player_view_mode() == PlayerViewMode::ISOMETRIC)
+            if (configs.view_mode() == player_configs::ViewMode::ISOMETRIC)
             {
-                c.ortho_scaling(SDL_max(c.ortho_scaling(), c.ortho_scaling() - 2));
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Isometric Zoom: %d", c.ortho_scaling());
+                configs.ortho_scaling(SDL_max(ORTHO_MIN_SCALE, configs.ortho_scaling() - 2));
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Isometric Zoom: %d", configs.ortho_scaling());
                 return;
             }
             break;
         case SDL_SCANCODE_MINUS:
         case SDL_SCANCODE_KP_MINUS:
-            if (c.player_view_mode() == PlayerViewMode::ISOMETRIC)
+            if (configs.view_mode() == player_configs::ViewMode::ISOMETRIC)
             {
-                c.ortho_scaling(SDL_min(ORTHO_MAX_SCALE, c.ortho_scaling() + 2));
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Isometric Zoom: %d", c.ortho_scaling());
+                configs.ortho_scaling(SDL_min(ORTHO_MAX_SCALE, configs.ortho_scaling() + 2));
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Isometric Zoom: %d", configs.ortho_scaling());
                 return;
             }
             break;
@@ -228,17 +197,17 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION)
     {
-        constexpr float mouse_sensitivity = 0.0025f;
+        constexpr float MOUSE_SENSITIVITY = 0.0025f;
         position *player_pos = &this->pos;
-        player_pos->rx += event.motion.xrel * mouse_sensitivity;
+        player_pos->rx += event.motion.xrel * MOUSE_SENSITIVITY;
 
-        if (this->_configs.invert_mouse())
+        if (this->configs.invert_mouse())
         {
-            player_pos->ry += event.motion.yrel * mouse_sensitivity;
+            player_pos->ry += event.motion.yrel * MOUSE_SENSITIVITY;
         }
         else
         {
-            player_pos->ry -= event.motion.yrel * mouse_sensitivity;
+            player_pos->ry -= event.motion.yrel * MOUSE_SENSITIVITY;
         }
 
         // Keep rotation within bounds
@@ -255,29 +224,12 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
     }
 }
 
-void player::update(float delta_time, mazes::randomizer &rng) noexcept
+void player::update([[maybe_unused]] float delta_time, [[maybe_unused]] mazes::randomizer &rng) noexcept
 {
-    // Auto-generate the first preview as soon as a world is available.
-    if (current_voxel_world && auto_preview_pending)
-    {
-        auto_preview_pending = false;
-        request_preview_generation();
-    }
-    process_preview_generation();
 }
 
 void player::draw() const noexcept
 {
-}
-
-void player::set_font_index(std::int32_t index) noexcept
-{
-    selected_font_index = index;
-}
-
-std::int32_t player::get_font_index() const noexcept
-{
-    return selected_font_index;
 }
 
 void player::handle_realtime_input(command_queue &commands)
@@ -403,30 +355,20 @@ void player::set_item(const std::int32_t value) noexcept
     }
 }
 
-std::string player::get_name() const noexcept
-{
-    return my_name;
-}
-
-void player::set_name(const std::string &name) noexcept
-{
-    my_name = name;
-}
-
 void player::set_world(world *w) noexcept
 {
-    current_voxel_world = w;
+    current_world = w;
 }
 
 std::string player::get_local_time() const noexcept
 {
-    if (!current_voxel_world)
+    if (!current_world)
     {
         return "00:00";
     }
 
     // time_of_day() returns 0.0-1.0 representing position in the day cycle
-    const float time_fraction = current_voxel_world->time_of_day();
+    const float time_fraction = current_world->time_of_day();
     const float total_hours = time_fraction * 24.0f;
 
     // Extract hours and minutes
@@ -457,8 +399,8 @@ void player::initialize_actions()
             const float target_vx = -SDL_sinf(p.pos.rx) * max_move_speed;
             const float target_vz = SDL_cosf(p.pos.rx) * max_move_speed;
 
-            p.vel.vx = lerp(p.vel.vx, target_vx, acceleration);
-            p.vel.vz = lerp(p.vel.vz, target_vz, acceleration);
+            p.vel.vx = matrix::lerp(p.vel.vx, target_vx, acceleration);
+            p.vel.vz = matrix::lerp(p.vel.vz, target_vz, acceleration);
 
             const float dt_seconds = dt / 1000.0f;
             p.pos.x += p.vel.vx * dt_seconds;
@@ -471,8 +413,8 @@ void player::initialize_actions()
             const float target_vx = SDL_sinf(p.pos.rx) * max_move_speed;
             const float target_vz = -SDL_cosf(p.pos.rx) * max_move_speed;
 
-            p.vel.vx = lerp(p.vel.vx, target_vx, acceleration);
-            p.vel.vz = lerp(p.vel.vz, target_vz, acceleration);
+            p.vel.vx = matrix::lerp(p.vel.vx, target_vx, acceleration);
+            p.vel.vz = matrix::lerp(p.vel.vz, target_vz, acceleration);
 
             const float dt_seconds = dt / 1000.0f;
             p.pos.x += p.vel.vx * dt_seconds;
@@ -485,8 +427,8 @@ void player::initialize_actions()
             const float target_vx = -SDL_cosf(p.pos.rx) * max_move_speed;
             const float target_vz = -SDL_sinf(p.pos.rx) * max_move_speed;
 
-            p.vel.vx = lerp(p.vel.vx, target_vx, acceleration);
-            p.vel.vz = lerp(p.vel.vz, target_vz, acceleration);
+            p.vel.vx = matrix::lerp(p.vel.vx, target_vx, acceleration);
+            p.vel.vz = matrix::lerp(p.vel.vz, target_vz, acceleration);
 
             const float dt_seconds = dt / 1000.0f;
             p.pos.x += p.vel.vx * dt_seconds;
@@ -499,8 +441,8 @@ void player::initialize_actions()
             const float target_vx = SDL_cosf(p.pos.rx) * max_move_speed;
             const float target_vz = SDL_sinf(p.pos.rx) * max_move_speed;
 
-            p.vel.vx = lerp(p.vel.vx, target_vx, acceleration);
-            p.vel.vz = lerp(p.vel.vz, target_vz, acceleration);
+            p.vel.vx = matrix::lerp(p.vel.vx, target_vx, acceleration);
+            p.vel.vz = matrix::lerp(p.vel.vz, target_vz, acceleration);
 
             const float dt_seconds = dt / 1000.0f;
             p.pos.x += p.vel.vx * dt_seconds;
@@ -534,7 +476,7 @@ void player::initialize_actions()
     player_commands[PlayerAction::TAG_SIGN].action = derived_action<player>(
         [](player &p, float dt, mazes::randomizer &rng)
         {
-            if (p.current_voxel_world)
+            if (p.current_world)
             {
                 p.on_tag_sign();
             }
@@ -573,7 +515,7 @@ void player::initialize_actions()
     player_commands[PlayerAction::BUILD_BLOCK].action = derived_action<player>(
         [](const player &p, float dt, mazes::randomizer &rng)
         {
-            if (p.current_voxel_world)
+            if (p.current_world)
             {
                 p.on_right_click();
             }
@@ -582,7 +524,7 @@ void player::initialize_actions()
     player_commands[PlayerAction::COPY_BLOCK].action = derived_action<player>(
         [](player &p, float dt, mazes::randomizer &rng)
         {
-            if (p.current_voxel_world)
+            if (p.current_world)
             {
                 p.on_middle_click();
             }
@@ -591,7 +533,7 @@ void player::initialize_actions()
     player_commands[PlayerAction::DESTROY_BLOCK].action = derived_action<player>(
         [](const player &p, float dt, mazes::randomizer &rng)
         {
-            if (p.current_voxel_world)
+            if (p.current_world)
             {
                 p.on_left_click();
             }
@@ -600,45 +542,32 @@ void player::initialize_actions()
     player_commands[PlayerAction::PLACE_LIGHT].action = derived_action<player>(
         [](const player &p, float dt, mazes::randomizer &rng)
         {
-            if (p.current_voxel_world)
+            if (p.current_world)
             {
                 p.on_light();
             }
         });
 
-    player_commands[PlayerAction::PREVIEW_MAZE].action = derived_action<player>(
+    player_commands[PlayerAction::PREVIEW_GHOST].action = derived_action<player>(
         [](player &p, const float dt, mazes::randomizer &rng)
         {
-            constexpr auto PREVIEW_COOLDOWN_MS = 250;
-            const auto current_time = SDL_GetTicks();
-
-            if (const auto time_since_last_preview_request = current_time - p.last_preview_request_time;
-                time_since_last_preview_request > PREVIEW_COOLDOWN_MS)
+            if (auto *editor = dynamic_cast<editor_world *>(p.current_world))
             {
-                if (p.request_preview_generation())
-                {
-                    p.last_preview_request_time = current_time;
-                }
+                editor->generate_ghost(p.configs.maze());
             }
         });
 
-    player_commands[PlayerAction::PLACE_MAZE].action = derived_action<player>(
+    player_commands[PlayerAction::PLACE_GHOST].action = derived_action<player>(
         [](player &p, const float dt, mazes::randomizer &rng)
         {
-            if (!p.current_voxel_world)
+            auto *editor = dynamic_cast<editor_world *>(p.current_world);
+            if (!editor)
             {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No world available for maze building\n");
                 return;
             }
 
-            // Check if we have a valid crosshair target
-            if (!p.current_voxel_world->current_projected_plane.has_valid_target)
-            {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No valid target block. Aim at a block face first.\n");
-                return;
-            }
-
-            p.current_voxel_world->commit_preview_to_world(p.get_item());
+            editor->commit_ghost(p.get_item());
         });
 }
 
@@ -652,7 +581,6 @@ bool player::is_realtime_action(const PlayerAction action) noexcept
     case PlayerAction::MOVE_BACKWARD:
     case PlayerAction::MOVE_DOWN:
     case PlayerAction::MOVE_UP:
-    case PlayerAction::PREVIEW_MAZE: // polled every frame; cooldown in action lambda
         return true;
     case PlayerAction::CHANGE_PERSPECTIVE:
         [[fallthrough]];
@@ -669,10 +597,10 @@ void player::on_light() const noexcept
 {
     const position *s = &this->pos;
     int hx, hy, hz;
-    if (const int hw = current_voxel_world->hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    if (const int hw = current_world->hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
         hy > 0 && hy < item::TOTAL_BLOCKS && item::is_destructable(hw))
     {
-        current_voxel_world->toggle_light(hx, hy, hz);
+        current_world->toggle_light(hx, hy, hz);
     }
 }
 
@@ -680,14 +608,14 @@ void player::on_left_click() const noexcept
 {
     const position *s = &this->pos;
     int hx, hy, hz;
-    if (const auto hw = current_voxel_world->hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    if (const auto hw = current_world->hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
         hy > 0 && hy < 256 && item::is_destructable(hw))
     {
-        current_voxel_world->set_block(hx, hy, hz, 0);
+        current_world->set_block(hx, hy, hz, 0);
 
-        if (item::is_plant(current_voxel_world->get_block(hx, hy + 1, hz)))
+        if (item::is_plant(current_world->get_block(hx, hy + 1, hz)))
         {
-            current_voxel_world->set_block(hx, hy + 1, hz, 0);
+            current_world->set_block(hx, hy + 1, hz, 0);
         }
     }
 }
@@ -696,12 +624,12 @@ void player::on_right_click() const noexcept
 {
     const position *s = &this->pos;
     int hx, hy, hz;
-    if (const int hw = current_voxel_world->hit_test(1, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    if (const int hw = current_world->hit_test(1, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
         hy > 0 && hy < item::TOTAL_BLOCKS && item::is_obstacle(hw))
     {
         if (!world::player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz))
         {
-            current_voxel_world->set_block(hx, hy, hz, get_item());
+            current_world->set_block(hx, hy, hz, get_item());
         }
     }
 }
@@ -710,115 +638,20 @@ void player::on_middle_click() noexcept
 {
     const position *s = &this->pos;
     int hx, hy, hz;
-    const int hw = current_voxel_world->hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    const int hw = current_world->hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (const auto it = std::ranges::find(item::ITEMS, hw); it != item::ITEMS.end())
+    {
         current_item_index = static_cast<std::int32_t>(it - item::ITEMS.begin());
+    }
 }
 
 void player::on_tag_sign() const noexcept
 {
     int hx, hy, hz, face;
-    if (auto result = current_voxel_world->hit_test_face(&hx, &hy, &hz, &face))
+    if (auto result = current_world->hit_test_face(&hx, &hy, &hz, &face))
     {
-        current_voxel_world->set_sign(hx, hy, hz, face, _configs.tag());
+        current_world->set_sign(hx, hy, hz, face, configs.tag());
     }
-}
-
-float player::lerp(float a, float b, float t) noexcept
-{
-    return a + t * (b - a);
-}
-
-bool player::preview_generation_in_progress() const noexcept
-{
-    if (!preview_maze_2d_fut.valid())
-    {
-        return false;
-    }
-
-    return preview_maze_2d_fut.wait_for(std::chrono::milliseconds{0}) != std::future_status::ready;
-}
-
-bool player::request_preview_generation() noexcept
-{
-    if (!current_voxel_world)
-    {
-        return false;
-    }
-
-    if (preview_generation_in_progress())
-    {
-        return false;
-    }
-
-    try
-    {
-#if defined(__EMSCRIPTEN__)
-        // Web builds share the runtime_app singleton with rendering, so run preview
-        // generation synchronously to avoid racing the GL/event loop.
-        pending_maze_preview_2d = generate_maze_task(_configs.maze());
-#else
-        preview_maze_2d_fut = std::async(std::launch::async, [this, maze_config = _configs.maze()]()
-                                         { return generate_maze_task(maze_config); });
-#endif
-        return true;
-    }
-    catch (const std::exception &)
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to schedule maze preview generation\n");
-        return false;
-    }
-}
-
-void player::process_preview_generation() noexcept
-{
-    if (!current_voxel_world)
-    {
-        return;
-    }
-
-#if defined(__EMSCRIPTEN__)
-    if (!pending_maze_preview_2d.has_value())
-    {
-        return;
-    }
-
-    auto preview = std::move(pending_maze_preview_2d);
-    pending_maze_preview_2d.reset();
-#else
-    if (!preview_maze_2d_fut.valid())
-    {
-        return;
-    }
-
-    if (preview_maze_2d_fut.wait_for(std::chrono::milliseconds{0}) != std::future_status::ready)
-    {
-        return;
-    }
-
-    auto preview = preview_maze_2d_fut.get();
-#endif
-    if (!preview.has_value())
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze preview generation failed\n");
-        return;
-    }
-
-    if (!current_voxel_world->update_preview(preview->pixel_data, preview->width, preview->height))
-    {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to upload maze preview texture\n");
-        return;
-    }
-
-    current_voxel_world->finalize_buildings(
-        std::move(preview->pixel_data),
-        preview->width,
-        preview->height,
-        preview->scale,
-        _configs.maze().levels(),
-        get_item());
-
-    last_preview_generation_time = SDL_GetTicks();
 }
 
 /// Gather player's voxel world artifacts from the database
@@ -826,7 +659,7 @@ void player::process_preview_generation() noexcept
 std::string player::artifacts() const noexcept
 {
     // Check if database is enabled
-    if (!db_is_enabled())
+    if (!db::is_enabled())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Database not enabled for artifacts export\n");
         return "";
@@ -838,7 +671,7 @@ std::string player::artifacts() const noexcept
     // Query blocks from nearby chunks - increased radius for better coverage
     // Radius of 4 chunks = 9x9 chunk area (~2304 blocks if fully populated)
     constexpr int chunk_radius = 4;
-    const auto blocks = db_query_blocks_near_chunks(player_chunk_p, player_chunk_q, chunk_radius);
+    const auto blocks = db::query_blocks_near_chunks(player_chunk_p, player_chunk_q, chunk_radius);
 
     if (blocks.empty())
     {
@@ -851,7 +684,7 @@ std::string player::artifacts() const noexcept
 
 bool player::is_download_ready() const noexcept
 {
-    return _configs.artifacts_ready();
+    return configs.artifacts_ready();
 }
 
 // ============================================================================
@@ -869,7 +702,7 @@ void player::start_async_artifact_export() noexcept
 
     SDL_Log("Starting async artifact export...\n");
 
-    if (!db_is_enabled())
+    if (!db::is_enabled())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Database not enabled for artifacts export\n");
         m_exporter.start_async({});
@@ -886,7 +719,7 @@ void player::start_async_artifact_export() noexcept
 
     SDL_Log("Async export: Querying database for blocks...\n");
     constexpr int chunk_radius = 4;
-    auto blocks = db_query_blocks_near_chunks(player_chunk_p, player_chunk_q, chunk_radius);
+    auto blocks = db::query_blocks_near_chunks(player_chunk_p, player_chunk_q, chunk_radius);
 
     if (blocks.empty())
     {
@@ -1010,30 +843,37 @@ const char *player::get_face_name(const int face) noexcept
     }
 }
 
-void player::cycle_ortho_view() noexcept
+const player_configs &player::get_configs() const noexcept
 {
-    const auto current = static_cast<int>(_configs.player_view_mode());
-    const auto next = (current + 1) % static_cast<int>(PlayerViewMode::COUNT);
-    _configs.player_view_mode(static_cast<PlayerViewMode>(next));
-
-    // Update legacy ortho value based on view mode
-    switch (_configs.player_view_mode())
-    {
-    case PlayerViewMode::PERSPECTIVE:
-        _configs.ortho_scaling(0);
-        break;
-    case PlayerViewMode::ISOMETRIC:
-        _configs.ortho_scaling(static_cast<int>(PlayerViewMode::FIXED_INT_FOR_ORTHO_SCALING));
-        break;
-    }
+    return configs;
 }
 
-void player::toggle_grid_overlay() noexcept
+player_configs &player::get_configs() noexcept
 {
-    _configs.show_grid_overlay(!_configs.show_grid_overlay());
+    return configs;
 }
 
-void player::toggle_crosshair_details() noexcept
+void player::set_configs(const player_configs &cfg)
 {
-    _configs.show_crosshair_details(!_configs.show_crosshair_details());
+    configs = cfg;
+}
+
+std::int32_t player::get_font_index() const noexcept
+{
+    return selected_font_index;
+}
+
+void player::set_font_index(const std::int32_t index) noexcept
+{
+    selected_font_index = index;
+}
+
+const std::string &player::get_name() const noexcept
+{
+    return my_name;
+}
+
+void player::set_name(const std::string &name)
+{
+    my_name = name;
 }

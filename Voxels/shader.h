@@ -26,9 +26,10 @@ public:
     std::uint32_t load_program(std::string_view vertex_shader_path, std::string_view fragment_shader_path);
 
     [[nodiscard]] std::uint32_t get() const noexcept;
+    [[nodiscard]] int uniform(std::string_view name) const;
 
 private:
-    std::uint32_t m_program;
+    std::uint32_t m_program{};
 }; // shader class
 
 #endif // SHADER_H

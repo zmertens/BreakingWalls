@@ -6,20 +6,7 @@
 #include <optional>
 #include <vector>
 
-class voxels_map;
-
-namespace mazes
-{
-    class configurator;
-}
-
-struct maze_preview_frame
-{
-    std::vector<std::uint8_t> pixel_data;
-    int width{0};
-    int height{0};
-    int scale{1};
-};
+class craft_map;
 
 class geometries
 {
@@ -55,11 +42,8 @@ public:
 
     static void make_sphere(float *data, float r, int detail) noexcept;
 
-    static std::optional<maze_preview_frame> generate_maze_preview(
-        const mazes::configurator &config);
-
-    static void create_voxel_world(const std::function<void(voxels_map *, int, int, int, int)> &setter,
-                                   voxels_map *m, const int p, const int q, const int chunk_size,
+    static void create_voxel_world(const std::function<void(craft_map *, int, int, int, int)> &setter,
+                                   craft_map *m, const int p, const int q, const int chunk_size,
                                    bool enable_heightmap = true,
                                    float player_x = 0.0f, float player_z = 0.0f,
                                    float flatten_radius = 128.0f) noexcept;

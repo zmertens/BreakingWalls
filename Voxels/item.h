@@ -78,6 +78,7 @@ public:
     static bool is_plant(int w) noexcept;
     static bool is_obstacle(int w) noexcept;
     static bool is_transparent(int w) noexcept;
+    static bool is_glass(int w) noexcept;
     static bool is_destructable(int w) noexcept;
 
     static BlockType get_block_type(int w) noexcept;

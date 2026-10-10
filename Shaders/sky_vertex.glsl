@@ -7,8 +7,10 @@ layout (location = 1) in vec3 normal;
 layout (location = 2) in vec2 uv;
 
 out vec2 fragment_uv;
+out vec3 sky_direction;
 
 void main() {
     gl_Position = matrix * position;
     fragment_uv = uv;
+    sky_direction = position.xyz;
 }

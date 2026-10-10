@@ -14,26 +14,15 @@
 
 #include <MazeBuilder/configurator.h>
 
+#include "artifact_exporter.h"
 #include "db.h"
 #include "geometries.h"
 #include "item.h"
-#include "artifact_exporter.h"
-#include "voxels_map.h"
+#include "player configs.h"
+#include "craft_map.h"
+#include "world.h"
 
 class texture;
-
-enum class Entity : unsigned int
-{
-    NONE = 0,
-    SCENE = 1 << 0,
-    PLAYER = 1 << 1,
-    ENEMY = 1 << 2,
-    PROJECTILE = 1 << 3,
-    PICKUP = 1 << 4,
-    CHUNK = 1 << 5,
-    SPATIAL = 1 << 6,
-    ALL = 1 << 7
-};
 
 enum class PlayerAction
 {
@@ -51,8 +40,8 @@ enum class PlayerAction
     COPY_BLOCK,
     DESTROY_BLOCK,
     PLACE_LIGHT,
-    PLACE_MAZE,
-    PREVIEW_MAZE,
+    PLACE_GHOST,
+    PREVIEW_GHOST,
     CHANGE_PERSPECTIVE,
     ZOOM_IN_ISO_VIEW,
     ZOOM_OUT_ISO_VIEW,
@@ -61,7 +50,6 @@ enum class PlayerAction
 };
 
 union SDL_Event;
-
 
 class world;
 
@@ -75,7 +63,6 @@ class player;
 struct command
 {
     std::function<void(player &, float, mazes::randomizer &rng)> action;
-    Entity category;
 };
 
 using command_queue = std::queue<command>;
@@ -85,7 +72,6 @@ std::function<void(player &, float, mazes::randomizer &)> derived_action(Functio
 {
     return [=](player &p, float dt, mazes::randomizer &rng)
     {
-        // Ensure that the cast is safe - check if player is base of GameObject
         if constexpr (std::is_base_of_v<player, GameObject>)
         {
             fn(static_cast<GameObject &>(p), dt, std::ref(rng));
@@ -93,7 +79,8 @@ std::function<void(player &, float, mazes::randomizer &)> derived_action(Functio
     };
 }
 
-class player
+// Handles player input and state
+class player final
 {
 public:
     struct position
@@ -105,332 +92,6 @@ public:
     {
         float vx, vy, vz;
     } vel{};
-
-    enum class PlayerViewMode : int
-    {
-        PERSPECTIVE = 0,
-        ISOMETRIC = 1,
-        COUNT = 2,
-        FIXED_INT_FOR_ORTHO_SCALING = 32
-    };
-
-    enum class CADTool : int
-    {
-        NONE = 0,
-        SELECT_BOX = 2
-    };
-
-    struct configs
-    {
-        configs &artifacts_ready(bool ready)
-        {
-            opt_artifacts_ready = ready;
-            return *this;
-        }
-
-        configs &enable_grid_snap(bool enabled)
-        {
-            opt_enable_grid_snap = enabled;
-            return *this;
-        }
-
-        configs &fullscreen(bool enabled)
-        {
-            opt_fullscreen = enabled;
-            return *this;
-        }
-
-        configs &invert_mouse(bool enabled)
-        {
-            opt_invert_mouse = enabled;
-            return *this;
-        }
-
-        configs &show_grid_overlay(bool enabled)
-        {
-            opt_show_grid_overlay = enabled;
-            return *this;
-        }
-
-        configs &show_heightmap(bool enabled)
-        {
-            opt_show_heightmap = enabled;
-            return *this;
-        }
-
-        configs &show_crosshair_details(bool enabled)
-        {
-            opt_show_crosshair_details = enabled;
-            return *this;
-        }
-
-        configs &show_maze_preview_2d_enabled(bool enabled)
-        {
-            opt_show_maze_preview_2d_enabled = enabled;
-            return *this;
-        }
-
-        configs &show_maze_preview_ghost(bool enabled)
-        {
-            opt_show_maze_preview_ghost = enabled;
-            return *this;
-        }
-
-        configs &show_stats_window(bool enabled)
-        {
-            opt_show_stats_window = enabled;
-            return *this;
-        }
-
-        configs &use_bloom_effect(bool enabled)
-        {
-            opt_use_bloom_effect = enabled;
-            return *this;
-        }
-
-        configs &vsync(bool enabled)
-        {
-            opt_vsync = enabled;
-            return *this;
-        }
-
-        configs &active_cad_tool(CADTool tool)
-        {
-            opt_cad_tool = tool;
-            return *this;
-        }
-
-        configs &exposure_range(float exposure)
-        {
-            opt_exposure_range = exposure;
-            return *this;
-        }
-
-        configs &fov(float value)
-        {
-            opt_fov = value;
-            return *this;
-        }
-
-        configs &gui_font_scale(float scale)
-        {
-            opt_gui_font_scale = scale;
-            return *this;
-        }
-
-        configs &day_length(int length)
-        {
-            opt_day_length = length;
-            return *this;
-        }
-
-        configs &grid_spacing(int spacing)
-        {
-            opt_grid_spacing = spacing;
-            return *this;
-        }
-
-        configs &grid_opacity(float opacity)
-        {
-            opt_grid_opacity = opacity;
-            return *this;
-        }
-
-        configs &ortho_scaling(int scaling)
-        {
-            opt_ortho_scaling = static_cast<PlayerViewMode>(scaling);
-            return *this;
-        }
-
-        configs &maze(const mazes::configurator &maze_config)
-        {
-            opt_maze = maze_config;
-            return *this;
-        }
-
-        configs &player_view_mode(PlayerViewMode view_mode)
-        {
-            opt_player_view_mode = view_mode;
-            return *this;
-        }
-
-        configs &tag(const std::string &value)
-        {
-            opt_tag = value;
-            return *this;
-        }
-
-        configs &start_time(std::uint64_t time)
-        {
-            opt_start_time = time;
-            return *this;
-        }
-
-        configs &start_ticks(std::uint64_t ticks)
-        {
-            opt_start_ticks = ticks;
-            return *this;
-        }
-
-        bool artifacts_ready() const noexcept
-        {
-            return opt_artifacts_ready;
-        }
-
-        bool enable_grid_snap() const noexcept
-        {
-            return opt_enable_grid_snap;
-        }
-
-        bool fullscreen() const noexcept
-        {
-            return opt_fullscreen;
-        }
-
-        bool invert_mouse() const noexcept
-        {
-            return opt_invert_mouse;
-        }
-
-        bool show_grid_overlay() const noexcept
-        {
-            return opt_show_grid_overlay;
-        }
-
-        bool show_heightmap() const noexcept
-        {
-            return opt_show_heightmap;
-        }
-
-        bool show_crosshair_details() const noexcept
-        {
-            return opt_show_crosshair_details;
-        }
-
-        bool show_maze_preview_2d_enabled() const noexcept
-        {
-            return opt_show_maze_preview_2d_enabled;
-        }
-
-        bool show_maze_preview_ghost() const noexcept
-        {
-            return opt_show_maze_preview_ghost;
-        }
-
-        bool show_stats_window() const noexcept
-        {
-            return opt_show_stats_window;
-        }
-
-        bool use_bloom_effect() const noexcept
-        {
-            return opt_use_bloom_effect;
-        }
-
-        bool vsync() const noexcept
-        {
-            return opt_vsync;
-        }
-
-        CADTool active_cad_tool() const noexcept
-        {
-            return opt_cad_tool;
-        }
-
-        float exposure_range() const noexcept
-        {
-            return opt_exposure_range;
-        }
-
-        float fov() const noexcept
-        {
-            return opt_fov;
-        }
-
-        float grid_opacity() const noexcept
-        {
-            return opt_grid_opacity;
-        }
-
-        float gui_font_scale() const noexcept
-        {
-            return opt_gui_font_scale;
-        }
-
-        int day_length() const noexcept
-        {
-            return opt_day_length;
-        }
-
-        int grid_spacing() const noexcept
-        {
-            return opt_grid_spacing;
-        }
-
-        int ortho_scaling() const noexcept
-        {
-            return static_cast<int>(opt_ortho_scaling);
-        }
-
-        mazes::configurator maze() const noexcept
-        {
-            return opt_maze;
-        }
-
-        PlayerViewMode player_view_mode() const noexcept
-        {
-            return opt_player_view_mode;
-        }
-
-        std::string tag() const noexcept
-        {
-            return opt_tag;
-        }
-
-        std::uint64_t start_time() const noexcept
-        {
-            return opt_start_time;
-        }
-
-        std::uint64_t start_ticks() const noexcept
-        {
-            return opt_start_ticks;
-        }
-
-private:
-        bool opt_artifacts_ready{false};
-        bool opt_enable_grid_snap{false};
-        bool opt_fullscreen{false};
-        bool opt_show_crosshair_details{true};
-        bool opt_invert_mouse{false};
-        bool opt_show_grid_overlay{false};
-        bool opt_show_heightmap{false};
-        bool opt_show_maze_preview_2d_enabled{true};
-        bool opt_show_maze_preview_ghost{true};
-        bool opt_show_stats_window{true};
-        bool opt_use_bloom_effect{true};
-        bool opt_vsync{false};
-
-        CADTool opt_cad_tool{CADTool::NONE};
-
-        float opt_exposure_range{0.45f};
-        float opt_fov{60.0f};
-        float opt_grid_opacity{1.0f};
-        float opt_gui_font_scale{1.0f};
-
-        int opt_day_length{600};
-        int opt_grid_spacing{8};
-
-        mazes::configurator opt_maze{};
-
-        PlayerViewMode opt_ortho_scaling{PlayerViewMode::FIXED_INT_FOR_ORTHO_SCALING};
-        PlayerViewMode opt_player_view_mode{PlayerViewMode::ISOMETRIC};
-
-        std::string opt_tag{"Put maze here"};
-
-        std::uint64_t opt_start_time{0};
-        std::uint64_t opt_start_ticks{0};
-    } _configs{};
 
     explicit player();
 
@@ -469,10 +130,16 @@ private:
     [[nodiscard]] std::int32_t get_item() const noexcept;
     void set_item(std::int32_t value) noexcept;
 
-    [[nodiscard]] std::string get_name() const noexcept;
-    void set_name(const std::string &name) noexcept;
-
     void set_world(world *w) noexcept;
+
+    [[nodiscard]] const player_configs &get_configs() const noexcept;
+    [[nodiscard]] player_configs &get_configs() noexcept;
+    void set_configs(const player_configs &cfg);
+
+    [[nodiscard]] std::int32_t get_font_index() const noexcept;
+    void set_font_index(std::int32_t index) noexcept;
+    [[nodiscard]] const std::string &get_name() const noexcept;
+    void set_name(const std::string &name);
 
     [[nodiscard]] std::string get_local_time() const noexcept;
 
@@ -488,30 +155,16 @@ private:
     // CAD Helper Functions
     [[nodiscard]] static const char *get_block_name(item::BlockType block_type) noexcept;
     [[nodiscard]] static const char *get_face_name(int face) noexcept;
-    void cycle_ortho_view() noexcept;
-    void toggle_grid_overlay() noexcept;
-    void toggle_crosshair_details() noexcept;
-    void activate_measurement_tool() noexcept;
-    void record_measurement_point(int x, int y, int z) noexcept;
-    void clear_measurement() noexcept;
-
-    void set_font_index(std::int32_t index) noexcept;
-    [[nodiscard]] std::int32_t get_font_index() const noexcept;
 
 private:
     void initialize_actions();
     static bool is_realtime_action(PlayerAction action) noexcept;
-    bool preview_generation_in_progress() const noexcept;
-    bool request_preview_generation() noexcept;
-    void process_preview_generation() noexcept;
 
     void on_light() const noexcept;
     void on_left_click() const noexcept;
     void on_right_click() const noexcept;
     void on_middle_click() noexcept;
     void on_tag_sign() const noexcept;
-
-    static float lerp(float a, float b, float t) noexcept;
 
     std::unordered_map<std::uint32_t, PlayerAction> keyboard_bindings;
 
@@ -522,23 +175,15 @@ private:
     bool _is_flying;
     bool _is_auto_running;
 
-    std::string my_name;
+    player_configs configs;
+
     std::uint32_t player_buffer;
 
     std::int32_t current_item_index;
     std::int32_t selected_font_index;
+    std::string my_name{"zm"};
 
-    world *current_voxel_world;
-
-    std::function<std::optional<maze_preview_frame>(const mazes::configurator &)> generate_maze_task;
-    std::future<std::optional<maze_preview_frame>> preview_maze_2d_fut;
-#if defined(__EMSCRIPTEN__)
-    std::optional<maze_preview_frame> pending_maze_preview_2d;
-#endif
-
-    std::uint64_t last_preview_generation_time{0};
-    std::uint64_t last_preview_request_time{0};
-    bool auto_preview_pending{true};
+    world *current_world{nullptr};
 
     artifact_exporter m_exporter;
 };

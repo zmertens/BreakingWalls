@@ -4,6 +4,9 @@
 #include <array>
 #include <cstdint>
 
+#include "resource_identifiers.h"
+#include "shader.h"
+
 // Gaussian bloom compositor inspired by OGRE3D's Compositor system.
 //
 // Rendering flow (three logical passes):
@@ -12,14 +15,21 @@
 //      set_single_mode()    — enable only attachment 0 (sky, UI, wireframe — no bloom).
 //   3. execute()            — blur bright pass × BLUR_PASSES*2 (ping-pong), composite to screen.
 //
-// Initialise once in world::init() after shaders are loaded.
-// Call resize() if the window is ever resized.
+// Loaded once by bloom_pass_manager after shaders are ready. Worlds borrow the
+// pass and resize it to their viewport; unchanged sizes retain the cached FBOs.
 class bloom_pass
 {
 public:
     // Number of horizontal+vertical blur iterations.  Higher = wider, softer bloom.
     static constexpr int BLUR_PASSES = 5;
     static constexpr float BLOOM_STRENGTH = 0.6f;
+
+    bloom_pass() = default;
+    ~bloom_pass() noexcept;
+    bloom_pass(const bloom_pass &) = delete;
+    bloom_pass &operator=(const bloom_pass &) = delete;
+    bloom_pass(bloom_pass &&) = delete;
+    bloom_pass &operator=(bloom_pass &&) = delete;
 
     [[nodiscard]] bool init(int width, int height,
                             std::uint32_t blur_program,
@@ -36,12 +46,23 @@ public:
 
     // Run blur passes then composite scene + bloom to the default framebuffer.
     // Pass strength=0 to skip blur and composite the scene without any bloom.
-    void execute(float strength = BLOOM_STRENGTH) const noexcept;
+    // When progress is in (0, 1) the composite is rendered to an offscreen target and then
+    // drawn to the screen through the chosen transition effect, fading out as progress -> 1.
+    void execute(float strength = BLOOM_STRENGTH, int blur_iterations = BLUR_PASSES,
+                 TransitionEffect effect = TransitionEffect::BLUR, float progress = 0.0f,
+                 float seconds = 0.0f) const noexcept;
+    void set_transition_programs(const std::array<std::uint32_t, static_cast<std::size_t>(TransitionEffect::COUNT)> &programs) noexcept;
 
     // Recreate FBOs at a new resolution (call on window resize).
-    void resize(int new_width, int new_height) noexcept;
+    [[nodiscard]] bool resize(int new_width, int new_height) noexcept;
 
     void destroy() noexcept;
+    void init_depth_effects();
+    void draw_depth_field(float seconds, float level, float lights) const noexcept;
+    // Draws the shared full-screen quad with whatever program is currently bound.
+    void draw_quad() const noexcept;
+    void bind_glass() const noexcept;
+    void resolve_glass() const noexcept;
 
 private:
     struct components final
@@ -55,6 +76,7 @@ private:
 
         components();
         ~components() noexcept;
+        void destroy() noexcept;
         components &operator=(const components &) = delete;
         components &operator=(components &&) noexcept = delete;
         components(const components &) = delete;
@@ -62,10 +84,10 @@ private:
 
         [[nodiscard]] bool init(int w, int h,
                                 int color_attachments = 1,
-                                bool depth = true) noexcept;
+                                bool depth = true, bool normalized = false) noexcept;
     };
 
-    void create_fbos(int w, int h) noexcept;
+    [[nodiscard]] bool create_fbos(int w, int h) noexcept;
     void destroy_fbos() noexcept;
     void create_screen_quad() noexcept;
 
@@ -73,6 +95,16 @@ private:
     //   color_tex[0] = full scene colour
     //   color_tex[1] = pixels above brightness threshold (bloom candidates)
     components m_scene_pass{};
+    components m_glass_pass{};
+    // Allocated on first use so games that never transition pay nothing.
+    mutable components m_transition_pass{};
+    mutable bool m_transition_ready{};
+    std::array<std::uint32_t, static_cast<std::size_t>(TransitionEffect::COUNT)> m_transition_programs{};
+    shader m_depth_field;
+    shader m_glass_resolve;
+    bool m_depth_enabled{};
+    int m_field_time{-1}, m_field_level{-1}, m_field_lights{-1};
+    int m_resolve_accumulation{-1}, m_resolve_optical_depth{-1};
 
     // Passes 2-3 — ping-pong Gaussian blur on the bright texture.
     std::array<components, 2> m_blur_pass{};

@@ -191,6 +191,7 @@ bool item::is_transparent(int w) noexcept
     {
         return true;
     }
+
     w = SDL_abs(w);
     if (is_plant(w))
     {
@@ -205,6 +206,11 @@ bool item::is_transparent(int w) noexcept
     default:
         return false;
     }
+}
+
+bool item::is_glass(const int w) noexcept
+{
+    return SDL_abs(w) == static_cast<int>(BlockType::GLASS);
 }
 
 bool item::is_destructable(const int w) noexcept

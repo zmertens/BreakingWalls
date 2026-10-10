@@ -1,13 +1,12 @@
 #include "db.h"
 
-#include "voxels_map.h"
+#include "craft_map.h"
 
 #include <sqlite/sqlite3.h>
 
 #include <SDL3/SDL.h>
 
 #include <chrono>
-
 #include <condition_variable>
 #include <mutex>
 #include <string>
@@ -24,6 +23,7 @@ namespace
         LIGHT,
         KEY,
         COMMIT,
+        FLUSH,
         EXIT
     };
 
@@ -178,6 +178,13 @@ namespace
         ring_put(r, &entry);
     }
 
+    void ring_put_flush(ring *r)
+    {
+        ring_entry entry;
+        entry.type = ring_entry_type::FLUSH;
+        ring_put(r, &entry);
+    }
+
     void ring_put_exit(ring *r)
     {
         ring_entry entry;
@@ -185,71 +192,71 @@ namespace
         ring_put(r, &entry);
     }
 
-    void sign_list_grow(sign_list *list)
-    {
-        sign_list new_list;
-        new_list.capacity = list->capacity * 2;
-        new_list.size = list->size;
-        new_list.data = static_cast<sign *>(SDL_calloc(new_list.capacity, sizeof(sign)));
-        SDL_memcpy(new_list.data, list->data, list->size * sizeof(sign));
-        SDL_free(list->data);
-        list->capacity = new_list.capacity;
-        list->size = new_list.size;
-        list->data = new_list.data;
-    }
-
-    void _sign_list_add(sign_list *list, const sign *entry)
-    {
-        if (list->size == list->capacity)
-        {
-            sign_list_grow(list);
-        }
-        sign *e = list->data + list->size++;
-        SDL_memcpy(e, entry, sizeof(sign));
-    }
-
-    int sign_list_remove_impl(sign_list *list, const int x, const int y, const int z, const int face)
-    {
-        int result = 0;
-        for (std::size_t i = 0; i < list->size; i++)
-        {
-            if (sign *e = list->data + i; e->x == x && e->y == y && e->z == z && e->face == face)
-            {
-                const sign *other = list->data + (--list->size);
-                SDL_memcpy(e, other, sizeof(sign));
-                i--;
-                result++;
-            }
-        }
-        return result;
-    }
-
-    int sign_list_remove_all_impl(sign_list *list, const int x, const int y, const int z)
-    {
-        int result = 0;
-        for (std::size_t i = 0; i < list->size; i++)
-        {
-            if (sign *e = list->data + i; e->x == x && e->y == y && e->z == z)
-            {
-                const sign *other = list->data + --list->size;
-                SDL_memcpy(e, other, sizeof(sign));
-                i--;
-                result++;
-            }
-        }
-        return result;
-    }
-
 } // namespace
 
-void sign_list_alloc(sign_list *list, const std::size_t capacity)
+void db::sign_list_grow(sign_list *list)
+{
+    sign_list new_list;
+    new_list.capacity = list->capacity * 2;
+    new_list.size = list->size;
+    new_list.data = static_cast<sign *>(SDL_calloc(new_list.capacity, sizeof(sign)));
+    SDL_memcpy(new_list.data, list->data, list->size * sizeof(sign));
+    SDL_free(list->data);
+    list->capacity = new_list.capacity;
+    list->size = new_list.size;
+    list->data = new_list.data;
+}
+
+void db::sign_list_add_impl(sign_list *list, const sign *entry)
+{
+    if (list->size == list->capacity)
+    {
+        sign_list_grow(list);
+    }
+    sign *e = list->data + list->size++;
+    SDL_memcpy(e, entry, sizeof(sign));
+}
+
+int db::sign_list_remove_impl(sign_list *list, const int x, const int y, const int z, const int face)
+{
+    int result = 0;
+    for (std::size_t i = 0; i < list->size; i++)
+    {
+        if (sign *e = list->data + i; e->x == x && e->y == y && e->z == z && e->face == face)
+        {
+            const sign *other = list->data + (--list->size);
+            SDL_memcpy(e, other, sizeof(sign));
+            i--;
+            result++;
+        }
+    }
+    return result;
+}
+
+int db::sign_list_remove_all_impl(sign_list *list, const int x, const int y, const int z)
+{
+    int result = 0;
+    for (std::size_t i = 0; i < list->size; i++)
+    {
+        if (sign *e = list->data + i; e->x == x && e->y == y && e->z == z)
+        {
+            const sign *other = list->data + --list->size;
+            SDL_memcpy(e, other, sizeof(sign));
+            i--;
+            result++;
+        }
+    }
+    return result;
+}
+
+void db::sign_list_alloc(sign_list *list, const std::size_t capacity)
 {
     list->capacity = capacity;
     list->size = 0;
     list->data = static_cast<sign *>(SDL_calloc(capacity, sizeof(sign)));
 }
 
-void sign_list_free(sign_list *list)
+void db::sign_list_free(sign_list *list)
 {
     SDL_free(list->data);
     list->data = nullptr;
@@ -257,7 +264,7 @@ void sign_list_free(sign_list *list)
     list->capacity = 0;
 }
 
-void sign_list_add(sign_list *list, const int x, const int y, const int z, const int face, const std::string_view text)
+void db::sign_list_add(sign_list *list, const int x, const int y, const int z, const int face, const std::string_view text)
 {
     sign_list_remove_impl(list, x, y, z, face);
     sign entry;
@@ -267,22 +274,22 @@ void sign_list_add(sign_list *list, const int x, const int y, const int z, const
     entry.face = face;
     SDL_strlcpy(entry.text, text.data(), MAX_SIGN_LENGTH);
     entry.text[MAX_SIGN_LENGTH - 1] = '\0';
-    _sign_list_add(list, &entry);
+    sign_list_add_impl(list, &entry);
 }
 
-int sign_list_remove(sign_list *list, const int x, const int y, const int z, const int face)
+int db::sign_list_remove(sign_list *list, const int x, const int y, const int z, const int face)
 {
     return sign_list_remove_impl(list, x, y, z, face);
 }
 
-int sign_list_remove_all(sign_list *list, const int x, const int y, const int z)
+int db::sign_list_remove_all(sign_list *list, const int x, const int y, const int z)
 {
     return sign_list_remove_all_impl(list, x, y, z);
 }
 
 static bool db_enabled = false;
 
-static sqlite3 *db;
+static sqlite3 *database_handle;
 static sqlite3_stmt *insert_block_stmt;
 static sqlite3_stmt *insert_light_stmt;
 static sqlite3_stmt *insert_sign_stmt;
@@ -306,24 +313,26 @@ static ring s_ring;
 static std::thread db_thread;
 static std::mutex mtx;
 static std::condition_variable cnd;
+static std::condition_variable flush_cnd;
+static bool flush_done{false};
 static std::mutex load_mtx;
 
-void db_enable()
+void db::enable()
 {
     db_enabled = true;
 }
 
-void db_disable()
+void db::disable()
 {
     db_enabled = false;
 }
 
-bool db_is_enabled()
+bool db::is_enabled()
 {
     return db_enabled;
 }
 
-int db_init(const char *path)
+int db::init(const char *path)
 {
     if (!db_enabled)
     {
@@ -426,64 +435,64 @@ int db_init(const char *path)
         if (rc != SQLITE_OK)
         {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "SQLite error: %s\n", sqlite3_errmsg(db));
+                         "SQLite error: %s\n", sqlite3_errmsg(database_handle));
         }
     };
 
-    auto rc = sqlite3_open(path, &db);
+    auto rc = sqlite3_open(path, &database_handle);
     check_rc(rc);
-    rc = sqlite3_exec(db, create_query, nullptr, nullptr, nullptr);
-    check_rc(rc);
-    rc = sqlite3_prepare_v2(
-        db, insert_block_query, -1, &insert_block_stmt, nullptr);
+    rc = sqlite3_exec(database_handle, create_query, nullptr, nullptr, nullptr);
     check_rc(rc);
     rc = sqlite3_prepare_v2(
-        db, insert_light_query, -1, &insert_light_stmt, nullptr);
+        database_handle, insert_block_query, -1, &insert_block_stmt, nullptr);
     check_rc(rc);
     rc = sqlite3_prepare_v2(
-        db, insert_sign_query, -1, &insert_sign_stmt, nullptr);
+        database_handle, insert_light_query, -1, &insert_light_stmt, nullptr);
     check_rc(rc);
     rc = sqlite3_prepare_v2(
-        db, delete_sign_query, -1, &delete_sign_stmt, nullptr);
+        database_handle, insert_sign_query, -1, &insert_sign_stmt, nullptr);
     check_rc(rc);
     rc = sqlite3_prepare_v2(
-        db, delete_signs_query, -1, &delete_signs_stmt, nullptr);
+        database_handle, delete_sign_query, -1, &delete_sign_stmt, nullptr);
     check_rc(rc);
-    rc = sqlite3_prepare_v2(db, load_blocks_query, -1, &load_blocks_stmt, nullptr);
+    rc = sqlite3_prepare_v2(
+        database_handle, delete_signs_query, -1, &delete_signs_stmt, nullptr);
     check_rc(rc);
-    rc = sqlite3_prepare_v2(db, load_lights_query, -1, &load_lights_stmt, nullptr);
+    rc = sqlite3_prepare_v2(database_handle, load_blocks_query, -1, &load_blocks_stmt, nullptr);
     check_rc(rc);
-    rc = sqlite3_prepare_v2(db, load_signs_query, -1, &load_signs_stmt, nullptr);
+    rc = sqlite3_prepare_v2(database_handle, load_lights_query, -1, &load_lights_stmt, nullptr);
     check_rc(rc);
-    rc = sqlite3_prepare_v2(db, get_key_query, -1, &get_key_stmt, nullptr);
+    rc = sqlite3_prepare_v2(database_handle, load_signs_query, -1, &load_signs_stmt, nullptr);
     check_rc(rc);
-    rc = sqlite3_prepare_v2(db, set_key_query, -1, &set_key_stmt, nullptr);
+    rc = sqlite3_prepare_v2(database_handle, get_key_query, -1, &get_key_stmt, nullptr);
+    check_rc(rc);
+    rc = sqlite3_prepare_v2(database_handle, set_key_query, -1, &set_key_stmt, nullptr);
     check_rc(rc);
 
     // Prepare preview blocks statements
-    rc = sqlite3_prepare_v2(db, insert_preview_block_query, -1, &insert_preview_block_stmt, nullptr);
+    rc = sqlite3_prepare_v2(database_handle, insert_preview_block_query, -1, &insert_preview_block_stmt, nullptr);
     check_rc(rc);
-    rc = sqlite3_prepare_v2(db, load_preview_blocks_query, -1, &load_preview_blocks_stmt, nullptr);
+    rc = sqlite3_prepare_v2(database_handle, load_preview_blocks_query, -1, &load_preview_blocks_stmt, nullptr);
     check_rc(rc);
-    rc = sqlite3_prepare_v2(db, delete_all_preview_blocks_query, -1, &delete_all_preview_blocks_stmt, nullptr);
+    rc = sqlite3_prepare_v2(database_handle, delete_all_preview_blocks_query, -1, &delete_all_preview_blocks_stmt, nullptr);
     check_rc(rc);
-    rc = sqlite3_prepare_v2(db, get_latest_preview_id_query, -1, &get_latest_preview_id_stmt, nullptr);
+    rc = sqlite3_prepare_v2(database_handle, get_latest_preview_id_query, -1, &get_latest_preview_id_stmt, nullptr);
     check_rc(rc);
-    sqlite3_exec(db, "begin;", nullptr, nullptr, nullptr);
+    sqlite3_exec(database_handle, "begin;", nullptr, nullptr, nullptr);
     static constexpr auto p = "";
-    db_worker_start(p);
+    worker_start(p);
 
     return 0;
 }
 
-void db_close()
+void db::close()
 {
     if (!db_enabled)
     {
         return;
     }
-    db_worker_stop();
-    sqlite3_exec(db, "commit;", nullptr, nullptr, nullptr);
+    worker_stop();
+    sqlite3_exec(database_handle, "commit;", nullptr, nullptr, nullptr);
     sqlite3_finalize(insert_block_stmt);
     sqlite3_finalize(insert_light_stmt);
     sqlite3_finalize(insert_sign_stmt);
@@ -501,10 +510,10 @@ void db_close()
     sqlite3_finalize(delete_all_preview_blocks_stmt);
     sqlite3_finalize(get_latest_preview_id_stmt);
 
-    sqlite3_close(db);
+    sqlite3_close(database_handle);
 }
 
-void db_commit()
+void db::commit()
 {
     if (!db_enabled)
     {
@@ -517,19 +526,30 @@ void db_commit()
     mtx.unlock();
 }
 
-void _db_commit()
+void db::commit_impl()
 {
-    sqlite3_exec(db, "commit; begin;", nullptr, nullptr, nullptr);
+    sqlite3_exec(database_handle, "commit; begin;", nullptr, nullptr, nullptr);
 }
 
-void db_flush()
+// Queued on the worker so it runs after any block/light writes already in flight.
+void db::flush()
 {
     if (!db_enabled)
     {
         return;
     }
 
-    // Execute DELETE statements to clear all tables
+    std::unique_lock lock(mtx);
+    flush_done = false;
+    ring_put_flush(&s_ring);
+    cnd.notify_one();
+    // Block until the worker has cleared the tables so a fresh world never loads stale chunks.
+    flush_cnd.wait(lock, []
+                   { return flush_done; });
+}
+
+void db::flush_impl()
+{
     const char *flush_query =
         "delete from state;"
         "delete from block;"
@@ -537,21 +557,17 @@ void db_flush()
         "delete from key;"
         "delete from sign;";
 
-    int rc = sqlite3_exec(db, flush_query, nullptr, nullptr, nullptr);
-    if (rc != SQLITE_OK)
+    if (sqlite3_exec(database_handle, flush_query, nullptr, nullptr, nullptr) != SQLITE_OK)
     {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "Failed to flush database: %s\n", sqlite3_errmsg(db));
+                     "Failed to flush database: %s\n", sqlite3_errmsg(database_handle));
+        return;
     }
-    else
-    {
-        SDL_Log("Database flushed successfully\n");
-        // Commit the deletions
-        _db_commit();
-    }
+    SDL_Log("Database flushed successfully\n");
+    commit_impl();
 }
 
-void db_save_state(float x, float y, float z, float rx, float ry)
+void db::save_state(float x, float y, float z, float rx, float ry)
 {
     if (!db_enabled)
     {
@@ -560,8 +576,8 @@ void db_save_state(float x, float y, float z, float rx, float ry)
     static const char *query =
         "insert into state (x, y, z, rx, ry) values (?, ?, ?, ?, ?);";
     sqlite3_stmt *stmt;
-    sqlite3_exec(db, "delete from state;", nullptr, nullptr, nullptr);
-    sqlite3_prepare_v2(db, query, -1, &stmt, nullptr);
+    sqlite3_exec(database_handle, "delete from state;", nullptr, nullptr, nullptr);
+    sqlite3_prepare_v2(database_handle, query, -1, &stmt, nullptr);
     sqlite3_bind_double(stmt, 1, x);
     sqlite3_bind_double(stmt, 2, y);
     sqlite3_bind_double(stmt, 3, z);
@@ -571,7 +587,7 @@ void db_save_state(float x, float y, float z, float rx, float ry)
     sqlite3_finalize(stmt);
 }
 
-int db_load_state(float *x, float *y, float *z, float *rx, float *ry)
+int db::load_state(float *x, float *y, float *z, float *rx, float *ry)
 {
     if (!db_enabled)
     {
@@ -581,7 +597,7 @@ int db_load_state(float *x, float *y, float *z, float *rx, float *ry)
         "select x, y, z, rx, ry from state;";
     int result = 0;
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, query, -1, &stmt, nullptr);
+    sqlite3_prepare_v2(database_handle, query, -1, &stmt, nullptr);
     if (sqlite3_step(stmt) == SQLITE_ROW)
     {
         *x = sqlite3_column_double(stmt, 0);
@@ -595,7 +611,7 @@ int db_load_state(float *x, float *y, float *z, float *rx, float *ry)
     return result;
 }
 
-void db_insert_block(int p, int q, int x, int y, int z, int w)
+void db::insert_block(int p, int q, int x, int y, int z, int w)
 {
     if (!db_enabled)
     {
@@ -607,7 +623,7 @@ void db_insert_block(int p, int q, int x, int y, int z, int w)
     mtx.unlock();
 }
 
-void _db_insert_block(int p, int q, int x, int y, int z, int w)
+void db::insert_block_impl(int p, int q, int x, int y, int z, int w)
 {
     sqlite3_reset(insert_block_stmt);
     sqlite3_bind_int(insert_block_stmt, 1, p);
@@ -619,7 +635,7 @@ void _db_insert_block(int p, int q, int x, int y, int z, int w)
     sqlite3_step(insert_block_stmt);
 }
 
-void db_insert_blocks(const std::vector<std::tuple<int, int, int, int, int, int>> &blocks)
+void db::insert_blocks(const std::vector<std::tuple<int, int, int, int, int, int>> &blocks)
 {
     if (!db_enabled)
     {
@@ -633,7 +649,7 @@ void db_insert_blocks(const std::vector<std::tuple<int, int, int, int, int, int>
     mtx.unlock();
 }
 
-void _db_insert_blocks(int *blocks)
+void db::insert_blocks_impl(int *blocks)
 {
     for (int i = 0; i < sizeof(*blocks) / 6; i++)
     {
@@ -648,7 +664,7 @@ void _db_insert_blocks(int *blocks)
     }
 }
 
-void db_insert_light(int p, int q, int x, int y, int z, int w)
+void db::insert_light(int p, int q, int x, int y, int z, int w)
 {
     if (!db_enabled)
     {
@@ -661,7 +677,7 @@ void db_insert_light(int p, int q, int x, int y, int z, int w)
     mtx.unlock();
 }
 
-void _db_insert_light(int p, int q, int x, int y, int z, int w)
+void db::insert_light_impl(int p, int q, int x, int y, int z, int w)
 {
     sqlite3_reset(insert_light_stmt);
     sqlite3_bind_int(insert_light_stmt, 1, p);
@@ -673,7 +689,7 @@ void _db_insert_light(int p, int q, int x, int y, int z, int w)
     sqlite3_step(insert_light_stmt);
 }
 
-void db_insert_sign(
+void db::insert_sign(
     int p, int q, int x, int y, int z, int face, const char *text)
 {
     if (!db_enabled)
@@ -691,7 +707,7 @@ void db_insert_sign(
     sqlite3_step(insert_sign_stmt);
 }
 
-void db_delete_sign(int x, int y, int z, int face)
+void db::delete_sign(int x, int y, int z, int face)
 {
     if (!db_enabled)
     {
@@ -705,7 +721,7 @@ void db_delete_sign(int x, int y, int z, int face)
     sqlite3_step(delete_sign_stmt);
 }
 
-void db_delete_signs(int x, int y, int z)
+void db::delete_signs(int x, int y, int z)
 {
     if (!db_enabled)
     {
@@ -718,16 +734,16 @@ void db_delete_signs(int x, int y, int z)
     sqlite3_step(delete_signs_stmt);
 }
 
-void db_delete_all_signs()
+void db::delete_all_signs()
 {
     if (!db_enabled)
     {
         return;
     }
-    sqlite3_exec(db, "delete from sign;", nullptr, nullptr, nullptr);
+    sqlite3_exec(database_handle, "delete from sign;", nullptr, nullptr, nullptr);
 }
 
-void db_load_blocks(voxels_map *map, int p, int q)
+void db::load_blocks(craft_map *map, int p, int q)
 {
     if (!db_enabled)
     {
@@ -748,7 +764,7 @@ void db_load_blocks(voxels_map *map, int p, int q)
     load_mtx.unlock();
 }
 
-void db_load_lights(voxels_map *map, int p, int q)
+void db::load_lights(craft_map *map, int p, int q)
 {
     if (!db_enabled)
     {
@@ -769,7 +785,7 @@ void db_load_lights(voxels_map *map, int p, int q)
     load_mtx.unlock();
 }
 
-void db_load_signs(sign_list *list, int p, int q)
+void db::load_signs(sign_list *list, int p, int q)
 {
     if (!db_enabled)
     {
@@ -789,7 +805,7 @@ void db_load_signs(sign_list *list, int p, int q)
     }
 }
 
-int db_get_key(const int p, const int q)
+int db::get_key(const int p, const int q)
 {
     if (!db_enabled)
     {
@@ -805,7 +821,7 @@ int db_get_key(const int p, const int q)
     return 0;
 }
 
-void db_set_key(int p, int q, const int key)
+void db::set_key(int p, int q, const int key)
 {
     if (!db_enabled)
     {
@@ -817,7 +833,7 @@ void db_set_key(int p, int q, const int key)
     mtx.unlock();
 }
 
-void _db_set_key(const int p, const int q, const int key)
+void db::set_key_impl(const int p, const int q, const int key)
 {
     sqlite3_reset(set_key_stmt);
     sqlite3_bind_int(set_key_stmt, 1, p);
@@ -826,7 +842,7 @@ void _db_set_key(const int p, const int q, const int key)
     sqlite3_step(set_key_stmt);
 }
 
-std::vector<std::tuple<int, int, int, int>> db_query_blocks_near_chunks(int center_p, int center_q, int radius)
+std::vector<std::tuple<int, int, int, int>> db::query_blocks_near_chunks(int center_p, int center_q, int radius)
 {
     std::vector<std::tuple<int, int, int, int>> blocks;
 
@@ -851,12 +867,12 @@ std::vector<std::tuple<int, int, int, int>> db_query_blocks_near_chunks(int cent
     sqlite3_stmt *stmt = nullptr;
 
     load_mtx.lock();
-    int rc = sqlite3_prepare_v2(db, query, -1, &stmt, nullptr);
+    int rc = sqlite3_prepare_v2(database_handle, query, -1, &stmt, nullptr);
     if (rc != SQLITE_OK)
     {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "Failed to prepare block query: %s\n",
-                     sqlite3_errmsg(db));
+                     sqlite3_errmsg(database_handle));
         load_mtx.unlock();
         return blocks;
     }
@@ -887,7 +903,7 @@ std::vector<std::tuple<int, int, int, int>> db_query_blocks_near_chunks(int cent
     return blocks;
 }
 
-void db_worker_start(const char *path)
+void db::worker_start(const char *path)
 {
     if (!db_enabled)
     {
@@ -896,10 +912,10 @@ void db_worker_start(const char *path)
     ring_alloc(&s_ring, 1024);
 
     db_thread = std::thread([](const char *p)
-                            { db_worker_run(const_cast<char *>(p)); }, path);
+                            { worker_run(const_cast<char *>(p)); }, path);
 }
 
-void db_worker_stop()
+void db::worker_stop()
 {
     if (!db_enabled)
     {
@@ -918,35 +934,44 @@ void db_worker_stop()
     ring_free(&s_ring);
 }
 
-int db_worker_run(void *arg)
+int db::worker_run(void *arg)
 {
     bool running = true;
     while (running)
     {
         ring_entry e;
 
-        while (!ring_get(&s_ring, &e))
         {
+            // Dequeue under the same lock producers use, so a notify can never be missed.
             std::unique_lock my_lock(mtx);
-            cnd.wait(my_lock);
+            cnd.wait(my_lock, [&e]
+                     { return ring_get(&s_ring, &e) != 0; });
         }
 
         switch (e.type)
         {
         case ring_entry_type::BLOCK:
-            _db_insert_block(e.p, e.q, e.x, e.y, e.z, e.w);
+            insert_block_impl(e.p, e.q, e.x, e.y, e.z, e.w);
             break;
         case ring_entry_type::BLOCKS:
-            _db_insert_blocks(e.blocks);
+            insert_blocks_impl(e.blocks);
             break;
         case ring_entry_type::LIGHT:
-            _db_insert_light(e.p, e.q, e.x, e.y, e.z, e.w);
+            insert_light_impl(e.p, e.q, e.x, e.y, e.z, e.w);
             break;
         case ring_entry_type::KEY:
-            _db_set_key(e.p, e.q, e.key);
+            set_key_impl(e.p, e.q, e.key);
             break;
         case ring_entry_type::COMMIT:
-            _db_commit();
+            commit_impl();
+            break;
+        case ring_entry_type::FLUSH:
+            flush_impl();
+            {
+                std::lock_guard lock(mtx);
+                flush_done = true;
+            }
+            flush_cnd.notify_all();
             break;
         case ring_entry_type::EXIT:
             running = false;
@@ -961,7 +986,7 @@ int db_worker_run(void *arg)
 // ============================================================================
 
 // Insert multiple preview blocks at once
-void db_insert_preview_blocks(int preview_id, const std::vector<std::tuple<int, int, int, int, int, int>> &blocks)
+void db::insert_preview_blocks(int preview_id, const std::vector<std::tuple<int, int, int, int, int, int>> &blocks)
 {
     if (!db_enabled || blocks.empty())
     {
@@ -969,7 +994,7 @@ void db_insert_preview_blocks(int preview_id, const std::vector<std::tuple<int, 
     }
 
     load_mtx.lock();
-    sqlite3_exec(db, "begin;", nullptr, nullptr, nullptr);
+    sqlite3_exec(database_handle, "begin;", nullptr, nullptr, nullptr);
 
     for (const auto &[p, q, x, y, z, w] : blocks)
     {
@@ -984,12 +1009,12 @@ void db_insert_preview_blocks(int preview_id, const std::vector<std::tuple<int, 
         sqlite3_step(insert_preview_block_stmt);
     }
 
-    sqlite3_exec(db, "commit;", nullptr, nullptr, nullptr);
+    sqlite3_exec(database_handle, "commit;", nullptr, nullptr, nullptr);
     load_mtx.unlock();
 }
 
 // Load preview blocks for a specific chunk and preview_id
-void db_load_preview_blocks(voxels_map *map, const int p, const int q, const int preview_id)
+void db::load_preview_blocks(craft_map *map, const int p, const int q, const int preview_id)
 {
     if (!db_enabled)
     {
@@ -1012,7 +1037,7 @@ void db_load_preview_blocks(voxels_map *map, const int p, const int q, const int
 }
 
 // Get the latest preview_id
-int db_get_latest_preview_id()
+int db::get_latest_preview_id()
 {
     if (!db_enabled)
     {
@@ -1032,14 +1057,14 @@ int db_get_latest_preview_id()
 }
 
 // Commit the latest preview to the main block table and clear all previews
-void db_commit_latest_preview_to_main()
+void db::commit_latest_preview_to_main()
 {
     if (!db_enabled)
     {
         return;
     }
 
-    const int latest_preview_id = db_get_latest_preview_id();
+    const int latest_preview_id = get_latest_preview_id();
     if (latest_preview_id <= 0)
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No preview blocks to commit\n");
@@ -1054,14 +1079,14 @@ void db_commit_latest_preview_to_main()
         "select p, q, x, y, z, w from preview_blocks where preview_id = ?;";
 
     sqlite3_stmt *move_stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db, move_query, -1, &move_stmt, nullptr);
+    int rc = sqlite3_prepare_v2(database_handle, move_query, -1, &move_stmt, nullptr);
     if (rc == SQLITE_OK)
     {
         sqlite3_bind_int(move_stmt, 1, latest_preview_id);
         sqlite3_step(move_stmt);
         sqlite3_finalize(move_stmt);
 
-        const int moved_count = sqlite3_changes(db);
+        const int moved_count = sqlite3_changes(database_handle);
     }
 
     // Clear all preview blocks after committing
@@ -1069,14 +1094,14 @@ void db_commit_latest_preview_to_main()
     sqlite3_step(delete_all_preview_blocks_stmt);
 
     // Commit the transaction
-    sqlite3_exec(db, "commit;", nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "begin;", nullptr, nullptr, nullptr);
+    sqlite3_exec(database_handle, "commit;", nullptr, nullptr, nullptr);
+    sqlite3_exec(database_handle, "begin;", nullptr, nullptr, nullptr);
 
     load_mtx.unlock();
 }
 
 // Flush all preview blocks without committing to main
-void db_flush_all_preview_blocks()
+void db::flush_all_preview_blocks()
 {
     if (!db_enabled)
     {
@@ -1092,7 +1117,7 @@ void db_flush_all_preview_blocks()
 }
 
 // Get all blocks for a specific preview_id (for building)
-std::vector<std::tuple<int, int, int, int, int, int>> db_get_all_preview_blocks(int preview_id)
+std::vector<std::tuple<int, int, int, int, int, int>> db::get_all_preview_blocks(int preview_id)
 {
     std::vector<std::tuple<int, int, int, int, int, int>> blocks;
 
@@ -1106,7 +1131,7 @@ std::vector<std::tuple<int, int, int, int, int, int>> db_get_all_preview_blocks(
     const char *query = "SELECT p, q, x, y, z, w FROM preview_blocks WHERE preview_id = ?;";
     sqlite3_stmt *stmt = nullptr;
 
-    int rc = sqlite3_prepare_v2(db, query, -1, &stmt, nullptr);
+    int rc = sqlite3_prepare_v2(database_handle, query, -1, &stmt, nullptr);
     if (rc == SQLITE_OK)
     {
         sqlite3_bind_int(stmt, 1, preview_id);

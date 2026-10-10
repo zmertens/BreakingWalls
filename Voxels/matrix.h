@@ -44,6 +44,12 @@ public:
         return (value > 0) - (value < 0);
     }
 
+    template <typename T>
+    static T lerp(T a, T b, T t) noexcept
+    {
+        return a + (b - a) * t;
+    }
+
     static void normalize(float *x, float *y, float *z) noexcept;
 
     static void identity(float *matrix) noexcept;

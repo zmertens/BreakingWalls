@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22...4.1)
 
-project(BreakingWalls VERSION 0.0.1 LANGUAGES C CXX)
+project(BreakingWalls VERSION 0.5.4 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

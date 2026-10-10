@@ -1,23 +1,10 @@
-#ifndef VOXELS_MAP_H
-#define VOXELS_MAP_H
+#ifndef CRAFT_MAP_H
+#define CRAFT_MAP_H
 
 #include <cstdint>
 #include <vector>
 
-// Compact 4-byte entry: value == 0 means the slot is empty.
-union MapEntry
-{
-    unsigned int value;
-    struct
-    {
-        unsigned char x;
-        unsigned char y;
-        unsigned char z;
-        char w;
-    } e;
-};
-
-// 3-D integer → int sparse voxel map.
+// 3-D integer sparse voxel map.
 //
 // Implemented as an open-addressing hash table with linear probing.
 // Keys are stored as unsigned-byte offsets from a (dx, dy, dz) base origin,
@@ -25,7 +12,7 @@ union MapEntry
 //
 // Supports range-for via a nested iterator that yields decoded absolute
 // coordinates, replacing the old MAP_FOR_EACH / END_MAP_FOR_EACH macros.
-class voxels_map
+class craft_map
 {
 public:
     // Value exposed by the iterator.
@@ -37,24 +24,24 @@ public:
     // Forward iterator over occupied (non-zero) entries.
     struct iterator
     {
-        const voxels_map *m;
+        const craft_map *m;
         unsigned int idx;
         voxel operator*() const noexcept;
         iterator &operator++() noexcept;
         bool operator!=(const iterator &o) const noexcept { return idx != o.idx; }
     };
 
-    voxels_map() = default;
+    craft_map() = default;
     // Construct and initialise with explicit base offsets and table size.
     // mask must be (2^n − 1).
-    voxels_map(int dx, int dy, int dz, unsigned int mask);
+    craft_map(int dx, int dy, int dz, unsigned int mask);
 
     // Rule-of-five: std::vector provides automatic deep-copy and destruction.
-    voxels_map(const voxels_map &) = default;
-    voxels_map &operator=(const voxels_map &) = default;
-    voxels_map(voxels_map &&) noexcept = default;
-    voxels_map &operator=(voxels_map &&) noexcept = default;
-    ~voxels_map() = default;
+    craft_map(const craft_map &) = default;
+    craft_map &operator=(const craft_map &) = default;
+    craft_map(craft_map &&) noexcept = default;
+    craft_map &operator=(craft_map &&) noexcept = default;
+    ~craft_map() = default;
 
     // Re-initialise in place (replaces the old map_alloc pattern on existing objects).
     void init(int dx, int dy, int dz, unsigned int mask);
@@ -76,6 +63,29 @@ public:
     [[nodiscard]] int dz() const noexcept { return m_dz; }
 
 private:
+    // Compact 4-byte entry: value == 0 means the slot is empty.
+    union map_entry
+    {
+        unsigned int value;
+        struct
+        {
+            unsigned char x;
+            unsigned char y;
+            unsigned char z;
+            char w;
+        } e;
+
+        static bool is_empty(const map_entry &entry) noexcept
+        {
+            return entry.value == 0;
+        }
+
+        static bool is_occupied(const map_entry &entry) noexcept
+        {
+            return entry.e.w != 0;
+        }
+    };
+
     void grow();
 
     int m_dx{};
@@ -83,7 +93,7 @@ private:
     int m_dz{};
     unsigned int m_mask{};
     unsigned int m_size{};
-    std::vector<MapEntry> m_data;
+    std::vector<map_entry> m_data;
 };
 
-#endif // VOXELS_MAP_H
+#endif // CRAFT_MAP_H

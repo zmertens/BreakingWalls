@@ -1,138 +1,17 @@
-// chunk_manager.cpp — chunk lifecycle, worker threads, collision, lighting, terrain
+// World-owned chunk scene, lifecycle, neighbor coordination, and collision.
 #include "world.h"
-#include "world_defs.h"
+#include "chunk_worker.h"
 
 #include "db.h"
-#include "geometries.h"
 #include "item.h"
 #include "matrix.h"
 #include "sdl_gl_helper.h"
-
-#if defined(__EMSCRIPTEN__)
-#include <GLES3/gl3.h>
-#else
-#include <glad/glad.h>
-#endif
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <array>
-#include <condition_variable>
-#include <mutex>
 #include <ranges>
-#include <thread>
-#include <vector>
-
-// Match defines in world.cpp
-
-// Macros used in light_fill / compute_chunk
-#define XZ_SIZE  (BUILD_CHUNK_SIZE * 3 + 2)
-#define XZ_LO    (BUILD_CHUNK_SIZE)
-#define XZ_HI    (BUILD_CHUNK_SIZE * 2 + 1)
-#define Y_SIZE   258
-#define XYZ(x, y, z) ((y) * XZ_SIZE * XZ_SIZE + (x) * XZ_SIZE + (z))
-#define XZ(x, z)     ((x) * XZ_SIZE + (z))
-
-// ---------------------------------------------------------------------------
-// Worker threads
-// ---------------------------------------------------------------------------
-
-bool world::worker_run(worker *w) const noexcept
-{
-    while (true)
-    {
-        std::unique_lock<std::mutex> my_lock(w->mtx);
-        w->cnd.wait(my_lock, [w]
-                    { return w->state == WorkerState::BUSY || w->should_stop; });
-        if (w->should_stop)
-            break;
-
-        worker_item *item = &w->item;
-        my_lock.unlock();
-
-        if (item->load)
-            this->load_chunk(item);
-        this->compute_chunk(item);
-
-        std::lock_guard<std::mutex> done_lock(w->mtx);
-        w->state = WorkerState::DONE;
-    }
-    return true;
-}
-
-void world::init_worker_threads() noexcept
-{
-    chunk_workers.reserve(CHUNK_WORKERS_TOTAL);
-    for (int i = 0; i < CHUNK_WORKERS_TOTAL; i++)
-    {
-        auto w = std::make_unique<worker>();
-        w->index       = i;
-        w->state       = WorkerState::IDLE;
-        w->should_stop = false;
-        chunk_workers.emplace_back(std::move(w));
-        worker *worker_ptr = chunk_workers.back().get();
-        worker_ptr->thrd = std::thread([this, worker_ptr]()
-                                       { this->worker_run(worker_ptr); });
-    }
-}
-
-void world::cleanup_worker_threads() noexcept
-{
-    for (auto &&w : chunk_workers)
-    {
-        w->mtx.lock();
-        w->should_stop = true;
-        w->cnd.notify_one();
-        w->mtx.unlock();
-    }
-    for (auto &&w : chunk_workers)
-    {
-#if !defined(__EMSCRIPTEN__)
-        w->thrd.join();
-        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "worker thread %d finished!", w->index);
-#else
-        if (w->thrd.joinable())
-            w->thrd.detach();
-#endif
-    }
-    chunk_workers.clear();
-}
-
-// ---------------------------------------------------------------------------
-// Frustum / visibility
-// ---------------------------------------------------------------------------
-
-bool world::chunk_visible(float planes[6][4], const int p, const int q,
-                          const int miny, const int maxy) const noexcept
-{
-    const auto miny_f = static_cast<float>(miny);
-    const auto maxy_f = static_cast<float>(maxy);
-    const float x = static_cast<float>(p * BUILD_CHUNK_SIZE - 1);
-    const float z = static_cast<float>(q * BUILD_CHUNK_SIZE - 1);
-    const float d = static_cast<float>(BUILD_CHUNK_SIZE + 1);
-    const float points[8][3] = {
-        {x + 0.f, miny_f, z + 0.f}, {x + d, miny_f, z + 0.f},
-        {x + 0.f, miny_f, z + d},   {x + d, miny_f, z + d},
-        {x + 0.f, maxy_f, z + 0.f}, {x + d, maxy_f, z + 0.f},
-        {x + 0.f, maxy_f, z + d},   {x + d, maxy_f, z + d}};
-    const int n = active_player->_configs.ortho_scaling() ? 4 : 6;
-    for (int i = 0; i < n; i++)
-    {
-        int in = 0, out = 0;
-        for (int j = 0; j < 8; j++)
-        {
-            const float d1 = planes[i][0] * points[j][0]
-                           + planes[i][1] * points[j][1]
-                           + planes[i][2] * points[j][2]
-                           + planes[i][3];
-            if (d1 < 0) out++; else in++;
-            if (in && out) break;
-        }
-        if (in == 0) return false;
-    }
-    return true;
-}
 
 // ---------------------------------------------------------------------------
 // Hit tests / collision
@@ -147,7 +26,7 @@ int world::highest_block(const float x, const float z) const noexcept
     const int q = chunked(z);
     if (const auto chunk_opt = find_chunk(p, q); chunk_opt.has_value())
     {
-        const voxels_map *map = &chunk_opt.value()->map;
+        const craft_map *map = &chunk_opt.value()->map;
         for (const auto [ex, ey, ez, ew] : *map)
         {
             if (item::is_obstacle(ew) && ex == nx && ez == nz)
@@ -157,7 +36,7 @@ int world::highest_block(const float x, const float z) const noexcept
     return result;
 }
 
-int world::_hit_test(const voxels_map *map, const float max_distance, const int previous,
+int world::_hit_test(const craft_map *map, const float max_distance, const int previous,
                      float x, float y, float z, float vx, float vy, float vz,
                      int *hx, int *hy, int *hz) noexcept
 {
@@ -250,7 +129,7 @@ int world::collide(const int height, float *x, float *y, float *z) const noexcep
     if (!chunk_opt.has_value())
         return result;
     const chunk *c = chunk_opt.value();
-    const voxels_map *map = &c->map;
+    const craft_map *map = &c->map;
     const int nx = static_cast<int>(SDL_roundf(*x));
     const int ny = static_cast<int>(SDL_roundf(*y));
     const int nz = static_cast<int>(SDL_roundf(*z));
@@ -339,8 +218,8 @@ void world::update_dirty_chunks_async() const noexcept
                         }
                         if (other)
                         {
-                            item->block_maps[dp + 1][dq + 1] = new voxels_map{other->map};
-                            item->light_maps[dp + 1][dq + 1] = new voxels_map{other->lights};
+                            item->block_maps[dp + 1][dq + 1] = new craft_map{other->map};
+                            item->light_maps[dp + 1][dq + 1] = new craft_map{other->lights};
                         }
                         else
                         {
@@ -359,257 +238,8 @@ void world::update_dirty_chunks_async() const noexcept
 }
 
 // ---------------------------------------------------------------------------
-// Occlusion / ambient occlusion
+// Synchronous mesh generation using neighboring chunks
 // ---------------------------------------------------------------------------
-
-void world::occlusion(char neighbors[27], char lights[27], float shades[27],
-                      float ao[6][4], float light[6][4]) noexcept
-{
-    static constexpr int lookup3[6][4][3] = {
-        {{0,1,3},{2,1,5},{6,3,7},{8,5,7}},
-        {{18,19,21},{20,19,23},{24,21,25},{26,23,25}},
-        {{6,7,15},{8,7,17},{24,15,25},{26,17,25}},
-        {{0,1,9},{2,1,11},{18,9,19},{20,11,19}},
-        {{0,3,9},{6,3,15},{18,9,21},{24,15,21}},
-        {{2,5,11},{8,5,17},{20,11,23},{26,17,23}}};
-    static constexpr int lookup4[6][4][4] = {
-        {{0,1,3,4},{1,2,4,5},{3,4,6,7},{4,5,7,8}},
-        {{18,19,21,22},{19,20,22,23},{21,22,24,25},{22,23,25,26}},
-        {{6,7,15,16},{7,8,16,17},{15,16,24,25},{16,17,25,26}},
-        {{0,1,9,10},{1,2,10,11},{9,10,18,19},{10,11,19,20}},
-        {{0,3,9,12},{3,6,12,15},{9,12,18,21},{12,15,21,24}},
-        {{2,5,11,14},{5,8,14,17},{11,14,20,23},{14,17,23,26}}};
-    static constexpr float curve[4] = {0.0, 0.25, 0.5, 0.75};
-
-    for (int i = 0; i < 6; i++)
-    {
-        for (int j = 0; j < 4; j++)
-        {
-            const int corner = neighbors[lookup3[i][j][0]];
-            const int side1  = neighbors[lookup3[i][j][1]];
-            const int side2  = neighbors[lookup3[i][j][2]];
-            const int value  = side1 && side2 ? 3 : corner + side1 + side2;
-            float shade_sum = 0, light_sum = 0;
-            const int is_light = lights[13] == 15;
-            for (int k = 0; k < 4; k++)
-            {
-                shade_sum += shades[lookup4[i][j][k]];
-                light_sum += lights[lookup4[i][j][k]];
-            }
-            if (is_light) light_sum = 15 * 4 * 10;
-            const float total = curve[value] + shade_sum / 4.0f;
-            ao[i][j]    = SDL_min(total, 1.0f);
-            light[i][j] = light_sum / 15.0f / 4.0f;
-        }
-    }
-}
-
-void world::light_fill(char *opaque, char *light, const int x, const int y, const int z,
-                       const int w, const int force) noexcept
-{
-    struct entry { int x, y, z, w; };
-    std::vector<entry> stk;
-    stk.reserve(512);
-
-    if (x + w < XZ_LO || z + w < XZ_LO) return;
-    if (x - w > XZ_HI || z - w > XZ_HI) return;
-    if (y < 0 || y >= Y_SIZE) return;
-    if (light[XYZ(x, y, z)] >= w) return;
-    if (!force && opaque[XYZ(x, y, z)]) return;
-    light[XYZ(x, y, z)] = static_cast<char>(w);
-    if (w - 1 > 0)
-    {
-        stk.push_back({x - 1, y, z, w - 1}); stk.push_back({x + 1, y, z, w - 1});
-        stk.push_back({x, y - 1, z, w - 1}); stk.push_back({x, y + 1, z, w - 1});
-        stk.push_back({x, y, z - 1, w - 1}); stk.push_back({x, y, z + 1, w - 1});
-    }
-
-    while (!stk.empty())
-    {
-        const auto [cx, cy, cz, cw] = stk.back();
-        stk.pop_back();
-        if (cx + cw < XZ_LO || cz + cw < XZ_LO) continue;
-        if (cx - cw > XZ_HI || cz - cw > XZ_HI) continue;
-        if (cy < 0 || cy >= Y_SIZE) continue;
-        if (light[XYZ(cx, cy, cz)] >= cw) continue;
-        if (opaque[XYZ(cx, cy, cz)]) continue;
-        light[XYZ(cx, cy, cz)] = static_cast<char>(cw);
-        if (cw - 1 <= 0) continue;
-        stk.push_back({cx - 1, cy, cz, cw - 1}); stk.push_back({cx + 1, cy, cz, cw - 1});
-        stk.push_back({cx, cy - 1, cz, cw - 1}); stk.push_back({cx, cy + 1, cz, cw - 1});
-        stk.push_back({cx, cy, cz - 1, cw - 1}); stk.push_back({cx, cy, cz + 1, cw - 1});
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Terrain generation (runs in worker thread)
-// ---------------------------------------------------------------------------
-
-void world::compute_chunk(worker_item *item) noexcept
-{
-    auto *opaque  = static_cast<char *>(SDL_calloc(XZ_SIZE * XZ_SIZE * Y_SIZE, sizeof(char)));
-    auto *light   = static_cast<char *>(SDL_calloc(XZ_SIZE * XZ_SIZE * Y_SIZE, sizeof(char)));
-    auto *highest = static_cast<int  *>(SDL_calloc(XZ_SIZE * XZ_SIZE, sizeof(int)));
-
-    if (!opaque || !light || !highest)
-    {
-        SDL_free(opaque); SDL_free(light); SDL_free(highest);
-        item->data = nullptr; item->faces = 0;
-        return;
-    }
-
-    int ox = item->p * BUILD_CHUNK_SIZE - BUILD_CHUNK_SIZE - 1;
-    int oy = -1;
-    int oz = item->q * BUILD_CHUNK_SIZE - BUILD_CHUNK_SIZE - 1;
-
-    int has_light = 0;
-    for (int a = 0; a < 3; a++)
-        for (int b = 0; b < 3; b++)
-            if (voxels_map *map = item->light_maps[a][b]; map && map->size())
-                has_light = 1;
-
-    // Populate opaque array
-    for (int a = 0; a < 3; a++)
-    {
-        for (int b = 0; b < 3; b++)
-        {
-            voxels_map *block_map = item->block_maps[a][b];
-            if (!block_map) continue;
-            for (const auto [ex, ey, ez, ew] : *block_map)
-            {
-                int x = ex - ox, y = ey - oy, z = ez - oz, w = ew;
-                if (x < 0 || y < 0 || z < 0) continue;
-                if (x >= XZ_SIZE || y >= Y_SIZE || z >= XZ_SIZE) continue;
-                opaque[XYZ(x, y, z)] = !item::is_transparent(w);
-                if (opaque[XYZ(x, y, z)])
-                    highest[XZ(x, z)] = SDL_max(highest[XZ(x, z)], y);
-            }
-        }
-    }
-
-    // Flood fill light
-    if (has_light)
-    {
-        for (int a = 0; a < 3; a++)
-        {
-            for (int b = 0; b < 3; b++)
-            {
-                voxels_map *map = item->light_maps[a][b];
-                if (!map) continue;
-                for (const auto [ex, ey, ez, ew] : *map)
-                    light_fill(opaque, light, ex - ox, ey - oy, ez - oz, ew, 1);
-            }
-        }
-    }
-
-    voxels_map *block_map = item->block_maps[1][1];
-
-    // Count exposed faces
-    int miny = 256, maxy = 0, faces = 0;
-    for (const auto [ex, ey, ez, ew] : *block_map)
-    {
-        if (ew <= 0) continue;
-        int x = ex - ox, y = ey - oy, z = ez - oz;
-        int f1 = !opaque[XYZ(x-1,y,z)], f2 = !opaque[XYZ(x+1,y,z)];
-        int f3 = !opaque[XYZ(x,y+1,z)], f4 = !opaque[XYZ(x,y-1,z)] && (ey > 0);
-        int f5 = !opaque[XYZ(x,y,z-1)], f6 = !opaque[XYZ(x,y,z+1)];
-        int total = f1 + f2 + f3 + f4 + f5 + f6;
-        if (total == 0) continue;
-        if (item::is_plant(ew)) total = 4;
-        miny = SDL_min(miny, ey); maxy = SDL_max(maxy, ey);
-        faces += total;
-    }
-
-    // Generate geometry
-    static constexpr int components = 10;
-    GLfloat *data = sdl_gl_helper::malloc_faces(components, faces);
-    int offset = 0;
-    for (const auto [ex, ey, ez, ew] : *block_map)
-    {
-        if (ew <= 0) continue;
-        int x = ex - ox, y = ey - oy, z = ez - oz;
-        int f1 = !opaque[XYZ(x-1,y,z)], f2 = !opaque[XYZ(x+1,y,z)];
-        int f3 = !opaque[XYZ(x,y+1,z)], f4 = !opaque[XYZ(x,y-1,z)] && (ey > 0);
-        int f5 = !opaque[XYZ(x,y,z-1)], f6 = !opaque[XYZ(x,y,z+1)];
-        int total = f1 + f2 + f3 + f4 + f5 + f6;
-        if (total == 0) continue;
-
-        char neighbors[27] = {0};
-        char lights[27] = {0};
-        float shades[27] = {0};
-        int index = 0;
-        for (int dx = -1; dx <= 1; dx++)
-        {
-            for (int dy = -1; dy <= 1; dy++)
-            {
-                for (int dz = -1; dz <= 1; dz++)
-                {
-                    neighbors[index] = opaque[XYZ(x+dx, y+dy, z+dz)];
-                    lights[index]    = light[XYZ(x+dx, y+dy, z+dz)];
-                    shades[index]    = 0;
-                    if (int hi = XZ(x+dx, z+dz);
-                        hi >= 0 && hi < XZ_SIZE * XZ_SIZE && y + dy <= highest[hi])
-                    {
-                        for (int oy1 = 0; oy1 < 8; oy1++)
-                        {
-                            if (y + dy + oy1 >= Y_SIZE) break;
-                            if (opaque[XYZ(x+dx, y+dy+oy1, z+dz)])
-                            {
-                                shades[index] = 1.0f - oy1 * 0.125f;
-                                break;
-                            }
-                        }
-                    }
-                    index++;
-                }
-            }
-        }
-
-        float ao[6][4], light2[6][4];
-        occlusion(neighbors, lights, shades, ao, light2);
-
-        if (item::is_plant(ew))
-        {
-            total = 4;
-            float min_ao = 1, max_light = 0;
-            for (int a = 0; a < 6; a++)
-                for (int b = 0; b < 4; b++)
-                {
-                    min_ao   = SDL_min(min_ao,   ao[a][b]);
-                    max_light = SDL_max(max_light, light2[a][b]);
-                }
-            float rotation = SDL_sinf(static_cast<float>(ex) * 12.9898f
-                                    + static_cast<float>(ez) * 78.233f) * 43758.5453f;
-            geometries::make_plant(data + offset, min_ao, max_light,
-                static_cast<float>(ex), static_cast<float>(ey), static_cast<float>(ez),
-                0.5f, ew, rotation);
-        }
-        else
-        {
-            geometries::make_cube(data + offset, ao, light2,
-                f1, f2, f3, f4, f5, f6,
-                static_cast<float>(ex), static_cast<float>(ey), static_cast<float>(ez), 0.5f, ew);
-        }
-        offset += total * 60;
-    }
-
-    SDL_free(opaque); SDL_free(light); SDL_free(highest);
-    item->miny = miny; item->maxy = maxy; item->faces = faces; item->data = data;
-}
-
-// ---------------------------------------------------------------------------
-// Buffer / chunk generation (main thread or from worker result)
-// ---------------------------------------------------------------------------
-
-void world::generate_chunk(chunk *c, const worker_item *item) noexcept
-{
-    c->miny = item->miny; c->maxy = item->maxy; c->faces = item->faces;
-    sdl_gl_helper::del_buffer(c->buffer);
-    c->buffer = sdl_gl_helper::gen_faces(10, item->faces, item->data);
-    SDL_free(item->data);
-    const_cast<worker_item *>(item)->data = nullptr;
-    sdl_gl_helper::gen_sign_buffer(c);
-}
 
 void world::gen_chunk_buffer(chunk *c) const noexcept
 {
@@ -639,49 +269,9 @@ void world::gen_chunk_buffer(chunk *c) const noexcept
             }
         }
     }
-    this->compute_chunk(item);
-    this->generate_chunk(c, item);
+    chunk::compute(item);
+    c->generate(item);
     c->dirty = 0;
-}
-
-void world::load_chunk(const worker_item *item) const noexcept
-{
-    const int p = item->p, q = item->q;
-    voxels_map *block_map = item->block_maps[1][1];
-    voxels_map *light_map = item->light_maps[1][1];
-
-    const bool enable_heightmap = active_player ? active_player->_configs.show_heightmap() : true;
-    const float player_x = active_player ? active_player->pos.x : 0.0f;
-    const float player_z = active_player ? active_player->pos.z : 0.0f;
-    constexpr float flatten_radius = 256.0f;
-
-    geometries::create_voxel_world(
-        [](voxels_map *m, int x, int y, int z, int w) { m->set(x, y, z, w); },
-        block_map, p, q, BUILD_CHUNK_SIZE,
-        enable_heightmap, player_x, player_z, flatten_radius);
-
-    db_load_blocks(block_map, p, q);
-    db_load_lights(light_map, p, q);
-}
-
-void world::init_chunk(chunk *c, int p, int q) noexcept
-{
-    c->p = p; c->q = q;
-    c->faces = 0; c->sign_faces = 0;
-    c->buffer = 0; c->sign_buffer = 0;
-    c->set_category(Entity::CHUNK);
-    dirty_chunk(c);
-    auto *signs = &c->signs;
-    sign_list_alloc(signs, 16);
-    db_load_signs(signs, p, q);
-    voxels_map *block_map = &c->map;
-    voxels_map *light_map = &c->lights;
-    const int dx = p * BUILD_CHUNK_SIZE - 1;
-    constexpr int dy = 0;
-    const int dz = q * BUILD_CHUNK_SIZE - 1;
-    block_map->init(dx, dy, dz, 0x7fff);
-    light_map->init(dx, dy, dz, 0xf);
-    this->attach_chunk_to_layer(c, static_cast<int>(Layer::BACKGROUND));
 }
 
 void world::create_chunk(chunk *c, const int p, const int q) noexcept
@@ -712,9 +302,7 @@ void world::delete_chunks() noexcept
         if (chunk_distance(c, p, q) < DELETE_CHUNK_RADIUS) break;
 
         detach_chunk_from_layer(c);
-        sign_list_free(&c->signs);
-        sdl_gl_helper::del_buffer(c->buffer);
-        sdl_gl_helper::del_buffer(c->sign_buffer);
+        c->release_buffers();
         delete c;
 
         --count;
@@ -736,14 +324,12 @@ void world::delete_all_chunks() noexcept
         chunk *c = background_layer[i];
         if (c == nullptr) continue;
         detach_chunk_from_layer(c);
-        sign_list_free(&c->signs);
-        sdl_gl_helper::del_buffer(c->buffer);
-        sdl_gl_helper::del_buffer(c->sign_buffer);
+        c->release_buffers();
         delete c;
         background_layer[i] = nullptr;
     }
     this->next_chunk_slot_in_view = 1;
-    if (background_layer[0] != nullptr && background_layer[0]->get_category() == Entity::SCENE)
+    if (background_layer[0] != nullptr)
         background_layer[0]->children.clear();
 }
 
@@ -767,7 +353,7 @@ void world::check_workers() noexcept
                     c->map    = *item->block_maps[1][1];
                     c->lights = *item->light_maps[1][1];
                 }
-                generate_chunk(c, item);
+                c->generate(item);
             }
             else
             {
@@ -822,8 +408,8 @@ void world::ensure_chunks_worker(player *_player, worker *w) noexcept
     float matrix[16];
     matrix::set_3d(matrix, width, height,
                    s->x, s->y, s->z, s->rx, s->ry,
-                   active_player->_configs.fov(),
-                   active_player->_configs.ortho_scaling(),
+                   active_player->get_configs().fov(),
+                   active_player->get_configs().ortho_scaling(),
                    RENDER_CHUNK_RADIUS);
     float planes[6][4];
     matrix::frustum_planes(planes, RENDER_CHUNK_RADIUS, matrix);
@@ -887,8 +473,8 @@ void world::ensure_chunks_worker(player *_player, worker *w) noexcept
             }
             if (other)
             {
-                item->block_maps[dp + 1][dq + 1] = new voxels_map{other->map};
-                item->light_maps[dp + 1][dq + 1] = new voxels_map{other->lights};
+                item->block_maps[dp + 1][dq + 1] = new craft_map{other->map};
+                item->light_maps[dp + 1][dq + 1] = new craft_map{other->lights};
             }
             else
             {
@@ -913,4 +499,192 @@ void world::ensure_chunks(player *_player) noexcept
             ensure_chunks_worker(_player, w.get());
         w->mtx.unlock();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Scene graph
+// ---------------------------------------------------------------------------
+
+void world::build_scene()
+{
+    auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
+
+    chunk *root = new chunk{};
+    root->bounds_min_x = -10000;
+    root->bounds_min_z = -10000;
+    root->bounds_max_x = 10000;
+    root->bounds_max_z = 10000;
+    root->parent = nullptr;
+    background_layer[0] = root;
+
+    std::fill(background_layer.begin() + 1, background_layer.end(), nullptr);
+
+    auto &foreground_layer = scene_graph_layers[static_cast<std::size_t>(Layer::FOREGROUND)];
+    std::ranges::fill(foreground_layer, nullptr);
+}
+
+void world::attach_chunk_to_layer(chunk *c, int layer_index) noexcept
+{
+    if (layer_index >= static_cast<int>(Layer::LAYER_COUNT) || c == nullptr)
+        return;
+
+    constexpr int CHUNK_SIZE = BUILD_CHUNK_SIZE;
+    c->bounds_min_x = c->p * CHUNK_SIZE;
+    c->bounds_min_z = c->q * CHUNK_SIZE;
+    c->bounds_max_x = (c->p + 1) * CHUNK_SIZE - 1;
+    c->bounds_max_z = (c->q + 1) * CHUNK_SIZE - 1;
+
+    insert_chunk_into_spatial_tree(c);
+}
+
+void world::detach_chunk_from_layer(chunk *c) noexcept
+{
+    if (c == nullptr || c->parent == nullptr)
+        return;
+    remove_chunk_from_spatial_tree(c);
+}
+
+void world::insert_chunk_into_spatial_tree(chunk *c) const noexcept
+{
+    if (c == nullptr)
+        return;
+
+    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
+    if (root == nullptr)
+        return;
+
+    if (chunk *spatial_parent = root; spatial_parent != nullptr)
+    {
+        c->parent = spatial_parent;
+        if (const bool is_attached = std::ranges::find(spatial_parent->children, c) != spatial_parent->children.cend();
+            !is_attached)
+        {
+            spatial_parent->children.push_back(c);
+        }
+    }
+}
+
+void world::remove_chunk_from_spatial_tree(chunk *c) noexcept
+{
+    if (c == nullptr || c->parent == nullptr)
+        return;
+    std::erase(c->parent->children, c);
+    c->parent = nullptr;
+}
+
+void world::traverse_chunks(const std::function<void(chunk *)> &callback) const noexcept
+{
+    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
+    if (root == nullptr)
+        return;
+
+    std::function<void(chunk *)> traverse_node = [&](chunk *node)
+    {
+        if (node == nullptr)
+            return;
+
+        if (node != root)
+            callback(node);
+
+        for (chunk *child : node->children)
+            traverse_node(child);
+    };
+
+    traverse_node(root);
+}
+
+void world::traverse_chunks_in_bounds(const int min_p, const int min_q, const int max_p, const int max_q,
+                                      const std::function<void(chunk *)> &callback) const noexcept
+{
+    constexpr int CHUNK_SIZE = BUILD_CHUNK_SIZE;
+    const int min_x = min_p * CHUNK_SIZE;
+    const int min_z = min_q * CHUNK_SIZE;
+    const int max_x = (max_p + 1) * CHUNK_SIZE - 1;
+    const int max_z = (max_q + 1) * CHUNK_SIZE - 1;
+
+    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
+    if (root == nullptr)
+        return;
+
+    std::function<void(chunk *)> traverse_node = [&](chunk *node)
+    {
+        if (node == nullptr)
+            return;
+
+        if (!node->intersects_bounds(min_x, min_z, max_x, max_z))
+            return;
+
+        if (node != root)
+            callback(node);
+
+        for (chunk *child : node->children)
+            traverse_node(child);
+    };
+
+    traverse_node(root);
+}
+
+// ---------------------------------------------------------------------------
+// Chunk query helpers (used by many methods across all .cpp files)
+// ---------------------------------------------------------------------------
+
+int world::chunked(const float x) noexcept
+{
+    return chunk::coordinate(x);
+}
+
+std::optional<chunk *> world::find_chunk(const int p, const int q) const noexcept
+{
+    const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
+    for (std::size_t i = 1; i < next_chunk_slot_in_view && i < background_layer.size(); ++i)
+    {
+        chunk *c = background_layer[i];
+        if (c != nullptr && c->p == p && c->q == q)
+            return c;
+    }
+    return std::nullopt;
+}
+
+bool world::chunk_visible(float planes[6][4], const int p, const int q,
+                          const int miny, const int maxy) const noexcept
+{
+    return chunk::visible(planes, p, q, miny, maxy, active_player->get_configs().ortho_scaling() != 0);
+}
+
+int world::chunk_distance(const chunk *c, const int p, const int q) noexcept
+{
+    return c->distance(p, q);
+}
+
+void world::load_chunk(const worker_item *item) const noexcept
+{
+    chunk::load(item, active_player ? active_player->get_configs().show_heightmap() : true,
+                active_player ? active_player->pos.x : 0.0f,
+                active_player ? active_player->pos.z : 0.0f);
+}
+
+void world::init_chunk(chunk *c, const int p, const int q) noexcept
+{
+    c->initialize(p, q);
+    dirty_chunk(c);
+    attach_chunk_to_layer(c, static_cast<int>(Layer::BACKGROUND));
+}
+
+std::size_t world::get_chunk_count() const noexcept
+{
+    return this->next_chunk_slot_in_view - 1;
+}
+
+bool world::player_intersects_block(const int height, const float x, const float y, const float z,
+                                    const int hx, const int hy, const int hz) noexcept
+{
+    const auto nx = static_cast<int>(SDL_roundf(x));
+    const auto ny = static_cast<int>(SDL_roundf(y));
+    const auto nz = static_cast<int>(SDL_roundf(z));
+    for (int i = 0; i < height; i++)
+    {
+        if (nx == hx && ny - i == hy && nz == hz)
+            return true;
+    }
+    return false;
 }

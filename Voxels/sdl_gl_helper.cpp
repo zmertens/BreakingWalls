@@ -3,7 +3,7 @@
 #if defined(__EMSCRIPTEN__)
 #include <GLES3/gl3.h>
 #else
-#include <glad/glad.h>
+#include <glad/gl.h>
 #endif
 
 #include <SDL3/SDL.h>
@@ -78,7 +78,10 @@ bool sdl_gl_helper::initialize(std::string_view title, int width, int height) no
         SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
 #if !defined(__EMSCRIPTEN__)
-        if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
+        if (!gladLoadGL([](const char *name) -> GLADapiproc
+            {
+                return SDL_GL_GetProcAddress(name);
+            }))
         {
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "OpenGL loader failed (%s)\n", SDL_GetError());
             SDL_Quit();
@@ -91,13 +94,14 @@ bool sdl_gl_helper::initialize(std::string_view title, int width, int height) no
         return true;
     };
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
     {
-        std::call_once(m_initialized_flag, init_func);
-        return true;
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_Init failed: %s\n", SDL_GetError());
+        return false;
     }
-    SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_Init failed: %s\n", SDL_GetError());
-    return false;
+
+    std::call_once(m_initialized_flag, init_func);
+    return true;
 }
 
 void sdl_gl_helper::destroy_and_quit() noexcept
@@ -555,13 +559,13 @@ int sdl_gl_helper::_gen_sign_buffer(float* data, const float x, const float y, c
 
 void sdl_gl_helper::gen_sign_buffer(chunk* chunk) noexcept
 {
-    const sign_list* signs = &chunk->signs;
+    const db::sign_list* signs = &chunk->signs;
 
     // first pass - count characters
     std::size_t max_faces = 0;
     for (int i = 0; i < signs->size; i++)
     {
-        const sign* e = signs->data + i;
+        const db::sign* e = signs->data + i;
         max_faces += SDL_strlen(e->text);
     }
 
@@ -570,7 +574,7 @@ void sdl_gl_helper::gen_sign_buffer(chunk* chunk) noexcept
     std::size_t faces = 0;
     for (int i = 0; i < signs->size; i++)
     {
-        const sign* e = signs->data + i;
+        const db::sign* e = signs->data + i;
         faces += static_cast<std::size_t>(_gen_sign_buffer(data + static_cast<int>(faces) * 30,
                                                            static_cast<float>(e->x),
                                                            static_cast<float>(e->y),

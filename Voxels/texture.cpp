@@ -3,7 +3,7 @@
 #if defined(__EMSCRIPTEN__)
 #include <GLES3/gl3.h>
 #else
-#include <glad/glad.h>
+#include <glad/gl.h>
 #endif
 
 #include <SDL3/SDL.h>

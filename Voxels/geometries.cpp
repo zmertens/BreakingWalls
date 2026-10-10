@@ -10,28 +10,6 @@
 #include "item.h"
 #include "matrix.h"
 
-#include <MazeBuilder/algos.h>
-#include <MazeBuilder/configurator.h>
-#include <MazeBuilder/grid_interface.h>
-#include <MazeBuilder/grid_operations.h>
-#include <MazeBuilder/runtime_app.h>
-#include <MazeBuilder/singleton_base.h>
-#include <MazeBuilder/string_utils.h>
-#include <MazeBuilder/topology.h>
-
-namespace
-{
-    constexpr int PIXELS_CELL_SIZE = 12;
-    constexpr int PIXELS_WALL_SIZE = 2;
-
-    std::pair<int, int> calculate_pixel_dimensions(unsigned int rows, unsigned int cols) noexcept
-    {
-        const int width = static_cast<int>(cols) * PIXELS_CELL_SIZE + (static_cast<int>(cols) + 1) * PIXELS_WALL_SIZE;
-        const int height = static_cast<int>(rows) * PIXELS_CELL_SIZE + (static_cast<int>(rows) + 1) * PIXELS_WALL_SIZE;
-        return {width, height};
-    }
-}
-
 void geometries::make_cube_faces(
     float *data, float ao[6][4], float light[6][4],
     int left, int right, int top, int bottom, int front, int back,
@@ -433,117 +411,8 @@ void geometries::make_sphere(float *data, float r, int detail) noexcept
     }
 }
 
-std::optional<maze_preview_frame> geometries::generate_maze_preview(const mazes::configurator &config)
-{
-    const auto app = mazes::singleton_base<mazes::runtime_app>::instance();
-    if (!app)
-    {
-        return std::nullopt;
-    }
-
-    std::string maze_request;
-    maze_request.reserve(160);
-    maze_request = "--rows=" + std::to_string(config.rows()) +
-                   " --columns=" + std::to_string(config.columns()) +
-                   " --levels=1 --algo=" + std::string{mazes::to_sv_from_algo(config.algo_id())} +
-                   " --seed=" + std::to_string(config.seed()) +
-                   " --output=stdout";
-
-    static std::mutex runtime_app_mutex;
-    mazes::topology topo;
-    {
-         std::lock_guard<std::mutex> lock{runtime_app_mutex};
-
-         [[maybe_unused]] const auto maze_result = app->apply(maze_request);
-
-         const auto _grid = app->get_finished_text();
-         if (_grid.empty())
-         {
-             return std::nullopt;
-         }
-
-         topo = mazes::topology::parse(_grid);
-     }
-
-     if (topo.rows == 0u || topo.columns == 0u)
-     {
-         return std::nullopt;
-     }
-
-     const auto [width, height] = calculate_pixel_dimensions(config.rows(), config.columns());
-     std::vector<std::uint8_t> pixel_data(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u);
-
-     const std::array<std::uint8_t, 4> wall_color{24u, 28u, 34u, 255u};
-     const std::array<std::uint8_t, 4> floor_color{244u, 241u, 232u, 255u};
-
-     auto set_pixel = [&](int x, int y, const std::array<std::uint8_t, 4> &color)
-     {
-         if (x >= 0 && y >= 0 && x < width && y < height)
-         {
-             const std::size_t offset = (static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)) * 4u;
-             pixel_data[offset + 0] = color[0];
-             pixel_data[offset + 1] = color[1];
-             pixel_data[offset + 2] = color[2];
-             pixel_data[offset + 3] = color[3];
-         }
-     };
-
-     auto fill_rect = [&](int x0, int y0, int w, int h, const std::array<std::uint8_t, 4> &color)
-     {
-         for (int y = y0; y < y0 + h; ++y)
-         {
-             for (int x = x0; x < x0 + w; ++x)
-             {
-                 set_pixel(x, y, color);
-             }
-         }
-     };
-
-     for (int y = 0; y < height; ++y)
-     {
-         for (int x = 0; x < width; ++x)
-         {
-             set_pixel(x, y, wall_color);
-         }
-     }
-
-     for (unsigned int row = 0; row < config.rows(); ++row)
-     {
-         for (unsigned int col = 0; col < config.columns(); ++col)
-         {
-             const auto *walls = topo.at(row, col);
-             if (!walls)
-             {
-                 continue;
-             }
-
-             const int px = PIXELS_WALL_SIZE + static_cast<int>(col) * (PIXELS_CELL_SIZE + PIXELS_WALL_SIZE);
-             const int py = PIXELS_WALL_SIZE + static_cast<int>(row) * (PIXELS_CELL_SIZE + PIXELS_WALL_SIZE);
-
-             fill_rect(px, py, PIXELS_CELL_SIZE, PIXELS_CELL_SIZE, floor_color);
-
-             if (!walls->east())
-             {
-                 fill_rect(px + PIXELS_CELL_SIZE, py, PIXELS_WALL_SIZE, PIXELS_CELL_SIZE, floor_color);
-             }
-
-             if (!walls->south())
-             {
-                 fill_rect(px, py + PIXELS_CELL_SIZE, PIXELS_CELL_SIZE, PIXELS_WALL_SIZE, floor_color);
-             }
-         }
-    }
-
-    maze_preview_frame frame;
-     frame.pixel_data = std::move(pixel_data);
-     frame.width = width;
-     frame.height = height;
-    frame.scale = 1;
-    return frame;
-}
-
-void geometries::create_voxel_world(const std::function<void(voxels_map *, int, int, int, int)> &setter,
-                                    voxels_map *m, const int p, const int q, const int chunk_size,
+void geometries::create_voxel_world(const std::function<void(craft_map *, int, int, int, int)> &setter,
+                                    craft_map *m, const int p, const int q, const int chunk_size,
                                     bool enable_heightmap,
                                     float player_x, float player_z,
                                     float flatten_radius) noexcept
@@ -584,8 +453,8 @@ void geometries::create_voxel_world(const std::function<void(voxels_map *, int, 
             // Apply flattening if within range and heightmap disabled
             if (should_flatten)
             {
-                h = 12;  // Flatten to water level
-                w = 1;   // Grass terrain
+                h = 12; // Flatten to water level
+                w = 1;  // Grass terrain
             }
 
             // sand and grass terrain

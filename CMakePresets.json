@@ -4,13 +4,10 @@
         {
             "name": "build-ninja",
             "displayName": "Build using Ninja Multi-Config",
-            "description": "Configure with Clang settings into build-ninja/",
+            "description": "Configure with settings into build-ninja/",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build-ninja",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-                "CMAKE_C_COMPILER": "clang",
-                "CMAKE_CXX_COMPILER": "clang++"
             }
         },
         {
@@ -20,8 +17,7 @@
             "description": "Build with directory: build-wasmjs/",
             "binaryDir": "${sourceDir}/build-wasmjs",
             "cacheVariables": {
-                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/../emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/../emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
             }
         },
         {

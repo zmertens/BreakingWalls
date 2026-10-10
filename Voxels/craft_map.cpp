@@ -1,4 +1,4 @@
-#include "voxels_map.h"
+#include "craft_map.h"
 
 // ── Integer hashing (unchanged from original) ─────────────────────────────
 static int hash_int(int key) noexcept
@@ -17,64 +17,54 @@ static int hash3(const int x, const int y, const int z) noexcept
     return hash_int(x) ^ hash_int(y) ^ hash_int(z);
 }
 
-static bool is_empty(const MapEntry &entry) noexcept
-{
-    return entry.value == 0;
-}
-
-static bool is_occupied(const MapEntry &entry) noexcept
-{
-    return entry.e.w != 0;
-}
-
 // ── iterator ──────────────────────────────────────────────────────────────
-voxels_map::voxel voxels_map::iterator::operator*() const noexcept
+craft_map::voxel craft_map::iterator::operator*() const noexcept
 {
-    const MapEntry &e = m->m_data[idx];
+    const map_entry &e = m->m_data[idx];
     return {e.e.x + m->m_dx, e.e.y + m->m_dy, e.e.z + m->m_dz, e.e.w};
 }
 
-voxels_map::iterator &voxels_map::iterator::operator++() noexcept
+craft_map::iterator &craft_map::iterator::operator++() noexcept
 {
     do
     {
         ++idx;
-    } while (idx <= m->m_mask && !is_occupied(m->m_data[idx]));
+    } while (idx <= m->m_mask && !map_entry::is_occupied(m->m_data[idx]));
     return *this;
 }
 
-// ── voxels_map ───────────────────────────────────────────────────────────────────────────
-voxels_map::voxels_map(const int dx, const int dy, const int dz, const unsigned int mask)
+// ── craft_map ───────────────────────────────────────────────────────────────────────────
+craft_map::craft_map(const int dx, const int dy, const int dz, const unsigned int mask)
 {
     init(dx, dy, dz, mask);
 }
 
-void voxels_map::init(const int dx, const int dy, const int dz, const unsigned int mask)
+void craft_map::init(const int dx, const int dy, const int dz, const unsigned int mask)
 {
     m_dx = dx;
     m_dy = dy;
     m_dz = dz;
     m_mask = mask;
     m_size = 0;
-    m_data.assign(mask + 1u, MapEntry{}); // zero-initialise all slots
+    m_data.assign(mask + 1u, map_entry{}); // zero-initialise all slots
 }
 
-voxels_map::iterator voxels_map::begin() const noexcept
+craft_map::iterator craft_map::begin() const noexcept
 {
     unsigned int i = 0;
-    while (i <= m_mask && !is_occupied(m_data[i]))
+    while (i <= m_mask && !map_entry::is_occupied(m_data[i]))
     {
         ++i;
     }
     return {this, i};
 }
 
-voxels_map::iterator voxels_map::end() const noexcept
+craft_map::iterator craft_map::end() const noexcept
 {
     return {this, m_mask + 1u};
 }
 
-int voxels_map::set(int x, int y, int z, const int w)
+int craft_map::set(int x, int y, int z, const int w)
 {
     if (m_data.empty())
     {
@@ -99,9 +89,9 @@ int voxels_map::set(int x, int y, int z, const int w)
 
     for (unsigned int probe = 0; probe <= m_mask; ++probe)
     {
-        MapEntry *entry = m_data.data() + index;
+        map_entry *entry = m_data.data() + index;
 
-        if (is_empty(*entry))
+        if (map_entry::is_empty(*entry))
         {
             if (w == 0)
             {
@@ -126,7 +116,7 @@ int voxels_map::set(int x, int y, int z, const int w)
             return 1;
         }
 
-        if (!is_occupied(*entry))
+        if (!map_entry::is_occupied(*entry))
         {
             if (first_tombstone > m_mask)
             {
@@ -155,7 +145,7 @@ int voxels_map::set(int x, int y, int z, const int w)
 
     if (w != 0 && first_tombstone <= m_mask)
     {
-        MapEntry *entry = m_data.data() + first_tombstone;
+        map_entry *entry = m_data.data() + first_tombstone;
         entry->e.x = static_cast<unsigned char>(x);
         entry->e.y = static_cast<unsigned char>(y);
         entry->e.z = static_cast<unsigned char>(z);
@@ -178,7 +168,7 @@ int voxels_map::set(int x, int y, int z, const int w)
     return 0;
 }
 
-int voxels_map::get(int x, int y, int z) const noexcept
+int craft_map::get(int x, int y, int z) const noexcept
 {
     if (m_data.empty())
     {
@@ -194,12 +184,12 @@ int voxels_map::get(int x, int y, int z) const noexcept
     }
     for (unsigned int probe = 0; probe <= m_mask; ++probe)
     {
-        const MapEntry *entry = m_data.data() + index;
-        if (is_empty(*entry))
+        const map_entry *entry = m_data.data() + index;
+        if (map_entry::is_empty(*entry))
         {
             return 0;
         }
-        if (is_occupied(*entry) && entry->e.x == x && entry->e.y == y && entry->e.z == z)
+        if (map_entry::is_occupied(*entry) && entry->e.x == x && entry->e.y == y && entry->e.z == z)
         {
             return entry->e.w;
         }
@@ -208,9 +198,9 @@ int voxels_map::get(int x, int y, int z) const noexcept
     return 0;
 }
 
-void voxels_map::grow()
+void craft_map::grow()
 {
-    voxels_map grown{m_dx, m_dy, m_dz, (m_mask << 1u) | 1u};
+    craft_map grown{m_dx, m_dy, m_dz, (m_mask << 1u) | 1u};
     for (const auto [ex, ey, ez, ew] : *this)
     {
         grown.set(ex, ey, ez, ew);

@@ -1,8 +1,8 @@
-// Main file for the Maze Builder voxel editor application.
+// Main file for voxel editor with maze generation.
 
 #include <iostream>
-#include <stdexcept>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include <MazeBuilder/buildinfo.h>
@@ -13,7 +13,7 @@
 // Run the SDL app
 static constexpr auto WINDOW_WIDTH = 1200, WINDOW_HEIGHT = 800;
 
-constexpr auto TITLE{ "Breaking Walls" };
+constexpr auto TITLE{"Breaking Walls"};
 
 // Avoid function-local static initialization on wasm main thread.
 // Eager init sidesteps __cxa_guard_acquire/pthread_cond_wait warnings.
@@ -39,8 +39,7 @@ EMSCRIPTEN_BINDINGS(craft_module)
         .smart_ptr<std::shared_ptr<craft>>("std::shared_ptr<craft>")
         // craft(TITLE, width, height) – construction is handled by the global VOXEL_ENGINE;
         // JS should use Module.get() rather than constructing a second instance.
-        .constructor<const std::string&, int, int>()
-
+        .constructor<const std::string &, int, int>()
         // ── Legacy synchronous download path ─────────────────────────────────
         // inst.artifacts() → full Wavefront OBJ string; may block if called before ready.
         .function("artifacts", &craft::artifacts)
@@ -48,7 +47,6 @@ EMSCRIPTEN_BINDINGS(craft_module)
         .function("is_download_ready", &craft::is_download_ready)
         // inst.reset_download_flag() → call after consuming artifacts() to re-arm the flag.
         .function("reset_download_flag", &craft::reset_download_flag)
-
         // ── Async (non-blocking) export path — preferred for web ─────────────
         // inst.begin_export() → starts the background OBJ-generation worker; returns immediately.
         .function("begin_export", &craft::begin_export)
@@ -58,31 +56,23 @@ EMSCRIPTEN_BINDINGS(craft_module)
         .function("get_export", &craft::get_export)
         // inst.get_export_status() → "idle" | "running" | "ready" for UI status overlays.
         .function("get_export_status", &craft::get_export_status)
-
         // ── Maze configuration (set before calling begin_export) ─────────────
-        // inst.set_maze_rows(n) → number of rows for the maze grid (e.g. 10).
-        .function("set_maze_rows", &craft::set_maze_rows)
-        // inst.set_maze_columns(n) → number of columns for the maze grid (e.g. 10).
-        .function("set_maze_columns", &craft::set_maze_columns)
-        // inst.set_maze_algo("dfs") → algorithm name: "binary_tree" | "sidewinder" | "dfs".
-        .function("set_maze_algo", &craft::set_maze_algo)
-        // inst.set_maze_seed(n) → deterministic RNG seed; 0 = random.
-        .function("set_maze_seed", &craft::set_maze_seed)
+        .function("maze", &craft::maze)
         .function("get_version", &craft::get_version);
 }
-#endif
+#endif // EMSCRIPTEN
 
 int main()
 {
     try
     {
         mazes::randomizer rng;
-
         if (!VOXEL_ENGINE->run(nullptr, std::ref(rng)))
         {
             throw std::runtime_error("Running Voxels app failed.");
         }
-    } catch (std::exception& ex)
+    }
+    catch (std::exception &ex)
     {
         std::cerr << ex.what() << std::endl;
     }
