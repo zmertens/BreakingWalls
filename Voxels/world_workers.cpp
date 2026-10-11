@@ -25,6 +25,7 @@ bool world::worker_run(worker *w) const noexcept
         if (item->load)
         {
             this->load_chunk(item);
+            
         }
         chunk::compute(item);
 

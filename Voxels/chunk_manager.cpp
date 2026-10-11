@@ -11,7 +11,9 @@
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <ranges>
+#include <string>
 
 // ---------------------------------------------------------------------------
 // Hit tests / collision
@@ -50,13 +52,27 @@ int world::_hit_test(const craft_map *map, const float max_distance, const int p
         {
             if (const int hw = map->get(nx, ny, nz); hw > 0)
             {
-                if (previous) { *hx = px; *hy = py; *hz = pz; }
-                else          { *hx = nx; *hy = ny; *hz = nz; }
+                if (previous)
+                {
+                    *hx = px;
+                    *hy = py;
+                    *hz = pz;
+                }
+                else
+                {
+                    *hx = nx;
+                    *hy = ny;
+                    *hz = nz;
+                }
                 return hw;
             }
-            px = nx; py = ny; pz = nz;
+            px = nx;
+            py = ny;
+            pz = nz;
         }
-        x += vx / m; y += vy / m; z += vz / m;
+        x += vx / m;
+        y += vy / m;
+        z += vz / m;
     }
     return 0;
 }
@@ -81,13 +97,13 @@ int world::hit_test(const int previous, const float x, const float y, const floa
         const int hw = _hit_test(&c->map, 8, previous, x, y, z, vx, vy, vz, &hx, &hy, &hz);
         if (hw > 0)
         {
-            if (const auto dist = SDL_sqrtf(SDL_powf(static_cast<float>(hx) - x, 2)
-                                         + SDL_powf(static_cast<float>(hy) - y, 2)
-                                         + SDL_powf(static_cast<float>(hz) - z, 2));
+            if (const auto dist = SDL_sqrtf(SDL_powf(static_cast<float>(hx) - x, 2) + SDL_powf(static_cast<float>(hy) - y, 2) + SDL_powf(static_cast<float>(hz) - z, 2));
                 best == 0 || dist < best)
             {
                 best = dist;
-                *bx = hx; *by = hy; *bz = hz;
+                *bx = hx;
+                *by = hy;
+                *bz = hz;
                 result = hw;
             }
         }
@@ -104,18 +120,40 @@ int world::hit_test_face(int *x, int *y, int *z, int *face) const noexcept
         int hx, hy, hz;
         hit_test(1, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
         const int dx = hx - *x, dy = hy - *y, dz = hz - *z;
-        if (dx == -1 && dy == 0 && dz == 0) { *face = 0; return 1; }
-        if (dx ==  1 && dy == 0 && dz == 0) { *face = 1; return 1; }
-        if (dx == 0 && dy == 0 && dz == -1) { *face = 2; return 1; }
-        if (dx == 0 && dy == 0 && dz ==  1) { *face = 3; return 1; }
+        if (dx == -1 && dy == 0 && dz == 0)
+        {
+            *face = 0;
+            return 1;
+        }
+        if (dx == 1 && dy == 0 && dz == 0)
+        {
+            *face = 1;
+            return 1;
+        }
+        if (dx == 0 && dy == 0 && dz == -1)
+        {
+            *face = 2;
+            return 1;
+        }
+        if (dx == 0 && dy == 0 && dz == 1)
+        {
+            *face = 3;
+            return 1;
+        }
         if (dx == 0 && dy == 1 && dz == 0)
         {
             auto degrees = SDL_roundf(static_cast<float>(matrix::to_degrees(SDL_atan2(s->x - hx, s->z - hz))));
-            if (degrees < 0.f) degrees += 360.f;
+            if (degrees < 0.f)
+                degrees += 360.f;
             const auto top = static_cast<int>(((degrees + 45.f) / 90.f)) % 4;
-            *face = 4 + top; return 1;
+            *face = 4 + top;
+            return 1;
         }
-        if (dx == 0 && dy == -1 && dz == 0) { *face = 8; return 1; }
+        if (dx == 0 && dy == -1 && dz == 0)
+        {
+            *face = 8;
+            return 1;
+        }
     }
     return 0;
 }
@@ -137,12 +175,24 @@ int world::collide(const int height, float *x, float *y, float *z) const noexcep
     for (int dy = 0; dy < height; dy++)
     {
         constexpr float pad = 0.25f;
-        if (px < -pad && item::is_obstacle(map->get(nx - 1, ny - dy, nz))) *x = nx - pad;
-        if (px >  pad && item::is_obstacle(map->get(nx + 1, ny - dy, nz))) *x = nx + pad;
-        if (py < -pad && item::is_obstacle(map->get(nx, ny - dy - 1, nz))) { *y = ny - pad; result = 1; }
-        if (py >  pad && item::is_obstacle(map->get(nx, ny - dy + 1, nz))) { *y = ny + pad; result = 1; }
-        if (pz < -pad && item::is_obstacle(map->get(nx, ny - dy, nz - 1))) *z = nz - pad;
-        if (pz >  pad && item::is_obstacle(map->get(nx, ny - dy, nz + 1))) *z = nz + pad;
+        if (px < -pad && item::is_obstacle(map->get(nx - 1, ny - dy, nz)))
+            *x = nx - pad;
+        if (px > pad && item::is_obstacle(map->get(nx + 1, ny - dy, nz)))
+            *x = nx + pad;
+        if (py < -pad && item::is_obstacle(map->get(nx, ny - dy - 1, nz)))
+        {
+            *y = ny - pad;
+            result = 1;
+        }
+        if (py > pad && item::is_obstacle(map->get(nx, ny - dy + 1, nz)))
+        {
+            *y = ny + pad;
+            result = 1;
+        }
+        if (pz < -pad && item::is_obstacle(map->get(nx, ny - dy, nz - 1)))
+            *z = nz - pad;
+        if (pz > pad && item::is_obstacle(map->get(nx, ny - dy, nz + 1)))
+            *z = nz + pad;
     }
     return result;
 }
@@ -153,17 +203,14 @@ int world::collide(const int height, float *x, float *y, float *z) const noexcep
 
 bool world::has_lights(const chunk *c) const noexcept
 {
-    static constexpr std::array<std::array<int, 2>, 9> offsets = {{{-1, -1}, {-1, 0}, {-1, 1},
-                                                                    {0, -1},  {0, 0},  {0, 1},
-                                                                    {1, -1},  {1, 0},  {1, 1}}};
+    static constexpr std::array<std::array<int, 2>, 9> offsets = {{{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 0}, {0, 1}, {1, -1}, {1, 0}, {1, 1}}};
     return std::ranges::any_of(offsets, [&](const auto &off)
-    {
+                               {
         const int dp = off[0], dq = off[1];
         const chunk *other = (dp || dq)
             ? find_chunk(c->p + dp, c->q + dq).value_or(nullptr)
             : c;
-        return other && other->lights.size() != 0;
-    });
+        return other && other->lights.size() != 0; });
 }
 
 void world::dirty_chunk(chunk *c) const noexcept
@@ -202,7 +249,9 @@ void world::update_dirty_chunks_async() const noexcept
                     continue;
 
                 worker_item *item = &worker->item;
-                item->p = c->p; item->q = c->q; item->load = 0;
+                item->p = c->p;
+                item->q = c->q;
+                item->load = 0;
 
                 for (int dp = -1; dp <= 1; dp++)
                 {
@@ -244,7 +293,8 @@ void world::update_dirty_chunks_async() const noexcept
 void world::gen_chunk_buffer(chunk *c) const noexcept
 {
     worker_item _item, *item = &_item;
-    item->p = c->p; item->q = c->q;
+    item->p = c->p;
+    item->q = c->q;
     for (int dp = -1; dp <= 1; dp++)
     {
         for (int dq = -1; dq <= 1; dq++)
@@ -278,7 +328,8 @@ void world::create_chunk(chunk *c, const int p, const int q) noexcept
 {
     init_chunk(c, p, q);
     worker_item _item, *item = &_item;
-    item->p = c->p; item->q = c->q;
+    item->p = c->p;
+    item->q = c->q;
     item->block_maps[1][1] = &c->map;
     item->light_maps[1][1] = &c->lights;
     load_chunk(item);
@@ -298,8 +349,10 @@ void world::delete_chunks() noexcept
     for (std::size_t i = 1; i < count; ++i)
     {
         chunk *c = background_layer[i];
-        if (c == nullptr) continue;
-        if (chunk_distance(c, p, q) < DELETE_CHUNK_RADIUS) break;
+        if (c == nullptr)
+            continue;
+        if (chunk_distance(c, p, q) < DELETE_CHUNK_RADIUS)
+            break;
 
         detach_chunk_from_layer(c);
         c->release_buffers();
@@ -322,7 +375,8 @@ void world::delete_all_chunks() noexcept
     for (std::size_t i = 1; i < this->next_chunk_slot_in_view; ++i)
     {
         chunk *c = background_layer[i];
-        if (c == nullptr) continue;
+        if (c == nullptr)
+            continue;
         detach_chunk_from_layer(c);
         c->release_buffers();
         delete c;
@@ -350,7 +404,7 @@ void world::check_workers() noexcept
                 chunk *c = chunk_opt.value();
                 if (item->load)
                 {
-                    c->map    = *item->block_maps[1][1];
+                    c->map = *item->block_maps[1][1];
                     c->lights = *item->light_maps[1][1];
                 }
                 c->generate(item);
@@ -363,8 +417,10 @@ void world::check_workers() noexcept
             for (int a = 0; a < 3; a++)
                 for (int b = 0; b < 3; b++)
                 {
-                    delete item->block_maps[a][b]; item->block_maps[a][b] = nullptr;
-                    delete item->light_maps[a][b]; item->light_maps[a][b] = nullptr;
+                    delete item->block_maps[a][b];
+                    item->block_maps[a][b] = nullptr;
+                    delete item->light_maps[a][b];
+                    item->light_maps[a][b] = nullptr;
                 }
             w->state = WorkerState::IDLE;
         }
@@ -422,9 +478,11 @@ void world::ensure_chunks_worker(player *_player, worker *w) noexcept
         {
             int a = p + dp, b = q + dq;
             int index = (SDL_abs(a) ^ SDL_abs(b)) % CHUNK_WORKERS_TOTAL;
-            if (index != w->index) continue;
+            if (index != w->index)
+                continue;
             auto chunk_opt = find_chunk(a, b);
-            if (chunk_opt.has_value() && !chunk_opt.value()->dirty) continue;
+            if (chunk_opt.has_value() && !chunk_opt.value()->dirty)
+                continue;
             int distance = SDL_max(SDL_abs(dp), SDL_abs(dq));
             const auto invisible = ~static_cast<int>(chunk_visible(planes, a, b, 0, item::TOTAL_BLOCKS));
             int priority = 0;
@@ -435,11 +493,14 @@ void world::ensure_chunks_worker(player *_player, worker *w) noexcept
             }
             if (const int score = (invisible << 24) | (priority << 16) | distance; score < best_score)
             {
-                best_score = score; best_a = a; best_b = b;
+                best_score = score;
+                best_a = a;
+                best_b = b;
             }
         }
     }
-    if (best_score == start) return;
+    if (best_score == start)
+        return;
 
     int a = best_a, b = best_b, load = 0;
     auto chunk_opt = find_chunk(a, b);
@@ -455,12 +516,16 @@ void world::ensure_chunks_worker(player *_player, worker *w) noexcept
             ++this->next_chunk_slot_in_view;
             init_chunk(c, a, b);
         }
-        else return;
+        else
+            return;
     }
-    else c = chunk_opt.value();
+    else
+        c = chunk_opt.value();
 
     worker_item *item = &w->item;
-    item->p = c->p; item->q = c->q; item->load = load;
+    item->p = c->p;
+    item->q = c->q;
+    item->load = load;
     for (int dp = -1; dp <= 1; dp++)
     {
         for (int dq = -1; dq <= 1; dq++)

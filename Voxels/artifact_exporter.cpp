@@ -57,7 +57,7 @@ std::string artifact_exporter::blocks_to_wavefront_obj(
         vertex_count += 8;
     }
 
-    SDL_Log("blocks_to_wavefront_obj: Generated OBJ with %d blocks in %lu ms\n",
+    SDL_Log("blocks_to_wavefront_obj: Generated OBJ with %d blocks in %llu ms\n",
             processed_blocks, SDL_GetTicks() - start_time);
     return result.str();
 }

@@ -356,8 +356,8 @@ bool editor_world::generate_ghost(const mazes::configurator &config) noexcept
                                 " --levels=1 --algo=" + std::string{mazes::to_sv_from_algo(config.algo_id())} +
                                 " --seed=" + std::to_string(config.seed()) +
                                 " --output=stdout";
-    [[maybe_unused]] const auto result = app->apply(request);
-    const auto topo = mazes::topology::parse(app->get_finished_text());
+    const auto result = app->apply(request);
+    const auto topo = mazes::topology::parse(std::string{result});
     if (topo.rows == 0u || topo.columns == 0u)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze ghost: failed to generate maze layout\n");

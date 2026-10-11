@@ -1,5 +1,5 @@
-#ifndef VOXELS_RESOURCE_IDENTIFIERS_H
-#define VOXELS_RESOURCE_IDENTIFIERS_H
+#ifndef RESOURCE_IDENTIFIERS_H
+#define RESOURCE_IDENTIFIERS_H
 
 #include <array>
 #include <cstddef>
@@ -41,7 +41,8 @@ enum class TextureIdentifier : unsigned int
     BITMAP_FONT = 3,
     WINDOW_ICON = 4,
     MAZE = 5,
-    TOTAL = 6
+    FLIPS_AND_ALE_ICON = 6,
+    TOTAL = 7
 };
 
 enum class FontIdentifier : unsigned int
@@ -87,4 +88,4 @@ typedef resource_manager<texture, TextureIdentifier> texture_manager;
 typedef resource_manager<bloom_pass, BloomPassIdentifier> bloom_pass_manager;
 typedef resource_manager<soundfx, SoundIdentifier> soundfx_manager;
 
-#endif // VOXELS_RESOURCE_IDENTIFIERS_H
+#endif // RESOURCE_IDENTIFIERS_H

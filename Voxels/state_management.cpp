@@ -321,6 +321,7 @@ void loading_state::load_resources() const noexcept
     ctx.ctx_textures->load(TextureIdentifier::SIGNS, "Textures/signs.png", static_cast<unsigned int>(TextureIdentifier::SIGNS));
     ctx.ctx_textures->load(TextureIdentifier::SKY, "Textures/sky.png", static_cast<unsigned int>(TextureIdentifier::SKY));
     ctx.ctx_textures->load(ctx.ctx_window, TextureIdentifier::WINDOW_ICON, "Textures/icon.bmp");
+    ctx.ctx_textures->load(TextureIdentifier::FLIPS_AND_ALE_ICON, "Textures/FlipsAndAleIcon.png", static_cast<unsigned int>(TextureIdentifier::FLIPS_AND_ALE_ICON));
 
     ctx.ctx_sounds->load(SoundIdentifier::GAME_THEME_SONG_1, "SoundFX/GameThemeSong.ogg", 0.f, 1.f, 98.6f, true);
     ctx.ctx_sounds->load(SoundIdentifier::LOADING_THEME_SONG, "SoundFX/loading.ogg", 0.35f, 1.f, 87.215f, true);
@@ -511,22 +512,44 @@ void menu_state::draw() const noexcept
                                              ImGui::GetContentRegionAvail().x * .4f);
         const float content_width = std::max(1.f, ImGui::GetContentRegionAvail().x - sidebar_width - style.ItemSpacing.x);
 
+        static constexpr auto FLIPS_AND_ALE_STR{"{ Flips and Ale gamedev }"};
         ImGui::TextColored(heading_color, "Options");
         ImGui::Separator();
         const float available_height = ImGui::GetContentRegionAvail().y;
         ImGui::BeginChild("##sidebar", ImVec2(sidebar_width, available_height), ImGuiChildFlags_Borders);
-        bool show_stats = configs.show_stats_window();
-        ImGui::Checkbox("Show Stats Overlay", &show_stats);
         if (ImGui::Button("Resume", ImVec2(-1.f, 0)))
         {
             request_stack_pop();
         }
-        configs.show_stats_window(show_stats);
         ImGui::Separator();
         draw_mode_sidebar(available_height);
         if (ImGui::Button("Close Application", ImVec2(-1.f, row_height)))
         {
             request_stack_clear();
+        }
+
+        const auto &icon = ctx.ctx_textures->get(TextureIdentifier::FLIPS_AND_ALE_ICON);
+        if (icon.gl_texture != 0 && icon.width > 0 && icon.height > 0)
+        {
+            ImGui::Separator();
+            const float max_width = ImGui::GetContentRegionAvail().x;
+            const float max_height = ImGui::GetContentRegionAvail().y;
+            const float aspect = static_cast<float>(icon.width) / static_cast<float>(icon.height);
+            float img_w = std::min(max_width, static_cast<float>(icon.width));
+            float img_h = img_w / aspect;
+            if (img_h > max_height)
+            {
+                img_h = max_height;
+                img_w = img_h * aspect;
+            }
+            if (img_w > 1.f && img_h > 1.f)
+            {
+                // Pin to the bottom of the sidebar, centered horizontally
+                ImGui::TextColored(ImVec4(1.f, 1.f, 1.f, 1.f), FLIPS_AND_ALE_STR);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetContentRegionAvail().y - img_h);
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (max_width - img_w) * .5f);
+                ImGui::Image(static_cast<ImTextureID>(icon.gl_texture), ImVec2(img_w, img_h));
+            }
         }
         ImGui::EndChild();
         ImGui::SameLine();
@@ -539,6 +562,8 @@ void menu_state::draw() const noexcept
                 bool vsync = configs.vsync(), fullscreen = configs.fullscreen();
                 float exposure = configs.exposure_val(), font_scale = configs.gui_font_scale();
                 bool bloom = configs.use_bloom_effect();
+                bool show_stats = configs.show_stats_window();
+                ImGui::Checkbox("Show FPS Stats", &show_stats);
                 ImGui::Checkbox("Enable VSync", &vsync);
                 ImGui::Checkbox("Enable Fullscreen", &fullscreen);
                 ImGui::Checkbox("Enable Bloom Effect", &bloom);
@@ -568,7 +593,7 @@ void menu_state::draw() const noexcept
                         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Fullscreen change failed: %s", SDL_GetError());
                     }
                 }
-                configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale);
+                configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale).show_stats_window(show_stats);
                 ImGui::EndTabItem();
             }
 
@@ -613,7 +638,9 @@ void menu_state::draw_mode_sidebar(const float available_height) const noexcept
     if (mode == StateIdentifier::EDITOR)
     {
         if (ImGui::Button("Play Game", ImVec2(-1.f, 0)))
+        {
             get_stack().switch_mode(StateIdentifier::GAME);
+        }
         ImGui::TextWrapped("Switching modes resets the current world.");
         ImGui::Separator();
 
@@ -651,7 +678,9 @@ void menu_state::draw_mode_sidebar(const float available_height) const noexcept
     else
     {
         if (ImGui::Button("Voxel Editor", ImVec2(-1.f, 0)))
+        {
             get_stack().switch_mode(StateIdentifier::EDITOR);
+        }
         ImGui::TextWrapped("Switching modes resets the current world.");
     }
 }
@@ -821,7 +850,9 @@ bool game_state::update(float dt, mazes::randomizer &rng) noexcept
     {
         current_game_world->update(dt, std::ref(rng));
         if (!current_game_world->tracing_running())
+        {
             request_stack_clear();
+        }
         return true;
     }
     return false;
