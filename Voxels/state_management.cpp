@@ -28,6 +28,7 @@
 #include <MazeBuilder/algos.h>
 #include <MazeBuilder/configurator.h>
 #include <MazeBuilder/io_utils.h>
+#include <MazeBuilder/progress.h>
 #include <MazeBuilder/string_utils.h>
 
 #include <algorithm>
@@ -322,7 +323,13 @@ void loading_state::load_resources() const noexcept
     ctx.ctx_textures->load(ctx.ctx_window, TextureIdentifier::WINDOW_ICON, "Textures/icon.bmp");
 
     ctx.ctx_sounds->load(SoundIdentifier::GAME_THEME_SONG_1, "SoundFX/GameThemeSong.ogg", 0.f, 1.f, 98.6f, true);
-    ctx.ctx_sounds->load(SoundIdentifier::BOINK, "SoundFX/boink.ogg", 0.f, 1.f, 25.75f, false);
+    ctx.ctx_sounds->load(SoundIdentifier::LOADING_THEME_SONG, "SoundFX/loading.ogg", 0.35f, 1.f, 87.215f, true);
+    ctx.ctx_sounds->load(SoundIdentifier::BOINK, "SoundFX/boink.ogg", 0.f, 1.f, 23.035f, false);
+    {
+        const auto &configs = ctx.ctx_player->get_configs();
+        ctx.ctx_sounds->get(SoundIdentifier::BOINK)
+            .set_volumes(configs.master_volume(), configs.music_volume(), configs.sfx_volume(), configs.mute_audio());
+    }
 }
 
 void loading_state::draw() const noexcept
@@ -353,7 +360,10 @@ bool loading_state::update(float, mazes::randomizer &) noexcept
     {
         if (!get_stack().resources_have_loaded())
         {
-            load_resources();
+            const auto prog{mazes::progress<>::duration([this]()
+                                                        { load_resources(); })};
+            SDL_Log("Resource loading took: %.7f ms",
+                    mazes::progress<>::to_double_from_duration(prog));
             get_stack().mark_resources_loaded();
         }
         resources_loaded = true;
@@ -462,6 +472,19 @@ menu_state::menu_state(state_stack &stack, const context &context)
     algo_list.emplace_back(mazes::to_sv_from_algo(mazes::algo::DFS));
     algo_list.emplace_back(mazes::to_sv_from_algo(mazes::algo::SIDEWINDER));
     algo_list.emplace_back(mazes::to_sv_from_algo(mazes::algo::PRIMS));
+
+    // The loading song plays while the menu is open; the game theme resumes when it closes.
+    auto *sounds = context.ctx_sounds;
+    auto &fx = sounds->get(SoundIdentifier::LOADING_THEME_SONG);
+    const auto &configs = context.ctx_player->get_configs();
+    fx.set_volumes(configs.master_volume(), configs.music_volume(), configs.sfx_volume(), configs.mute_audio());
+    sounds->get(SoundIdentifier::GAME_THEME_SONG_1).stop(SoundIdentifier::GAME_THEME_SONG_1);
+    fx.play(SoundIdentifier::LOADING_THEME_SONG);
+}
+
+menu_state::~menu_state()
+{
+    get_context().ctx_sounds->get(SoundIdentifier::LOADING_THEME_SONG).stop(SoundIdentifier::LOADING_THEME_SONG);
 }
 
 void menu_state::draw() const noexcept
@@ -550,6 +573,19 @@ void menu_state::draw() const noexcept
             }
 
             draw_mode_tabs();
+            if (ImGui::BeginTabItem("Audio"))
+            {
+                float master = configs.master_volume(), music = configs.music_volume(), sfx = configs.sfx_volume();
+                bool muted = configs.mute_audio();
+                ImGui::Checkbox("Mute All", &muted);
+                ImGui::SliderFloat("Master Volume", &master, 0.f, 1.f);
+                ImGui::SliderFloat("Music Volume", &music, 0.f, 1.f);
+                ImGui::SliderFloat("Effects Volume", &sfx, 0.f, 1.f);
+                configs.master_volume(master).music_volume(music).sfx_volume(sfx).mute_audio(muted);
+                ctx.ctx_sounds->get(SoundIdentifier::LOADING_THEME_SONG)
+                    .set_volumes(configs.master_volume(), configs.music_volume(), configs.sfx_volume(), configs.mute_audio());
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
         }
         ImGui::EndChild();
@@ -658,7 +694,7 @@ void menu_state::draw_mode_tabs() const noexcept
         static constexpr auto ROWS{maze.MAX_ROWS / 4}, COLUMNS{maze.MAX_COLUMNS / 4};
         static constexpr auto LEVELS{maze.MAX_LEVELS / 2};
         static constexpr auto SEED{maze.DEFAULT_SEED_VALUE};
-        static int rows = 2, columns = 2, levels = 2, seed = SEED;
+        static int rows = maze.rows(), columns = maze.columns(), levels = maze.levels(), seed = maze.seed();
         ImGui::SliderInt("Rows", &rows, 2, ROWS);
         ImGui::SliderInt("Columns", &columns, 2, COLUMNS);
         ImGui::SliderInt("Levels", &levels, 1, LEVELS);
@@ -674,18 +710,16 @@ void menu_state::draw_mode_tabs() const noexcept
             }
             ImGui::EndCombo();
         }
-        if (ImGui::Button("Apply Configs"))
-        {
-            configs.maze(mazes::configurator{}
-                             .algo_id(mazes::to_algo_from_sv(m_selected_algo))
-                             .rows(rows)
-                             .columns(columns)
-                             .levels(levels)
-                             .seed(seed));
-        }
+
+        configs.maze(mazes::configurator{}
+                         .algo_id(mazes::to_algo_from_sv(m_selected_algo))
+                         .rows(rows)
+                         .columns(columns)
+                         .levels(levels)
+                         .seed(seed));
         ImGui::EndTabItem();
     }
-    if (ImGui::BeginTabItem("CADTools"))
+    if (ImGui::BeginTabItem("CAD Tools"))
     {
         bool invert = configs.invert_mouse(), details = configs.show_crosshair_details();
         bool ghost = configs.show_ghosts();

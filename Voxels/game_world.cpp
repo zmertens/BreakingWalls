@@ -63,6 +63,7 @@ void game_world::configure_tracing_board(const std::size_t side)
     }
     auto &game = *m_tracing;
     game.board = maze_game_model(game.rng(), true, side);
+    game.ai.reset(game.board);
     game.selected_side = static_cast<int>(side);
     game.configuration_error.clear();
     cancel_tracing_input();
@@ -70,7 +71,6 @@ void game_world::configure_tracing_board(const std::size_t side)
     game.rendered.clear();
     game.rendered_level = 0;
     game.falling_vertices = 0;
-    game.paused = false;
     sync_tracing_board();
 }
 
@@ -288,7 +288,7 @@ void game_world::cancel_tracing_input()
 void game_world::trace_pointer(float x, float y, bool begin, bool release)
 {
     auto &game = *m_tracing;
-    if (game.paused || game.gesture_lockout)
+    if (game.gesture_lockout)
         return;
     if (game.layout.extent > 0)
     {
@@ -371,9 +371,8 @@ void game_world::handle_tracing_event(const SDL_Event &event)
         if (event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
         {
             cancel_tracing_input();
-            game.paused = !game.paused;
         }
-        else if (!game.paused && !ImGui::GetIO().WantCaptureKeyboard)
+        else if (!ImGui::GetIO().WantCaptureKeyboard)
         {
             switch (event.key.scancode)
             {
@@ -404,7 +403,7 @@ void game_world::handle_tracing_event(const SDL_Event &event)
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (event.button.which == SDL_TOUCH_MOUSEID || game.paused || !game.touches.empty() ||
+        if (event.button.which == SDL_TOUCH_MOUSEID || !game.touches.empty() ||
             !game.layout.contains(event.button.x, event.button.y) || ImGui::GetIO().WantCaptureMouse)
             break;
         game.pointer = {event.button.x, event.button.y};
@@ -423,7 +422,7 @@ void game_world::handle_tracing_event(const SDL_Event &event)
         if (event.motion.which == SDL_TOUCH_MOUSEID || !game.touches.empty())
             break;
         game.pointer = {event.motion.x, event.motion.y};
-        if (!game.paused && game.pan_origin)
+        if (game.pan_origin)
         {
             const auto [x, y] = *game.pan_origin;
             game.layout.pan(event.motion.x - x, event.motion.y - y);
@@ -448,7 +447,7 @@ void game_world::handle_tracing_event(const SDL_Event &event)
         }
         break;
     case SDL_EVENT_MOUSE_WHEEL:
-        if (!game.paused && game.touches.empty() &&
+        if (game.touches.empty() &&
             game.layout.contains(event.wheel.mouse_x, event.wheel.mouse_y) &&
             !ImGui::GetIO().WantCaptureMouse)
         {
@@ -477,7 +476,7 @@ void game_world::handle_tracing_event(const SDL_Event &event)
         const float x = event.tfinger.x * size.x, y = event.tfinger.y * size.y;
         if (event.type == SDL_EVENT_FINGER_DOWN)
         {
-            if (game.paused || game.mouse_down || game.pan_origin || !game.layout.contains(x, y) ||
+            if (game.mouse_down || game.pan_origin || !game.layout.contains(x, y) ||
                 (game.touches.empty() && ImGui::GetIO().WantCaptureMouse))
             {
                 break;
@@ -577,7 +576,7 @@ void game_world::draw_tracing() const
     const int viewport_width = std::max(1, static_cast<int>(game.layout.width * scale_x));
     const int viewport_height = std::max(1, static_cast<int>(game.layout.height * scale_y));
     const bool bloom = active_player->get_configs().use_bloom_effect();
-    // Fill-rate budget: scene, glass, fog and bloom render at no more than ~1.2M pixels and are
+    // Fill-rate budget: scene, glass and bloom render at no more than ~1.2M pixels and are
     // upscaled by the composite, so frame cost stays flat as the window grows.
     constexpr float PIXEL_BUDGET = 1.2e6f;
     const float render_scale = std::min(1.0f, std::sqrt(PIXEL_BUDGET / (static_cast<float>(viewport_width) * viewport_height)));
@@ -669,8 +668,8 @@ void game_world::draw_tracing() const
     // The block program is shared with other worlds, so leave it without ball occluders.
     glUniform1i(game.block_ball_count, 0);
     // Block tops sit at y = 7.5, which is where the balls rest.
-    game.environment.draw_reflected_balls(game.balls, projection, environment, 7.5f, 0.35f);
-    game.environment.draw_balls(game.balls, projection, environment);
+    game.environment.draw_reflected_balls(game.balls, projection, environment, 7.5f, 0.35f, game.effect_time);
+    game.environment.draw_balls(game.balls, projection, environment, game.effect_time);
     glBindVertexArray(game.vao);
     m_bloom->bind_glass();
     glUseProgram(game.glass_shader.get());
@@ -717,6 +716,8 @@ void game_world::draw_tracing() const
     };
     add_edges(game.board.saved_edges(), 4.0f, 0.075f);
     add_edges(game.board.active_edges(), 3.0f, 0.1f);
+    add_edges(game.board.saved_edges(maze_game_model::owner::ai), 7.0f, 0.075f);
+    add_edges(game.board.active_edges(maze_game_model::owner::ai), 6.0f, 0.1f);
     game.swarm.append_vertices(strokes, game.effect_time);
     game.line_vertices = static_cast<int>(strokes.size() / 10);
     if (game.line_vertices)
@@ -733,29 +734,6 @@ void game_world::draw_tracing() const
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
     m_bloom->resolve_glass();
-    {
-        // Fog is world-anchored: the radius follows the grid size, and zoom, pan and resize
-        // reach the shader through the layout uniforms every frame.
-        const auto &fog = game.fog_uniforms;
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glUseProgram(game.fog_shader.get());
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, game.fog_texture);
-        glUniform1i(fog[0], 0);
-        glUniform2f(fog[1], game.layout.width, game.layout.height);
-        glUniform1f(fog[2], game.layout.pitch());
-        glUniform1f(fog[3], game.layout.rotation);
-        glUniform2f(fog[4], game.layout.camera_x, game.layout.camera_z);
-        glUniform2f(fog[5], new_center, new_center);
-        glUniform1f(fog[6], static_cast<float>(game.board.side()) * 0.5f + 1.0f);
-        glUniform1f(fog[7], game.effect_time);
-        glUniform1f(fog[8], game.fog_enabled ? 1.0f : 0.0f);
-        m_bloom->draw_quad();
-        glDisable(GL_BLEND);
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_CULL_FACE);
-    }
     glViewport(static_cast<int>(game.layout.left * scale_x),
                pixel_height - static_cast<int>((game.layout.top + game.layout.height) * scale_y),
                viewport_width, viewport_height);
@@ -818,18 +796,11 @@ void game_world::draw_menu_options()
     ImGui::Text("Level: %zu   Lights: %d / %d", game.board.level(),
                 game.board.lights_activated(), maze_game_model::LIGHTS_PER_LEVEL);
 
-    if (ImGui::Button(game.paused ? "Resume Game" : "Pause Game"))
-    {
-        cancel_tracing_input();
-        game.paused = !game.paused;
-    }
-    ImGui::SameLine();
     if (ImGui::Button("New Game"))
     {
         game.board.reset();
         cancel_tracing_input();
         game.layout.reset_camera();
-        game.paused = false;
         game.rendered.clear();
         game.rendered_level = 0;
         game.falling_vertices = 0;
@@ -837,10 +808,15 @@ void game_world::draw_menu_options()
         game.configuration_error.clear();
     }
 
-    ImGui::Checkbox("Radial fog", &game.fog_enabled);
     ImGui::BeginDisabled(!game.environment.ready());
     ImGui::Checkbox("Maze environment", &game.environment_enabled);
     ImGui::EndDisabled();
+    {
+        bool ai_enabled = active_player->get_configs().game_ai_enabled();
+        if (ImGui::Checkbox("AI autoplayer", &ai_enabled))
+            active_player->get_configs().enable_game_ai(ai_enabled);
+        game.ai.set_enabled(ai_enabled);
+    }
     ImGui::SetNextItemWidth(100.f);
     ImGui::InputInt("Board side", &game.selected_side, 0, 0);
     if (ImGui::Button("Apply / reset board"))
@@ -855,8 +831,6 @@ void game_world::draw_menu_options()
     }
     if (!game.configuration_error.empty())
         ImGui::TextWrapped("%s", game.configuration_error.c_str());
-    else if (game.paused)
-        ImGui::TextUnformatted("Game paused.");
     else
         ImGui::TextWrapped("%s", game.board.message().c_str());
     if (!game.environment_error.empty())
@@ -889,7 +863,6 @@ game_world::~game_world()
         sdl_gl_helper::del_buffer(m_tracing->glass_buffer);
         sdl_gl_helper::del_buffer(m_tracing->falling_buffer);
         sdl_gl_helper::del_buffer(m_tracing->line_buffer);
-        glDeleteTextures(1, &m_tracing->fog_texture);
     }
     if (active_player)
     {
@@ -916,48 +889,13 @@ void game_world::init() noexcept
     game.environment.init_balls();
     try
     {
-        game.environment.init(game.board, game.rng());
+        game.environment.init(game.rng());
     }
     catch (const std::exception &error)
     {
         game.environment_error = error.what();
         game.environment_enabled = false;
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Game maze environment: %s", error.what());
-    }
-#if defined(__EMSCRIPTEN__)
-    game.fog_shader.load_program("Shaders/es/bloom_quad_vertex.es.glsl", "Shaders/es/radial_fog_fragment.es.glsl");
-#else
-    game.fog_shader.load_program("Shaders/bloom_quad_vertex.glsl", "Shaders/radial_fog_fragment.glsl");
-#endif
-    {
-        constexpr const char *names[]{"cloud_noise", "view_size", "pitch", "rotation", "camera",
-                                      "board_center", "fog_radius", "seconds", "density"};
-        for (std::size_t i = 0; i < std::size(names); ++i)
-            game.fog_uniforms[i] = game.fog_shader.uniform(names[i]);
-        // Seamlessly tiling cloud noise: fractal simplex blended across its own edges.
-        constexpr int N = 128;
-        constexpr float scale = 4.0f;
-        std::vector<std::uint8_t> pixels(N * N);
-        const auto sample = [&](const float x, const float y)
-        { return simplex2(x * scale, y * scale, 4, 0.5f, 2.0f) * 0.5f + 0.5f; };
-        for (int y = 0; y < N; ++y)
-            for (int x = 0; x < N; ++x)
-            {
-                const float u = static_cast<float>(x) / N, v = static_cast<float>(y) / N;
-                const float value = sample(u, v) * (1 - u) * (1 - v) + sample(u - 1, v) * u * (1 - v) +
-                                    sample(u, v - 1) * (1 - u) * v + sample(u - 1, v - 1) * u * v;
-                pixels[static_cast<std::size_t>(y * N + x)] =
-                    static_cast<std::uint8_t>(std::clamp(value, 0.0f, 1.0f) * 255.0f);
-            }
-        glGenTextures(1, &game.fog_texture);
-        glBindTexture(GL_TEXTURE_2D, game.fog_texture);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, N, N, 0, GL_RED, GL_UNSIGNED_BYTE, pixels.data());
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     }
     game.glass_attrib.program = game.glass_shader.get();
     game.glass_attrib.position = 0;
@@ -990,7 +928,7 @@ void game_world::update(const float delta_time, mazes::randomizer &) noexcept
 {
     auto &game = *m_tracing;
     refresh_tracing_layout();
-    if (!game.paused && !game.gesture_lockout && !game.pan_origin && game.pointer)
+    if (!game.gesture_lockout && !game.pan_origin && game.pointer)
     {
         const auto [x, y] = *game.pointer;
         if (game.layout.contains(x, y) && !ImGui::GetIO().WantCaptureMouse)
@@ -1000,26 +938,37 @@ void game_world::update(const float delta_time, mazes::randomizer &) noexcept
             const float distance = voxel_board_layout::EDGE_SPEED * std::max(0.0f, delta_time) / 1000.0f;
             game.layout.pan(-fx * distance, -fy * distance);
             if (game.mouse_down || game.finger)
+            {
                 trace_pointer(x, y);
+            }
+        }
+        if (!m_sounds->is_playing(SoundIdentifier::GAME_THEME_SONG_1))
+        {
+            m_sounds->play(SoundIdentifier::GAME_THEME_SONG_1);
         }
     }
-    if (!m_tracing->paused)
+    m_tracing->effect_time += std::max(0.0f, delta_time) / 1000.0f;
+    if (active_player && active_player->get_configs().game_ai_enabled())
     {
-        m_tracing->effect_time += std::max(0.0f, delta_time) / 1000.0f;
+        game.ai.set_enabled(true);
+        game.ai.update(game.board, std::max(0.0f, delta_time) / 1000.0f, game.rng);
+    }
+    else
+    {
+        game.ai.set_enabled(false);
     }
     // The listener hovers over the camera focus so panning moves the soundstage with the view.
     m_sounds->set_listener_position(game.layout.camera_x, active_player->pos.y, game.layout.camera_z);
     sync_tracing_board();
     std::optional<game_swarm::point> swarm_head;
-    if (!game.paused && !game.gesture_lockout && game.layout.extent > 0 && game.swipe_pointer &&
+    if (!game.gesture_lockout && game.layout.extent > 0 && game.swipe_pointer &&
         (game.mouse_down || game.finger))
-        swarm_head = game.layout.to_world(game.swipe_pointer->first, game.swipe_pointer->second);
-    game.swarm.update(std::max(0.0f, delta_time) / 1000.0f, swarm_head, game.rng);
-    if (!game.paused)
     {
-        if (game.balls.update(delta_time / 1000.0f))
-            play_boink();
+        swarm_head = game.layout.to_world(game.swipe_pointer->first, game.swipe_pointer->second);
     }
+    game.swarm.update(std::max(0.0f, delta_time) / 1000.0f, swarm_head, game.rng);
+    if (game.balls.update(delta_time / 1000.0f))
+        play_boink();
 }
 
 void game_world::handle_event(const SDL_Event &event) noexcept

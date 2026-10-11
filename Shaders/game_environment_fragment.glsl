@@ -32,13 +32,18 @@ void main() {
     vec2 local = vec2(screen_position.x, -screen_position.y) * viewport_scale / zoom;
     float c = cos(rotation), s = sin(rotation);
     vec2 world = vec2(c * local.x - s * local.y, s * local.x + c * local.y) + pan;
-    vec3 maze = texture(environment_map, normalize(vec3(world.x, -0.7, world.y))).rgb * 0.24;
-    // Keep a faint maze layer near the board, fading into neon beyond its footprint.
+    // Rings spread outward from the heightmap edge; every lit light adds strength. They bend the
+    // cubemap lookup (refraction) and brighten it (reflection), so the clouds ripple instead of fog.
     float board_distance = max(abs(world.x), abs(world.y)) / max(animation.w, 0.01);
-    float height_band = 1.0 - smoothstep(0.65, 1.7, board_distance);
-    float pulse = 0.5 + 0.5 * sin(animation.x * 0.35 + animation.y * 0.4 + board_distance * 2.0);
-    float maze_weight = height_band * mix(0.10, 0.24, pulse);
-    vec3 radiance = mix(neon_field(world), maze, maze_weight);
+    float edge = board_distance - 1.0;
+    float travel = edge * 7.0 - animation.x * 1.4 - animation.y * 0.5;
+    float envelope = smoothstep(-0.25, 0.1, edge) * exp(-max(edge, 0.0) * 0.9);
+    float strength = envelope * (0.35 + 0.13 * animation.z);
+    float wave = sin(travel);
+    vec2 outward = normalize(world + vec2(1e-4));
+    vec3 direction = normalize(vec3(world.x, -0.7, world.y) + vec3(outward.x, 0.0, outward.y) * wave * strength * 0.5);
+    vec3 clouds = texture(environment_map, direction).rgb;
+    vec3 radiance = neon_field(world) * 0.6 + clouds * (0.55 + 0.9 * strength * (0.5 + 0.5 * wave));
     radiance *= 1.0 - 0.2 * smoothstep(0.4, 1.4, length(screen_position));
     fragColor = vec4(radiance, 1.0);
     brightColor = vec4(0.0, 0.0, 0.0, 1.0);

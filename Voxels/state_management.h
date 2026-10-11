@@ -177,6 +177,7 @@ class menu_state : public state
 {
 public:
     menu_state(state_stack &stack, const context &context);
+    ~menu_state() override;
 
     void draw() const noexcept override;
     bool update(float delta_time, mazes::randomizer &rng) noexcept override;

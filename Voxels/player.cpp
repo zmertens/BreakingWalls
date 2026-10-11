@@ -91,12 +91,12 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
         {
         case SDL_SCANCODE_H:
             this->configs.show_crosshair_details(!this->configs.show_crosshair_details());
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Hover Display [H]: %s",
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Crosshair Details [H]: %s",
                         configs.show_crosshair_details() ? "ON" : "OFF");
             return;
         case SDL_SCANCODE_M:
             this->configs.show_ghosts(!this->configs.show_ghosts());
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Preview Ghost [M]: %s",
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Show Ghost [M]: %s",
                         configs.show_ghosts() ? "ON" : "OFF");
             return;
         case SDL_SCANCODE_O:
@@ -752,74 +752,7 @@ std::string player::get_artifact_export_result() noexcept
 
 const char *player::get_block_name(item::BlockType block_type) noexcept
 {
-    using BlockType = item::BlockType;
-    switch (block_type)
-    {
-    case BlockType::EMPTY:
-        return "Empty";
-    case BlockType::GRASS:
-        return "Grass";
-    case BlockType::SAND:
-        return "Sand";
-    case BlockType::STONE:
-        return "Stone";
-    case BlockType::BRICK:
-        return "Brick";
-    case BlockType::WOOD:
-        return "Wood";
-    case BlockType::CEMENT:
-        return "Cement";
-    case BlockType::DIRT:
-        return "Dirt";
-    case BlockType::PLANK:
-        return "Plank";
-    case BlockType::SNOW:
-        return "Snow";
-    case BlockType::GLASS:
-        return "Glass";
-    case BlockType::COBBLE:
-        return "Cobblestone";
-    case BlockType::LIGHT_STONE:
-        return "Light Stone";
-    case BlockType::DARK_STONE:
-        return "Dark Stone";
-    case BlockType::CHEST:
-        return "Chest";
-    case BlockType::LEAVES:
-        return "Leaves";
-    case BlockType::CLOUD:
-        return "Cloud";
-    case BlockType::TALL_GRASS:
-        return "Tall Grass";
-    case BlockType::YELLOW_FLOWER:
-        return "Yellow Flower";
-    case BlockType::RED_FLOWER:
-        return "Red Flower";
-    case BlockType::PURPLE_FLOWER:
-        return "Purple Flower";
-    case BlockType::SUN_FLOWER:
-        return "Sun Flower";
-    case BlockType::WHITE_FLOWER:
-        return "White Flower";
-    case BlockType::BLUE_FLOWER:
-        return "Blue Flower";
-    case BlockType::SDL_LOGO:
-        return "SDL Logo";
-    case BlockType::SFML_LOGO:
-        return "SFML Logo";
-    case BlockType::CACTUS_1:
-        return "Cactus 1";
-    case BlockType::CACTUS_2:
-        return "Cactus 2";
-    default:
-        if (block_type >= BlockType::COLOR_00 && block_type <= BlockType::COLOR_31)
-        {
-            static char color_name[32];
-            SDL_snprintf(color_name, sizeof(color_name), "Color %02d", static_cast<int>(block_type) - static_cast<int>(BlockType::COLOR_00));
-            return color_name;
-        }
-        return "Unknown";
-    }
+    return item::to_block_name(block_type).data();
 }
 
 const char *player::get_face_name(const int face) noexcept

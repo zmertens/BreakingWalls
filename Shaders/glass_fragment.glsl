@@ -88,7 +88,7 @@ void main() {
     float shadow_depth = 1.0 - min(ball_shade.r, min(ball_shade.g, ball_shade.b));
     color = color * ball_shade + ball_glow;
     alpha = min(alpha + shadow_depth * 0.2, 0.9);
-    if (fragment_light > 4.5) {
+    if (fragment_light > 4.5 && fragment_light < 5.5) {
         // Swarm bee: soft glowing dot (normal.x = tint, normal.y = swarm strength), shadowed like the board.
         float r2 = dot(fragment_uv, fragment_uv);
         if (r2 > 1.0) discard;
@@ -98,10 +98,13 @@ void main() {
         alpha = core * core * 0.28 * surface_normal.y;
     } else if (fragment_light > 2.5) {
         // Swipe trace: dominant color, feathered edge, shaded by the same balls as the board.
-        bool active_stroke = fragment_light < 3.5;
+        bool ai_stroke = fragment_light > 5.5;
+        bool active_stroke = fragment_light < 3.5 || (ai_stroke && fragment_light < 6.5);
         float feather = 1.0 - smoothstep(0.35, 1.0, abs(fragment_uv.x));
         float pulse = 0.88 + 0.12 * sin(seconds * 6.0);
-        vec3 stroke = active_stroke ? vec3(1.0, 0.86, 0.22) * pulse : vec3(0.95, 0.55, 0.16);
+        vec3 stroke = ai_stroke
+            ? (active_stroke ? vec3(0.96, 0.94, 1.0) * pulse : vec3(0.74, 0.66, 0.92))
+            : (active_stroke ? vec3(1.0, 0.86, 0.22) * pulse : vec3(0.95, 0.55, 0.16));
         color = stroke * ball_shade + ball_glow * 0.5;
         alpha = (active_stroke ? 0.9 : 0.65) * feather;
     } else if (fragment_light > 1.5) {

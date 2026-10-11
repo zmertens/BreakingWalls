@@ -11,19 +11,56 @@
 
 struct soundfx::audio_state
 {
-    sf::Music music;
+    struct music_track
+    {
+        sf::Music music;
+        sf::Time offset{};
+        float base_volume{100.0f};
+        bool loaded{};
+    };
+
+    music_track game_theme, loading_theme;
     sf::SoundBuffer boink;
     std::array<std::unique_ptr<sf::Sound>, 8> voices;
     std::size_t next_voice{};
-    sf::Time music_offset{}, boink_offset{};
-    bool music_loaded{}, boink_loaded{};
+    sf::Time boink_offset{};
+    float boink_volume{100.0f};
+    float master{1.0f}, music_scale{1.0f}, effects_scale{1.0f};
+    bool muted{};
+    bool boink_loaded{};
     float min_distance{1.0f}, attenuation{1.0f};
+
+    // Streamed songs; nullptr for buffered effects.
+    music_track *track(SoundIdentifier id) noexcept
+    {
+        if (id == SoundIdentifier::GAME_THEME_SONG_1)
+            return &game_theme;
+        if (id == SoundIdentifier::LOADING_THEME_SONG)
+            return &loading_theme;
+        return nullptr;
+    }
+    const music_track *track(SoundIdentifier id) const noexcept
+    {
+        return const_cast<audio_state *>(this)->track(id);
+    }
+
+    void apply_volumes()
+    {
+        sf::Listener::setGlobalVolume(muted ? 0.0f : master * 100.0f);
+        for (auto *t : {&game_theme, &loading_theme})
+            t->music.setVolume(t->base_volume * music_scale);
+        for (auto &voice : voices)
+            if (voice)
+                voice->setVolume(boink_volume * effects_scale);
+    }
 
     void require_loaded(SoundIdentifier id) const
     {
-        if ((id == SoundIdentifier::GAME_THEME_SONG_1 && music_loaded) ||
-            (id == SoundIdentifier::BOINK && boink_loaded))
+        const auto *t = track(id);
+        if ((t && t->loaded) || (id == SoundIdentifier::BOINK && boink_loaded))
+        {
             return;
+        }
         SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Sound identifier %u is not loaded", static_cast<unsigned int>(id));
         throw std::logic_error("Sound identifier is not loaded");
     }
@@ -42,24 +79,25 @@ bool soundfx::load_from_file(SoundIdentifier id, std::string_view filename,
         return false;
     }
     auto &audio = *m_audio;
-    if (id == SoundIdentifier::GAME_THEME_SONG_1)
+    if (auto *t = audio.track(id))
     {
-        audio.music.stop();
-        audio.music_loaded = false;
-        if (!audio.music.openFromFile(std::string(filename)))
+        t->music.stop();
+        t->loaded = false;
+        if (!t->music.openFromFile(std::string(filename)))
             return false;
-        if (sf::seconds(offset) >= audio.music.getDuration())
+        if (sf::seconds(offset) >= t->music.getDuration())
         {
             SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Music offset exceeds duration");
             return false;
         }
-        audio.music_offset = sf::seconds(offset);
-        audio.music.setPitch(pitch);
-        audio.music.setVolume(volume);
-        audio.music.setLooping(loop);
+        t->offset = sf::seconds(offset);
+        t->music.setPitch(pitch);
+        t->base_volume = volume;
+        t->music.setVolume(volume * audio.music_scale);
+        t->music.setLooping(loop);
         // Background music must not attenuate/pan as the listener moves.
-        audio.music.setSpatializationEnabled(false);
-        audio.music_loaded = true;
+        t->music.setSpatializationEnabled(false);
+        t->loaded = true;
         return true;
     }
     if (id == SoundIdentifier::BOINK)
@@ -75,12 +113,13 @@ bool soundfx::load_from_file(SoundIdentifier id, std::string_view filename,
             return false;
         }
         audio.boink_offset = sf::seconds(offset);
+        audio.boink_volume = volume;
         audio.next_voice = 0;
         for (auto &voice : audio.voices)
         {
             voice = std::make_unique<sf::Sound>(audio.boink);
             voice->setPitch(pitch);
-            voice->setVolume(volume);
+            voice->setVolume(volume * audio.effects_scale);
             voice->setLooping(loop);
         }
         audio.boink_loaded = true;
@@ -88,6 +127,17 @@ bool soundfx::load_from_file(SoundIdentifier id, std::string_view filename,
     }
     SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Unsupported sound identifier %u", static_cast<unsigned int>(id));
     return false;
+}
+
+void soundfx::set_volumes(float master, float music, float effects, bool muted)
+{
+    const auto clamp01 = [](float v) { return std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : 0.0f; };
+    auto &audio = *m_audio;
+    audio.master = clamp01(master);
+    audio.music_scale = clamp01(music);
+    audio.effects_scale = clamp01(effects);
+    audio.muted = muted;
+    audio.apply_volumes();
 }
 
 float soundfx::volume_factor(float min_distance, float attenuation, float distance) noexcept
@@ -119,12 +169,12 @@ void soundfx::play_at(SoundIdentifier id, float x, float y, float z)
 {
     auto &audio = *m_audio;
     audio.require_loaded(id);
-    if (id == SoundIdentifier::GAME_THEME_SONG_1)
+    if (auto *t = audio.track(id))
     {
-        audio.music.setSpatializationEnabled(true);
-        audio.music.setPosition({x, y, z});
-        audio.music.setMinDistance(audio.min_distance);
-        audio.music.setAttenuation(audio.attenuation);
+        t->music.setSpatializationEnabled(true);
+        t->music.setPosition({x, y, z});
+        t->music.setMinDistance(audio.min_distance);
+        t->music.setAttenuation(audio.attenuation);
         play(id);
         return;
     }
@@ -140,12 +190,12 @@ void soundfx::play(SoundIdentifier id)
 {
     auto &audio = *m_audio;
     audio.require_loaded(id);
-    if (id == SoundIdentifier::GAME_THEME_SONG_1)
+    if (auto *t = audio.track(id))
     {
         if (!is_playing(id))
         {
-            audio.music.setPlayingOffset(audio.music_offset);
-            audio.music.play();
+            t->music.setPlayingOffset(t->offset);
+            t->music.play();
         }
         return;
     }
@@ -160,8 +210,8 @@ void soundfx::stop(SoundIdentifier id)
 {
     auto &audio = *m_audio;
     audio.require_loaded(id);
-    if (id == SoundIdentifier::GAME_THEME_SONG_1)
-        audio.music.stop();
+    if (auto *t = audio.track(id))
+        t->music.stop();
     else
         for (auto &voice : audio.voices)
             voice->stop();
@@ -171,8 +221,8 @@ bool soundfx::is_playing(SoundIdentifier id) const
 {
     const auto &audio = *m_audio;
     audio.require_loaded(id);
-    if (id == SoundIdentifier::GAME_THEME_SONG_1)
-        return audio.music.getStatus() == sf::SoundSource::Status::Playing;
+    if (const auto *t = audio.track(id))
+        return t->music.getStatus() == sf::SoundSource::Status::Playing;
     return std::any_of(audio.voices.begin(), audio.voices.end(), [](const auto &voice)
     {
         return voice->getStatus() == sf::SoundSource::Status::Playing;

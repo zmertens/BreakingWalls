@@ -2,6 +2,7 @@
 #define ITEM_H
 
 #include <array>
+#include <string_view>
 
 class item
 {
@@ -82,6 +83,7 @@ public:
     static bool is_destructable(int w) noexcept;
 
     static BlockType get_block_type(int w) noexcept;
+    static std::string_view to_block_name(BlockType block_type) noexcept;
 
     static std::array<std::array<int, BLOCK_FACE_COUNT>, TOTAL_BLOCKS> BLOCKS;
     static std::array<int, TOTAL_ITEMS> ITEMS;

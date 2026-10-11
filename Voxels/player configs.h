@@ -1,6 +1,7 @@
 #ifndef PLAYER_CONFIGS_H
 #define PLAYER_CONFIGS_H
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -159,6 +160,41 @@ struct player_configs
         return *this;
     }
 
+    player_configs &enable_game_ai(bool enabled)
+    {
+        opt_game_ai = enabled;
+        return *this;
+    }
+
+    player_configs &master_volume(float volume)
+    {
+        opt_master_volume = std::clamp(volume, 0.0f, 1.0f);
+        return *this;
+    }
+
+    player_configs &music_volume(float volume)
+    {
+        opt_music_volume = std::clamp(volume, 0.0f, 1.0f);
+        return *this;
+    }
+
+    player_configs &sfx_volume(float volume)
+    {
+        opt_sfx_volume = std::clamp(volume, 0.0f, 1.0f);
+        return *this;
+    }
+
+    player_configs &mute_audio(bool muted)
+    {
+        opt_mute_audio = muted;
+        return *this;
+    }
+
+    float master_volume() const noexcept { return opt_master_volume.value_or(1.0f); }
+    float music_volume() const noexcept { return opt_music_volume.value_or(1.0f); }
+    float sfx_volume() const noexcept { return opt_sfx_volume.value_or(1.0f); }
+    bool mute_audio() const noexcept { return opt_mute_audio.value_or(false); }
+
     bool artifacts_ready() const noexcept
     {
         return opt_artifacts_ready.value();
@@ -269,6 +305,11 @@ struct player_configs
         return opt_start_ticks.value();
     }
 
+    bool game_ai_enabled() const noexcept
+    {
+        return opt_game_ai.value_or(false);
+    }
+
     ViewMode view_mode() const noexcept
     {
         return opt_view_mode.value();
@@ -295,12 +336,20 @@ private:
     std::optional<int> opt_day_length{600};
     std::optional<int> opt_grid_spacing{8};
     std::optional<int> opt_ortho_scaling{1};
-    std::optional<mazes::configurator> opt_maze{mazes::configurator{}};
+    std::optional<mazes::configurator> opt_maze{mazes::configurator{}
+                                                    .rows(8)
+                                                    .columns(8)
+                                                    .levels(3)};
 
     std::optional<std::string> opt_tag{"Tag 1"};
 
     std::optional<std::uint64_t> opt_start_time{0};
     std::optional<std::uint64_t> opt_start_ticks{0};
+    std::optional<bool> opt_game_ai{true};
+    std::optional<bool> opt_mute_audio{false};
+    std::optional<float> opt_master_volume{1.0f};
+    std::optional<float> opt_music_volume{1.0f};
+    std::optional<float> opt_sfx_volume{1.0f};
 
     std::optional<ViewMode> opt_view_mode{ViewMode::ORTHO};
 }; // player_configs

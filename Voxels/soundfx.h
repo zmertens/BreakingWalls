@@ -24,6 +24,8 @@ public:
     bool set_spatialization(float min_distance, float attenuation);
     // MinDistance / (MinDistance + Attenuation * (max(Distance, MinDistance) - MinDistance)), in [0, 1].
     [[nodiscard]] static float volume_factor(float min_distance, float attenuation, float distance) noexcept;
+    // Scales in [0, 1]; applied to loaded and future sounds.
+    void set_volumes(float master, float music, float effects, bool muted);
     void stop(SoundIdentifier id);
     [[nodiscard]] bool is_playing(SoundIdentifier id) const;
 private:

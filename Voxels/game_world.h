@@ -7,6 +7,7 @@
 #include "game_environment.h"
 #include "game_balls.h"
 #include "game_swarm.h"
+#include "game_ai.h"
 #include "soundfx.h"
 #include <map>
 
@@ -46,16 +47,12 @@ private:
         point gesture_midpoint{};
         float gesture_distance{}, gesture_angle{};
         bool gesture_lockout{}, gesture_rotation_latched{};
-        bool mouse_down{}, paused{}, running{true};
+        bool mouse_down{}, running{true};
         std::uint32_t vao{};
         shader glass_shader;
         game_environment environment;
         game_balls balls;
         game_swarm swarm;
-        shader fog_shader;
-        std::uint32_t fog_texture{};
-        bool fog_enabled{true};
-        int fog_uniforms[10]{};
         std::optional<point> swipe_pointer;
         bool environment_enabled{true};
         std::string environment_error;
@@ -78,6 +75,7 @@ private:
         int bloom_emission{-1};
         int light_attenuation{-1};
         int goal_block{static_cast<int>(item::BlockType::GRASS)};
+        game_ai ai;
         std::mt19937 rng{std::random_device{}()};
     };
     std::unique_ptr<tracing_state> m_tracing;

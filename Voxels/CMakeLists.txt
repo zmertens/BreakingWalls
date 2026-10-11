@@ -22,6 +22,7 @@ set(CRAFT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_world.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_world_renderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/font.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/game_ai.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/game_world.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/game_environment.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/game_balls.cpp

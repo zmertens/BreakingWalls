@@ -7,6 +7,7 @@ uniform vec4 surfaces[16];
 uniform samplerCube environment_map;
 uniform bool environment_enabled;
 uniform bool mirrored;
+uniform float seconds;
 flat in int sphere_index;
 in vec3 ray_origin;
 in vec3 ray_direction;
@@ -35,6 +36,36 @@ vec3 lighting(vec3 normal, vec3 view, vec3 color, float visibility) {
     float diffuse = max(dot(normal, light), 0.0);
     float specular = pow(max(dot(normal, normalize(light + view)), 0.0), 48.0);
     return color * (0.18 + diffuse * visibility * 0.82) + vec3(specular * visibility * 0.45);
+}
+
+vec3 animated_surface(vec3 normal, vec4 sphere, vec4 surface) {
+    const float pi = 3.141592653589793;
+    float spin = seconds * (1.8 + fract(sphere.x * 11.13 + sphere.z * 7.19) * 2.7);
+    vec2 uv = vec2(atan(normal.z, normal.x) / (2.0 * pi) + 0.5,
+                  0.5 + asin(normal.y) / pi);
+    uv = uv * vec2(2.5, 1.35);
+    mat2 rotation = mat2(cos(spin), -sin(spin), sin(spin), cos(spin));
+    uv = rotation * uv;
+
+    float bands = 0.5 + 0.5 * sin((uv.x * 16.0 + uv.y * 8.0) + spin * 4.5);
+    float flecks = 0.5 + 0.5 * sin((uv.x * 28.0 - uv.y * 19.0) + spin * 6.0);
+    float grain = 0.5 + 0.5 * sin((uv.x + uv.y * 1.8) * 26.0 + spin * 5.0) *
+                 cos((uv.x - uv.y) * 18.0 - spin * 2.5);
+    float texture_mix = smoothstep(0.2, 1.0, bands * 0.45 + flecks * 0.35 + grain * 0.2);
+    vec3 base = surface.rgb;
+    vec3 lit = mix(base, vec3(1.0), 0.18 + 0.42 * texture_mix);
+    vec3 accent = mix(base * 1.25, vec3(0.92, 0.96, 1.0), 0.6);
+    vec3 textured = mix(lit, accent, 0.18 + 0.28 * sin((uv.x * 10.0 + spin * 2.0)));
+
+    float material = clamp(surface.a, 0.0, 2.0);
+    if (material < 0.5) {
+        return mix(base, textured, 0.55);
+    } else if (material < 1.5) {
+        vec3 metal = mix(base * 0.72, texture_mix * vec3(0.85, 0.9, 1.0), 0.7);
+        return mix(metal, textured, 0.8) + vec3(0.08, 0.1, 0.12) * texture_mix;
+    }
+    vec3 glass = mix(base, vec3(1.0), 0.25 + 0.35 * texture_mix);
+    return mix(glass, vec3(0.9, 0.96, 1.0), 0.22 * smoothstep(0.7, 1.0, texture_mix));
 }
 
 // One secondary scene query; no recursion or full-screen primary sphere search.
@@ -84,10 +115,11 @@ void main() {
     vec3 point = origin + distance * direction;
     vec3 normal = normalize(point - sphere.xyz);
     vec4 surface = surfaces[sphere_index];
-    vec3 radiance = lighting(normal, -direction, surface.rgb, shadow(point, normal));
+    vec3 surface_color = animated_surface(normal, sphere, surface);
+    vec3 radiance = lighting(normal, -direction, surface_color, shadow(point, normal));
     vec3 reflected = reflect(direction, normal);
     if (surface.a > 0.5 && surface.a < 1.5) {
-        vec3 fresnel = surface.rgb + (vec3(1.0) - surface.rgb) *
+        vec3 fresnel = surface_color + (vec3(1.0) - surface_color) *
                        pow(1.0 - max(dot(-direction, normal), 0.0), 5.0);
         radiance = radiance * 0.2 + fresnel * secondary(point + normal * 0.002, reflected, sphere_index);
     } else if (surface.a >= 1.5) {
@@ -102,7 +134,7 @@ void main() {
             radiance = reflection;
         } else {
             vec3 transmission = secondary(exit_point + exit_normal * 0.002, normalize(transmitted), sphere_index);
-            radiance = mix(transmission * mix(vec3(1.0), surface.rgb, 0.2), reflection, fresnel) +
+            radiance = mix(transmission * mix(vec3(1.0), surface_color, 0.2), reflection, fresnel) +
                        radiance * 0.12;
         }
     }

@@ -1,7 +1,5 @@
 #include "game_environment.h"
 #include "game_balls.h"
-#include "maze_game_model.h"
-#include "sdl_gl_helper.h"
 
 #if defined(__EMSCRIPTEN__)
 #include <GLES3/gl3.h>
@@ -10,13 +8,67 @@
 #endif
 
 #include <SDL3/SDL.h>
-#include <stb/stb_image.h>
+#include <noise/noise.h>
 
-#include <memory>
-#include <random>
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <stdexcept>
 #include <string>
-#include <system_error>
+#include <vector>
+
+namespace
+{
+constexpr int FACE_SIZE = 128;
+
+// Direction through texel (x, y) of a cubemap face, following the GL face orientation rules.
+std::array<float, 3> face_direction(const std::size_t face, const int x, const int y)
+{
+    const float sc = 2.0f * (static_cast<float>(x) + 0.5f) / FACE_SIZE - 1.0f;
+    const float tc = 2.0f * (static_cast<float>(y) + 0.5f) / FACE_SIZE - 1.0f;
+    float d[3];
+    switch (face)
+    {
+    case 0: d[0] = 1; d[1] = -tc; d[2] = -sc; break;
+    case 1: d[0] = -1; d[1] = -tc; d[2] = sc; break;
+    case 2: d[0] = sc; d[1] = 1; d[2] = tc; break;
+    case 3: d[0] = sc; d[1] = -1; d[2] = -tc; break;
+    case 4: d[0] = sc; d[1] = -tc; d[2] = 1; break;
+    default: d[0] = -sc; d[1] = -tc; d[2] = -1; break;
+    }
+    const float length = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    return {d[0] / length, d[1] / length, d[2] / length};
+}
+
+// Sampling by direction keeps noise continuous across face edges. The seed offsets the lookup so the
+// global noise permutation, which terrain generation owns, is never reseeded here.
+std::vector<std::uint8_t> make_face(const std::size_t face, const std::uint32_t seed)
+{
+    const float ox = static_cast<float>(seed & 0xFFFu) * 0.37f, oy = static_cast<float>((seed >> 12) & 0xFFFu) * 0.29f,
+                oz = static_cast<float>((seed >> 20) & 0xFFFu) * 0.31f;
+    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(FACE_SIZE) * FACE_SIZE * 4);
+    for (int y = 0; y < FACE_SIZE; ++y)
+        for (int x = 0; x < FACE_SIZE; ++x)
+        {
+            const auto [dx, dy, dz] = face_direction(face, x, y);
+            const float px = dx * 2.2f + ox, py = dy * 2.2f + oy, pz = dz * 2.2f + oz;
+            // Domain-warped fractal noise gives billowy cloud edges.
+            const float warp = simplex3(px * 0.7f + 11.0f, py * 0.7f, pz * 0.7f, 2, 0.5f, 2.0f);
+            const float cloud = simplex3(px + warp * 0.8f, py, pz, 5, 0.5f, 2.0f) * 0.5f + 0.5f;
+            const float density = std::clamp((cloud - 0.42f) * 2.4f, 0.0f, 1.0f);
+            const float tint = simplex3(px * 0.35f, py * 0.35f + 31.0f, pz * 0.35f, 2, 0.5f, 2.0f) * 0.5f + 0.5f;
+            // Dark violet sky, with clouds lit from cyan toward magenta.
+            const float sky[3]{0.03f, 0.04f, 0.12f};
+            const float lit[3]{0.30f + 0.55f * tint, 0.50f - 0.20f * tint, 0.95f};
+            const auto out = static_cast<std::size_t>(y * FACE_SIZE + x) * 4;
+            for (int c = 0; c < 3; ++c)
+                pixels[out + static_cast<std::size_t>(c)] = static_cast<std::uint8_t>(
+                    std::clamp(sky[c] + (lit[c] - sky[c]) * density, 0.0f, 1.0f) * 255.0f);
+            pixels[out + 3] = 255;
+        }
+    return pixels;
+}
+} // namespace
 
 game_environment::~game_environment() noexcept
 {
@@ -24,64 +76,20 @@ game_environment::~game_environment() noexcept
         glDeleteTextures(1, &m_cubemap);
     if (m_vao)
         glDeleteVertexArrays(1, &m_vao);
-    if (!m_directory.empty())
-    {
-        // Only remove the six named files and our directory, never unrelated temp files.
-        for (const auto name : maze_game_model::ENVIRONMENT_FACE_NAMES)
-        {
-            std::error_code error;
-            std::filesystem::remove(m_directory / (std::string(name) + ".png"), error);
-            if (error)
-                SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze environment cleanup: %s", error.message().c_str());
-        }
-        std::error_code error;
-        std::filesystem::remove(m_directory, error);
-        if (error)
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze environment directory cleanup: %s", error.message().c_str());
-    }
 }
 
-void game_environment::init(const maze_game_model &board, const std::uint32_t seed)
+void game_environment::init(const std::uint32_t seed)
 {
-    if (!m_directory.empty())
-        throw std::logic_error("Maze environment is already initialized");
-    const auto root = std::filesystem::temp_directory_path();
-    std::random_device nonce;
-    for (int attempt = 0; attempt < 16; ++attempt)
-    {
-        const auto directory = root / ("breakingwalls_environment_" + std::to_string(nonce()));
-        if (std::filesystem::create_directory(directory))
-        {
-            m_directory = directory;
-            break;
-        }
-    }
-    if (m_directory.empty())
-        throw std::runtime_error("Maze environment: could not allocate a unique temporary directory");
-    m_images = board.write_environment_images(m_directory, seed);
-
+    if (m_cubemap)
+        throw std::logic_error("Game environment is already initialized");
     glActiveTexture(GL_TEXTURE2);
     glGenTextures(1, &m_cubemap);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_cubemap);
-    int face_size = 0;
-    GLint max_size{};
-    glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &max_size);
-    for (std::size_t face = 0; face < m_images.size(); ++face)
+    for (std::size_t face = 0; face < 6; ++face)
     {
-        const auto bytes = sdl_gl_helper::load_file_binary(m_images[face].string());
-        int width{}, height{}, channels{};
-        stbi_set_flip_vertically_on_load(false);
-        std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> pixels{
-            stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &width, &height, &channels, 4),
-            stbi_image_free};
-        stbi_set_flip_vertically_on_load(true);
-        if (!pixels)
-            throw std::runtime_error("Maze environment: PNG decode failed for " + m_images[face].string());
-        if (width != height || width <= 0 || width > max_size || (face_size != 0 && face_size != width))
-            throw std::runtime_error("Maze environment: cubemap faces must have matching square dimensions");
-        face_size = width;
+        const auto pixels = make_face(face, seed);
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<GLenum>(face), 0, GL_RGBA8,
-                     width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.get());
+                     FACE_SIZE, FACE_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
     }
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -91,7 +99,7 @@ void game_environment::init(const maze_game_model &board, const std::uint32_t se
     if (!m_vao)
         glGenVertexArrays(1, &m_vao);
     if (const auto error = glGetError(); error != GL_NO_ERROR)
-        throw std::runtime_error("Maze environment: OpenGL upload failed (" + std::to_string(error) + ")");
+        throw std::runtime_error("Game environment: OpenGL upload failed (" + std::to_string(error) + ")");
 
 #if defined(__EMSCRIPTEN__)
     m_background.load_program("Shaders/es/game_environment_vertex.es.glsl",
@@ -107,7 +115,7 @@ void game_environment::init(const maze_game_model &board, const std::uint32_t se
     m_viewport_scale = m_background.uniform("viewport_scale");
     m_animation = m_background.uniform("animation");
     m_ready = true;
-    SDL_Log("Maze environment: six distance-colored PNGs cached in %s", m_directory.string().c_str());
+    SDL_Log("Game environment: procedural noise cubemap ready");
 }
 
 void game_environment::bind() const noexcept
@@ -131,12 +139,13 @@ void game_environment::init_balls()
     m_ball_environment = m_spheres.uniform("environment_map");
     m_ball_environment_enabled = m_spheres.uniform("environment_enabled");
     m_ball_mirrored = m_spheres.uniform("mirrored");
+    m_ball_seconds = m_spheres.uniform("seconds");
     if (!m_vao)
         glGenVertexArrays(1, &m_vao);
 }
 
 void game_environment::draw_balls(const game_balls &balls, const float *projection,
-                                  const bool use_environment) const noexcept
+                                  const bool use_environment, const float seconds) const noexcept
 {
     std::array<float, game_balls::MAX_BALLS * 4> spheres{}, surfaces{};
     const auto instances = balls.balls();
@@ -152,6 +161,7 @@ void game_environment::draw_balls(const game_balls &balls, const float *projecti
     glUniform1i(m_ball_environment, 2);
     glUniform1i(m_ball_environment_enabled, use_environment && m_ready);
     glUniform1i(m_ball_mirrored, 0);
+    glUniform1f(m_ball_seconds, seconds);
     const auto count = static_cast<GLsizei>(instances.size());
     glUniform1i(m_ball_count, count);
     glUniform4fv(m_ball_spheres, count, spheres.data());
@@ -169,7 +179,7 @@ void game_environment::draw_balls(const game_balls &balls, const float *projecti
 
 void game_environment::draw_reflected_balls(const game_balls &balls, const float *projection,
                                             const bool use_environment, const float plane_y,
-                                            const float strength) const noexcept
+                                            const float strength, const float seconds) const noexcept
 {
     std::array<float, game_balls::MAX_BALLS * 4> spheres{}, surfaces{};
     const auto count = static_cast<GLsizei>(balls.pack(spheres, surfaces));
@@ -193,6 +203,7 @@ void game_environment::draw_reflected_balls(const game_balls &balls, const float
     glUniform1i(m_ball_environment, 2);
     glUniform1i(m_ball_environment_enabled, use_environment && m_ready);
     glUniform1i(m_ball_mirrored, 1);
+    glUniform1f(m_ball_seconds, seconds);
     glUniform1i(m_ball_count, count);
     glUniform4fv(m_ball_spheres, count, spheres.data());
     glUniform4fv(m_ball_surfaces, count, surfaces.data());
