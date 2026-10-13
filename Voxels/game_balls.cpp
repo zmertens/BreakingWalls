@@ -94,9 +94,10 @@ void game_balls::sync_bricks(const maze_game_model &board)
         for (const auto &ball : m_balls)
         {
             const auto p = b3Body_GetPosition(ball.body);
-            if (std::abs(p.x - brick.x) >= 0.5f + RADIUS ||
-                std::abs(p.y - (brick.y + 0.5f)) >= 0.5f + RADIUS ||
-                std::abs(p.z - brick.z) >= 0.5f + RADIUS)
+            const float dx = std::max(std::abs(p.x - brick.x) - 0.5f, 0.0f);
+            const float dy = std::max(std::abs(p.y - brick.y) - 0.5f, 0.0f);
+            const float dz = std::max(std::abs(p.z - brick.z) - 0.5f, 0.0f);
+            if (dx * dx + dy * dy + dz * dz >= RADIUS * RADIUS)
                 continue;
             float best = INFINITY;
             b3Vec3 destination{};
