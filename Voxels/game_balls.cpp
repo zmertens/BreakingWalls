@@ -141,7 +141,7 @@ std::size_t game_balls::pack(std::array<float, MAX_BALLS * 4> &spheres, std::arr
         const auto position = b3Body_GetPosition(m_balls[i].body);
         spheres[i * 4] = position.x;
         spheres[i * 4 + 1] = position.y;
-        spheres[i * 4 + 2] = position.y;
+        spheres[i * 4 + 2] = position.z;
         spheres[i * 4 + 3] = RADIUS;
         std::copy(m_balls[i].color.begin(), m_balls[i].color.end(), surfaces.begin() + i * 4);
         surfaces[i * 4 + 3] = static_cast<float>(m_balls[i].surface);
