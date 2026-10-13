@@ -3,7 +3,7 @@
 
 #include "maze_game_model.h"
 
-#include <box2d/box2d.h>
+#include <box3d/box3d.h>
 
 #include <array>
 #include <span>
@@ -13,13 +13,13 @@ class game_balls final
 public:
     static constexpr std::size_t MAX_BALLS = 16;
     static constexpr float RADIUS = 0.28f;
-    static constexpr float HEIGHT = 7.5f + RADIUS;
+    static constexpr float BOARD_FLOOR = 7.5f;
     static constexpr float FIXED_STEP = 1.0f / 120.0f;
     
     enum class material { diffuse, metal, dielectric };
     struct ball
     {
-        b2BodyId body{b2_nullBodyId};
+        b3BodyId body{b3_nullBodyId};
         material surface{};
         std::array<float, 3> color{};
     };
@@ -31,20 +31,19 @@ public:
     void reset(const maze_game_model &board, std::mt19937 &rng);
     void sync_bricks(const maze_game_model &board);
     bool update(float seconds);
-    bool swipe(b2Vec2 from, b2Vec2 to);
-    // Board-plane (x, z) position of the most recent hit from update() or swipe().
-    [[nodiscard]] b2Vec2 last_hit() const noexcept { return m_last_hit; }
+    bool swipe(b3Vec3 from, b3Vec3 to);
+    [[nodiscard]] b3Vec3 last_hit() const noexcept { return m_last_hit; }
     [[nodiscard]] std::span<const ball> balls() const noexcept { return m_balls; }
     // Fills sphere (xyz, radius) and surface (rgb, material) uniform arrays; returns the ball count.
     std::size_t pack(std::array<float, MAX_BALLS * 4> &spheres, std::array<float, MAX_BALLS * 4> &surfaces) const;
 
 private:
-    b2WorldId m_world{b2_nullWorldId};
+    b3WorldId m_world{b3_nullWorldId};
     std::vector<ball> m_balls;
-    std::vector<b2BodyId> m_bricks;
+    std::vector<b3BodyId> m_bricks;
     float m_accumulator{};
-    b2Vec2 m_last_hit{};
-    b2BodyId box(float x, float z, float half_x, float half_z);
+    b3Vec3 m_last_hit{};
+    b3BodyId box(b3Vec3 position, b3Vec3 half_extents);
 };
 
 #endif

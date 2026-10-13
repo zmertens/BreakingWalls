@@ -267,7 +267,7 @@ void game_world::refresh_tracing_layout() const
 void game_world::play_boink() const
 {
     const auto hit = m_tracing->balls.last_hit();
-    m_sounds->play_at(SoundIdentifier::BOINK, hit.x, game_balls::HEIGHT, hit.y);
+    m_sounds->play_at(SoundIdentifier::BOINK, hit.x, hit.y, hit.z);
 }
 
 void game_world::cancel_tracing_input()
@@ -297,7 +297,8 @@ void game_world::trace_pointer(float x, float y, bool begin, bool release)
             const auto [px, py] = *game.swipe_pointer;
             const auto [ax, az] = game.layout.to_world(px, py);
             const auto [bx, bz] = game.layout.to_world(x, y);
-            if (game.balls.swipe({ax, az}, {bx, bz}))
+            if (game.balls.swipe({ax, game_balls::BOARD_FLOOR, az},
+                                 {bx, game_balls::BOARD_FLOOR, bz}))
                 play_boink();
         }
         if (release)

@@ -82,14 +82,14 @@ FetchContent_MakeAvailable(SFML)
 FetchContent_Declare(MazeBuilder GIT_REPOSITORY https://github.com/zmertens/MazeBuilder.git GIT_TAG v8.6.5)
 FetchContent_MakeAvailable(MazeBuilder)
 
-# Get box2d
-set(BOX2D_REPO_URL https://github.com/erincatto/box2d.git)
-set(BOX2D_VERSION v3.1.1)
-FetchContent_Declare(box2d GIT_REPOSITORY ${BOX2D_REPO_URL} GIT_TAG ${BOX2D_VERSION})
-FetchContent_MakeAvailable(box2d)
-set_property(TARGET box2d PROPERTY COMPILE_WARNING_AS_ERROR OFF)
+# Get Box3D
+set(BOX3D_REPO_URL https://github.com/erincatto/box3d.git)
+set(BOX3D_VERSION v0.1.0)
+FetchContent_Declare(box3d GIT_REPOSITORY ${BOX3D_REPO_URL} GIT_TAG ${BOX3D_VERSION})
+FetchContent_MakeAvailable(box3d)
+set_property(TARGET box3d PROPERTY COMPILE_WARNING_AS_ERROR OFF)
 
-target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE MazeBuilder::MazeBuilder SDL3::SDL3 box2d::box2d SFML::Audio)
+target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE MazeBuilder::MazeBuilder SDL3::SDL3 box3d::box3d SFML::Audio)
 
 if(EMSCRIPTEN)
     message(INFO ": Building ${BREAKING_WALLS_APP_NAME} for the Web!")

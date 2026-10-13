@@ -11,7 +11,7 @@ Breaking Walls is a C++20 voxel application with two modes: a stacked-maze traci
 
 ## Configure and build
 
-The CMake presets use Ninja Multi-Config for desktop and web builds. The project requires CMake 3.22 or newer and a C++20 toolchain. CMake fetches SDL3, SFML Audio, MazeBuilder, and Box2D during configuration, so the first configure needs network access.
+The CMake presets use Ninja Multi-Config for desktop and web builds. The project requires CMake 3.22 or newer and a C++20 toolchain. CMake fetches SDL3, SFML Audio, MazeBuilder, and Box3D during configuration, so the first configure needs network access.
 
 ### Desktop
 
