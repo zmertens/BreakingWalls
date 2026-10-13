@@ -63,7 +63,7 @@ void game_balls::reset(const maze_game_model &board, std::mt19937 &rng)
         auto body_def = b3DefaultBodyDef();
         body_def.type = b3_dynamicBody;
         body_def.position = {static_cast<float>(squares[i] % board.side()),
-                             BOARD_FLOOR + RADIUS + 0.2f,
+                             BOARD_FLOOR + RADIUS,
                              static_cast<float>(squares[i] / board.side())};
         body_def.linearDamping = 0.08f;
         body_def.angularDamping = 0.10f;
