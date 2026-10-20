@@ -37,6 +37,9 @@ public:
     // Load sound effect
     void load(Identifier id, std::string_view filename, float offset, float pitch, float volume, bool loop = false);
 
+    // Load a default-constructed resource
+    void load(Identifier id);
+
     Resource &get(Identifier id);
     const Resource &get(Identifier id) const;
 
@@ -152,6 +155,12 @@ void resource_manager<Resource, Identifier>::load(Identifier id, std::string_vie
         throw std::runtime_error("Failed to load sound from " + std::string(filename));
     }
     insert_resource(id, std::move(resource));
+}
+
+template <typename Resource, typename Identifier>
+void resource_manager<Resource, Identifier>::load(Identifier id)
+{
+    insert_resource(id, std::make_shared<Resource>());
 }
 
 template <typename Resource, typename Identifier>

@@ -19,6 +19,7 @@
 
 #include "db.h"
 #include "font.h"
+#include "heightmap.h"
 #include "player.h"
 #include "resource_manager.h"
 #include "shader.h"
@@ -29,6 +30,7 @@
 #include <MazeBuilder/configurator.h>
 #include <MazeBuilder/io_utils.h>
 #include <MazeBuilder/progress.h>
+#include <MazeBuilder/randomizer.h>
 #include <MazeBuilder/string_utils.h>
 
 #include <algorithm>
@@ -82,10 +84,6 @@ namespace
             return "Destroy Block";
         case PlayerAction::PLACE_LIGHT:
             return "Place Light";
-        case PlayerAction::PLACE_GHOST:
-            return "Build Maze";
-        case PlayerAction::PREVIEW_GHOST:
-            return "Preview Maze";
         case PlayerAction::CHANGE_PERSPECTIVE:
             return "Change Perspective";
         case PlayerAction::ZOOM_IN_ISO_VIEW:
@@ -105,7 +103,7 @@ namespace
                active_player->get_name() + ".obj";
     }
 
-    void handle_artifacts(player *active_player, const std::string &artifacts) noexcept
+    void handle_artifacts(player *active_player, artifact_exporter_manager &exporters, const std::string &artifacts) noexcept
     {
         if (artifacts.empty())
         {
@@ -117,7 +115,7 @@ namespace
         constexpr mazes::io_utils io{};
         const auto filename = make_filename(active_player);
         const auto success = io.write_file(filename, artifacts);
-        active_player->get_configs().artifacts_ready(false);
+        exporters.get(ArtifactIdentifier::WORLD_OBJ_1).set_download_ready(false);
         SDL_Log("Write file '%s': %s (%zu bytes)\n", filename.c_str(),
                 success ? "SUCCESS" : "FAILED", artifacts.size());
 #else
@@ -128,10 +126,10 @@ namespace
 
 state::context::context(SDL_Window *window, font_manager &fonts, shader_manager &shaders,
                         texture_manager &textures, bloom_pass_manager &bloom_passes,
-                        player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds)
+                        player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds, artifact_exporter_manager &artifacts)
     : ctx_window{window}, ctx_fonts{&fonts}, ctx_shaders{&shaders},
       ctx_textures{&textures}, ctx_bloom_passes{&bloom_passes},
-      ctx_player{&active_player}, ctx_sdl{&sdl}, ctx_sounds{&sounds}
+      ctx_player{&active_player}, ctx_sdl{&sdl}, ctx_sounds{&sounds}, ctx_artifacts{&artifacts}
 {
 }
 
@@ -223,17 +221,6 @@ void state_stack::push_state(const StateIdentifier state_id) { pending_changes_l
 void state_stack::pop_state() { pending_changes_list.emplace_back(StackAction::POP); }
 void state_stack::clear_states() { pending_changes_list.emplace_back(StackAction::CLEAR); }
 
-void state_stack::switch_mode(const StateIdentifier state_id)
-{
-    if (state_id != StateIdentifier::GAME && state_id != StateIdentifier::EDITOR)
-    {
-        throw std::invalid_argument("Switch state failed - expected game or editor state");
-    }
-
-    clear_states();
-    push_state(state_id);
-}
-
 void state_stack::mark_resources_loaded() noexcept { resources_loaded = true; }
 bool state_stack::resources_have_loaded() const noexcept { return resources_loaded; }
 
@@ -313,8 +300,6 @@ void loading_state::load_resources() const noexcept
     const auto blur = ctx.ctx_shaders->get(ShaderIdentifier::BLOOM_BLUR_SHADER).get();
     const auto composite = ctx.ctx_shaders->get(ShaderIdentifier::BLOOM_COMPOSITE_SHADER).get();
     ctx.ctx_bloom_passes->load(BloomPassIdentifier::EDITOR, width, height, blur, composite);
-    ctx.ctx_bloom_passes->load(BloomPassIdentifier::GAME, 1, 1, blur, composite, true);
-    ctx.ctx_bloom_passes->get(BloomPassIdentifier::GAME).set_transition_programs({ctx.ctx_shaders->get(ShaderIdentifier::TRANSITION_BLUR_SHADER).get(), ctx.ctx_shaders->get(ShaderIdentifier::TRANSITION_PIXELATE_SHADER).get(), ctx.ctx_shaders->get(ShaderIdentifier::TRANSITION_WAVE_SHADER).get()});
 
     ctx.ctx_textures->load(TextureIdentifier::ATLAS, "Textures/atlas.png", static_cast<unsigned int>(TextureIdentifier::ATLAS));
     ctx.ctx_textures->load(TextureIdentifier::BITMAP_FONT, "Textures/bitmap_font.png", static_cast<unsigned int>(TextureIdentifier::BITMAP_FONT));
@@ -322,6 +307,9 @@ void loading_state::load_resources() const noexcept
     ctx.ctx_textures->load(TextureIdentifier::SKY, "Textures/sky.png", static_cast<unsigned int>(TextureIdentifier::SKY));
     ctx.ctx_textures->load(ctx.ctx_window, TextureIdentifier::WINDOW_ICON, "Textures/icon.bmp");
     ctx.ctx_textures->load(TextureIdentifier::FLIPS_AND_ALE_ICON, "Textures/FlipsAndAleIcon.png", static_cast<unsigned int>(TextureIdentifier::FLIPS_AND_ALE_ICON));
+
+    ctx.ctx_artifacts->load(ArtifactIdentifier::WORLD_OBJ_1);
+    ctx.ctx_artifacts->load(ArtifactIdentifier::WORLD_IMG_1);
 
     ctx.ctx_sounds->load(SoundIdentifier::GAME_THEME_SONG_1, "SoundFX/GameThemeSong.ogg", 0.f, 1.f, 98.6f, true);
     ctx.ctx_sounds->load(SoundIdentifier::LOADING_THEME_SONG, "SoundFX/loading.ogg", 0.35f, 1.f, 87.215f, true);
@@ -400,6 +388,15 @@ void editor_state::draw() const noexcept
         request_stack_push(StateIdentifier::MENU);
     }
 }
+
+void editor_state::draw_physics_controls() const noexcept
+{
+    if (current_editor_world)
+        current_editor_world->draw_physics_controls();
+    else
+        ImGui::TextUnformatted("Physics sandbox is still loading.");
+}
+
 void editor_state::rebuild_world() noexcept
 {
     // Only an explicit "Make New World" discards saved edits; normal teardown keeps them.
@@ -417,7 +414,7 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
     {
         if (stack.resources_have_loaded())
         {
-            configs.show_ghosts(true).show_crosshair_details(true);
+            configs.show_crosshair_details(true);
             current_editor_world.emplace(ctx.ctx_window, *ctx.ctx_fonts, &active_player,
                                          *ctx.ctx_shaders, *ctx.ctx_textures, ctx.ctx_sdl,
                                          &ctx.ctx_bloom_passes->get(BloomPassIdentifier::EDITOR));
@@ -439,6 +436,8 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
         ctx.ctx_player->update(delta_time, rng);
         ctx.ctx_player->handle_realtime_input(current_editor_world->get_command_queue());
     }
+    if (current_editor_world)
+        current_editor_world->update_physics(delta_time);
     return true;
 }
 
@@ -466,7 +465,6 @@ bool editor_state::handle_event(SDL_Event &event) noexcept
 
 menu_state::menu_state(state_stack &stack, const context &context)
     : state{stack, context},
-      mode{stack.peek_state<editor_state *>() ? StateIdentifier::EDITOR : StateIdentifier::GAME},
       m_selected_algo{mazes::to_sv_from_algo(context.ctx_player->get_configs().maze().algo_id())}
 {
     algo_list.emplace_back(mazes::to_sv_from_algo(mazes::algo::BINARY_TREE));
@@ -485,6 +483,10 @@ menu_state::menu_state(state_stack &stack, const context &context)
 
 menu_state::~menu_state()
 {
+    if (m_preview_texture)
+    {
+        glDeleteTextures(1, &m_preview_texture);
+    }
     get_context().ctx_sounds->get(SoundIdentifier::LOADING_THEME_SONG).stop(SoundIdentifier::LOADING_THEME_SONG);
 }
 
@@ -569,6 +571,8 @@ void menu_state::draw() const noexcept
                 ImGui::Checkbox("Enable Bloom Effect", &bloom);
                 ImGui::SliderFloat("Exposure", &exposure, .1f, 2.f);
                 ImGui::SliderFloat("Font Scale", &font_scale, .6f, 1.4f);
+                bool hover_info = configs.show_crosshair_details();
+                ImGui::Checkbox("Show Hover Info [H]", &hover_info);
                 if (ImGui::BeginListBox("##FontList"))
                 {
                     for (const auto &[font_id, font_name] : selectable_fonts)
@@ -593,11 +597,19 @@ void menu_state::draw() const noexcept
                         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Fullscreen change failed: %s", SDL_GetError());
                     }
                 }
-                configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale).show_stats_window(show_stats);
+                configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale).show_stats_window(show_stats).show_crosshair_details(hover_info);
                 ImGui::EndTabItem();
             }
 
             draw_mode_tabs();
+            if (ImGui::BeginTabItem("Physics"))
+            {
+                if (auto *editor = get_stack().peek_state<editor_state *>())
+                    editor->draw_physics_controls();
+                else
+                    ImGui::TextUnformatted("Physics sandbox is only available in the editor.");
+                ImGui::EndTabItem();
+            }
             if (ImGui::BeginTabItem("Audio"))
             {
                 float master = configs.master_volume(), music = configs.music_volume(), sfx = configs.sfx_volume();
@@ -621,7 +633,7 @@ void menu_state::draw() const noexcept
 
 bool menu_state::update(float, mazes::randomizer &) noexcept
 {
-    if (mode == StateIdentifier::EDITOR && rebuild_world_requested)
+    if (rebuild_world_requested)
     {
         if (auto *editor = get_stack().peek_state<editor_state *>())
         {
@@ -635,15 +647,7 @@ bool menu_state::update(float, mazes::randomizer &) noexcept
 void menu_state::draw_mode_sidebar(const float available_height) const noexcept
 {
     auto *active_player = get_context().ctx_player;
-    if (mode == StateIdentifier::EDITOR)
     {
-        if (ImGui::Button("Play Game", ImVec2(-1.f, 0)))
-        {
-            get_stack().switch_mode(StateIdentifier::GAME);
-        }
-        ImGui::TextWrapped("Switching modes resets the current world.");
-        ImGui::Separator();
-
         ImGui::TextUnformatted("Key Bindings");
         const float row_height = ImGui::GetFrameHeightWithSpacing();
         if (ImGui::BeginTable("##keybinds", 2,
@@ -675,36 +679,65 @@ void menu_state::draw_mode_sidebar(const float available_height) const noexcept
         ImGui::BulletText("Middle Click: Copy block type");
         ImGui::BulletText("Scroll: Cycle block types");
     }
-    else
+}
+
+void menu_state::draw_heightmap_preview() const noexcept
+{
+    const auto map = heightmap_library::instance().current();
+    if (!map || map->side <= 0)
     {
-        if (ImGui::Button("Voxel Editor", ImVec2(-1.f, 0)))
-        {
-            get_stack().switch_mode(StateIdentifier::EDITOR);
-        }
-        ImGui::TextWrapped("Switching modes resets the current world.");
+        ImGui::TextUnformatted("No heightmap available.");
+        return;
     }
+    if (map != m_preview_source)
+    {
+        // Top-down view: material colour of each column, shaded by elevation.
+        std::vector<unsigned char> pixels(static_cast<std::size_t>(map->side) * static_cast<std::size_t>(map->side) * 4);
+        for (int z = 0; z < map->side; ++z)
+        {
+            for (int x = 0; x < map->side; ++x)
+            {
+                const float e = map->elevation(x, z);
+                const auto &kd = heightmap::material_for(e).kd;
+                const float shade = 0.65f + 0.35f * e;
+                auto *px = &pixels[(static_cast<std::size_t>(z) * static_cast<std::size_t>(map->side) + static_cast<std::size_t>(x)) * 4];
+                for (int c = 0; c < 3; ++c)
+                {
+                    px[c] = static_cast<unsigned char>(std::clamp(kd[c] * shade, 0.f, 1.f) * 255.f);
+                }
+                px[3] = 255;
+            }
+        }
+        if (!m_preview_texture)
+        {
+            glGenTextures(1, &m_preview_texture);
+        }
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_preview_texture);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, map->side, map->side, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        m_preview_source = map;
+    }
+    const float size = std::min(ImGui::GetContentRegionAvail().x, 256.f);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - size) * 0.5f);
+    ImGui::Image(static_cast<ImTextureID>(m_preview_texture), ImVec2(size, size));
 }
 
 void menu_state::draw_mode_tabs() const noexcept
 {
     auto *active_player = get_context().ctx_player;
     auto &&configs = active_player->get_configs();
-    if (mode == StateIdentifier::GAME)
-    {
-        if (ImGui::BeginTabItem("Game"))
-        {
-            if (auto *game = get_stack().peek_state<game_state *>())
-                game->draw_menu_options();
-            ImGui::EndTabItem();
-        }
-        return;
-    }
     if (ImGui::BeginTabItem("Builder"))
     {
-        if (ImGui::Button("Make New World"))
-        {
-            rebuild_world_requested = true;
-        }
+        draw_heightmap_preview();
+        ImGui::Separator();
+        static int island_size = 128, octaves = 3;
+        static float frequency = 3.0f;
+        static bool apply_maze = false;
         static char tag[256]{};
         if (tag[0] == '\0')
         {
@@ -714,16 +747,17 @@ void menu_state::draw_mode_tabs() const noexcept
         {
             configs.tag(std::string{tag});
         }
-        bool heightmap = configs.show_heightmap();
-        if (ImGui::Checkbox("Build more mountains (requires new world)", &heightmap))
-        {
-            configs.show_heightmap(heightmap);
-        }
+        ImGui::SliderInt("Island Size", &island_size, heightmap::MIN_SIDE, heightmap::MAX_SIDE);
+        ImGui::SliderInt("Noise Octaves", &octaves, 1, 6);
+        ImGui::SliderFloat("Noise Frequency", &frequency, 1.f, 8.f);
+        ImGui::Checkbox("Apply maze to heightmap", &apply_maze);
+
+        thread_local mazes::randomizer rng{};
         auto maze = configs.maze();
         static constexpr auto ROWS{maze.MAX_ROWS / 4}, COLUMNS{maze.MAX_COLUMNS / 4};
         static constexpr auto LEVELS{maze.MAX_LEVELS / 2};
-        static constexpr auto SEED{maze.DEFAULT_SEED_VALUE};
-        static int rows = maze.rows(), columns = maze.columns(), levels = maze.levels(), seed = maze.seed();
+        static constexpr auto SEED{1'000};
+        static int rows = maze.rows(), columns = maze.columns(), levels = maze.levels(), seed = rng.get_int(0, SEED);
         ImGui::SliderInt("Rows", &rows, 2, ROWS);
         ImGui::SliderInt("Columns", &columns, 2, COLUMNS);
         ImGui::SliderInt("Levels", &levels, 1, LEVELS);
@@ -744,26 +778,32 @@ void menu_state::draw_mode_tabs() const noexcept
                          .algo_id(mazes::to_algo_from_sv(m_selected_algo))
                          .rows(rows)
                          .columns(columns)
-                         .levels(levels)
-                         .seed(seed));
+                         .levels(levels));
+        ImGui::Separator();
+        if (ImGui::Button("Make New World", ImVec2(-1.f, 0)))
+        {
+            heightmap_params params;
+            params.side = island_size;
+            params.octaves = octaves;
+            params.frequency = frequency;
+            params.apply_maze = apply_maze;
+            params.maze = configs.maze();
+            params.seed = rng.get_int(0, SEED);
+            heightmap_library::instance().add(params);
+            rebuild_world_requested = true;
+        }
         ImGui::EndTabItem();
     }
-    if (ImGui::BeginTabItem("CAD Tools"))
+    if (ImGui::BeginTabItem("Camera"))
     {
-        bool invert = configs.invert_mouse(), details = configs.show_crosshair_details();
-        bool ghost = configs.show_ghosts();
-        bool grid = configs.show_grid_overlay(), snap = configs.enable_grid_snap();
+        bool invert = configs.invert_mouse();
         float fov = configs.fov();
         int ortho = configs.ortho_scaling(), day = configs.day_length();
         ImGui::Checkbox("Invert Mouse Y-Axis", &invert);
         ImGui::SliderFloat("Field of View", &fov, 30, 120);
         ImGui::SliderInt("Orthographic Scale", &ortho, 0, 64);
-        ImGui::Checkbox("Show Hover Info [H]", &details);
-        ImGui::Checkbox("Show Maze Ghost [M]", &ghost);
-        ImGui::Checkbox("Show CAD Grid", &grid);
-        ImGui::Checkbox("CAD Grid Snap", &snap);
         ImGui::SliderInt("Day Length (s)", &day, 60, 1800);
-        configs.invert_mouse(invert).fov(fov).ortho_scaling(ortho).day_length(day).show_crosshair_details(details).show_ghosts(ghost).show_grid_overlay(grid).enable_grid_snap(snap);
+        configs.invert_mouse(invert).fov(fov).ortho_scaling(ortho).day_length(day);
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Player"))
@@ -776,6 +816,36 @@ void menu_state::draw_mode_tabs() const noexcept
     }
     if (ImGui::BeginTabItem("Exports"))
     {
+        auto &library = heightmap_library::instance();
+        ImGui::TextUnformatted("Heightmaps");
+        if (ImGui::BeginListBox("##heightmaps", ImVec2(-1.f, 6 * ImGui::GetTextLineHeightWithSpacing())))
+        {
+            const auto &entries = library.entries();
+            for (std::size_t i = 0; i < entries.size(); ++i)
+            {
+                const auto &map = *entries[i].map;
+                const std::string label = map.name + " (" + std::to_string(map.side) + "x" +
+                                          std::to_string(map.side) + ")##" + std::to_string(i);
+                if (ImGui::Selectable(label.c_str(), i == library.selected()) && i != library.selected())
+                {
+                    library.select(i);
+                    rebuild_world_requested = true;
+                }
+            }
+            ImGui::EndListBox();
+        }
+        ImGui::BeginDisabled(library.entries().empty());
+        if (ImGui::Button("Delete Selected"))
+        {
+            library.remove(library.selected());
+            if (!library.current())
+            {
+                library.add(heightmap_params{});
+            }
+            rebuild_world_requested = true;
+        }
+        ImGui::EndDisabled();
+        ImGui::Separator();
         if (m_export_in_progress && active_player->is_artifact_export_ready())
         {
             m_cached_artifacts = active_player->get_artifact_export_result();
@@ -791,9 +861,9 @@ void menu_state::draw_mode_tabs() const noexcept
         if (ImGui::Button("Download File"))
         {
 #if defined(__EMSCRIPTEN__)
-            configs.artifacts_ready(true);
+            get_context().ctx_artifacts->get(ArtifactIdentifier::WORLD_OBJ_1).set_download_ready(true);
 #endif
-            handle_artifacts(active_player, m_cached_artifacts);
+            handle_artifacts(active_player, *get_context().ctx_artifacts, m_cached_artifacts);
         }
         ImGui::EndDisabled();
         ImGui::TextWrapped("%s", m_cached_artifacts.empty() ? "No artifacts generated yet." : m_cached_artifacts.substr(0, 512).c_str());
@@ -816,91 +886,3 @@ bool menu_state::handle_event(SDL_Event &event) noexcept
 }
 
 bool menu_state::is_ready_to_rebuild_world() const noexcept { return rebuild_world_requested; }
-
-game_state::game_state(state_stack &s, const context &ctx)
-    : state{s, ctx}
-{
-}
-
-void game_state::open_menu()
-{
-    if (current_game_world)
-    {
-        current_game_world->suspend_input();
-    }
-    request_stack_push(StateIdentifier::MENU);
-}
-
-bool game_state::update(float dt, mazes::randomizer &rng) noexcept
-{
-    if (!current_game_world)
-    {
-        if (get_stack().resources_have_loaded())
-        {
-            const auto &ctx = get_context();
-            SDL_SetWindowRelativeMouseMode(ctx.ctx_window, false);
-            current_game_world.emplace(ctx.ctx_window, *ctx.ctx_fonts, ctx.ctx_player,
-                                       *ctx.ctx_shaders, *ctx.ctx_textures, ctx.ctx_sdl,
-                                       &ctx.ctx_bloom_passes->get(BloomPassIdentifier::GAME));
-            current_game_world->init();
-            SDL_Log("Game world initializing completed\n");
-        }
-    }
-    if (current_game_world && get_stack().is_top(this))
-    {
-        current_game_world->update(dt, std::ref(rng));
-        if (!current_game_world->tracing_running())
-        {
-            request_stack_clear();
-        }
-        return true;
-    }
-    return false;
-}
-
-bool game_state::handle_event(SDL_Event &event) noexcept
-{
-    if (event.type == SDL_EVENT_QUIT)
-    {
-        get_context().ctx_player->set_active(false);
-        request_stack_clear();
-        return true;
-    }
-    if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
-    {
-        open_menu();
-        return false;
-    }
-    if (current_game_world)
-    {
-        current_game_world->handle_event(event);
-    }
-    return true;
-}
-
-void game_state::draw() const noexcept
-{
-    if (current_game_world)
-    {
-        if (get_stack().is_top(this))
-        {
-            current_game_world->draw();
-        }
-    }
-    if (get_stack().is_top(this) && draw_menu_button())
-    {
-        const_cast<game_state *>(this)->open_menu();
-    }
-}
-
-void game_state::draw_menu_options()
-{
-    if (current_game_world)
-    {
-        current_game_world->draw_menu_options();
-    }
-    else
-    {
-        ImGui::TextUnformatted("Game settings will be available when the world is ready.");
-    }
-}

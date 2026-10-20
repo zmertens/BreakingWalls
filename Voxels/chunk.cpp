@@ -310,22 +310,25 @@ void chunk::generate(worker_item *item) noexcept
 }
 
 void chunk::load(const worker_item *item, const bool enable_heightmap,
-                 const float player_x, const float player_z) noexcept
+                 const float player_x, const float player_z, const heightmap *constrained,
+                 const bool include_decorations, const bool load_persisted_blocks) noexcept
 {
     const int p = item->p, q = item->q;
     craft_map *block_map = item->block_maps[1][1];
     craft_map *light_map = item->light_maps[1][1];
 
     constexpr float flatten_radius = 256.0f;
-    (void)flatten_radius;
 
     geometries::create_voxel_world(
         [](craft_map *m, int x, int y, int z, int w) { m->set(x, y, z, w); },
         block_map, p, q, world::BUILD_CHUNK_SIZE,
-        enable_heightmap, player_x, player_z, flatten_radius);
+        enable_heightmap, player_x, player_z, flatten_radius, constrained, include_decorations);
 
-    db::load_blocks(block_map, p, q);
-    db::load_lights(light_map, p, q);
+    if (load_persisted_blocks)
+    {
+        db::load_blocks(block_map, p, q);
+        db::load_lights(light_map, p, q);
+    }
 }
 
 void chunk::initialize(const int chunk_p, const int chunk_q) noexcept

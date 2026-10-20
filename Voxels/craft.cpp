@@ -57,6 +57,7 @@ struct craft::craft_impl
     sdl_gl_helper simple_direct_medialayer;
     shader_manager world_shaders;
     soundfx_manager world_sounds;
+    artifact_exporter_manager artifact_exporters;
     texture_manager world_textures;
     bloom_pass_manager world_bloom_passes;
     std::unique_ptr<state_stack> crafting_states;
@@ -87,11 +88,12 @@ struct craft::craft_impl
             std::ref(world_bloom_passes),
             std::ref(active_player),
             std::ref(simple_direct_medialayer),
-            std::ref(world_sounds)});
+            std::ref(world_sounds),
+            std::ref(artifact_exporters)});
 
         register_states();
 
-        crafting_states->push_state(StateIdentifier::GAME);
+        crafting_states->push_state(StateIdentifier::EDITOR);
         crafting_states->push_state(StateIdentifier::LOADING);
 
     }
@@ -99,7 +101,6 @@ struct craft::craft_impl
     void register_states() const noexcept
     {
         crafting_states->register_state<editor_state>(StateIdentifier::EDITOR);
-        crafting_states->register_state<game_state>(StateIdentifier::GAME);
         crafting_states->register_state<loading_state>(StateIdentifier::LOADING);
         crafting_states->register_state<menu_state>(StateIdentifier::MENU);
     }
@@ -204,14 +205,7 @@ struct craft::craft_impl
             const ImGuiIO &io = ImGui::GetIO();
             const bool imgui_wants_keyboard = io.WantCaptureKeyboard;
             const bool imgui_wants_mouse = io.WantCaptureMouse;
-            const auto *game = crafting_states->peek_state<game_state *>();
-            const bool game_pointer_event = game && crafting_states->is_top(game) &&
-                (event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
-                 event.type == SDL_EVENT_FINGER_DOWN || event.type == SDL_EVENT_FINGER_MOTION ||
-                 event.type == SDL_EVENT_FINGER_UP ||
-                 event.type == SDL_EVENT_FINGER_CANCELED);
             const bool should_forward_event =
-                game_pointer_event ||
                 (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP &&
                  event.type != SDL_EVENT_TEXT_INPUT && !imgui_wants_mouse) ||
                 (!imgui_wants_keyboard && !imgui_wants_mouse);
@@ -389,12 +383,17 @@ std::string craft::artifacts() const noexcept
 
 bool craft::is_download_ready() const noexcept
 {
-    return this->crafting_impl->active_player.is_download_ready();
+    const auto &exporters = this->crafting_impl->artifact_exporters;
+    return !exporters.is_empty() && exporters.get(ArtifactIdentifier::WORLD_OBJ_1).is_download_ready();
 }
 
 void craft::reset_download_flag() const noexcept
 {
-    this->crafting_impl->active_player.get_configs().artifacts_ready(false);
+    auto &exporters = this->crafting_impl->artifact_exporters;
+    if (!exporters.is_empty())
+    {
+        exporters.get(ArtifactIdentifier::WORLD_OBJ_1).set_download_ready(false);
+    }
 }
 
 // ── Async export ─────────────────────────────────────────────────────────────
@@ -416,10 +415,9 @@ std::string craft::get_export() noexcept
     // Retrieve the finished OBJ string; empty if called before is_export_ready().
     const std::string result = this->crafting_impl->active_player.get_artifact_export_result();
     // Mark download flag so legacy is_download_ready() path is also satisfied.
-    if (!result.empty())
+    if (!result.empty() && !this->crafting_impl->artifact_exporters.is_empty())
     {
-        auto &&configs{this->crafting_impl->active_player.get_configs()};
-        configs.artifacts_ready(true);
+        this->crafting_impl->artifact_exporters.get(ArtifactIdentifier::WORLD_OBJ_1).set_download_ready(true);
     }
     return result;
 }
@@ -437,7 +435,7 @@ std::string craft::get_export_status() const noexcept
     // Check whether a future is in-flight (valid but not yet ready).
     // We reuse is_artifact_export_ready() for the ready check and infer running
     // from the download flag being false and an export having been requested.
-    if (this->crafting_impl->active_player.get_configs().artifacts_ready() && !this->crafting_impl->active_player.is_artifact_export_ready())
+    if (this->is_download_ready() && !this->crafting_impl->active_player.is_artifact_export_ready())
     {
         return "ready";
     }

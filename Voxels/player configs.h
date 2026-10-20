@@ -16,24 +16,6 @@ struct player_configs
         ORTHO = 2
     };
 
-    enum class CADTool : unsigned int
-    {
-        NONE = 0,
-        SELECT_BOX = 1
-    };
-
-    player_configs &artifacts_ready(bool ready)
-    {
-        opt_artifacts_ready = ready;
-        return *this;
-    }
-
-    player_configs &enable_grid_snap(bool enabled)
-    {
-        opt_enable_grid_snap = enabled;
-        return *this;
-    }
-
     player_configs &fullscreen(bool enabled)
     {
         opt_fullscreen = enabled;
@@ -46,27 +28,9 @@ struct player_configs
         return *this;
     }
 
-    player_configs &show_grid_overlay(bool enabled)
-    {
-        opt_show_grid_overlay = enabled;
-        return *this;
-    }
-
-    player_configs &show_heightmap(bool enabled)
-    {
-        opt_show_heightmap = enabled;
-        return *this;
-    }
-
     player_configs &show_crosshair_details(bool enabled)
     {
         opt_show_crosshair_details = enabled;
-        return *this;
-    }
-
-    player_configs &show_ghosts(bool enabled)
-    {
-        opt_show_ghosts = enabled;
         return *this;
     }
 
@@ -118,12 +82,6 @@ struct player_configs
         return *this;
     }
 
-    player_configs &grid_spacing(int spacing)
-    {
-        opt_grid_spacing = spacing;
-        return *this;
-    }
-
     player_configs &grid_opacity(float opacity)
     {
         opt_grid_opacity = opacity;
@@ -160,12 +118,6 @@ struct player_configs
         return *this;
     }
 
-    player_configs &enable_game_ai(bool enabled)
-    {
-        opt_game_ai = enabled;
-        return *this;
-    }
-
     player_configs &master_volume(float volume)
     {
         opt_master_volume = std::clamp(volume, 0.0f, 1.0f);
@@ -195,16 +147,6 @@ struct player_configs
     float sfx_volume() const noexcept { return opt_sfx_volume.value_or(1.0f); }
     bool mute_audio() const noexcept { return opt_mute_audio.value_or(false); }
 
-    bool artifacts_ready() const noexcept
-    {
-        return opt_artifacts_ready.value();
-    }
-
-    bool enable_grid_snap() const noexcept
-    {
-        return opt_enable_grid_snap.value();
-    }
-
     bool fullscreen() const noexcept
     {
         return opt_fullscreen.value();
@@ -215,14 +157,10 @@ struct player_configs
         return opt_invert_mouse.value();
     }
 
-    bool show_grid_overlay() const noexcept
+    // Terrain is always generated from a heightmap.
+    static constexpr bool show_heightmap() noexcept
     {
-        return opt_show_grid_overlay.value();
-    }
-
-    bool show_heightmap() const noexcept
-    {
-        return opt_show_heightmap.value();
+        return true;
     }
 
     bool show_crosshair_details() const noexcept
@@ -230,19 +168,9 @@ struct player_configs
         return opt_show_crosshair_details.value();
     }
 
-    bool show_ghosts() const noexcept
-    {
-        return opt_show_ghosts.value();
-    }
-
     const mazes::configurator &maze() const noexcept
     {
         return opt_maze.value();
-    }
-
-    int grid_spacing() const noexcept
-    {
-        return opt_grid_spacing.value();
     }
 
     float grid_opacity() const noexcept
@@ -305,25 +233,15 @@ struct player_configs
         return opt_start_ticks.value();
     }
 
-    bool game_ai_enabled() const noexcept
-    {
-        return opt_game_ai.value_or(false);
-    }
-
     ViewMode view_mode() const noexcept
     {
         return opt_view_mode.value();
     }
 
 private:
-    std::optional<bool> opt_artifacts_ready{false};
-    std::optional<bool> opt_enable_grid_snap{false};
     std::optional<bool> opt_fullscreen{false};
     std::optional<bool> opt_show_crosshair_details{true};
     std::optional<bool> opt_invert_mouse{false};
-    std::optional<bool> opt_show_grid_overlay{false};
-    std::optional<bool> opt_show_heightmap{false};
-    std::optional<bool> opt_show_ghosts{true};
     std::optional<bool> opt_show_stats_window{true};
     std::optional<bool> opt_use_bloom_effect{true};
     std::optional<bool> opt_vsync{true};
@@ -334,7 +252,6 @@ private:
     std::optional<float> opt_gui_font_scale{1.0f};
 
     std::optional<int> opt_day_length{600};
-    std::optional<int> opt_grid_spacing{8};
     std::optional<int> opt_ortho_scaling{1};
     std::optional<mazes::configurator> opt_maze{mazes::configurator{}
                                                     .rows(8)
@@ -345,7 +262,6 @@ private:
 
     std::optional<std::uint64_t> opt_start_time{0};
     std::optional<std::uint64_t> opt_start_ticks{0};
-    std::optional<bool> opt_game_ai{true};
     std::optional<bool> opt_mute_audio{false};
     std::optional<float> opt_master_volume{1.0f};
     std::optional<float> opt_music_volume{1.0f};

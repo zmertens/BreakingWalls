@@ -16,6 +16,7 @@
 #endif
 
 #include <SDL3/SDL.h>
+#include <imgui.h>
 
 #include <algorithm>
 #include <array>
@@ -191,82 +192,6 @@ void editor_world::render_hover_info() const noexcept
 
     SDL_snprintf(info_buffer, sizeof(info_buffer), "Dist: %.1f", distance);
     render_text(font_tex, 0, x_offset, y_base + line_height, 10.0f, info_buffer);
-
-    constexpr std::string_view BUILD_HINTS{"Press [E] to preview - [B] to build"};
-    render_text(world_textures.get(TextureIdentifier::BITMAP_FONT).gl_texture, 0, static_cast<float>(viewport_width / 2) - 10.f, 55.f, 14.0f, BUILD_HINTS.data());
-}
-
-void editor_world::render_ghost() const noexcept
-{
-    if (!active_player->get_configs().show_ghosts() || !current_ghost.has_data ||
-        !current_projected_plane.has_valid_target)
-        return;
-
-    const int face      = current_projected_plane.target_face;
-    const ivec3 normal  = face_normal(face);
-    const ivec3 axis_u  = face_u_axis(face);
-    const ivec3 axis_v  = face_v_axis(face);
-
-    const int anchor_x  = current_projected_plane.target_x + normal.x;
-    const int anchor_y  = current_projected_plane.target_y + normal.y;
-    const int anchor_z  = current_projected_plane.target_z + normal.z;
-
-    float matrix[16];
-    begin_3d_pass(&s_line_attrib, matrix);
-    glLineWidth(1.0f);
-
-    std::vector<float> wireframe_data;
-
-    const float player_x = active_player->pos.x;
-    const float player_y = active_player->pos.y;
-    const float player_z = active_player->pos.z;
-    constexpr float render_distance = 64.0f;
-
-    // Only the first and last layers are outlined to keep tall ghosts cheap to draw.
-    const int depth_step = std::max(1, current_ghost.wall_height - 1);
-
-    for (int v = 0; v < current_ghost.height; ++v)
-    {
-        for (int u = 0; u < current_ghost.width; ++u)
-        {
-            if (!current_ghost.walls[static_cast<std::size_t>(v) * static_cast<std::size_t>(current_ghost.width) +
-                                     static_cast<std::size_t>(u)])
-                continue;
-
-            for (int depth = 0; depth < current_ghost.wall_height; depth += depth_step)
-            {
-                const int world_x = anchor_x + axis_u.x * u + axis_v.x * v + normal.x * depth;
-                const int world_y = anchor_y + axis_u.y * u + axis_v.y * v + normal.y * depth;
-                const int world_z = anchor_z + axis_u.z * u + axis_v.z * v + normal.z * depth;
-
-                const float fx = static_cast<float>(world_x) - player_x;
-                const float fy = static_cast<float>(world_y) - player_y;
-                const float fz = static_cast<float>(world_z) - player_z;
-                if (fx * fx + fy * fy + fz * fz > render_distance * render_distance)
-                    continue;
-                if (get_block(world_x, world_y, world_z) != 0)
-                    continue;
-
-                float cube_data[72];
-                geometries::make_cube_wireframe(cube_data,
-                                               static_cast<float>(world_x),
-                                               static_cast<float>(world_y),
-                                               static_cast<float>(world_z),
-                                               0.51f);
-                wireframe_data.insert(wireframe_data.end(), cube_data, cube_data + 72);
-            }
-        }
-    }
-
-    if (!wireframe_data.empty())
-    {
-        const GLuint batch_buffer = sdl_gl_helper::gen_buffer(
-            wireframe_data.size() * sizeof(float), wireframe_data.data());
-        sdl_gl_helper::draw_lines(&s_line_attrib, batch_buffer, 3,
-                                  static_cast<int>(wireframe_data.size() / 3));
-        sdl_gl_helper::del_buffer(batch_buffer);
-    }
-    glLineWidth(1.0f);
 }
 
 void editor_world::render_item(const std::uint32_t texture) const noexcept
@@ -300,6 +225,142 @@ void editor_world::render_item(const std::uint32_t texture) const noexcept
     glDepthMask(GL_TRUE);
     if (depth_was_enabled)
         glEnable(GL_DEPTH_TEST);
+}
+
+void editor_world::render_held_stick(const std::uint32_t texture) const noexcept
+{
+    const auto &c = active_player->get_configs();
+    if (c.view_mode() != player_configs::ViewMode::PERSPECTIVE)
+        return;
+
+    constexpr float swing_ms = 280.0f;
+    float swing = 0.0f;
+    if (m_swinging)
+    {
+        const float t = static_cast<float>(SDL_GetTicks() - m_swing_start_ms) / swing_ms;
+        if (t < 1.0f)
+            swing = SDL_sinf(t * 3.14159265f);
+    }
+
+    // Model space: stick extends along -z from its grip; the camera sits at the origin looking down -z.
+    float matrix[16], b[16];
+    const auto [w, h] = simple_direct_medialayer->get_window_size();
+    matrix::identity(matrix);
+    matrix::rotate(b, 1, 0, 0, 0.10f);
+    matrix::multiply(matrix, b, matrix);
+    matrix::rotate(b, 0, 1, 0, 0.18f);
+    matrix::multiply(matrix, b, matrix);
+    matrix::translate(b, 0.28f - 0.05f * swing, -0.30f + 0.06f * swing, -0.35f - 0.40f * swing);
+    matrix::multiply(matrix, b, matrix);
+    matrix::perspective(b, c.fov(), static_cast<float>(w) / static_cast<float>(std::max(h, 1)), 0.05f, 10.0f);
+    matrix::multiply(matrix, b, matrix);
+
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glUseProgram(s_block_attrib.program);
+    glUniformMatrix4fv(s_block_attrib.matrix, 1, GL_FALSE, matrix);
+    glActiveTexture(GL_TEXTURE0 + static_cast<unsigned int>(TextureIdentifier::ATLAS));
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glUniform3f(s_block_attrib.camera, 0, 0, 0);
+    glUniform1i(s_block_attrib.sampler, 0);
+    glUniform1f(s_block_attrib.timer, time_of_day());
+    glUniform1i(s_block_attrib.extra4, 0);
+
+    constexpr int segments = 14;
+    constexpr float half = 0.018f;
+    for (int i = 0; i < segments; ++i)
+    {
+        const GLuint buffer = sdl_gl_helper::gen_cube_buffer(0, 0, -static_cast<float>(i) * half * 2.0f, half,
+                                                             static_cast<int>(item::BlockType::WOOD));
+        sdl_gl_helper::draw_cube(&s_block_attrib, buffer);
+        sdl_gl_helper::del_buffer(buffer);
+    }
+}
+
+void editor_world::render_physics() const noexcept
+{
+    if (m_physics_objects.empty() || !B3_IS_NON_NULL(m_physics_world))
+        return;
+
+    float projection[16];
+    begin_3d_pass(&s_block_attrib, projection);
+    const auto &player_position = active_player->pos;
+    glActiveTexture(GL_TEXTURE0 + static_cast<unsigned int>(TextureIdentifier::ATLAS));
+    glBindTexture(GL_TEXTURE_2D, world_textures.get(TextureIdentifier::ATLAS).gl_texture);
+    glUniform3f(s_block_attrib.camera, player_position.x, player_position.y, player_position.z);
+    glUniform1i(s_block_attrib.sampler, 0);
+    glUniform1f(s_block_attrib.timer, time_of_day());
+
+    // Physics x/y/z map to the slice's right axis, world up, and depth axis.
+    const float rx = m_physics_right_x, rz = m_physics_right_z;
+
+    for (const auto &object : m_physics_objects)
+    {
+        const auto position = b3Body_GetPosition(object.body);
+        const float px = static_cast<float>(position.x);
+        const float py = static_cast<float>(position.y);
+        const float pz = static_cast<float>(position.z);
+        const float world_x = m_physics_origin_x + rx * px - rz * pz;
+        const float world_z = m_physics_origin_z + rz * px + rx * pz;
+
+        const auto q = b3Body_GetRotation(object.body);
+        const float qx = q.v.x, qy = q.v.y, qz = q.v.z, qw = q.s;
+        // Rotation matrix columns in physics space, then re-expressed in world axes.
+        const float local[3][3]{
+            {1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy + qz * qw), 2 * (qx * qz - qy * qw)},
+            {2 * (qx * qy - qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz + qx * qw)},
+            {2 * (qx * qz + qy * qw), 2 * (qy * qz - qx * qw), 1 - 2 * (qx * qx + qy * qy)}};
+        float transform[16]{};
+        for (int c = 0; c < 3; ++c)
+        {
+            transform[c * 4] = rx * local[c][0] - rz * local[c][2];
+            transform[c * 4 + 1] = local[c][1];
+            transform[c * 4 + 2] = rz * local[c][0] + rx * local[c][2];
+        }
+        transform[12] = world_x;
+        transform[13] = py;
+        transform[14] = world_z;
+        transform[15] = 1.0f;
+        float world_matrix[16];
+        matrix::multiply(world_matrix, projection, transform);
+        glUniformMatrix4fv(s_block_attrib.matrix, 1, GL_FALSE, world_matrix);
+        const auto slot = static_cast<std::size_t>(object.block_type);
+        if (object.sphere)
+            sdl_gl_helper::draw_item(&s_block_attrib, m_physics_sphere_buffers[slot], m_physics_sphere_vertices);
+        else
+            sdl_gl_helper::draw_cube(&s_block_attrib, m_physics_cube_buffers[slot]);
+    }
+}
+
+void editor_world::draw_physics_controls() const noexcept
+{
+    ImGui::Checkbox("Paused", &m_physics_paused);
+    ImGui::Text("Blocks: %zu  Spheres: %zu  /  %zu",
+                static_cast<std::size_t>(std::ranges::count_if(
+                    m_physics_objects, [](const physics_object &object) { return !object.sphere; })),
+                static_cast<std::size_t>(std::ranges::count_if(
+                    m_physics_objects, [](const physics_object &object) { return object.sphere; })),
+                MAX_PHYSICS_OBJECTS);
+    ImGui::Text("Collision impacts: %llu",
+                static_cast<unsigned long long>(m_physics_impact_count));
+    if (m_physics_objects.size() < MAX_PHYSICS_OBJECTS)
+    {
+        if (ImGui::Button("Add block"))
+            m_add_physics_block_requested = true;
+        ImGui::SameLine();
+        const auto sphere_count = std::ranges::count_if(
+            m_physics_objects, [](const physics_object &object) { return object.sphere; });
+        ImGui::BeginDisabled(sphere_count >= MAX_PHYSICS_SPHERES);
+        if (ImGui::Button("Add sphere"))
+            m_add_physics_sphere_requested = true;
+        ImGui::EndDisabled();
+    }
+    if (ImGui::Button("Jolt blocks"))
+        m_physics_jolt_requested = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Reset stack"))
+        m_physics_reset_requested = true;
+    ImGui::TextUnformatted("Heightmap voxels above y=1 are dynamic; y=0 and y=1 stay fixed.");
 }
 
 void editor_world::render_player(const std::uint32_t texture) const noexcept

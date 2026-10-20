@@ -8,6 +8,7 @@
 #include <noise/noise.h>
 
 #include "item.h"
+#include "heightmap.h"
 #include "matrix.h"
 
 void geometries::make_cube_faces(
@@ -415,8 +416,72 @@ void geometries::create_voxel_world(const std::function<void(craft_map *, int, i
                                     craft_map *m, const int p, const int q, const int chunk_size,
                                     bool enable_heightmap,
                                     float player_x, float player_z,
-                                    float flatten_radius) noexcept
+                                    float flatten_radius,
+                                    const heightmap *constrained,
+                                    const bool include_decorations) noexcept
 {
+    if (constrained)
+    {
+        // Voxels exist only inside the heightmap; everything outside is empty for performance.
+        for (int dx = -1; dx < chunk_size + 1; dx++)
+        {
+            for (int dz = -1; dz < chunk_size + 1; dz++)
+            {
+                const int flag = (dx < 0 || dz < 0 || dx >= chunk_size || dz >= chunk_size) ? -1 : 1;
+                const int x = p * chunk_size + dx;
+                const int z = q * chunk_size + dz;
+                if (!constrained->contains(x, z))
+                {
+                    continue;
+                }
+                const int h = constrained->column_height(x, z);
+                const int top = heightmap::material_for(constrained->elevation(x, z)).block;
+                for (int y = 0; y < h; y++)
+                {
+                    setter(m, x, y, z, (y == h - 1 ? top : 3) * flag);
+                }
+
+                // Trees belong to the owning chunk and remain fully inside the constrained map.
+                if (include_decorations && flag > 0 && top == static_cast<int>(item::BlockType::GRASS) &&
+                    x >= 3 && z >= 3 && x + 3 < constrained->side && z + 3 < constrained->side &&
+                    simplex2(static_cast<float>(x), static_cast<float>(z), 6, 0.5f, 2.0f) > 0.84f)
+                {
+                    for (int y = h + 3; y < h + 8; ++y)
+                    {
+                        for (int ox = -3; ox <= 3; ++ox)
+                        {
+                            for (int oz = -3; oz <= 3; ++oz)
+                            {
+                                const int d = ox * ox + oz * oz + (y - (h + 4)) * (y - (h + 4));
+                                if (d < 11)
+                                {
+                                    setter(m, x + ox, y, z + oz, static_cast<int>(item::BlockType::LEAVES));
+                                }
+                            }
+                        }
+                    }
+                    for (int y = h; y < h + 7; ++y)
+                    {
+                        setter(m, x, y, z, static_cast<int>(item::BlockType::WOOD));
+                    }
+                }
+
+                // Keep constrained heightmaps bounded while preserving the voxel-cloud sky layer.
+                for (int y = 64; include_decorations && y < 72; ++y)
+                {
+                    if (simplex3(static_cast<float>(x) * 0.01f,
+                                 static_cast<float>(y) * 0.1f,
+                                 static_cast<float>(z) * 0.01f,
+                                 8, 0.5f, 2.0f) > 0.75f)
+                    {
+                        setter(m, x, y, z, static_cast<int>(item::BlockType::CLOUD) * flag);
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     constexpr int pad = 1;
     for (int dx = -pad; dx < chunk_size + pad; dx++)
     {

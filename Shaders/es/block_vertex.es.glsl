@@ -21,6 +21,7 @@ out float fog_height;
 out float diffuse;
 out vec3 world_position;
 out vec3 surface_normal;
+out vec3 view_direction;
 
 const float pi = 3.14159265;
 const vec3 light_direction = normalize(vec3(-1.0, 1.0, -1.0));
@@ -34,6 +35,7 @@ void main() {
     gl_Position = matrix * viewed;
     world_position = position.xyz;
     surface_normal = normal;
+    view_direction = camera - world_position;
     fragment_uv = uv.xy;
     fragment_ao = 0.3 + (1.0 - uv.z) * 0.7;
     fragment_light = uv.w;

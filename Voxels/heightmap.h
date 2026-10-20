@@ -1,0 +1,105 @@
+#ifndef HEIGHTMAP_H
+#define HEIGHTMAP_H
+
+#include <array>
+#include <cstdint>
+#include <deque>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include <MazeBuilder/configurator.h>
+
+/// Surface material shared by the editor (authoring) and the game world (consumer).
+/// Elevation bands pick the block type; the colour/shininess are exported with the OBJ materials.
+struct heightmap_material
+{
+    const char *name;
+    float max_elevation; // upper bound of the elevation band (0..1)
+    int block;           // item::BlockType value used for the surface voxel
+    float kd[3];         // diffuse colour
+    float ns;            // specular exponent
+};
+
+inline constexpr std::array<heightmap_material, 4> HEIGHTMAP_MATERIALS{{
+    {"sand", 0.18f, 2, {0.86f, 0.80f, 0.55f}, 8.0f},
+    {"grass", 0.55f, 1, {0.30f, 0.62f, 0.25f}, 4.0f},
+    {"stone", 0.80f, 3, {0.50f, 0.50f, 0.52f}, 16.0f},
+    {"snow", 1.01f, 9, {0.95f, 0.96f, 1.00f}, 32.0f},
+}};
+
+/// A constrained (island style) square height field. Elevation is normalized to [0, 1].
+struct heightmap
+{
+    static constexpr int MIN_SIDE = 32;
+    static constexpr int MAX_SIDE = 256;
+
+    std::string name;
+    int side{0};
+    int max_height{32};
+    std::vector<float> data;
+
+    [[nodiscard]] bool contains(int x, int z) const noexcept { return x >= 0 && z >= 0 && x < side && z < side; }
+    [[nodiscard]] float elevation(int x, int z) const noexcept;
+    /// Number of solid voxels in the column (at least one inside the map).
+    [[nodiscard]] int column_height(int x, int z) const noexcept;
+    [[nodiscard]] static const heightmap_material &material_for(float elevation) noexcept;
+};
+
+struct heightmap_params
+{
+    int side{128};
+    int seed{0};
+    int octaves{3};
+    float frequency{3.0f};
+    float edge_factor{0.9f};
+    float edge_dropoff{1.5f};
+    int max_height{32};
+    bool apply_maze{false};
+    mazes::configurator maze{};
+};
+
+/// Writes a grayscale (PGM) maze image under the system temp directory; walls are white.
+[[nodiscard]] std::filesystem::path write_maze_image(const mazes::configurator &maze, int side);
+
+/// Reads a maze image back into elevations using gradient descent on a smoothness-regularized energy,
+/// E(h) = 1/2 sum (h - pixel)^2 + lambda/2 sum |grad h|^2.
+[[nodiscard]] std::vector<float> decode_maze_image(const std::filesystem::path &image, int side);
+
+/// Builds a heightmap, splitting rows over worker threads.
+[[nodiscard]] heightmap generate_heightmap(const heightmap_params &params);
+
+/// Process-wide list of generated heightmaps, persisted through db.
+class heightmap_library
+{
+public:
+    static heightmap_library &instance();
+
+    struct entry
+    {
+        int id{0}; // db row id, or 0 if not persisted
+        std::shared_ptr<const heightmap> map;
+    };
+
+    /// Loads persisted heightmaps once.
+    void ensure_loaded();
+    /// Generates, stores, and selects a new heightmap.
+    std::shared_ptr<const heightmap> add(const heightmap_params &params);
+    void select(std::size_t index);
+    void remove(std::size_t index);
+
+    [[nodiscard]] const std::vector<entry> &entries() const noexcept { return m_entries; }
+    [[nodiscard]] std::size_t selected() const noexcept { return m_selected; }
+    [[nodiscard]] std::shared_ptr<const heightmap> current() const noexcept;
+
+    /// Play queue for the game world: saved heightmaps first, otherwise freshly generated ones.
+    [[nodiscard]] std::deque<std::shared_ptr<const heightmap>> make_play_queue(std::size_t count);
+
+private:
+    std::vector<entry> m_entries;
+    std::size_t m_selected{0};
+    bool m_loaded{false};
+};
+
+#endif // HEIGHTMAP_H

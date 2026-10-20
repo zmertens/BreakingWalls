@@ -8,6 +8,9 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
+#include <cmath>
+#include <vector>
 #include "geometries.h"
 #include "shader.h"
 #include "world.h"
@@ -345,6 +348,72 @@ std::uint32_t sdl_gl_helper::gen_line_buffer(const float x1, const float y1, con
         x2, y2, z2   // End point
     };
     return gen_buffer(sizeof(data), data);
+}
+
+std::uint32_t sdl_gl_helper::gen_voxel_sphere_buffer(const float radius, const int cells, const int w,
+                                                     int &out_vertices) noexcept
+{
+    const float cell = radius * 2.0f / static_cast<float>(cells);
+    const float half = cell * 0.5f;
+    const float center = static_cast<float>(cells - 1) * 0.5f;
+    const auto filled = [&](const int i, const int j, const int k)
+    {
+        if (i < 0 || j < 0 || k < 0 || i >= cells || j >= cells || k >= cells)
+            return false;
+        const float dx = (static_cast<float>(i) - center) * cell;
+        const float dy = (static_cast<float>(j) - center) * cell;
+        const float dz = (static_cast<float>(k) - center) * cell;
+        return dx * dx + dy * dy + dz * dz <= radius * radius;
+    };
+
+    std::vector<float> mesh;
+    float ao[6][4] = {0};
+    float light[6][4];
+    for (auto &face : light)
+        std::fill(std::begin(face), std::end(face), 0.5f);
+    float face_data[60];
+    for (int i = 0; i < cells; ++i)
+        for (int j = 0; j < cells; ++j)
+            for (int k = 0; k < cells; ++k)
+            {
+                if (!filled(i, j, k))
+                    continue;
+                const float cx = (static_cast<float>(i) - center) * cell;
+                const float cy = (static_cast<float>(j) - center) * cell;
+                const float cz = (static_cast<float>(k) - center) * cell;
+                const int exposed[6] = {!filled(i - 1, j, k), !filled(i + 1, j, k), !filled(i, j + 1, k),
+                                        !filled(i, j - 1, k), !filled(i, j, k - 1), !filled(i, j, k + 1)};
+                for (int f = 0; f < 6; ++f)
+                {
+                    if (!exposed[f])
+                        continue;
+                    int mask[6] = {0, 0, 0, 0, 0, 0};
+                    mask[f] = 1;
+                    geometries::make_cube(face_data, ao, light, mask[0], mask[1], mask[2], mask[3], mask[4], mask[5],
+                                          cx, cy, cz, half, w);
+                    for (int v = 0; v < 6; ++v)
+                    {
+                        float *vertex = face_data + v * 10;
+                        const float len = std::sqrt(vertex[0] * vertex[0] + vertex[1] * vertex[1] +
+                                                    vertex[2] * vertex[2]);
+                        if (len > 0.0f)
+                        {
+                            vertex[3] = vertex[0] / len;
+                            vertex[4] = vertex[1] / len;
+                            vertex[5] = vertex[2] / len;
+                        }
+                    }
+                    mesh.insert(mesh.end(), face_data, face_data + 60);
+                }
+            }
+
+    const std::size_t faces = mesh.size() / 60;
+    out_vertices = static_cast<int>(faces * 6);
+    GLfloat *data = malloc_faces(10, faces);
+    std::copy(mesh.begin(), mesh.end(), data);
+    const auto buffer = gen_faces(10, faces, data);
+    SDL_free(data);
+    return buffer;
 }
 
 std::uint32_t sdl_gl_helper::gen_cube_buffer(const float x, const float y, const float z, const float n,

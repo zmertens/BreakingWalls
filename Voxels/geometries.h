@@ -7,6 +7,7 @@
 #include <vector>
 
 class craft_map;
+struct heightmap;
 
 class geometries
 {
@@ -46,7 +47,9 @@ public:
                                    craft_map *m, const int p, const int q, const int chunk_size,
                                    bool enable_heightmap = true,
                                    float player_x = 0.0f, float player_z = 0.0f,
-                                   float flatten_radius = 128.0f) noexcept;
+                                   float flatten_radius = 128.0f,
+                                   const heightmap *constrained = nullptr,
+                                   bool include_decorations = true) noexcept;
 
 private:
     static int _make_sphere(

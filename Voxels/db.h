@@ -2,6 +2,8 @@
 #define DB_H
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <vector>
@@ -34,6 +36,19 @@ public:
 	static void sign_list_add(sign_list *list, int x, int y, int z, int face, std::string_view text);
 	static int sign_list_remove(sign_list *list, int x, int y, int z, int face);
 	static int sign_list_remove_all(sign_list *list, int x, int y, int z);
+
+	struct heightmap_record
+	{
+		int id{};
+		std::string name;
+		int side{};
+		int max_height{};
+		std::vector<std::uint8_t> data; // one byte of elevation per cell
+	};
+
+	static int save_heightmap(const std::string &name, int side, int max_height, const std::vector<std::uint8_t> &data);
+	static std::vector<heightmap_record> load_heightmaps();
+	static void delete_heightmap(int id);
 
 	static void enable();
 	static void disable();

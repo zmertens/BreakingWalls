@@ -39,8 +39,6 @@ player::player()
     assign_key(PlayerAction::FLY, SDL_SCANCODE_TAB);
     assign_key(PlayerAction::PLACE_LIGHT, SDL_SCANCODE_LCTRL);
     assign_key(PlayerAction::TAG_SIGN, SDL_SCANCODE_T);
-    assign_key(PlayerAction::PLACE_GHOST, SDL_SCANCODE_B);
-    assign_key(PlayerAction::PREVIEW_GHOST, SDL_SCANCODE_E);
     assign_key(PlayerAction::COPY_BLOCK, SDL_SCANCODE_C);
     assign_key(PlayerAction::CHANGE_PERSPECTIVE, SDL_SCANCODE_O);
     assign_key(PlayerAction::ZOOM_IN_ISO_VIEW, SDL_SCANCODE_EQUALS);
@@ -93,11 +91,6 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
             this->configs.show_crosshair_details(!this->configs.show_crosshair_details());
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Crosshair Details [H]: %s",
                         configs.show_crosshair_details() ? "ON" : "OFF");
-            return;
-        case SDL_SCANCODE_M:
-            this->configs.show_ghosts(!this->configs.show_ghosts());
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Show Ghost [M]: %s",
-                        configs.show_ghosts() ? "ON" : "OFF");
             return;
         case SDL_SCANCODE_O:
         {
@@ -547,28 +540,6 @@ void player::initialize_actions()
                 p.on_light();
             }
         });
-
-    player_commands[PlayerAction::PREVIEW_GHOST].action = derived_action<player>(
-        [](player &p, const float dt, mazes::randomizer &rng)
-        {
-            if (auto *editor = dynamic_cast<editor_world *>(p.current_world))
-            {
-                editor->generate_ghost(p.configs.maze());
-            }
-        });
-
-    player_commands[PlayerAction::PLACE_GHOST].action = derived_action<player>(
-        [](player &p, const float dt, mazes::randomizer &rng)
-        {
-            auto *editor = dynamic_cast<editor_world *>(p.current_world);
-            if (!editor)
-            {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No world available for maze building\n");
-                return;
-            }
-
-            editor->commit_ghost(p.get_item());
-        });
 }
 
 bool player::is_realtime_action(const PlayerAction action) noexcept
@@ -680,11 +651,6 @@ std::string player::artifacts() const noexcept
     }
 
     return artifact_exporter::blocks_to_wavefront_obj(blocks);
-}
-
-bool player::is_download_ready() const noexcept
-{
-    return configs.artifacts_ready();
 }
 
 // ============================================================================

@@ -723,9 +723,12 @@ int world::chunk_distance(const chunk *c, const int p, const int q) noexcept
 
 void world::load_chunk(const worker_item *item) const noexcept
 {
-    chunk::load(item, active_player ? active_player->get_configs().show_heightmap() : true,
+    chunk::load(item, true,
                 active_player ? active_player->pos.x : 0.0f,
-                active_player ? active_player->pos.z : 0.0f);
+                active_player ? active_player->pos.z : 0.0f,
+                world_heightmap.get(),
+                world_include_decorations,
+                world_load_persisted_blocks);
 }
 
 void world::init_chunk(chunk *c, const int p, const int q) noexcept

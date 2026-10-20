@@ -3,7 +3,7 @@
 
 #include "resource_identifiers.h"
 #include "editor_world.h"
-#include "game_world.h"
+#include "heightmap.h"
 
 #include <atomic>
 #include <functional>
@@ -36,7 +36,6 @@ enum class StateIdentifier : unsigned int
 {
     DONE = 0,
     EDITOR = 1,
-    GAME = 2,
     LOADING = 3,
     MENU = 4,
     TOTAL = 5
@@ -53,7 +52,7 @@ public:
     {
         context(SDL_Window *window, font_manager &fonts, shader_manager &shaders,
                 texture_manager &textures, bloom_pass_manager &bloom_passes,
-                player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds);
+                player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds, artifact_exporter_manager &artifacts);
 
         SDL_Window *ctx_window;
         font_manager *ctx_fonts;
@@ -63,6 +62,7 @@ public:
         player *ctx_player;
         sdl_gl_helper *ctx_sdl;
         soundfx_manager *ctx_sounds;
+        artifact_exporter_manager *ctx_artifacts;
     };
 
     state(state_stack &stack, const context &context);
@@ -125,7 +125,6 @@ public:
     void push_state(StateIdentifier state_id);
     void pop_state();
     void clear_states();
-    void switch_mode(StateIdentifier state_id);
     void mark_resources_loaded() noexcept;
     [[nodiscard]] bool resources_have_loaded() const noexcept;
     void apply_pending_changes();
@@ -163,6 +162,7 @@ public:
     editor_state(state_stack &stack, const context &context);
 
     void draw_preview3D(int fbo, int width, int height) const noexcept;
+    void draw_physics_controls() const noexcept;
     void draw() const noexcept override;
     void rebuild_world() noexcept;
     bool update(float delta_time, mazes::randomizer &rng) noexcept override;
@@ -187,27 +187,16 @@ public:
 protected:
     void draw_mode_sidebar(float available_height) const noexcept;
     void draw_mode_tabs() const noexcept;
+    void draw_heightmap_preview() const noexcept;
 
 private:
-    const StateIdentifier mode;
     std::list<std::string> algo_list;
     mutable std::string m_selected_algo;
     mutable std::string m_cached_artifacts;
     mutable bool m_export_in_progress{false};
     mutable bool rebuild_world_requested{false};
-};
-
-class game_state final : public state
-{
-public:
-    game_state(state_stack &stack, const context &context);
-    void draw() const noexcept override;
-    bool update(float delta_time, mazes::randomizer &rng) noexcept override;
-    bool handle_event(SDL_Event &event) noexcept override;
-    void open_menu();
-    void draw_menu_options();
-private:
-    std::optional<game_world> current_game_world;
+    mutable unsigned int m_preview_texture{0};
+    mutable std::shared_ptr<const heightmap> m_preview_source;
 };
 
 #endif // STATE_MANAGEMENT_H

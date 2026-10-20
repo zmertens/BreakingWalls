@@ -1,5 +1,4 @@
 #include "game_environment.h"
-#include "game_balls.h"
 
 #if defined(__EMSCRIPTEN__)
 #include <GLES3/gl3.h>
@@ -82,6 +81,11 @@ void game_environment::init(const std::uint32_t seed)
 {
     if (m_cubemap)
         throw std::logic_error("Game environment is already initialized");
+    // The caller may have performed unrelated GL work. Only errors from this upload should
+    // decide whether the environment is available.
+    while (glGetError() != GL_NO_ERROR)
+    {
+    }
     glActiveTexture(GL_TEXTURE2);
     glGenTextures(1, &m_cubemap);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_cubemap);
@@ -114,6 +118,9 @@ void game_environment::init(const std::uint32_t seed)
     m_pan = m_background.uniform("pan");
     m_viewport_scale = m_background.uniform("viewport_scale");
     m_animation = m_background.uniform("animation");
+    m_static_horizon = m_background.uniform("static_horizon");
+    m_view = m_background.uniform("view");
+    m_use_view = m_background.uniform("use_view");
     m_ready = true;
     SDL_Log("Game environment: procedural noise cubemap ready");
 }
@@ -124,111 +131,12 @@ void game_environment::bind() const noexcept
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_cubemap);
 }
 
-void game_environment::init_balls()
-{
-#if defined(__EMSCRIPTEN__)
-    m_spheres.load_program("Shaders/es/game_ball_vertex.es.glsl", "Shaders/es/game_ball_fragment.es.glsl");
-#else
-    m_spheres.load_program("Shaders/game_ball_vertex.glsl", "Shaders/game_ball_fragment.glsl");
-#endif
-    m_ball_matrix = m_spheres.uniform("matrix");
-    m_ball_count = m_spheres.uniform("ball_count");
-    m_ball_index = m_spheres.uniform("ball_index");
-    m_ball_spheres = m_spheres.uniform("spheres[0]");
-    m_ball_surfaces = m_spheres.uniform("surfaces[0]");
-    m_ball_environment = m_spheres.uniform("environment_map");
-    m_ball_environment_enabled = m_spheres.uniform("environment_enabled");
-    m_ball_mirrored = m_spheres.uniform("mirrored");
-    m_ball_seconds = m_spheres.uniform("seconds");
-    if (!m_vao)
-        glGenVertexArrays(1, &m_vao);
-}
-
-void game_environment::draw_balls(const game_balls &balls, const float *projection,
-                                  const bool use_environment, const float seconds) const noexcept
-{
-    std::array<float, game_balls::MAX_BALLS * 4> spheres{}, surfaces{};
-    const auto instances = balls.balls();
-    if (instances.empty())
-        return;
-    balls.pack(spheres, surfaces);
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_BLEND);
-    glUseProgram(m_spheres.get());
-    bind();
-    glUniform1i(m_ball_environment, 2);
-    glUniform1i(m_ball_environment_enabled, use_environment && m_ready);
-    glUniform1i(m_ball_mirrored, 0);
-    glUniform1f(m_ball_seconds, seconds);
-    const auto count = static_cast<GLsizei>(instances.size());
-    glUniform1i(m_ball_count, count);
-    glUniform4fv(m_ball_spheres, count, spheres.data());
-    glUniform4fv(m_ball_surfaces, count, surfaces.data());
-    glUniformMatrix4fv(m_ball_matrix, 1, GL_FALSE, projection);
-    glBindVertexArray(m_vao);
-    for (int i = 0; i < count; ++i)
-    {
-        glUniform1i(m_ball_index, i);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    }
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-}
-
-void game_environment::draw_reflected_balls(const game_balls &balls, const float *projection,
-                                            const bool use_environment, const float plane_y,
-                                            const float strength, const float seconds) const noexcept
-{
-    std::array<float, game_balls::MAX_BALLS * 4> spheres{}, surfaces{};
-    const auto count = static_cast<GLsizei>(balls.pack(spheres, surfaces));
-    if (count == 0)
-        return;
-    for (GLsizei i = 0; i < count; ++i)
-        spheres[static_cast<std::size_t>(i) * 4 + 1] = 2.0f * plane_y - spheres[static_cast<std::size_t>(i) * 4 + 1];
-    glEnable(GL_STENCIL_TEST);
-    glStencilFunc(GL_EQUAL, 1, 0xFF);
-    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-    glStencilMask(0x00);
-    // Reflections sit below the floor's depth, so the stencil alone confines them to the floor.
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glDisable(GL_CULL_FACE);
-    glEnable(GL_BLEND);
-    glBlendColor(0.0f, 0.0f, 0.0f, strength);
-    glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
-    glUseProgram(m_spheres.get());
-    bind();
-    glUniform1i(m_ball_environment, 2);
-    glUniform1i(m_ball_environment_enabled, use_environment && m_ready);
-    glUniform1i(m_ball_mirrored, 1);
-    glUniform1f(m_ball_seconds, seconds);
-    glUniform1i(m_ball_count, count);
-    glUniform4fv(m_ball_spheres, count, spheres.data());
-    glUniform4fv(m_ball_surfaces, count, surfaces.data());
-    glUniformMatrix4fv(m_ball_matrix, 1, GL_FALSE, projection);
-    glBindVertexArray(m_vao);
-    for (int i = 0; i < count; ++i)
-    {
-        glUniform1i(m_ball_index, i);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    }
-    glBindVertexArray(0);
-    glUniform1i(m_ball_mirrored, 0);
-    glDisable(GL_BLEND);
-    glDisable(GL_STENCIL_TEST);
-    glStencilMask(0xFF);
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
-}
-
 void game_environment::draw(const float rotation, const float zoom,
                             const float pan_x, const float pan_y,
                             const float scale_x, const float scale_y,
                             const float seconds, const float level,
-                            const float lights, const float board_radius) const noexcept
+                            const float lights, const float board_radius,
+                            const bool static_horizon, const float *view) const noexcept
 {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -241,6 +149,10 @@ void game_environment::draw(const float rotation, const float zoom,
     glUniform2f(m_pan, pan_x, pan_y);
     glUniform2f(m_viewport_scale, scale_x, scale_y);
     glUniform4f(m_animation, seconds, level, lights, board_radius);
+    glUniform1i(m_static_horizon, static_horizon);
+    glUniform1i(m_use_view, view != nullptr);
+    if (view)
+        glUniform4fv(m_view, 1, view);
     glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);

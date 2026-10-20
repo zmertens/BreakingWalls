@@ -40,8 +40,6 @@ enum class PlayerAction
     COPY_BLOCK,
     DESTROY_BLOCK,
     PLACE_LIGHT,
-    PLACE_GHOST,
-    PREVIEW_GHOST,
     CHANGE_PERSPECTIVE,
     ZOOM_IN_ISO_VIEW,
     ZOOM_OUT_ISO_VIEW,
@@ -144,8 +142,6 @@ public:
     [[nodiscard]] std::string get_local_time() const noexcept;
 
     [[nodiscard]] std::string artifacts() const noexcept;
-
-    [[nodiscard]] bool is_download_ready() const noexcept;
 
     // Async artifact export
     void start_async_artifact_export() noexcept;

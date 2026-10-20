@@ -26,7 +26,12 @@ public:
     /// Retrieve the result (waits if not yet done, caches it afterwards).
     [[nodiscard]] std::string get_result() noexcept;
 
+    /// Download-availability flag, tracked per exporter instance.
+    void set_download_ready(bool ready) noexcept { m_download_ready = ready; }
+    [[nodiscard]] bool is_download_ready() const noexcept { return m_download_ready; }
+
 private:
+    bool m_download_ready{false};
     std::future<std::string> m_future;
     std::string m_cached;
 };

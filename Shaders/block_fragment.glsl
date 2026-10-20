@@ -7,9 +7,12 @@ uniform bool is_ortho;
 uniform float bloom_emission;
 uniform float light_attenuation;
 uniform bool mirror_mask;
+uniform samplerCube environment_map;
+uniform float environment_strength;
 
 in vec3 world_position;
 in vec3 surface_normal;
+in vec3 view_direction;
 in vec2 fragment_uv;
 in float fragment_ao;
 in float fragment_light;
@@ -111,6 +114,15 @@ void main() {
     vec3 ball_shade, ball_glow;
     ball_shading(world_position, normalize(surface_normal), ball_shade, ball_glow);
     color = color * ball_shade + ball_glow;
+    if (environment_strength > 0.0) {
+        vec3 incident = normalize(-view_direction);
+        vec3 normal = faceforward(normalize(surface_normal), incident, normalize(surface_normal));
+        float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(normal, -incident), 0.0), 5.0);
+        vec3 reflected = texture(environment_map, reflect(incident, normal)).rgb;
+        vec3 refracted = texture(environment_map, refract(incident, normal, 1.0 / 1.33)).rgb;
+        vec3 environment = mix(refracted, reflected, fresnel) * 1.4;
+        color = mix(color, environment, clamp(environment_strength * (0.35 + 0.65 * fresnel), 0.0, 1.0));
+    }
     // Apply fog with sky blue color that matches the background
     vec3 fog_color = vec3(0.53, 0.81, 0.92) * (daylight * 0.4 + 0.6);
     color = mix(color, fog_color, fog_factor);

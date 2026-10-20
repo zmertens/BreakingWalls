@@ -15,16 +15,12 @@ std::string artifact_exporter::blocks_to_wavefront_obj(
     const auto start_time = SDL_GetTicks();
 
     std::ostringstream result;
-    result << "# Maze Builder Export\n";
+    result << "# Voxel artifacts\n";
     result << "# Generated from database\n";
     result << "# Block count: " << blocks.size() << "\n\n";
 
     static constexpr float cube_vertices[8][3] = {
-        {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f},
-        {0.5f, 0.5f, -0.5f},   {-0.5f, 0.5f, -0.5f},
-        {-0.5f, -0.5f, 0.5f},  {0.5f, -0.5f, 0.5f},
-        {0.5f, 0.5f, 0.5f},    {-0.5f, 0.5f, 0.5f}
-    };
+        {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}, {-0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f}};
 
     static constexpr int cube_faces[6][6] = {
         {4, 5, 6, 4, 6, 7}, // front  (+Z)
@@ -38,15 +34,16 @@ std::string artifact_exporter::blocks_to_wavefront_obj(
     int vertex_count = 0, processed_blocks = 0;
     for (const auto &[x, y, z, w] : blocks)
     {
-        if (w == 0) continue;
+        if (w == 0)
+            continue;
         if (++processed_blocks % 10000 == 0)
             SDL_Log("OBJ export progress: %d / %zu blocks\n", processed_blocks, blocks.size());
 
         for (int v = 0; v < 8; ++v)
         {
             result << "v " << (static_cast<float>(x) + cube_vertices[v][0])
-                   << " "  << (static_cast<float>(y) + cube_vertices[v][1])
-                   << " "  << (static_cast<float>(z) + cube_vertices[v][2]) << "\n";
+                   << " " << (static_cast<float>(y) + cube_vertices[v][1])
+                   << " " << (static_cast<float>(z) + cube_vertices[v][2]) << "\n";
         }
         for (int face = 0; face < 6; ++face)
         {
@@ -57,7 +54,7 @@ std::string artifact_exporter::blocks_to_wavefront_obj(
         vertex_count += 8;
     }
 
-    SDL_Log("blocks_to_wavefront_obj: Generated OBJ with %d blocks in %llu ms\n",
+    SDL_Log("Generated OBJ with %d blocks in %lu ms\n",
             processed_blocks, SDL_GetTicks() - start_time);
     return result.str();
 }
@@ -78,7 +75,8 @@ bool artifact_exporter::is_ready() const noexcept
 
 std::string artifact_exporter::get_result() noexcept
 {
-    if (!is_ready()) return "";
+    if (!is_ready())
+        return "";
     if (m_cached.empty())
     {
         m_cached = m_future.get();

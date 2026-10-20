@@ -16,6 +16,7 @@
 #include "resource_identifiers.h"
 #include "sdl_gl_helper.h"
 #include "craft_map.h"
+#include "heightmap.h"
 
 union SDL_Event;
 
@@ -104,6 +105,11 @@ protected:
     void gen_chunk_buffer(chunk *c) const noexcept;
 
     void load_chunk(const worker_item *item) const noexcept;
+
+    // Optional constrained terrain; fixed for the lifetime of the world so workers can read it unlocked.
+    std::shared_ptr<const heightmap> world_heightmap;
+    bool world_include_decorations{true};
+    bool world_load_persisted_blocks{true};
     void init_chunk(chunk *c, int p, int q) noexcept;
     void create_chunk(chunk *c, int p, int q) noexcept;
     void delete_chunks() noexcept;

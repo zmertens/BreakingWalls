@@ -1,17 +1,18 @@
 # Breaking Walls
 
-Breaking Walls is a C++20 voxel application with two modes: a stacked-maze tracing game and a voxel editor. It uses SDL3 and OpenGL on desktop; the web build targets WebGL 2 through Emscripten.
+Breaking Walls is a 2D game application with voxel-engine-like features. It requires C++20 features and uses SDL3 and OpenGL on desktop; the web build targets WebGL 2 through Emscripten. See [Configure and build](#configure-and-build) for more info.
 
-## Current behavior
+## Graphics
 
-- **Game:** Trace from the blue start through hidden rewards and hazards to the green goal. Activate five yellow lights to descend to the next board. Board side defaults to 8 and can be set from 4 to 40 in the Game tab. Game score, strokes, and level history are in memory and reset when starting a new game or switching modes.
-- **Editor:** Build and edit voxel terrain, configure and generate maze ghosts, and use the perspective, isometric, or orthographic camera. Its sky now has a time-of-day palette with a sun, moon, and soft halos. Editor data is stored in `breakingwalls.db` on desktop; web builds use an in-memory database.
-- **Common menu:** Resume or switch modes; adjust VSync, fullscreen, bloom, exposure, and font scale. The Game tab also has the board and maze-environment controls; editor tools and settings are shown only in editor mode.
-- **Input:** In game, hold the left mouse button or one finger from a blue start and trace toward the goal. Right/middle drag or arrow keys pan; the wheel zooms; Ctrl+wheel or Q/E rotates; R resets the camera. Escape opens the menu. The menu includes the mode-specific control reminders.
+- **Game:** Trace paths in realtime towards randomized goals and gain points
+- **Editor:** Build and edit voxel terrain, configure and generate levels, and use a dashboard to view level details. Open the menu's **Physics** tab to experiment with a Box3D simulation: exposed heightmap voxels in a camera-facing slice become dynamic, and falling spheres can knock them loose. Editor data is stored in `breakingwalls.db` on desktop; web builds use an in-memory database.
+- **Common menu:** Resume or switch modes; adjust VSync, fullscreen, bloom, exposure, and font scale - graphics and audio settings as well.
+- **Input:** In game, hold the left mouse button or one finger or joystick (A) from a random block and trace continuously toward the goal. Escape opens the menu. The menu includes the mode-specific control reminders.
+  - **Camera**: Right/middle drag or arrow keys pan; the wheel zooms; Ctrl+wheel or Q/E rotates; R resets the camera.
 
 ## Configure and build
 
-The CMake presets use Ninja Multi-Config for desktop and web builds. The project requires CMake 3.22 or newer and a C++20 toolchain. CMake fetches SDL3, SFML Audio, MazeBuilder, and Box2D during configuration, so the first configure needs network access.
+The CMake presets use Ninja Multi-Config for desktop and web builds. CMake fetches SDL3, SFML, MazeBuilder, and Box3D during configuration, so the first configure needs network access.
 
 ### Desktop
 

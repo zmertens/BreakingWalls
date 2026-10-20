@@ -22,15 +22,11 @@ set(CRAFT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_world.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_world_renderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/font.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/game_ai.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/game_world.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/game_environment.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/game_balls.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/game_swarm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/geometries.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/heightmap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/item.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/maze_game_model.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/matrix.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/player.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sdl_gl_helper.cpp
@@ -58,7 +54,7 @@ include(FetchContent)
 # Get SDL
 set(SDL_SHARED FALSE CACHE BOOL "Build a SDL shared library (if available)")
 set(SDL_STATIC TRUE CACHE BOOL "Build a SDL static library (if available)")
-FetchContent_Declare(SDL GIT_REPOSITORY https://github.com/libsdl-org/SDL.git GIT_TAG release-3.4.14)
+FetchContent_Declare(SDL GIT_REPOSITORY https://github.com/libsdl-org/SDL.git GIT_TAG release-3.4.18)
 FetchContent_MakeAvailable(SDL)
 set_property(DIRECTORY "${CMAKE_BINARY_DIR}/_deps/sdl-src" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
@@ -79,17 +75,22 @@ FetchContent_Declare(SFML GIT_REPOSITORY ${GET_SFML_REPO_URL} GIT_TAG ${GET_SFML
 FetchContent_MakeAvailable(SFML)
 
 # Get MazeBuilder
-FetchContent_Declare(MazeBuilder GIT_REPOSITORY https://github.com/zmertens/MazeBuilder.git GIT_TAG v8.6.5)
+set(MAZE_BUILDER_BUILD_SHARED OFF CACHE BOOL "Build MazeBuilder as a shared library")
+FetchContent_Declare(MazeBuilder GIT_REPOSITORY https://github.com/zmertens/MazeBuilder.git GIT_TAG v8.8.13)
 FetchContent_MakeAvailable(MazeBuilder)
 
-# Get box2d
-set(BOX2D_REPO_URL https://github.com/erincatto/box2d.git)
-set(BOX2D_VERSION v3.1.1)
-FetchContent_Declare(box2d GIT_REPOSITORY ${BOX2D_REPO_URL} GIT_TAG ${BOX2D_VERSION})
-FetchContent_MakeAvailable(box2d)
-set_property(TARGET box2d PROPERTY COMPILE_WARNING_AS_ERROR OFF)
+# Get box3d
+set(BOX3D_REPO_URL https://github.com/erincatto/box3d.git)
+set(BOX3D_VERSION v0.1.0)
+FetchContent_Declare(box3d GIT_REPOSITORY ${BOX3D_REPO_URL} GIT_TAG ${BOX3D_VERSION})
+FetchContent_MakeAvailable(box3d)
+set_property(TARGET box3d PROPERTY COMPILE_WARNING_AS_ERROR OFF)
+# Unoptimized Box3D is ~7x slower per step; keep it optimized even in Debug.
+if(NOT MSVC)
+    target_compile_options(box3d PRIVATE "$<$<CONFIG:Debug>:-O2>")
+endif()
 
-target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE MazeBuilder::MazeBuilder SDL3::SDL3 box2d::box2d SFML::Audio)
+target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE MazeBuilder::MazeBuilder SDL3::SDL3 box3d::box3d SFML::Audio)
 
 if(EMSCRIPTEN)
     message(INFO ": Building ${BREAKING_WALLS_APP_NAME} for the Web!")

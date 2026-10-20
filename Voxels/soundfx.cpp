@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 
@@ -34,9 +35,13 @@ struct soundfx::audio_state
     music_track *track(SoundIdentifier id) noexcept
     {
         if (id == SoundIdentifier::GAME_THEME_SONG_1)
+        {
             return &game_theme;
+        }
         if (id == SoundIdentifier::LOADING_THEME_SONG)
+        {
             return &loading_theme;
+        }
         return nullptr;
     }
     const music_track *track(SoundIdentifier id) const noexcept
@@ -46,12 +51,15 @@ struct soundfx::audio_state
 
     void apply_volumes()
     {
+        using V = std::unique_ptr<sf::Sound>;
         sf::Listener::setGlobalVolume(muted ? 0.0f : master * 100.0f);
-        for (auto *t : {&game_theme, &loading_theme})
-            t->music.setVolume(t->base_volume * music_scale);
-        for (auto &voice : voices)
-            if (voice)
-                voice->setVolume(boink_volume * effects_scale);
+        std::array<music_track *, 2> tracks = {&game_theme, &loading_theme};
+        std::ranges::for_each(tracks, [&](auto *t)
+                              { t->music.setVolume(t->base_volume * music_scale); });
+        std::ranges::for_each(voices | std::views::filter([](V &voice)
+                                                          { return static_cast<bool>(voice); }),
+                              [&](V &voice)
+                              { voice->setVolume(boink_volume * effects_scale); });
     }
 
     void require_loaded(SoundIdentifier id) const
@@ -84,7 +92,10 @@ bool soundfx::load_from_file(SoundIdentifier id, std::string_view filename,
         t->music.stop();
         t->loaded = false;
         if (!t->music.openFromFile(std::string(filename)))
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to open music from file %s", std::string(filename).c_str());
             return false;
+        }
         if (sf::seconds(offset) >= t->music.getDuration())
         {
             SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Music offset exceeds duration");
@@ -103,10 +114,15 @@ bool soundfx::load_from_file(SoundIdentifier id, std::string_view filename,
     if (id == SoundIdentifier::BOINK)
     {
         for (auto &voice : audio.voices)
+        {
             voice.reset();
+        }
         audio.boink_loaded = false;
         if (!audio.boink.loadFromFile(std::string(filename)))
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to load sound from file %s", std::string(filename).c_str());
             return false;
+        }
         if (sf::seconds(offset) >= audio.boink.getDuration())
         {
             SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Sound offset exceeds duration");
@@ -131,7 +147,8 @@ bool soundfx::load_from_file(SoundIdentifier id, std::string_view filename,
 
 void soundfx::set_volumes(float master, float music, float effects, bool muted)
 {
-    const auto clamp01 = [](float v) { return std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : 0.0f; };
+    const auto clamp01 = [](auto v)
+    { return std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : 0.0f; };
     auto &audio = *m_audio;
     audio.master = clamp01(master);
     audio.music_scale = clamp01(music);
@@ -144,7 +161,9 @@ float soundfx::volume_factor(float min_distance, float attenuation, float distan
 {
     if (!std::isfinite(min_distance) || min_distance <= 0 || !std::isfinite(attenuation) || attenuation < 0 ||
         std::isnan(distance))
+    {
         return 0.0f;
+    }
     return min_distance / (min_distance + attenuation * (std::max(distance, min_distance) - min_distance));
 }
 
@@ -211,10 +230,14 @@ void soundfx::stop(SoundIdentifier id)
     auto &audio = *m_audio;
     audio.require_loaded(id);
     if (auto *t = audio.track(id))
+    {
         t->music.stop();
+    }
     else
-        for (auto &voice : audio.voices)
-            voice->stop();
+    {
+        std::ranges::for_each(audio.voices, [](auto &voice)
+                              { voice->stop(); });
+    }
 }
 
 bool soundfx::is_playing(SoundIdentifier id) const
@@ -222,9 +245,9 @@ bool soundfx::is_playing(SoundIdentifier id) const
     const auto &audio = *m_audio;
     audio.require_loaded(id);
     if (const auto *t = audio.track(id))
-        return t->music.getStatus() == sf::SoundSource::Status::Playing;
-    return std::any_of(audio.voices.begin(), audio.voices.end(), [](const auto &voice)
     {
-        return voice->getStatus() == sf::SoundSource::Status::Playing;
-    });
+        return t->music.getStatus() == sf::SoundSource::Status::Playing;
+    }
+    return std::any_of(audio.voices.begin(), audio.voices.end(), [](const auto &voice)
+                       { return voice->getStatus() == sf::SoundSource::Status::Playing; });
 }

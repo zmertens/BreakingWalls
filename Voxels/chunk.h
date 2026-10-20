@@ -6,6 +6,7 @@
 
 #include "db.h"
 #include "craft_map.h"
+#include "heightmap.h"
 
 // CPU mesh job. Maps are borrowed for synchronous jobs and copied for workers.
 struct worker_item
@@ -54,7 +55,8 @@ struct chunk
     void generate(worker_item *item) noexcept;
     void release_buffers() noexcept;
     static void load(const worker_item *item, bool enable_heightmap,
-                     float player_x, float player_z) noexcept;
+                     float player_x, float player_z, const heightmap *constrained = nullptr,
+                     bool include_decorations = true, bool load_persisted_blocks = true) noexcept;
     static void compute(worker_item *item) noexcept;
 
     [[nodiscard]] bool intersects_bounds(const int min_x, const int min_z,

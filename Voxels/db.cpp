@@ -354,6 +354,13 @@ int db::init(const char *path)
         "    z int not null,"
         "    w int not null"
         ");"
+        "create table if not exists heightmap ("
+        "    id integer primary key autoincrement,"
+        "    name text not null,"
+        "    side int not null,"
+        "    max_height int not null,"
+        "    data blob not null"
+        ");"
         "create table if not exists preview_blocks ("
         "    preview_id int not null,"
         "    p int not null,"
@@ -1154,4 +1161,88 @@ std::vector<std::tuple<int, int, int, int, int, int>> db::get_all_preview_blocks
     load_mtx.unlock();
 
     return blocks;
+}
+
+int db::save_heightmap(const std::string &name, const int side, const int max_height,
+                       const std::vector<std::uint8_t> &data)
+{
+    if (!db_enabled)
+    {
+        return 0;
+    }
+
+    int id = 0;
+    load_mtx.lock();
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(database_handle,
+                           "insert into heightmap (name, side, max_height, data) values (?, ?, ?, ?);",
+                           -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 2, side);
+        sqlite3_bind_int(stmt, 3, max_height);
+        sqlite3_bind_blob(stmt, 4, data.data(), static_cast<int>(data.size()), SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt) == SQLITE_DONE)
+        {
+            id = static_cast<int>(sqlite3_last_insert_rowid(database_handle));
+        }
+        sqlite3_finalize(stmt);
+    }
+    load_mtx.unlock();
+    commit();
+    return id;
+}
+
+std::vector<db::heightmap_record> db::load_heightmaps()
+{
+    std::vector<heightmap_record> records;
+    if (!db_enabled)
+    {
+        return records;
+    }
+
+    load_mtx.lock();
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(database_handle,
+                           "select id, name, side, max_height, data from heightmap order by id;",
+                           -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            heightmap_record record;
+            record.id = sqlite3_column_int(stmt, 0);
+            record.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+            record.side = sqlite3_column_int(stmt, 2);
+            record.max_height = sqlite3_column_int(stmt, 3);
+            const auto *bytes = static_cast<const std::uint8_t *>(sqlite3_column_blob(stmt, 4));
+            const auto size = static_cast<std::size_t>(sqlite3_column_bytes(stmt, 4));
+            if (bytes && size == static_cast<std::size_t>(record.side) * static_cast<std::size_t>(record.side))
+            {
+                record.data.assign(bytes, bytes + size);
+                records.push_back(std::move(record));
+            }
+        }
+        sqlite3_finalize(stmt);
+    }
+    load_mtx.unlock();
+    return records;
+}
+
+void db::delete_heightmap(const int id)
+{
+    if (!db_enabled || id <= 0)
+    {
+        return;
+    }
+
+    load_mtx.lock();
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(database_handle, "delete from heightmap where id = ?;", -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_int(stmt, 1, id);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+    load_mtx.unlock();
+    commit();
 }
