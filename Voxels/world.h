@@ -11,6 +11,7 @@
 
 #include "bloom_pass.h"
 #include "chunk.h"
+#include "chunk_index.h"
 #include "item.h"
 #include "player.h"
 #include "resource_identifiers.h"
@@ -70,8 +71,8 @@ protected:
     void traverse_chunks(const std::function<void(chunk *)> &callback) const noexcept;
     void traverse_chunks_in_bounds(int min_p, int min_q, int max_p, int max_q,
                                    const std::function<void(chunk *)> &callback) const noexcept;
-    void insert_chunk_into_spatial_tree(chunk *c) const noexcept;
-    static void remove_chunk_from_spatial_tree(chunk *c) noexcept;
+    void insert_chunk_into_spatial_tree(chunk *c) noexcept;
+    void remove_chunk_from_spatial_tree(chunk *c) noexcept;
 
     // Worker functions
     bool worker_run(worker *w) const noexcept;
@@ -155,6 +156,8 @@ protected:
     std::array<std::array<chunk *, MAX_CHUNKS>, static_cast<std::size_t>(Layer::LAYER_COUNT)> scene_graph_layers;
 
     std::size_t next_chunk_slot_in_view;
+
+    chunk_index chunk_lookup;
 
     player *active_player;
 

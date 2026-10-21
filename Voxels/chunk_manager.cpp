@@ -87,12 +87,8 @@ int world::hit_test(const int previous, const float x, const float y, const floa
     float vx, vy, vz;
     matrix::compute_sight_vector(rx, ry, std::ref(vx), std::ref(vy), std::ref(vz));
 
-    const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-    for (std::size_t i = 1; i < next_chunk_slot_in_view; ++i)
+    chunk_lookup.query(p - 1, q - 1, p + 1, q + 1, [&](const chunk *c)
     {
-        const chunk *c = background_layer[i];
-        if (c == nullptr || chunk_distance(c, p, q) > 1)
-            continue;
         int hx, hy, hz;
         const int hw = _hit_test(&c->map, 8, previous, x, y, z, vx, vy, vz, &hx, &hy, &hz);
         if (hw > 0)
@@ -107,7 +103,7 @@ int world::hit_test(const int previous, const float x, const float y, const floa
                 result = hw;
             }
         }
-    }
+    });
     return result;
 }
 
@@ -383,8 +379,7 @@ void world::delete_all_chunks() noexcept
         background_layer[i] = nullptr;
     }
     this->next_chunk_slot_in_view = 1;
-    if (background_layer[0] != nullptr)
-        background_layer[0]->children.clear();
+    chunk_lookup.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -609,84 +604,34 @@ void world::detach_chunk_from_layer(chunk *c) noexcept
     remove_chunk_from_spatial_tree(c);
 }
 
-void world::insert_chunk_into_spatial_tree(chunk *c) const noexcept
+void world::insert_chunk_into_spatial_tree(chunk *c) noexcept
 {
     if (c == nullptr)
         return;
-
     chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
     if (root == nullptr)
         return;
-
-    if (chunk *spatial_parent = root; spatial_parent != nullptr)
-    {
-        c->parent = spatial_parent;
-        if (const bool is_attached = std::ranges::find(spatial_parent->children, c) != spatial_parent->children.cend();
-            !is_attached)
-        {
-            spatial_parent->children.push_back(c);
-        }
-    }
+    c->parent = root;
+    chunk_lookup.insert(c);
 }
 
 void world::remove_chunk_from_spatial_tree(chunk *c) noexcept
 {
     if (c == nullptr || c->parent == nullptr)
         return;
-    std::erase(c->parent->children, c);
+    chunk_lookup.remove(c);
     c->parent = nullptr;
 }
 
 void world::traverse_chunks(const std::function<void(chunk *)> &callback) const noexcept
 {
-    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
-    if (root == nullptr)
-        return;
-
-    std::function<void(chunk *)> traverse_node = [&](chunk *node)
-    {
-        if (node == nullptr)
-            return;
-
-        if (node != root)
-            callback(node);
-
-        for (chunk *child : node->children)
-            traverse_node(child);
-    };
-
-    traverse_node(root);
+    chunk_lookup.for_each([&](chunk *c) { callback(c); });
 }
 
 void world::traverse_chunks_in_bounds(const int min_p, const int min_q, const int max_p, const int max_q,
                                       const std::function<void(chunk *)> &callback) const noexcept
 {
-    constexpr int CHUNK_SIZE = BUILD_CHUNK_SIZE;
-    const int min_x = min_p * CHUNK_SIZE;
-    const int min_z = min_q * CHUNK_SIZE;
-    const int max_x = (max_p + 1) * CHUNK_SIZE - 1;
-    const int max_z = (max_q + 1) * CHUNK_SIZE - 1;
-
-    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
-    if (root == nullptr)
-        return;
-
-    std::function<void(chunk *)> traverse_node = [&](chunk *node)
-    {
-        if (node == nullptr)
-            return;
-
-        if (!node->intersects_bounds(min_x, min_z, max_x, max_z))
-            return;
-
-        if (node != root)
-            callback(node);
-
-        for (chunk *child : node->children)
-            traverse_node(child);
-    };
-
-    traverse_node(root);
+    chunk_lookup.query(min_p, min_q, max_p, max_q, callback);
 }
 
 // ---------------------------------------------------------------------------
@@ -700,14 +645,7 @@ int world::chunked(const float x) noexcept
 
 std::optional<chunk *> world::find_chunk(const int p, const int q) const noexcept
 {
-    const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-    for (std::size_t i = 1; i < next_chunk_slot_in_view && i < background_layer.size(); ++i)
-    {
-        chunk *c = background_layer[i];
-        if (c != nullptr && c->p == p && c->q == q)
-            return c;
-    }
-    return std::nullopt;
+    return chunk_lookup.find(p, q);
 }
 
 bool world::chunk_visible(float planes[6][4], const int p, const int q,
