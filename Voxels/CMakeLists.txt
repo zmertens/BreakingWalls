@@ -46,6 +46,7 @@ target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<OR:$<STREQUAL
 target_compile_features(${BREAKING_WALLS_APP_NAME} PRIVATE cxx_std_20)
 
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:Extlibs/glad_3_0/include> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/Extlibs/glad_3_0/include>)
+target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:Extlibs/bvhv2> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/Extlibs/bvhv2>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:Extlibs/dearimgui> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/Extlibs/dearimgui>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:Extlibs> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/Extlibs>)
 
