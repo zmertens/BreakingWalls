@@ -32,6 +32,7 @@
 #include "world.h"
 
 #include <MazeBuilder/buildinfo.h>
+#include <MazeBuilder/grid_interface.h>
 #include <MazeBuilder/randomizer.h>
 #include <MazeBuilder/runtime_app.h>
 
@@ -48,9 +49,6 @@
 
 struct craft::craft_impl
 {
-    const std::string &INIT_WINDOW_TITLE;
-    const int INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT;
-
     font_manager game_fonts;
 
     player active_player;
@@ -66,10 +64,9 @@ struct craft::craft_impl
     mutable int smoothed_fps_counter{0};
     mutable float fps_timer_smoothed{0.0f};
 
-    craft_impl(const std::string &title, const int w, const int h)
-        : INIT_WINDOW_TITLE(title), INIT_WINDOW_WIDTH(w), INIT_WINDOW_HEIGHT(h)
+    craft_impl(std::string_view title, const int w, const int h)
     {
-        start_SDL();
+        start_SDL(title, w, h);
 
         if (!simple_direct_medialayer.gl_context)
         {
@@ -95,7 +92,6 @@ struct craft::craft_impl
 
         crafting_states->push_state(StateIdentifier::EDITOR);
         crafting_states->push_state(StateIdentifier::LOADING);
-
     }
 
     void register_states() const noexcept
@@ -105,9 +101,9 @@ struct craft::craft_impl
         crafting_states->register_state<menu_state>(StateIdentifier::MENU);
     }
 
-    void start_SDL() noexcept
+    void start_SDL(std::string_view title, const int w, const int h) noexcept
     {
-        if (simple_direct_medialayer.initialize(INIT_WINDOW_TITLE, INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT))
+        if (simple_direct_medialayer.initialize(title, w, h))
         {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SDL initialized successfully.\n");
         }
@@ -245,20 +241,26 @@ struct craft::craft_impl
     }
 }; // craft_impl
 
-craft::craft(const std::string &title, const int w, const int h)
-    : crafting_impl{std::make_unique<craft_impl>(cref(title), w, h)}
-{
-}
-
+craft::craft() = default;
 craft::~craft() = default;
 
-/**
- * Run the craft-engine in a loop with SDL window open
- */
-bool craft::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomizer &rng) const noexcept
+void craft::initialize(std::string_view title, const unsigned int w, const unsigned int h) noexcept
 {
-    auto &&app = *this->crafting_impl;
-    if (!app.simple_direct_medialayer.window || !app.simple_direct_medialayer.gl_context || !app.crafting_states)
+    if (!crafting_impl)
+    {
+        crafting_impl = std::make_unique<craft_impl>(title, w, h);
+    }
+    else
+    {
+        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "Craft already initialized\n");
+    }
+}
+
+// @brief Main run loop for the SDL app
+bool craft::run(mazes::randomizer &rng) const noexcept
+{
+    auto &&app = this->crafting_impl;
+    if (!app || !app->simple_direct_medialayer.window)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL did not initialize (%s)\n", SDL_GetError());
         return false;
@@ -294,13 +296,13 @@ bool craft::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomizer &rn
     rng.seed(previous);
 
     // Trigger an initial update to set states, render pipeline ready
-    app.crafting_states->update(time_step, std::ref(rng));
+    app->crafting_states->update(time_step, std::ref(rng));
 
     // BEGIN EVENT LOOP
 #if defined(__EMSCRIPTEN__)
     EMSCRIPTEN_MAINLOOP_BEGIN
 #else
-    while (!app.crafting_states->is_empty())
+    while (!app->crafting_states->is_empty())
 #endif
     {
         // FRAME RATE
@@ -312,7 +314,7 @@ bool craft::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomizer &rn
         previous = current;
         accumulator += elapsed;
 
-        app.process_input();
+        app->process_input();
 
         // FLUSH DATABASE
         static constexpr auto COMMIT_INTERVAL = 5000u;
@@ -328,10 +330,10 @@ bool craft::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomizer &rn
             time_step += FIXED_TIME_STEP;
             accumulator -= FIXED_TIME_STEP;
 
-            app.update(FIXED_TIME_STEP, std::ref(rng));
+            app->update(FIXED_TIME_STEP, std::ref(rng));
         }
 
-        app.render(elapsed);
+        app->render(elapsed);
 
         time_step = time_step >= 1000.0 ? 0.0 : time_step;
     } // EVENT LOOP
@@ -343,16 +345,16 @@ bool craft::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomizer &rn
 
     SDL_Log("Game ended, beginning cleanup...\n");
     SDL_Log("Clearing state stack...\n");
-    if (!app.crafting_states->is_empty())
+    if (!app->crafting_states->is_empty())
     {
-        app.crafting_states->clear_states();
-        app.crafting_states->apply_pending_changes();
+        app->crafting_states->clear_states();
+        app->crafting_states->apply_pending_changes();
     }
 
     // Cleanup ImGui
-    app.world_bloom_passes.clear();
-    app.world_textures.clear();
-    app.world_shaders.clear();
+    app->world_bloom_passes.clear();
+    app->world_textures.clear();
+    app->world_shaders.clear();
 
     SDL_Log("Shutting down ImGui...\n");
     ImGui_ImplOpenGL3_Shutdown();
@@ -369,7 +371,7 @@ bool craft::run([[maybe_unused]] mazes::grid_interface *g, mazes::randomizer &rn
 
     // Cleanup SDL (this must be last)
     SDL_Log("Shutting down SDL...\n");
-    app.simple_direct_medialayer.destroy_and_quit();
+    app->simple_direct_medialayer.destroy_and_quit();
 
     SDL_Log("Cleanup complete, exiting gracefully.\n");
 
