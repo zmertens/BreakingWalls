@@ -83,6 +83,19 @@ private:
         int block_type{};
     };
 
+    // Spring-damper "soft body" that trails the player so the third-person model wobbles, leans and squashes.
+    struct player_body
+    {
+        float ox{}, oy{}, oz{};
+        float vx{}, vy{}, vz{};
+        float yaw_offset{}, yaw_velocity{};
+        float squash{}, squash_velocity{};
+        float last_x{}, last_y{}, last_z{}, last_av_y{};
+        bool last_grounded{true};
+        bool initialized{false};
+    } m_player_body;
+    void update_player_body(float dt_seconds) noexcept;
+
     static constexpr std::size_t MAX_PHYSICS_OBJECTS = 4096;
     static constexpr std::size_t MAX_PHYSICS_SPHERES = 64;
     static constexpr float PHYSICS_STEP = 1.0f / 60.0f;

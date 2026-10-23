@@ -105,6 +105,8 @@ protected:
     int hit_test(int previous, float x, float y, float z,
                  float rx, float ry, int *bx, int *by, int *bz) const noexcept;
     int hit_test_face(int *x, int *y, int *z, int *face) const noexcept;
+    [[nodiscard]] std::array<float, 2> camera_rotation() const noexcept;
+    [[nodiscard]] std::array<float, 3> camera_position() const noexcept;
     int collide(int height, float *x, float *y, float *z) const noexcept;
     [[nodiscard]] static bool player_intersects_block(int height, float x, float y, float z,
                                                       int hx, int hy, int hz) noexcept;

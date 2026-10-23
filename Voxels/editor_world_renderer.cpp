@@ -248,7 +248,8 @@ void editor_world::render_physics() const noexcept
     const auto &player_position = active_player->pos;
     glActiveTexture(GL_TEXTURE0 + static_cast<unsigned int>(TextureIdentifier::ATLAS));
     glBindTexture(GL_TEXTURE_2D, world_textures.get(TextureIdentifier::ATLAS).gl_texture);
-    glUniform3f(s_block_attrib.camera, player_position.x, player_position.y, player_position.z);
+    const auto cam = camera_position();
+    glUniform3f(s_block_attrib.camera, cam[0], cam[1], cam[2]);
     glUniform1i(s_block_attrib.sampler, 0);
     glUniform1f(s_block_attrib.timer, time_of_day());
 
@@ -327,7 +328,8 @@ void editor_world::draw_physics_controls() const noexcept
 void editor_world::render_player(const std::uint32_t texture) const noexcept
 {
     const auto &c = active_player->get_configs();
-    if (c.ortho_scaling() < 1)
+    const bool is_third_person = c.view_mode() == player_configs::ViewMode::THIRD_PERSON;
+    if (c.ortho_scaling() < 1 && !is_third_person)
         return;
 
     float matrix[16];
@@ -335,7 +337,8 @@ void editor_world::render_player(const std::uint32_t texture) const noexcept
     const player::position *s = &active_player->pos;
     glActiveTexture(GL_TEXTURE0 + static_cast<unsigned int>(TextureIdentifier::ATLAS));
     glBindTexture(GL_TEXTURE_2D, texture);
-    glUniform3f(s_block_attrib.camera, s->x, s->y, s->z);
+    const auto cam = camera_position();
+    glUniform3f(s_block_attrib.camera, cam[0], cam[1], cam[2]);
     glUniform1i(s_block_attrib.sampler, 0);
     glUniform1f(s_block_attrib.timer, time_of_day());
 
@@ -363,6 +366,14 @@ void editor_world::render_player(const std::uint32_t texture) const noexcept
         py = s->y + vy * marker_distance - 0.35f + 0.16f * SDL_sinf(t * 3.0f);
         pz = s->z + vz * marker_distance;
     }
+    else if (is_third_person)
+    {
+        // The camera eye is the player's position; the body hangs just below it.
+        const auto &body = m_player_body;
+        px = s->x + body.ox;
+        py = s->y - 0.5f + body.oy;
+        pz = s->z + body.oz;
+    }
     else
     {
         constexpr float offset_distance = 3.0f;
@@ -381,7 +392,19 @@ void editor_world::render_player(const std::uint32_t texture) const noexcept
     const GLboolean cull_was_enabled  = glIsEnabled(GL_CULL_FACE);
     if (use_isometric_fx) { glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); }
 
-    const GLuint player_buffer = sdl_gl_helper::gen_player_buffer(px, py, pz, animated_rx, animated_ry);
+    float sx = 1.0f, sy = 1.0f, sz = 1.0f, lean_x = 0.0f, lean_z = 0.0f;
+    float model_rx = animated_rx;
+    if (is_third_person)
+    {
+        const auto &body = m_player_body;
+        sy = 1.0f + body.squash;
+        sx = sz = 1.0f / std::sqrt(sy);
+        lean_x = -body.ox * 0.8f;
+        lean_z = -body.oz * 0.8f;
+        model_rx = body.yaw_offset;
+    }
+    const GLuint player_buffer = sdl_gl_helper::gen_player_buffer(px, py, pz, model_rx, animated_ry, sx, sy, sz,
+                                                                  lean_x, lean_z);
     sdl_gl_helper::draw_player(&s_block_attrib, player_buffer);
     sdl_gl_helper::del_buffer(player_buffer);
 

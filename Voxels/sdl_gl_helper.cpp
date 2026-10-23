@@ -444,10 +444,11 @@ std::uint32_t sdl_gl_helper::gen_plant_buffer(const float x, const float y, cons
 }
 
 std::uint32_t sdl_gl_helper::gen_player_buffer(const float x, const float y, const float z, const float rx,
-                                               const float ry) noexcept
+                                               const float ry, const float sx, const float sy, const float sz,
+                                               const float lean_x, const float lean_z) noexcept
 {
     GLfloat* data = malloc_faces(10, 6);
-    geometries::make_player(data, x, y, z, rx, ry);
+    geometries::make_player(data, x, y, z, rx, ry, sx, sy, sz, lean_x, lean_z);
     return gen_faces(10, 6, data);
 }
 

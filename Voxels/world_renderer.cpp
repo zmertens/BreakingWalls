@@ -17,8 +17,10 @@ std::pair<int, int> world::begin_3d_pass(const sdl_gl_helper::attrib *a, float m
 {
     auto [w, h] = simple_direct_medialayer->get_window_size();
     const auto *s = &active_player->pos;
+    const auto cam = camera_position();
+    const auto rot = camera_rotation();
     matrix::set_3d(matrix, w, h,
-                   s->x, s->y, s->z, s->rx, s->ry,
+                   cam[0], cam[1], cam[2], rot[0], rot[1],
                    active_player->get_configs().fov(),
                    active_player->get_configs().ortho_scaling(),
                    RENDER_CHUNK_RADIUS);
@@ -39,7 +41,8 @@ int world::render_chunks(const std::uint32_t texture) const noexcept
     matrix::frustum_planes(planes, RENDER_CHUNK_RADIUS, matrix);
     glActiveTexture(GL_TEXTURE0 + static_cast<unsigned int>(TextureIdentifier::ATLAS));
     glBindTexture(GL_TEXTURE_2D, texture);
-    glUniform3f(s_block_attrib.camera, s->x, s->y, s->z);
+    const auto cam = camera_position();
+    glUniform3f(s_block_attrib.camera, cam[0], cam[1], cam[2]);
     glUniform1i(s_block_attrib.sampler, 0);
     glUniform1f(s_block_attrib.extra2, light);
     glUniform1f(s_block_attrib.extra3, static_cast<GLfloat>(RENDER_CHUNK_RADIUS * BUILD_CHUNK_SIZE));

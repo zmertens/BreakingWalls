@@ -100,6 +100,10 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
                 configs.view_mode(player_configs::ViewMode::PERSPECTIVE).ortho_scaling(0);
                 break;
             case player_configs::ViewMode::PERSPECTIVE:
+                configs.view_mode(player_configs::ViewMode::THIRD_PERSON).ortho_scaling(0);
+                view_name = "Third Person";
+                break;
+            case player_configs::ViewMode::THIRD_PERSON:
                 configs.view_mode(player_configs::ViewMode::ISOMETRIC).ortho_scaling(ORTHO_MIN_SCALE);
                 view_name = "Isometric View";
                 break;
@@ -490,6 +494,7 @@ void player::initialize_actions()
             }
         });
 
+#if defined(BREAKING_WALLS_DEBUG_DEF)
     player_commands[PlayerAction::FLY].action = derived_action<player>(
         [](player &p, float dt, mazes::randomizer &rng)
         {
@@ -499,6 +504,7 @@ void player::initialize_actions()
                 p.vel.vy = 0.0f;
             }
         });
+#endif
 
     player_commands[PlayerAction::BUILD_BLOCK].action = derived_action<player>(
         [](const player &p, float dt, mazes::randomizer &rng)

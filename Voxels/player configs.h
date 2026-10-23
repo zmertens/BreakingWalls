@@ -13,7 +13,8 @@ struct player_configs
     {
         PERSPECTIVE = 0,
         ISOMETRIC = 1,
-        ORTHO = 2
+        ORTHO = 2,
+        THIRD_PERSON = 3
     };
 
     player_configs &fullscreen(bool enabled)

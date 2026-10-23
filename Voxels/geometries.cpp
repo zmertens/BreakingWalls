@@ -162,7 +162,9 @@ void geometries::make_plant(
 
 void geometries::make_player(
     float *data,
-    const float x, const float y, const float z, const float rx, const float ry) noexcept
+    const float x, const float y, const float z, const float rx, const float ry,
+    const float sx, const float sy, const float sz,
+    const float lean_x, const float lean_z) noexcept
 {
     float ao[6][4]{};
     float light[6][4] = {
@@ -177,6 +179,12 @@ void geometries::make_player(
         1, 1, 1, 1, 1, 1,
         226, 224, 241, 209, 225, 227,
         0, 0, 0, 0.4);
+    for (int i = 0; i < 36; ++i)
+    {
+        data[i * 10 + 0] *= sx;
+        data[i * 10 + 1] *= sy;
+        data[i * 10 + 2] *= sz;
+    }
     float ma[16];
     float mb[16];
     matrix::identity(ma);
@@ -188,6 +196,13 @@ void geometries::make_player(
     matrix::translate(mb, x, y, z);
     matrix::multiply(ma, mb, ma);
     matrix::apply(data, ma, 36, 0, 10);
+    // Shear in world space so the top of the body leans while the base stays put.
+    for (int i = 0; i < 36; ++i)
+    {
+        const float h = data[i * 10 + 1] - y;
+        data[i * 10 + 0] += lean_x * h;
+        data[i * 10 + 2] += lean_z * h;
+    }
 }
 
 void geometries::make_cube_wireframe(float *data, const float x, const float y, const float z, const float n) noexcept

@@ -160,6 +160,46 @@ int world::hit_test_face(int *x, int *y, int *z, int *face) const noexcept
     return 0;
 }
 
+std::array<float, 2> world::camera_rotation() const noexcept
+{
+    const auto &p = active_player->pos;
+    if (active_player->get_configs().view_mode() == player_configs::ViewMode::ORTHO)
+        return {p.rx, -matrix::to_radians(90.0f)};
+    return {p.rx, p.ry};
+}
+
+std::array<float, 3> world::camera_position() const noexcept
+{
+    const auto &p = active_player->pos;
+    if (active_player->get_configs().view_mode() != player_configs::ViewMode::THIRD_PERSON)
+        return {p.x, p.y, p.z};
+
+    constexpr float boom_length = 6.0f, step = 0.1f, clearance = 0.3f;
+    float vx, vy, vz;
+    matrix::compute_sight_vector(p.rx, p.ry, vx, vy, vz);
+    float dist = 0.0f;
+    for (float d = step; d <= boom_length; d += step)
+    {
+        const float cx = p.x - vx * d, cy = p.y - vy * d, cz = p.z - vz * d;
+        const auto chunk_opt = find_chunk(chunked(cx), chunked(cz));
+        if (!chunk_opt.has_value())
+            break;
+        const craft_map *map = &chunk_opt.value()->map;
+        // Probe around the camera so the near plane never clips into a wall.
+        bool blocked = false;
+        for (int ox = -1; ox <= 1 && !blocked; ox += 2)
+            for (int oy = -1; oy <= 1 && !blocked; oy += 2)
+                for (int oz = -1; oz <= 1 && !blocked; oz += 2)
+                    blocked = item::is_obstacle(map->get(static_cast<int>(SDL_roundf(cx + ox * clearance)),
+                                                         static_cast<int>(SDL_roundf(cy + oy * clearance)),
+                                                         static_cast<int>(SDL_roundf(cz + oz * clearance))));
+        if (blocked)
+            break;
+        dist = d;
+    }
+    return {p.x - vx * dist, p.y - vy * dist, p.z - vz * dist};
+}
+
 int world::collide(const int height, float *x, float *y, float *z) const noexcept
 {
     int result = 0;
@@ -545,8 +585,10 @@ void world::ensure_chunks(player *_player) noexcept
     auto [width, height] = simple_direct_medialayer->get_window_size();
     const player::position *s = &_player->pos;
     float matrix[16];
+    const auto cam = camera_position();
+    const auto rot = camera_rotation();
     matrix::set_3d(matrix, width, height,
-                   s->x, s->y, s->z, s->rx, s->ry,
+                   cam[0], cam[1], cam[2], rot[0], rot[1],
                    active_player->get_configs().fov(),
                    active_player->get_configs().ortho_scaling(),
                    RENDER_CHUNK_RADIUS);

@@ -332,8 +332,63 @@ command_queue &editor_world::get_command_queue() noexcept
     return world_commands;
 }
 
+void editor_world::update_player_body(const float dt_seconds) noexcept
+{
+    auto &b = m_player_body;
+    const auto &p = active_player->pos;
+    const bool grounded = active_player->is_on_ground();
+    const float dt = std::min(dt_seconds, 1.0f / 30.0f);
+    if (!b.initialized || std::abs(p.x - b.last_x) > 4.0f || std::abs(p.z - b.last_z) > 4.0f ||
+        std::abs(p.y - b.last_y) > 4.0f)
+    {
+        b = player_body{};
+        b.last_x = p.x;
+        b.last_y = p.y;
+        b.last_z = p.z;
+        b.last_grounded = grounded;
+        b.initialized = true;
+        return;
+    }
+    if (dt <= 0.0f)
+        return;
+
+    // Anchor velocity from actual motion, so collisions and flying are covered too.
+    const float av_x = (p.x - b.last_x) / dt, av_y = (p.y - b.last_y) / dt, av_z = (p.z - b.last_z) / dt;
+    b.last_x = p.x;
+    b.last_y = p.y;
+    b.last_z = p.z;
+
+    constexpr float stiffness = 120.0f, damping = 9.0f, restitution = 0.35f, floor_offset = -0.15f;
+    b.vx += (-stiffness * b.ox - damping * (b.vx - av_x)) * dt;
+    b.vy += (-stiffness * b.oy - damping * (b.vy - av_y)) * dt;
+    b.vz += (-stiffness * b.oz - damping * (b.vz - av_z)) * dt;
+    b.ox += (b.vx - av_x) * dt;
+    b.oy += (b.vy - av_y) * dt;
+    b.oz += (b.vz - av_z) * dt;
+    if (b.oy < floor_offset)
+    {
+        b.oy = floor_offset;
+        if (b.vy - av_y < 0.0f)
+            b.vy = av_y - (b.vy - av_y) * restitution;
+    }
+
+    float yaw_error = p.rx - b.yaw_offset;
+    yaw_error = std::remainder(yaw_error, 2.0f * 3.14159265f);
+    b.yaw_velocity += (60.0f * yaw_error - 8.0f * b.yaw_velocity) * dt;
+    b.yaw_offset += b.yaw_velocity * dt;
+
+    if (grounded != b.last_grounded)
+        b.squash_velocity += grounded ? std::max(b.last_av_y, -20.0f) * 0.6f : 4.0f;
+    b.last_grounded = grounded;
+    b.last_av_y = av_y;
+    const float stretch_target = grounded ? 0.0f : std::clamp(std::abs(av_y) * 0.02f, 0.0f, 0.3f);
+    b.squash_velocity += (-150.0f * (b.squash - stretch_target) - 10.0f * b.squash_velocity) * dt;
+    b.squash = std::clamp(b.squash + b.squash_velocity * dt, -0.45f, 0.45f);
+}
+
 void editor_world::update_physics(const float delta_time) noexcept
 {
+    update_player_body(delta_time / 1000.0f);
     const float dt_seconds = delta_time / 1000.0f;
     if (m_physics_reset_requested)
     {
