@@ -167,7 +167,7 @@ void chunk::compute(worker_item *item) noexcept
     int has_light = 0;
     for (int a = 0; a < 3; a++)
         for (int b = 0; b < 3; b++)
-            if (craft_map *map = item->light_maps[a][b]; map && map->size())
+            if (craft_map *map = item->light_maps.get(a, b); map && map->size())
                 has_light = 1;
 
     // Populate opaque array
@@ -175,7 +175,7 @@ void chunk::compute(worker_item *item) noexcept
     {
         for (int b = 0; b < 3; b++)
         {
-            craft_map *block_map = item->block_maps[a][b];
+            craft_map *block_map = item->block_maps.get(a, b);
             if (!block_map) continue;
             for (const auto [ex, ey, ez, ew] : *block_map)
             {
@@ -196,7 +196,7 @@ void chunk::compute(worker_item *item) noexcept
         {
             for (int b = 0; b < 3; b++)
             {
-                craft_map *map = item->light_maps[a][b];
+                craft_map *map = item->light_maps.get(a, b);
                 if (!map) continue;
                 for (const auto [ex, ey, ez, ew] : *map)
                     light_fill(opaque, light, ex - ox, ey - oy, ez - oz, ew, 1);
@@ -204,7 +204,7 @@ void chunk::compute(worker_item *item) noexcept
         }
     }
 
-    craft_map *block_map = item->block_maps[1][1];
+    craft_map *block_map = item->block_maps.get(1, 1);
 
     // Count exposed faces
     int miny = 256, maxy = 0, faces = 0;
@@ -314,8 +314,8 @@ void chunk::load(const worker_item *item, const bool enable_heightmap,
                  const bool include_decorations, const bool load_persisted_blocks) noexcept
 {
     const int p = item->p, q = item->q;
-    craft_map *block_map = item->block_maps[1][1];
-    craft_map *light_map = item->light_maps[1][1];
+    craft_map *block_map = item->block_maps.get(1, 1);
+    craft_map *light_map = item->light_maps.get(1, 1);
 
     constexpr float flatten_radius = 256.0f;
 

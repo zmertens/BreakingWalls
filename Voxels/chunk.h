@@ -1,9 +1,12 @@
 #ifndef CHUNK_H
 #define CHUNK_H
 
+#include <array>
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <memory>
+#include <ranges>
 #include <thread>
 #include <vector>
 
@@ -14,14 +17,39 @@
 // Unified voxel chunk: spatial scene-graph node + terrain/light data.
 struct chunk final
 {
+
+    // 3x3 neighborhood of maps keyed by a * 3 + b. Owned copies are freed automatically;
+    // borrowed entries use a non-owning shared_ptr and never free the map.
+    class neighbor_maps
+    {
+    public:
+        [[nodiscard]] craft_map *get(const int a, const int b) const noexcept
+        {
+            const auto &slot = m_slots[a * 3 + b];
+            return slot ? slot.get() : nullptr;
+        }
+        void own(const int a, const int b, const craft_map &src)
+        {
+            m_slots[a * 3 + b] = std::make_shared<craft_map>(src);
+        }
+        void borrow(const int a, const int b, craft_map &src)
+        {
+            m_slots[a * 3 + b] = std::shared_ptr<craft_map>(std::shared_ptr<void>{}, &src);
+        }
+        void clear() noexcept { std::ranges::for_each(m_slots.begin(), m_slots.end(), [](auto &slot) { slot.reset(); }); }
+
+    private:
+        std::array<std::shared_ptr<craft_map>, 9u> m_slots;
+    };
+
     // CPU mesh job. Maps are borrowed for synchronous jobs and copied for workers.
     struct worker_item
     {
         int p{};
         int q{};
         int load{};
-        craft_map *block_maps[3][3]{};
-        craft_map *light_maps[3][3]{};
+        neighbor_maps block_maps{};
+        neighbor_maps light_maps{};
         int miny{};
         int maxy{};
         int faces{};

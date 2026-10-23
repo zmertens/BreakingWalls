@@ -239,7 +239,7 @@ void world::update_dirty_chunks_async() const noexcept
 {
     for (auto &&worker : chunk_workers)
     {
-        worker->mtx.lock();
+        std::lock_guard<std::mutex> lock(worker->mtx);
         if (worker->state == chunk::WorkerState::IDLE)
         {
             const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
@@ -271,13 +271,8 @@ void world::update_dirty_chunks_async() const noexcept
                         }
                         if (other)
                         {
-                            item->block_maps[dp + 1][dq + 1] = new craft_map{other->map};
-                            item->light_maps[dp + 1][dq + 1] = new craft_map{other->lights};
-                        }
-                        else
-                        {
-                            item->block_maps[dp + 1][dq + 1] = nullptr;
-                            item->light_maps[dp + 1][dq + 1] = nullptr;
+                            item->block_maps.own(dp + 1, dq + 1, other->map);
+                            item->light_maps.own(dp + 1, dq + 1, other->lights);
                         }
                     }
                 }
@@ -286,7 +281,6 @@ void world::update_dirty_chunks_async() const noexcept
                 break;
             }
         }
-        worker->mtx.unlock();
     }
 }
 
@@ -313,13 +307,8 @@ void world::gen_chunk_buffer(chunk *c) const noexcept
             }
             if (other)
             {
-                item->block_maps[dp + 1][dq + 1] = &other->map;
-                item->light_maps[dp + 1][dq + 1] = &other->lights;
-            }
-            else
-            {
-                item->block_maps[dp + 1][dq + 1] = nullptr;
-                item->light_maps[dp + 1][dq + 1] = nullptr;
+                item->block_maps.borrow(dp + 1, dq + 1, other->map);
+                item->light_maps.borrow(dp + 1, dq + 1, other->lights);
             }
         }
     }
@@ -334,8 +323,8 @@ void world::create_chunk(chunk *c, const int p, const int q) noexcept
     chunk::worker_item _item, *item = &_item;
     item->p = c->p;
     item->q = c->q;
-    item->block_maps[1][1] = &c->map;
-    item->light_maps[1][1] = &c->lights;
+    item->block_maps.borrow(1, 1, c->map);
+    item->light_maps.borrow(1, 1, c->lights);
     load_chunk(item);
 }
 
@@ -408,8 +397,8 @@ void world::check_workers() noexcept
                 chunk *c = chunk_opt.value();
                 if (item->load)
                 {
-                    c->map = *item->block_maps[1][1];
-                    c->lights = *item->light_maps[1][1];
+                    c->map = *item->block_maps.get(1, 1);
+                    c->lights = *item->light_maps.get(1, 1);
                 }
                 c->generate(item);
             }
@@ -418,14 +407,8 @@ void world::check_workers() noexcept
                 SDL_free(item->data);
                 item->data = nullptr;
             }
-            for (int a = 0; a < 3; a++)
-                for (int b = 0; b < 3; b++)
-                {
-                    delete item->block_maps[a][b];
-                    item->block_maps[a][b] = nullptr;
-                    delete item->light_maps[a][b];
-                    item->light_maps[a][b] = nullptr;
-                }
+            item->block_maps.clear();
+            item->light_maps.clear();
             w->state = chunk::WorkerState::IDLE;
         }
         w->mtx.unlock();
@@ -464,7 +447,7 @@ void world::force_chunks(player *_player) noexcept
 // Read-only scan: safe to run concurrently with other scans as long as the
 // scene graph is not mutated until all scans have finished.
 std::optional<std::pair<int, int>> world::select_chunk_for_worker(float planes[6][4], int p, int q,
-                                                                    int worker_index) const noexcept
+                                                                  int worker_index) const noexcept
 {
     int start = 0x0fffffff, best_score = start, best_a = 0, best_b = 0;
     for (int dp = -CREATE_CHUNK_RADIUS; dp <= CREATE_CHUNK_RADIUS; dp++)
@@ -542,13 +525,8 @@ void world::dispatch_chunk_to_worker(chunk::worker *w, int a, int b) noexcept
             }
             if (other)
             {
-                item->block_maps[dp + 1][dq + 1] = new craft_map{other->map};
-                item->light_maps[dp + 1][dq + 1] = new craft_map{other->lights};
-            }
-            else
-            {
-                item->block_maps[dp + 1][dq + 1] = 0;
-                item->light_maps[dp + 1][dq + 1] = 0;
+                item->block_maps.own(dp + 1, dq + 1, other->map);
+                item->light_maps.own(dp + 1, dq + 1, other->lights);
             }
         }
     }

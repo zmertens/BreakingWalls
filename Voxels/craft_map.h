@@ -31,18 +31,6 @@ public:
         bool operator!=(const iterator &o) const noexcept { return idx != o.idx; }
     };
 
-    craft_map() = default;
-    // Construct and initialise with explicit base offsets and table size.
-    // mask must be (2^n − 1).
-    craft_map(int dx, int dy, int dz, unsigned int mask);
-
-    // Rule-of-five: std::vector provides automatic deep-copy and destruction.
-    craft_map(const craft_map &) = default;
-    craft_map &operator=(const craft_map &) = default;
-    craft_map(craft_map &&) noexcept = default;
-    craft_map &operator=(craft_map &&) noexcept = default;
-    ~craft_map() = default;
-
     // Re-initialise in place (replaces the old map_alloc pattern on existing objects).
     void init(int dx, int dy, int dz, unsigned int mask);
 

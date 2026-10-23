@@ -92,7 +92,6 @@ protected:
     [[nodiscard]] float time_of_day() const noexcept;
     [[nodiscard]] float get_daylight() const noexcept;
 
-    // Read-only; safe to call concurrently provided no thread mutates the scene graph meanwhile.
     [[nodiscard]] std::optional<chunk *> find_chunk(int p, int q) const noexcept;
     static int chunk_distance(const chunk *c, int p, int q) noexcept;
     bool chunk_visible(float planes[6][4], int p, int q, int miny, int maxy) const noexcept;
@@ -148,7 +147,6 @@ protected:
     [[nodiscard]] int render_chunks(std::uint32_t texture) const noexcept;
     // Matrix setup helpers — bind shader program, upload projection matrix uniform.
     std::pair<int, int> begin_3d_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
-    sdl_gl_helper::attrib s_block_attrib{};
 
     enum class Layer
     {
@@ -158,6 +156,8 @@ protected:
     };
 
     const sdl_gl_helper *simple_direct_medialayer;
+
+    sdl_gl_helper::attrib s_block_attrib{};
 
     font_manager &active_fonts;
     shader_manager &world_shaders;

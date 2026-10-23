@@ -65,14 +65,6 @@ void world::cleanup_worker_threads() noexcept
             w->thrd.join();
         }
         SDL_free(w->item.data);
-        for (int a = 0; a < 3; ++a)
-        {
-            for (int b = 0; b < 3; ++b)
-            {
-                delete w->item.block_maps[a][b];
-                delete w->item.light_maps[a][b];
-            }
-        }
         w->item = {};
         SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "worker thread %d finished!", w->index);
     }

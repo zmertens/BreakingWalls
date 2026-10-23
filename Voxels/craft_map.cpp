@@ -33,12 +33,6 @@ craft_map::iterator &craft_map::iterator::operator++() noexcept
     return *this;
 }
 
-// ── craft_map ───────────────────────────────────────────────────────────────────────────
-craft_map::craft_map(const int dx, const int dy, const int dz, const unsigned int mask)
-{
-    init(dx, dy, dz, mask);
-}
-
 void craft_map::init(const int dx, const int dy, const int dz, const unsigned int mask)
 {
     m_dx = dx;
@@ -200,7 +194,8 @@ int craft_map::get(int x, int y, int z) const noexcept
 
 void craft_map::grow()
 {
-    craft_map grown{m_dx, m_dy, m_dz, (m_mask << 1u) | 1u};
+    craft_map grown;
+    grown.init(m_dx, m_dy, m_dz, (m_mask << 1u) | 1u);
     for (const auto [ex, ey, ez, ew] : *this)
     {
         grown.set(ex, ey, ez, ew);
