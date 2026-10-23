@@ -122,11 +122,21 @@ void ThreadPool::worker(ThreadPool* pool, size_t thread_id) {
     }
 }
 
-void ThreadPool::start(size_t thread_count) {
+void ThreadPool::start(std::size_t thread_count) {
     if (thread_count == 0)
-        thread_count = std::max(1u, std::thread::hardware_concurrency());
-    for (size_t i = 0; i < thread_count; ++i)
+    {
+        const auto FINAL_THREAD_COUNT =
+#if defined(__EMSCRIPTEN__)
+            8u;
+#else
+            std::min(8u, std::thread::hardware_concurrency());
+#endif
+        thread_count = FINAL_THREAD_COUNT;
+    }
+    for (std::size_t i = 0; i < thread_count; ++i)
+    {
         threads_.emplace_back(worker, this, i);
+    }
 }
 
 void ThreadPool::stop() {

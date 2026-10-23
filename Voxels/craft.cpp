@@ -258,7 +258,7 @@ void craft::initialize(std::string_view title, const unsigned int w, const unsig
 bool craft::run(mazes::randomizer &rng) const noexcept
 {
     auto &&app = this->crafting_impl;
-    if (!app || !app->simple_direct_medialayer.window)
+    if (!app || !app->simple_direct_medialayer.window || !app->simple_direct_medialayer.gl_context || !app->crafting_states)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL did not initialize (%s)\n", SDL_GetError());
         return false;
