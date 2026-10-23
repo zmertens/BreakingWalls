@@ -1,7 +1,7 @@
 // World-owned chunk scene, lifecycle, neighbor coordination, and collision.
 #include "world.h"
-#include "chunk_worker.h"
 
+#include "chunk.h"
 #include "db.h"
 #include "item.h"
 #include "matrix.h"
@@ -236,7 +236,7 @@ void world::update_dirty_chunks_async() const noexcept
     for (auto &&worker : chunk_workers)
     {
         worker->mtx.lock();
-        if (worker->state == WorkerState::IDLE)
+        if (worker->state == chunk::WorkerState::IDLE)
         {
             const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
             for (std::size_t i = 1; i < next_chunk_slot_in_view && i < background_layer.size(); ++i)
@@ -248,7 +248,7 @@ void world::update_dirty_chunks_async() const noexcept
                 if (index != worker->index)
                     continue;
 
-                worker_item *item = &worker->item;
+                chunk::worker_item *item = &worker->item;
                 item->p = c->p;
                 item->q = c->q;
                 item->load = 0;
@@ -277,7 +277,7 @@ void world::update_dirty_chunks_async() const noexcept
                         }
                     }
                 }
-                worker->state = WorkerState::BUSY;
+                worker->state = chunk::WorkerState::BUSY;
                 worker->cnd.notify_one();
                 break;
             }
@@ -292,7 +292,7 @@ void world::update_dirty_chunks_async() const noexcept
 
 void world::gen_chunk_buffer(chunk *c) const noexcept
 {
-    worker_item _item, *item = &_item;
+    chunk::worker_item _item, *item = &_item;
     item->p = c->p;
     item->q = c->q;
     for (int dp = -1; dp <= 1; dp++)
@@ -314,8 +314,8 @@ void world::gen_chunk_buffer(chunk *c) const noexcept
             }
             else
             {
-                item->block_maps[dp + 1][dq + 1] = 0;
-                item->light_maps[dp + 1][dq + 1] = 0;
+                item->block_maps[dp + 1][dq + 1] = nullptr;
+                item->light_maps[dp + 1][dq + 1] = nullptr;
             }
         }
     }
@@ -327,7 +327,7 @@ void world::gen_chunk_buffer(chunk *c) const noexcept
 void world::create_chunk(chunk *c, const int p, const int q) noexcept
 {
     init_chunk(c, p, q);
-    worker_item _item, *item = &_item;
+    chunk::worker_item _item, *item = &_item;
     item->p = c->p;
     item->q = c->q;
     item->block_maps[1][1] = &c->map;
@@ -396,9 +396,9 @@ void world::check_workers() noexcept
     for (auto &&w : chunk_workers)
     {
         w->mtx.lock();
-        if (w->state == WorkerState::DONE)
+        if (w->state == chunk::WorkerState::DONE)
         {
-            worker_item *item = &w->item;
+            chunk::worker_item *item = &w->item;
             if (auto chunk_opt = find_chunk(item->p, item->q); chunk_opt.has_value())
             {
                 chunk *c = chunk_opt.value();
@@ -422,7 +422,7 @@ void world::check_workers() noexcept
                     delete item->light_maps[a][b];
                     item->light_maps[a][b] = nullptr;
                 }
-            w->state = WorkerState::IDLE;
+            w->state = chunk::WorkerState::IDLE;
         }
         w->mtx.unlock();
     }
@@ -457,7 +457,7 @@ void world::force_chunks(player *_player) noexcept
     }
 }
 
-void world::ensure_chunks_worker(player *_player, worker *w) noexcept
+void world::ensure_chunks_worker(player *_player, chunk::worker *w) noexcept
 {
     auto [width, height] = simple_direct_medialayer->get_window_size();
     player::position *s = &_player->pos;
@@ -479,10 +479,13 @@ void world::ensure_chunks_worker(player *_player, worker *w) noexcept
             int a = p + dp, b = q + dq;
             int index = (SDL_abs(a) ^ SDL_abs(b)) % CHUNK_WORKERS_TOTAL;
             if (index != w->index)
-                continue;
+            {
+                    continue;
+            }
             auto chunk_opt = find_chunk(a, b);
             if (chunk_opt.has_value() && !chunk_opt.value()->dirty)
-                continue;
+            {    continue;
+            }
             int distance = SDL_max(SDL_abs(dp), SDL_abs(dq));
             const auto invisible = ~static_cast<int>(chunk_visible(planes, a, b, 0, item::TOTAL_BLOCKS));
             int priority = 0;
@@ -522,7 +525,7 @@ void world::ensure_chunks_worker(player *_player, worker *w) noexcept
     else
         c = chunk_opt.value();
 
-    worker_item *item = &w->item;
+    chunk::worker_item *item = &w->item;
     item->p = c->p;
     item->q = c->q;
     item->load = load;
@@ -549,7 +552,7 @@ void world::ensure_chunks_worker(player *_player, worker *w) noexcept
         }
     }
     c->dirty = 0;
-    w->state = WorkerState::BUSY;
+    w->state = chunk::WorkerState::BUSY;
     w->cnd.notify_one();
 }
 
@@ -560,8 +563,10 @@ void world::ensure_chunks(player *_player) noexcept
     for (auto &&w : chunk_workers)
     {
         w->mtx.lock();
-        if (w->state == WorkerState::IDLE)
+        if (w->state == chunk::WorkerState::IDLE)
+        {    
             ensure_chunks_worker(_player, w.get());
+        }
         w->mtx.unlock();
     }
 }
@@ -721,7 +726,7 @@ int world::chunk_distance(const chunk *c, const int p, const int q) noexcept
     return c->distance(p, q);
 }
 
-void world::load_chunk(const worker_item *item) const noexcept
+void world::load_chunk(const chunk::worker_item *item) const noexcept
 {
     chunk::load(item, true,
                 active_player ? active_player->pos.x : 0.0f,

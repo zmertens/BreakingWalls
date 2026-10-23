@@ -1,30 +1,51 @@
 #ifndef CHUNK_H
 #define CHUNK_H
 
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 #include "db.h"
 #include "craft_map.h"
 #include "heightmap.h"
 
-// CPU mesh job. Maps are borrowed for synchronous jobs and copied for workers.
-struct worker_item
-{
-    int p{};
-    int q{};
-    int load{};
-    craft_map *block_maps[3][3]{};
-    craft_map *light_maps[3][3]{};
-    int miny{};
-    int maxy{};
-    int faces{};
-    float *data{};
-};
-
 // Unified voxel chunk: spatial scene-graph node + terrain/light data.
-struct chunk
+struct chunk final
 {
+    // CPU mesh job. Maps are borrowed for synchronous jobs and copied for workers.
+    struct worker_item
+    {
+        int p{};
+        int q{};
+        int load{};
+        craft_map *block_maps[3][3]{};
+        craft_map *light_maps[3][3]{};
+        int miny{};
+        int maxy{};
+        int faces{};
+        float *data{};
+    };
+
+    enum class WorkerState : int
+    {
+        IDLE = 0,
+        BUSY = 1,
+        DONE = 2
+    };
+
+    struct worker
+    {
+        int index{};
+        WorkerState state{WorkerState::IDLE};
+        std::thread thrd;
+        std::mutex mtx;
+        std::condition_variable cnd;
+        worker_item item;
+        bool should_stop{};
+    };
+
     // Spatial hierarchy
     chunk *parent{nullptr};
     std::vector<chunk *> children{};

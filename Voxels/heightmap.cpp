@@ -109,8 +109,7 @@ namespace
 
         const int width = static_cast<int>(columns) * 2 + 1;
         const int height = static_cast<int>(rows) * 2 + 1;
-        maze_obj result{rows, columns, std::vector<std::uint8_t>(
-                                         static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0u)};
+        maze_obj result{rows, columns, std::vector<std::uint8_t>(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0u)};
         const auto mark = [&](const int x, const int y)
         {
             if (x >= 0 && x < width && y >= 0 && y < height)
@@ -233,7 +232,8 @@ std::filesystem::path write_maze_image(const mazes::configurator &config, const 
     }
 
     // Nearest-neighbour upscale to the heightmap resolution.
-    out << "P5\n" << side << ' ' << side << "\n255\n";
+    out << "P5\n"
+        << side << ' ' << side << "\n255\n";
     std::vector<char> row_bytes(static_cast<std::size_t>(side));
     for (int py = 0; py < side; ++py)
     {

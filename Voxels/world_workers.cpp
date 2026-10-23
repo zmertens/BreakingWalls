@@ -1,6 +1,6 @@
 #include "world.h"
 
-#include "chunk_worker.h"
+#include "chunk.h"
 
 #include <SDL3/SDL.h>
 
@@ -8,29 +8,28 @@
 // Worker threads
 // ---------------------------------------------------------------------------
 
-bool world::worker_run(worker *w) const noexcept
+bool world::worker_run(chunk::worker *w) const noexcept
 {
     while (true)
     {
         std::unique_lock<std::mutex> my_lock(w->mtx);
         w->cnd.wait(my_lock, [w]
-                    { return w->state == WorkerState::BUSY || w->should_stop; });
+                    { return w->state == chunk::WorkerState::BUSY || w->should_stop; });
         if (w->should_stop)
         {
             break;
         }
-        worker_item *item = &w->item;
+        chunk::worker_item *item = &w->item;
         my_lock.unlock();
 
         if (item->load)
         {
             this->load_chunk(item);
-            
         }
         chunk::compute(item);
 
         std::lock_guard<std::mutex> done_lock(w->mtx);
-        w->state = WorkerState::DONE;
+        w->state = chunk::WorkerState::DONE;
     }
     return true;
 }
@@ -40,14 +39,14 @@ void world::init_worker_threads() noexcept
     chunk_workers.reserve(CHUNK_WORKERS_TOTAL);
     for (int i = 0; i < CHUNK_WORKERS_TOTAL; i++)
     {
-        auto w = std::make_unique<worker>();
-        w->index       = i;
-        w->state       = WorkerState::IDLE;
+        auto w = std::make_unique<chunk::worker>();
+        w->index = i;
+        w->state = chunk::WorkerState::IDLE;
         w->should_stop = false;
         chunk_workers.emplace_back(std::move(w));
-        worker *worker_ptr = chunk_workers.back().get();
+        chunk::worker *worker_ptr = chunk_workers.back().get();
         worker_ptr->thrd = std::thread([this, worker_ptr]()
-                                       { this->worker_run(worker_ptr); });
+                                       { this->worker_run(static_cast<chunk::worker *>(worker_ptr)); });
     }
 }
 

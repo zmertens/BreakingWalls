@@ -1,6 +1,5 @@
 #include "world.h"
 
-#include "chunk_worker.h"
 #include "resource_manager.h"
 #include "shader.h"
 
@@ -9,7 +8,9 @@
 #else
 #include <glad/gl.h>
 #endif
+
 #include <SDL3/SDL.h>
+
 #include <stdexcept>
 
 world::builder::builder(font_manager &fonts, shader_manager &shaders,

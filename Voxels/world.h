@@ -82,7 +82,7 @@ protected:
     static void remove_chunk_from_spatial_tree(chunk *c) noexcept;
 
     // Worker functions
-    bool worker_run(worker *w) const noexcept;
+    bool worker_run(chunk::worker *w) const noexcept;
     void init_worker_threads() noexcept;
     void cleanup_worker_threads() noexcept;
 
@@ -112,7 +112,7 @@ protected:
 
     void gen_chunk_buffer(chunk *c) const noexcept;
 
-    void load_chunk(const worker_item *item) const noexcept;
+    void load_chunk(const chunk::worker_item *item) const noexcept;
 
     // Optional constrained terrain; fixed for the lifetime of the world so workers can read it unlocked.
     std::shared_ptr<const heightmap> world_heightmap;
@@ -124,7 +124,7 @@ protected:
     void delete_all_chunks() noexcept;
     void force_chunks(player *player) noexcept;
     void check_workers() noexcept;
-    void ensure_chunks_worker(player *_player, worker *w) noexcept;
+    void ensure_chunks_worker(player *_player, chunk::worker *w) noexcept;
     void ensure_chunks(player *_player) noexcept;
 
     void unset_sign(int x, int y, int z) const noexcept;
@@ -166,7 +166,7 @@ protected:
 
     player *active_player;
 
-    std::vector<std::unique_ptr<worker>> chunk_workers;
+    std::vector<std::unique_ptr<chunk::worker>> chunk_workers;
 
     bloom_pass *const m_bloom;
 };
