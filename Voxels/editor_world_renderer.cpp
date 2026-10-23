@@ -155,47 +155,6 @@ void editor_world::render_crosshairs() const noexcept
     sdl_gl_helper::del_buffer(crosshair_buffer);
 }
 
-void editor_world::render_hover_info() const noexcept
-{
-    if (!active_player->get_configs().show_crosshair_details() || !current_projected_plane.has_valid_target)
-     {SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "No hover info");   return;
-     }
-
-    int viewport_width, viewport_height;
-    SDL_GetWindowSizeInPixels(simple_direct_medialayer->window, &viewport_width, &viewport_height);
-
-    const int hx = current_projected_plane.target_x;
-    const int hy = current_projected_plane.target_y;
-    const int hz = current_projected_plane.target_z;
-    const int face = current_projected_plane.target_face;
-    const int block_type = get_block(hx, hy, hz);
-
-    const float dx = active_player->pos.x - static_cast<float>(hx);
-    const float dy = active_player->pos.y - static_cast<float>(hy);
-    const float dz = active_player->pos.z - static_cast<float>(hz);
-    const float distance = SDL_sqrt(dx * dx + dy * dy + dz * dz);
-
-    const float x_offset   = static_cast<float>(viewport_width) * 0.5f + 30.0f;
-    const float y_base      = static_cast<float>(viewport_height) * 0.5f;
-    const float line_height = 15.0f;
-
-    char info_buffer[256];
-    const auto font_tex = world_textures.get(TextureIdentifier::BITMAP_FONT).gl_texture;
-
-    SDL_snprintf(info_buffer, sizeof(info_buffer), "Block: %s",
-                 player::get_block_name(item::get_block_type(block_type)));
-    render_text(font_tex, 0, x_offset, y_base - line_height * 2, 10.0f, info_buffer);
-
-    SDL_snprintf(info_buffer, sizeof(info_buffer), "Pos: (%d, %d, %d)", hx, hy, hz);
-    render_text(font_tex, 0, x_offset, y_base - line_height, 10.0f, info_buffer);
-
-    SDL_snprintf(info_buffer, sizeof(info_buffer), "Face: %s", player::get_face_name(face));
-    render_text(font_tex, 0, x_offset, y_base, 10.0f, info_buffer);
-
-    SDL_snprintf(info_buffer, sizeof(info_buffer), "Dist: %.1f", distance);
-    render_text(font_tex, 0, x_offset, y_base + line_height, 10.0f, info_buffer);
-}
-
 void editor_world::render_item(const std::uint32_t texture) const noexcept
 {
     const GLboolean depth_was_enabled = glIsEnabled(GL_DEPTH_TEST);

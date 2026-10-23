@@ -183,12 +183,18 @@ public:
     bool handle_event(SDL_Event &event) noexcept override;
     [[nodiscard]] bool is_ready_to_rebuild_world() const noexcept;
 
-protected:
+private:
     void draw_mode_sidebar(float available_height) const noexcept;
+    void draw_builder_tab() const noexcept;
+    void draw_camera_tab() const noexcept;
+    void draw_player_tab() const noexcept;
+    void draw_exports_tab() const noexcept;
     void draw_mode_tabs() const noexcept;
     void draw_heightmap_preview() const noexcept;
+    void draw_heading() const noexcept;
+    void draw_content(player *p, player_configs &configs, float content_width, float available_height) const noexcept;
+    void draw_menu(player *p, player_configs &configs) const noexcept;
 
-private:
     std::list<std::string> algo_list;
     mutable std::string m_selected_algo;
     mutable std::string m_cached_artifacts;

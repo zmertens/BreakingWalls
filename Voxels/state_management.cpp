@@ -40,9 +40,13 @@
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
+#include <utility>
 
 namespace
 {
+    constexpr float golden_ratio = 1.61803398875f;
+    constexpr float golden_minor_ratio = 1.f / golden_ratio;
+
     constexpr std::array selectable_fonts{
         std::pair{FontIdentifier::COUSINE_REGULAR, std::string_view{"Cousine Regular"}},
         std::pair{FontIdentifier::KARLA_REGULAR, std::string_view{"Karla Regular"}},
@@ -140,17 +144,16 @@ state::state(state_stack &stack, const context &context)
 
 bool state::draw_menu_button() const noexcept
 {
+    bool clicked = false;
     ImGui::SetNextWindowPos(ImVec2(12.f, 12.f), ImGuiCond_Always);
     if (ImGui::Begin("##mode_menu_button", nullptr,
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration |
                          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav))
     {
-        const bool open = ImGui::Button("MENU (ESC)");
-        ImGui::End();
-        return open;
+        clicked = ImGui::Button("MENU (ESC)");
     }
     ImGui::End();
-    return false;
+    return clicked;
 }
 
 void state::request_stack_push(const StateIdentifier state_id) const { active_stack->push_state(state_id); }
@@ -203,17 +206,15 @@ void state_stack::update(const float delta_time, mazes::randomizer &rng) noexcep
 
 void state_stack::draw() const noexcept
 {
-    for (const auto &active_state : active_stack)
-        active_state->draw();
+    std::ranges::for_each(active_stack, [&](const state::ptr &s)
+                          { s->draw(); });
 }
 
 void state_stack::handle_event(SDL_Event &event) noexcept
 {
-    for (auto it = active_stack.rbegin(); it != active_stack.rend(); ++it)
-    {
-        if (!(*it)->handle_event(event))
-            break;
-    }
+    std::ranges::for_each(std::ranges::reverse_view{active_stack}, [&](const state::ptr &s)
+                          { if (!s->handle_event(event))
+                            { return;} });
     apply_pending_changes();
 }
 
@@ -392,14 +393,17 @@ void editor_state::draw() const noexcept
 void editor_state::draw_physics_controls() const noexcept
 {
     if (current_editor_world)
+    {
         current_editor_world->draw_physics_controls();
+    }
     else
+    {
         ImGui::TextUnformatted("Physics sandbox is still loading.");
+    }
 }
 
 void editor_state::rebuild_world() noexcept
 {
-    // Only an explicit "Make New World" discards saved edits; normal teardown keeps them.
     current_editor_world.reset();
     db::flush();
 }
@@ -416,14 +420,10 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
     {
         if (stack.resources_have_loaded())
         {
-            configs.show_crosshair_details(true);
-
             current_editor_world.emplace(
                 world::builder{
                     *ctx.ctx_fonts, *ctx.ctx_shaders, *ctx.ctx_textures,
-                    *ctx.ctx_bloom_passes, active_player, *ctx.ctx_sdl
-                }
-            );
+                    *ctx.ctx_bloom_passes, active_player, *ctx.ctx_sdl});
 
             current_editor_world->init();
             if (active)
@@ -436,15 +436,13 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
     if (current_editor_world && active)
     {
         current_editor_world->update(delta_time, rng);
-        if (!SDL_GetWindowRelativeMouseMode(get_context().ctx_sdl->window))
-        {
-            SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, true);
-        }
-        p.update(delta_time, rng);
+        p.update(delta_time, std::ref(rng));
         p.handle_realtime_input(current_editor_world->get_command_queue());
     }
     if (current_editor_world)
+    {
         current_editor_world->update_physics(delta_time);
+    }
     return true;
 }
 
@@ -455,13 +453,11 @@ bool editor_state::handle_event(SDL_Event &event) noexcept
     {
         p.set_active(false);
         request_stack_clear();
-        return false;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
     {
-        SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, false);
-        request_stack_push(StateIdentifier::MENU);
-        return false;
+        auto *win{&get_context().ctx_sdl->window};
+        SDL_SetWindowRelativeMouseMode(*win, !SDL_GetWindowRelativeMouseMode(*win));
     }
     if (current_editor_world)
     {
@@ -498,15 +494,120 @@ menu_state::~menu_state()
     get_context().ctx_sounds->get(SoundIdentifier::LOADING_THEME_SONG).stop(SoundIdentifier::LOADING_THEME_SONG);
 }
 
-void menu_state::draw() const noexcept
+// Uniform rectangular button size: tracks the available width (so it resizes with the window)
+// but is capped so buttons never get overly wide, and always fits within the region.
+static ImVec2 menu_button_size() noexcept
 {
-    const auto &ctx = get_context();
-    auto *active_player = ctx.ctx_player;
-    auto &&configs = active_player->get_configs();
-    ImGui::GetIO().FontGlobalScale = configs.gui_font_scale();
-    ImGui::PushFont(ctx.ctx_fonts->get(static_cast<FontIdentifier>(active_player->get_font_index())).get());
+    const float scale = ImGui::GetIO().FontGlobalScale;
+    const float avail = ImGui::GetContentRegionAvail().x;
+    const float max_width = std::max(160.f, std::round(320.f * scale));
+    const float width = std::max(1.f, std::min(avail, max_width));
+    const float height = std::round(ImGui::GetFrameHeight() * golden_ratio);
+    return ImVec2(width, height);
+}
 
+void menu_state::draw_heading() const noexcept
+{
     constexpr ImVec4 heading_color{.745f, .863f, .498f, 1.f};
+
+    constexpr auto FLIPS_AND_ALE_STR{"{ Flips and Ale gamedev } "};
+    ImGui::TextColored(heading_color, "%s\n", FLIPS_AND_ALE_STR);
+    ImGui::SameLine();
+    const auto &icon = get_context().ctx_textures->get(TextureIdentifier::FLIPS_AND_ALE_ICON);
+    if (icon.gl_texture != 0 && icon.width > 0 && icon.height > 0)
+    {
+        auto &&font_size{ImGui::GetFontSize()};
+        ImGui::Image(reinterpret_cast<void *>(static_cast<intptr_t>(icon.gl_texture)), ImVec2(font_size * 2.535f, 1.0009535f * font_size));
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Resume", menu_button_size()))
+    {
+        SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, true);
+        request_stack_pop();
+    }
+    ImGui::SameLine();
+    if (ImGui::ColorButton("Close", ImVec4(1.f, 0.f, 0.f, 1.f),
+                           ImGuiColorEditFlags_NoTooltip, menu_button_size()))
+    {
+        request_stack_clear();
+    }
+}
+
+void menu_state::draw_content(player *p, player_configs &configs, float content_width, float available_height) const noexcept
+{
+    ImGui::BeginChild("##content", ImVec2(content_width, available_height), ImGuiChildFlags_Borders);
+    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * golden_minor_ratio);
+    if (ImGui::BeginTabBar("##tabs"))
+    {
+        if (ImGui::BeginTabItem("Graphics"))
+        {
+            bool vsync = configs.vsync(), fullscreen = configs.fullscreen();
+            float exposure = configs.exposure_val(), font_scale = configs.gui_font_scale();
+            bool bloom = configs.use_bloom_effect();
+            bool show_stats = configs.show_stats_window();
+            ImGui::Checkbox("Show FPS Stats", &show_stats);
+            ImGui::Checkbox("Enable VSync", &vsync);
+            ImGui::Checkbox("Enable Fullscreen", &fullscreen);
+            ImGui::Checkbox("Enable Bloom Effect", &bloom);
+            ImGui::SliderFloat("Exposure", &exposure, .1f, 2.f);
+            ImGui::SliderFloat("Font Scale", &font_scale, .6f, 1.4f);
+            if (ImGui::BeginListBox("##FontList"))
+            {
+                for (const auto &[font_id, font_name] : selectable_fonts)
+                {
+                    if (ImGui::Selectable(font_name.data(),
+                                          p->get_font_index() == static_cast<int>(font_id)))
+                        p->set_font_index(static_cast<int>(font_id));
+                }
+                ImGui::EndListBox();
+            }
+            if (vsync != configs.vsync())
+            {
+                if (!SDL_GL_SetSwapInterval(vsync ? 1 : 0))
+                {
+                    SDL_LogError(SDL_LOG_CATEGORY_ERROR, "VSync change failed: %s", SDL_GetError());
+                }
+            }
+            if (fullscreen != configs.fullscreen())
+            {
+                if (!SDL_SetWindowFullscreen(get_context().ctx_sdl->window, fullscreen ? SDL_WINDOW_FULLSCREEN : 0))
+                {
+                    SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Fullscreen change failed: %s", SDL_GetError());
+                }
+            }
+            configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale).show_stats_window(show_stats);
+            ImGui::EndTabItem();
+        }
+
+        draw_mode_tabs();
+        if (ImGui::BeginTabItem("Physics"))
+        {
+            if (auto *editor = get_stack().peek_state<editor_state *>())
+                editor->draw_physics_controls();
+            else
+                ImGui::TextUnformatted("Physics sandbox is only available in the editor.");
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Audio"))
+        {
+            float master = configs.master_volume(), music = configs.music_volume(), sfx = configs.sfx_volume();
+            bool muted = configs.mute_audio();
+            ImGui::Checkbox("Mute All", &muted);
+            ImGui::SliderFloat("Master Volume", &master, 0.f, 1.f);
+            ImGui::SliderFloat("Music Volume", &music, 0.f, 1.f);
+            ImGui::SliderFloat("Effects Volume", &sfx, 0.f, 1.f);
+            configs.master_volume(master).music_volume(music).sfx_volume(sfx).mute_audio(muted);
+            get_context().ctx_sounds->get(SoundIdentifier::LOADING_THEME_SONG).set_volumes(configs.master_volume(), configs.music_volume(), configs.sfx_volume(), configs.mute_audio());
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::PopItemWidth();
+    ImGui::EndChild();
+}
+
+void menu_state::draw_menu(player *p, player_configs &configs) const noexcept
+{
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(display, ImGuiCond_Always);
@@ -515,127 +616,35 @@ void menu_state::draw() const noexcept
 
     if (ImGui::Begin("##menu", nullptr, flags))
     {
-        const auto &style = ImGui::GetStyle();
-        const float scale = ImGui::GetIO().FontGlobalScale;
-        const float row_height = ImGui::GetFrameHeightWithSpacing();
-        const float sidebar_width = std::min(std::clamp(std::round(290.f * scale), 200.f, 420.f),
-                                             ImGui::GetContentRegionAvail().x * .4f);
-        const float content_width = std::max(1.f, ImGui::GetContentRegionAvail().x - sidebar_width - style.ItemSpacing.x);
-
-        static constexpr auto FLIPS_AND_ALE_STR{"{ Flips and Ale gamedev }"};
-        ImGui::TextColored(heading_color, "Options");
-        ImGui::Separator();
+        draw_heading();
+        const auto style{ImGui::GetStyle()};
+        const float available_width = ImGui::GetContentRegionAvail().x;
+        const float sidebar_width = std::min(std::clamp(std::round(available_width * golden_minor_ratio), 200.f, 420.f),
+                                             available_width * .4f);
+        const float content_width = std::max(1.f, available_width - sidebar_width - style.ItemSpacing.x);
         const float available_height = ImGui::GetContentRegionAvail().y;
         ImGui::BeginChild("##sidebar", ImVec2(sidebar_width, available_height), ImGuiChildFlags_Borders);
-        if (ImGui::Button("Resume", ImVec2(-1.f, 0)))
-        {
-            request_stack_pop();
-        }
-        ImGui::Separator();
         draw_mode_sidebar(available_height);
-        if (ImGui::Button("Close Application", ImVec2(-1.f, row_height)))
-        {
-            request_stack_clear();
-        }
-
-        const auto &icon = ctx.ctx_textures->get(TextureIdentifier::FLIPS_AND_ALE_ICON);
-        if (icon.gl_texture != 0 && icon.width > 0 && icon.height > 0)
-        {
-            ImGui::Separator();
-            const float max_width = ImGui::GetContentRegionAvail().x;
-            const float max_height = ImGui::GetContentRegionAvail().y;
-            const float aspect = static_cast<float>(icon.width) / static_cast<float>(icon.height);
-            float img_w = std::min(max_width, static_cast<float>(icon.width));
-            float img_h = img_w / aspect;
-            if (img_h > max_height)
-            {
-                img_h = max_height;
-                img_w = img_h * aspect;
-            }
-            if (img_w > 1.f && img_h > 1.f)
-            {
-                // Pin to the bottom of the sidebar, centered horizontally
-                ImGui::TextColored(ImVec4(1.f, 1.f, 1.f, 1.f), FLIPS_AND_ALE_STR);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetContentRegionAvail().y - img_h);
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (max_width - img_w) * .5f);
-                ImGui::Image(static_cast<ImTextureID>(icon.gl_texture), ImVec2(img_w, img_h));
-            }
-        }
+        ImGui::Separator();
         ImGui::EndChild();
         ImGui::SameLine();
 
-        ImGui::BeginChild("##content", ImVec2(content_width, available_height), ImGuiChildFlags_Borders);
-        if (ImGui::BeginTabBar("##tabs"))
-        {
-            if (ImGui::BeginTabItem("Graphics"))
-            {
-                bool vsync = configs.vsync(), fullscreen = configs.fullscreen();
-                float exposure = configs.exposure_val(), font_scale = configs.gui_font_scale();
-                bool bloom = configs.use_bloom_effect();
-                bool show_stats = configs.show_stats_window();
-                ImGui::Checkbox("Show FPS Stats", &show_stats);
-                ImGui::Checkbox("Enable VSync", &vsync);
-                ImGui::Checkbox("Enable Fullscreen", &fullscreen);
-                ImGui::Checkbox("Enable Bloom Effect", &bloom);
-                ImGui::SliderFloat("Exposure", &exposure, .1f, 2.f);
-                ImGui::SliderFloat("Font Scale", &font_scale, .6f, 1.4f);
-                bool hover_info = configs.show_crosshair_details();
-                ImGui::Checkbox("Show Hover Info [H]", &hover_info);
-                if (ImGui::BeginListBox("##FontList"))
-                {
-                    for (const auto &[font_id, font_name] : selectable_fonts)
-                    {
-                        if (ImGui::Selectable(font_name.data(),
-                                              active_player->get_font_index() == static_cast<int>(font_id)))
-                            active_player->set_font_index(static_cast<int>(font_id));
-                    }
-                    ImGui::EndListBox();
-                }
-                if (vsync != configs.vsync())
-                {
-                    if (!SDL_GL_SetSwapInterval(vsync ? 1 : 0))
-                    {
-                        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "VSync change failed: %s", SDL_GetError());
-                    }
-                }
-                if (fullscreen != configs.fullscreen())
-                {
-                    if (!SDL_SetWindowFullscreen(ctx.ctx_sdl->window, fullscreen ? SDL_WINDOW_FULLSCREEN : 0))
-                    {
-                        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Fullscreen change failed: %s", SDL_GetError());
-                    }
-                }
-                configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale).show_stats_window(show_stats).show_crosshair_details(hover_info);
-                ImGui::EndTabItem();
-            }
-
-            draw_mode_tabs();
-            if (ImGui::BeginTabItem("Physics"))
-            {
-                if (auto *editor = get_stack().peek_state<editor_state *>())
-                    editor->draw_physics_controls();
-                else
-                    ImGui::TextUnformatted("Physics sandbox is only available in the editor.");
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Audio"))
-            {
-                float master = configs.master_volume(), music = configs.music_volume(), sfx = configs.sfx_volume();
-                bool muted = configs.mute_audio();
-                ImGui::Checkbox("Mute All", &muted);
-                ImGui::SliderFloat("Master Volume", &master, 0.f, 1.f);
-                ImGui::SliderFloat("Music Volume", &music, 0.f, 1.f);
-                ImGui::SliderFloat("Effects Volume", &sfx, 0.f, 1.f);
-                configs.master_volume(master).music_volume(music).sfx_volume(sfx).mute_audio(muted);
-                ctx.ctx_sounds->get(SoundIdentifier::LOADING_THEME_SONG)
-                    .set_volumes(configs.master_volume(), configs.music_volume(), configs.sfx_volume(), configs.mute_audio());
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
-        }
-        ImGui::EndChild();
+        draw_content(p, configs, content_width, available_height);
     }
     ImGui::End();
+}
+
+void menu_state::draw() const noexcept
+{
+    const auto &ctx = get_context();
+    auto *active_player = ctx.ctx_player;
+    auto &&configs = active_player->get_configs();
+
+    ImGui::GetIO().FontGlobalScale = configs.gui_font_scale();
+    ImGui::PushFont(ctx.ctx_fonts->get(static_cast<FontIdentifier>(active_player->get_font_index())).get());
+
+    draw_menu(active_player, configs);
+
     ImGui::PopFont();
 }
 
@@ -735,146 +744,169 @@ void menu_state::draw_heightmap_preview() const noexcept
     ImGui::Image(static_cast<ImTextureID>(m_preview_texture), ImVec2(size, size));
 }
 
-void menu_state::draw_mode_tabs() const noexcept
+void menu_state::draw_builder_tab() const noexcept
+{
+    auto &&configs = get_context().ctx_player->get_configs();
+    draw_heightmap_preview();
+    ImGui::Separator();
+    static int island_size = 128, octaves = 3;
+    static float frequency = 3.0f;
+    static bool apply_maze = false;
+    static char tag[256]{};
+    if (tag[0] == '\0')
+    {
+        SDL_strlcpy(tag, configs.tag().c_str(), std::size(tag));
+    }
+    if (ImGui::InputText("Tag Message", tag, std::size(tag)))
+    {
+        configs.tag(std::string{tag});
+    }
+    ImGui::SliderInt("Island Size", &island_size, heightmap::MIN_SIDE, heightmap::MAX_SIDE);
+    ImGui::SliderInt("Noise Octaves", &octaves, 1, 6);
+    ImGui::SliderFloat("Noise Frequency", &frequency, 1.f, 8.f);
+    ImGui::Checkbox("Apply maze to heightmap", &apply_maze);
+
+    thread_local mazes::randomizer rng{};
+    auto maze = configs.maze();
+    static constexpr auto ROWS{maze.MAX_ROWS / 4}, COLUMNS{maze.MAX_COLUMNS / 4};
+    static constexpr auto LEVELS{maze.MAX_LEVELS / 2};
+    static constexpr auto SEED{1'000};
+    static int rows = maze.rows(), columns = maze.columns(), levels = maze.levels(), seed = rng.get_int(0, SEED);
+    ImGui::SliderInt("Rows", &rows, 2, ROWS);
+    ImGui::SliderInt("Columns", &columns, 2, COLUMNS);
+    ImGui::SliderInt("Levels", &levels, 1, LEVELS);
+    ImGui::SliderInt("Seed", &seed, 0, SEED);
+    if (ImGui::BeginCombo("Algorithm", m_selected_algo.c_str()))
+    {
+        for (const auto &algorithm : algo_list)
+        {
+            if (ImGui::Selectable(algorithm.c_str()))
+            {
+                m_selected_algo = algorithm;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    configs.maze(mazes::configurator{}
+                     .algo_id(mazes::to_algo_from_sv(m_selected_algo))
+                     .rows(rows)
+                     .columns(columns)
+                     .levels(levels));
+
+    ImGui::Separator();
+    if (ImGui::Button("Make New World", menu_button_size()))
+    {
+        heightmap_params params;
+        params.side = island_size;
+        params.octaves = octaves;
+        params.frequency = frequency;
+        params.apply_maze = apply_maze;
+        params.maze = configs.maze();
+        params.seed = rng.get_int(0, SEED);
+        heightmap_library::instance().add(params);
+        rebuild_world_requested = true;
+    }
+}
+
+void menu_state::draw_camera_tab() const noexcept
+{
+    auto &&configs = get_context().ctx_player->get_configs();
+    bool invert = configs.invert_mouse();
+    float fov = configs.fov();
+    int ortho = configs.ortho_scaling(), day = configs.day_length();
+    ImGui::Checkbox("Invert Mouse Y-Axis", &invert);
+    ImGui::SliderFloat("Field of View", &fov, 30, 120);
+    ImGui::SliderInt("Orthographic Scale", &ortho, 0, 64);
+    ImGui::SliderInt("Day Length (s)", &day, 60, 1800);
+    configs.invert_mouse(invert).fov(fov).ortho_scaling(ortho).day_length(day);
+}
+
+void menu_state::draw_player_tab() const noexcept
 {
     auto *active_player = get_context().ctx_player;
-    auto &&configs = active_player->get_configs();
+    ImGui::Text("Name: %s", active_player->get_name().c_str());
+    ImGui::Text("Local time: %s", active_player->get_local_time().data());
+    ImGui::Text("X: %.2f   Y: %.2f   Z: %.2f", active_player->pos.x, active_player->pos.y, active_player->pos.z);
+    ImGui::Text("Selected block type: %d", active_player->get_item());
+}
+
+void menu_state::draw_exports_tab() const noexcept
+{
+    auto *active_player = get_context().ctx_player;
+    auto &library = heightmap_library::instance();
+    ImGui::TextUnformatted("Heightmaps");
+    if (ImGui::BeginListBox("##heightmaps", ImVec2(-1.f, 6 * ImGui::GetTextLineHeightWithSpacing())))
+    {
+        const auto &entries = library.entries();
+        for (std::size_t i = 0; i < entries.size(); ++i)
+        {
+            const auto &map = *entries[i].map;
+            const std::string label = map.name + " (" + std::to_string(map.side) + "x" +
+                                      std::to_string(map.side) + ")##" + std::to_string(i);
+            if (ImGui::Selectable(label.c_str(), i == library.selected()) && i != library.selected())
+            {
+                library.select(i);
+                rebuild_world_requested = true;
+            }
+        }
+        ImGui::EndListBox();
+    }
+    ImGui::BeginDisabled(library.entries().empty());
+    if (ImGui::Button("Delete Selected", menu_button_size()))
+    {
+        library.remove(library.selected());
+        if (!library.current())
+        {
+            library.add(heightmap_params{});
+        }
+        rebuild_world_requested = true;
+    }
+    ImGui::EndDisabled();
+    ImGui::Separator();
+    if (m_export_in_progress && active_player->is_artifact_export_ready())
+    {
+        m_cached_artifacts = active_player->get_artifact_export_result();
+        m_export_in_progress = false;
+    }
+    if (ImGui::Button("Generate Artifacts (Async)", menu_button_size()))
+    {
+        active_player->start_async_artifact_export();
+        m_cached_artifacts.clear();
+        m_export_in_progress = true;
+    }
+    ImGui::BeginDisabled(m_cached_artifacts.empty() || m_export_in_progress);
+    if (ImGui::Button("Download File", menu_button_size()))
+    {
+#if defined(__EMSCRIPTEN__)
+        get_context().ctx_artifacts->get(ArtifactIdentifier::WORLD_OBJ_1).set_download_ready(true);
+#endif
+        handle_artifacts(active_player, *get_context().ctx_artifacts, m_cached_artifacts);
+    }
+    ImGui::EndDisabled();
+    ImGui::TextWrapped("%s", m_cached_artifacts.empty() ? "No artifacts generated yet." : m_cached_artifacts.substr(0, 512).c_str());
+}
+
+void menu_state::draw_mode_tabs() const noexcept
+{
     if (ImGui::BeginTabItem("Builder"))
     {
-        draw_heightmap_preview();
-        ImGui::Separator();
-        static int island_size = 128, octaves = 3;
-        static float frequency = 3.0f;
-        static bool apply_maze = false;
-        static char tag[256]{};
-        if (tag[0] == '\0')
-        {
-            SDL_strlcpy(tag, configs.tag().c_str(), std::size(tag));
-        }
-        if (ImGui::InputText("Tag Message", tag, std::size(tag)))
-        {
-            configs.tag(std::string{tag});
-        }
-        ImGui::SliderInt("Island Size", &island_size, heightmap::MIN_SIDE, heightmap::MAX_SIDE);
-        ImGui::SliderInt("Noise Octaves", &octaves, 1, 6);
-        ImGui::SliderFloat("Noise Frequency", &frequency, 1.f, 8.f);
-        ImGui::Checkbox("Apply maze to heightmap", &apply_maze);
-
-        thread_local mazes::randomizer rng{};
-        auto maze = configs.maze();
-        static constexpr auto ROWS{maze.MAX_ROWS / 4}, COLUMNS{maze.MAX_COLUMNS / 4};
-        static constexpr auto LEVELS{maze.MAX_LEVELS / 2};
-        static constexpr auto SEED{1'000};
-        static int rows = maze.rows(), columns = maze.columns(), levels = maze.levels(), seed = rng.get_int(0, SEED);
-        ImGui::SliderInt("Rows", &rows, 2, ROWS);
-        ImGui::SliderInt("Columns", &columns, 2, COLUMNS);
-        ImGui::SliderInt("Levels", &levels, 1, LEVELS);
-        ImGui::SliderInt("Seed", &seed, 0, SEED);
-        if (ImGui::BeginCombo("Algorithm", m_selected_algo.c_str()))
-        {
-            for (const auto &algorithm : algo_list)
-            {
-                if (ImGui::Selectable(algorithm.c_str()))
-                {
-                    m_selected_algo = algorithm;
-                }
-            }
-            ImGui::EndCombo();
-        }
-
-        configs.maze(mazes::configurator{}
-                         .algo_id(mazes::to_algo_from_sv(m_selected_algo))
-                         .rows(rows)
-                         .columns(columns)
-                         .levels(levels));
-        ImGui::Separator();
-        if (ImGui::Button("Make New World", ImVec2(-1.f, 0)))
-        {
-            heightmap_params params;
-            params.side = island_size;
-            params.octaves = octaves;
-            params.frequency = frequency;
-            params.apply_maze = apply_maze;
-            params.maze = configs.maze();
-            params.seed = rng.get_int(0, SEED);
-            heightmap_library::instance().add(params);
-            rebuild_world_requested = true;
-        }
+        draw_builder_tab();
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Camera"))
     {
-        bool invert = configs.invert_mouse();
-        float fov = configs.fov();
-        int ortho = configs.ortho_scaling(), day = configs.day_length();
-        ImGui::Checkbox("Invert Mouse Y-Axis", &invert);
-        ImGui::SliderFloat("Field of View", &fov, 30, 120);
-        ImGui::SliderInt("Orthographic Scale", &ortho, 0, 64);
-        ImGui::SliderInt("Day Length (s)", &day, 60, 1800);
-        configs.invert_mouse(invert).fov(fov).ortho_scaling(ortho).day_length(day);
+        draw_camera_tab();
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Player"))
     {
-        ImGui::Text("Name: %s", active_player->get_name().c_str());
-        ImGui::Text("Local time: %s", active_player->get_local_time().data());
-        ImGui::Text("X: %.2f   Y: %.2f   Z: %.2f", active_player->pos.x, active_player->pos.y, active_player->pos.z);
-        ImGui::Text("Selected block type: %d", active_player->get_item());
+        draw_player_tab();
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Exports"))
     {
-        auto &library = heightmap_library::instance();
-        ImGui::TextUnformatted("Heightmaps");
-        if (ImGui::BeginListBox("##heightmaps", ImVec2(-1.f, 6 * ImGui::GetTextLineHeightWithSpacing())))
-        {
-            const auto &entries = library.entries();
-            for (std::size_t i = 0; i < entries.size(); ++i)
-            {
-                const auto &map = *entries[i].map;
-                const std::string label = map.name + " (" + std::to_string(map.side) + "x" +
-                                          std::to_string(map.side) + ")##" + std::to_string(i);
-                if (ImGui::Selectable(label.c_str(), i == library.selected()) && i != library.selected())
-                {
-                    library.select(i);
-                    rebuild_world_requested = true;
-                }
-            }
-            ImGui::EndListBox();
-        }
-        ImGui::BeginDisabled(library.entries().empty());
-        if (ImGui::Button("Delete Selected"))
-        {
-            library.remove(library.selected());
-            if (!library.current())
-            {
-                library.add(heightmap_params{});
-            }
-            rebuild_world_requested = true;
-        }
-        ImGui::EndDisabled();
-        ImGui::Separator();
-        if (m_export_in_progress && active_player->is_artifact_export_ready())
-        {
-            m_cached_artifacts = active_player->get_artifact_export_result();
-            m_export_in_progress = false;
-        }
-        if (ImGui::Button("Generate Artifacts (Async)"))
-        {
-            active_player->start_async_artifact_export();
-            m_cached_artifacts.clear();
-            m_export_in_progress = true;
-        }
-        ImGui::BeginDisabled(m_cached_artifacts.empty() || m_export_in_progress);
-        if (ImGui::Button("Download File"))
-        {
-#if defined(__EMSCRIPTEN__)
-            get_context().ctx_artifacts->get(ArtifactIdentifier::WORLD_OBJ_1).set_download_ready(true);
-#endif
-            handle_artifacts(active_player, *get_context().ctx_artifacts, m_cached_artifacts);
-        }
-        ImGui::EndDisabled();
-        ImGui::TextWrapped("%s", m_cached_artifacts.empty() ? "No artifacts generated yet." : m_cached_artifacts.substr(0, 512).c_str());
+        draw_exports_tab();
         ImGui::EndTabItem();
     }
 }
@@ -888,7 +920,7 @@ bool menu_state::handle_event(SDL_Event &event) noexcept
     }
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
     {
-        request_stack_pop();
+        // Do nothing on ESC key press here
     }
     return event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED;
 }

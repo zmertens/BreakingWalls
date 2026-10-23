@@ -87,11 +87,6 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
     {
         switch (event.key.scancode)
         {
-        case SDL_SCANCODE_H:
-            this->configs.show_crosshair_details(!this->configs.show_crosshair_details());
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Crosshair Details [H]: %s",
-                        configs.show_crosshair_details() ? "ON" : "OFF");
-            return;
         case SDL_SCANCODE_O:
         {
             const char *view_name = "Perspective";

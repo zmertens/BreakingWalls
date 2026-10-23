@@ -233,8 +233,6 @@ void editor_world::update(const float delta_time, mazes::randomizer &rng) noexce
         active_player->set_on_ground(false);
     }
 
-    update_projected_plane();
-
     delete_chunks();
     sdl_gl_helper::del_buffer(active_player->get_buffer());
     ensure_chunks(active_player);
@@ -322,7 +320,6 @@ void editor_world::draw() const noexcept
 
     render_wireframe();
     render_crosshairs();
-    render_hover_info();
     render_held_stick(atlas_texture);
 
     const auto &configs{active_player->get_configs()};
@@ -695,15 +692,3 @@ void editor_world::restore_physics_voxels() noexcept
     m_physics_voxel_sources.clear();
 }
 
-void editor_world::update_projected_plane() noexcept
-{
-    int hx, hy, hz, face;
-    current_projected_plane.has_valid_target = hit_test_face(&hx, &hy, &hz, &face) != 0;
-    if (current_projected_plane.has_valid_target)
-    {
-        current_projected_plane.target_x = hx;
-        current_projected_plane.target_y = hy;
-        current_projected_plane.target_z = hz;
-        current_projected_plane.target_face = face;
-    }
-}

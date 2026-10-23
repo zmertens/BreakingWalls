@@ -28,12 +28,6 @@ struct player_configs
         return *this;
     }
 
-    player_configs &show_crosshair_details(bool enabled)
-    {
-        opt_show_crosshair_details = enabled;
-        return *this;
-    }
-
     player_configs &maze(const mazes::configurator &value)
     {
         opt_maze = value;
@@ -163,11 +157,6 @@ struct player_configs
         return true;
     }
 
-    bool show_crosshair_details() const noexcept
-    {
-        return opt_show_crosshair_details.value();
-    }
-
     const mazes::configurator &maze() const noexcept
     {
         return opt_maze.value();
@@ -240,7 +229,6 @@ struct player_configs
 
 private:
     std::optional<bool> opt_fullscreen{false};
-    std::optional<bool> opt_show_crosshair_details{true};
     std::optional<bool> opt_invert_mouse{false};
     std::optional<bool> opt_show_stats_window{true};
     std::optional<bool> opt_use_bloom_effect{true};

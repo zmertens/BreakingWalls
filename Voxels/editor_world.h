@@ -33,8 +33,6 @@ public:
     [[nodiscard]] int rendered_terrain_faces() const noexcept { return m_rendered_terrain_faces; }
 
 private:
-    void update_projected_plane() noexcept;
-
     void render_signs(std::uint32_t sign) const noexcept;
     void render_sign(std::uint32_t sign) const noexcept;
     void render_sky(std::uint32_t buffer, std::uint32_t sky_tex) const noexcept;
@@ -44,23 +42,12 @@ private:
     void render_player(std::uint32_t texture) const noexcept;
     void render_held_stick(std::uint32_t texture) const noexcept;
     void render_physics() const noexcept;
-    void render_hover_info() const noexcept;
     void render_text(std::uint32_t font, int justify,
                      float x, float y, float n, std::string_view text) const noexcept;
 
     std::pair<int, int> begin_sky_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
     std::pair<int, int> begin_item_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
     std::pair<int, int> begin_2d_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
-
-    // Face under the crosshair; feeds the hover info.
-    struct projected_plane
-    {
-        int target_x{0};
-        int target_y{0};
-        int target_z{0};
-        int target_face{0};
-        bool has_valid_target{false};
-    } current_projected_plane{};
 
     command_queue world_commands;
     game_environment environment;
