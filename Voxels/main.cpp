@@ -33,9 +33,8 @@ EMSCRIPTEN_BINDINGS(craft_module)
 
     emscripten::class_<craft>("craft")
         .smart_ptr<std::shared_ptr<craft>>("std::shared_ptr<craft>")
-        // craft(TITLE, width, height) – construction is handled by the global VOXEL_ENGINE;
         // JS should use Module.get() rather than constructing a second instance.
-        .constructor<const std::string &, int, int>()
+        .constructor<>()
         // ── Legacy synchronous download path ─────────────────────────────────
         // inst.artifacts() → full Wavefront OBJ string; may block if called before ready.
         .function("artifacts", &craft::artifacts)
