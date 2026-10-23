@@ -20,9 +20,7 @@ class editor_world final : public world
     friend class player;
 
 public:
-    editor_world(SDL_Window *window, font_manager &fonts, player *p,
-                 shader_manager &shaders, texture_manager &textures,
-                 const sdl_gl_helper *sdl, bloom_pass *bloom);
+    editor_world(const world::builder &b);
     ~editor_world() override;
 
     void init() noexcept override;

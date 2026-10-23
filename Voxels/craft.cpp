@@ -49,15 +49,15 @@
 
 struct craft::craft_impl
 {
-    font_manager game_fonts;
-
     player active_player;
+    font_manager game_fonts;
     sdl_gl_helper simple_direct_medialayer;
     shader_manager world_shaders;
     soundfx_manager world_sounds;
     artifact_exporter_manager artifact_exporters;
     texture_manager world_textures;
     bloom_pass_manager world_bloom_passes;
+
     std::unique_ptr<state_stack> crafting_states;
 
     mutable double fps_timer{0.0};
@@ -77,8 +77,6 @@ struct craft::craft_impl
         setup_imgui();
 
         crafting_states = std::make_unique<state_stack>(state::context{
-            // @TODO - re-use sdl here
-            simple_direct_medialayer.window,
             std::ref(game_fonts),
             std::ref(world_shaders),
             std::ref(world_textures),

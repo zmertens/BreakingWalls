@@ -124,10 +124,10 @@ namespace
     }
 }
 
-state::context::context(SDL_Window *window, font_manager &fonts, shader_manager &shaders,
+state::context::context(font_manager &fonts, shader_manager &shaders,
                         texture_manager &textures, bloom_pass_manager &bloom_passes,
                         player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds, artifact_exporter_manager &artifacts)
-    : ctx_window{window}, ctx_fonts{&fonts}, ctx_shaders{&shaders},
+    : ctx_fonts{&fonts}, ctx_shaders{&shaders},
       ctx_textures{&textures}, ctx_bloom_passes{&bloom_passes},
       ctx_player{&active_player}, ctx_sdl{&sdl}, ctx_sounds{&sounds}, ctx_artifacts{&artifacts}
 {
@@ -305,7 +305,7 @@ void loading_state::load_resources() const noexcept
     ctx.ctx_textures->load(TextureIdentifier::BITMAP_FONT, "Textures/bitmap_font.png", static_cast<unsigned int>(TextureIdentifier::BITMAP_FONT));
     ctx.ctx_textures->load(TextureIdentifier::SIGNS, "Textures/signs.png", static_cast<unsigned int>(TextureIdentifier::SIGNS));
     ctx.ctx_textures->load(TextureIdentifier::SKY, "Textures/sky.png", static_cast<unsigned int>(TextureIdentifier::SKY));
-    ctx.ctx_textures->load(ctx.ctx_window, TextureIdentifier::WINDOW_ICON, "Textures/icon.bmp");
+    ctx.ctx_textures->load(ctx.ctx_sdl->window, TextureIdentifier::WINDOW_ICON, "Textures/icon.bmp");
     ctx.ctx_textures->load(TextureIdentifier::FLIPS_AND_ALE_ICON, "Textures/FlipsAndAleIcon.png", static_cast<unsigned int>(TextureIdentifier::FLIPS_AND_ALE_ICON));
 
     ctx.ctx_artifacts->load(ArtifactIdentifier::WORLD_OBJ_1);
@@ -384,7 +384,7 @@ void editor_state::draw() const noexcept
     }
     if (draw_menu_button())
     {
-        SDL_SetWindowRelativeMouseMode(get_context().ctx_window, false);
+        SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, false);
         request_stack_push(StateIdentifier::MENU);
     }
 }
@@ -407,6 +407,8 @@ void editor_state::rebuild_world() noexcept
 bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexcept
 {
     const auto &ctx = get_context();
+    auto &&window{ctx.ctx_sdl->window};
+    auto &&p{*ctx.ctx_player};
     auto &&configs{active_player.get_configs()};
     auto &stack = get_stack();
     const bool active = stack.is_top(this);
@@ -415,13 +417,18 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
         if (stack.resources_have_loaded())
         {
             configs.show_crosshair_details(true);
-            current_editor_world.emplace(ctx.ctx_window, *ctx.ctx_fonts, &active_player,
-                                         *ctx.ctx_shaders, *ctx.ctx_textures, ctx.ctx_sdl,
-                                         &ctx.ctx_bloom_passes->get(BloomPassIdentifier::EDITOR));
+
+            current_editor_world.emplace(
+                world::builder{
+                    *ctx.ctx_fonts, *ctx.ctx_shaders, *ctx.ctx_textures,
+                    *ctx.ctx_bloom_passes, active_player, *ctx.ctx_sdl
+                }
+            );
+
             current_editor_world->init();
             if (active)
             {
-                SDL_SetWindowRelativeMouseMode(ctx.ctx_window, true);
+                SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, true);
             }
             SDL_Log("Editor: World initialized after loading completed\n");
         }
@@ -429,12 +436,12 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
     if (current_editor_world && active)
     {
         current_editor_world->update(delta_time, rng);
-        if (!SDL_GetWindowRelativeMouseMode(ctx.ctx_window))
+        if (!SDL_GetWindowRelativeMouseMode(get_context().ctx_sdl->window))
         {
-            SDL_SetWindowRelativeMouseMode(ctx.ctx_window, true);
+            SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, true);
         }
-        ctx.ctx_player->update(delta_time, rng);
-        ctx.ctx_player->handle_realtime_input(current_editor_world->get_command_queue());
+        p.update(delta_time, rng);
+        p.handle_realtime_input(current_editor_world->get_command_queue());
     }
     if (current_editor_world)
         current_editor_world->update_physics(delta_time);
@@ -443,21 +450,22 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
 
 bool editor_state::handle_event(SDL_Event &event) noexcept
 {
+    auto &&p{*get_context().ctx_player};
     if (event.type == SDL_EVENT_QUIT)
     {
-        active_player.set_active(false);
+        p.set_active(false);
         request_stack_clear();
         return false;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
     {
-        SDL_SetWindowRelativeMouseMode(get_context().ctx_window, false);
+        SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, false);
         request_stack_push(StateIdentifier::MENU);
         return false;
     }
     if (current_editor_world)
     {
-        active_player.handle_event(event, current_editor_world->get_command_queue());
+        p.handle_event(event, current_editor_world->get_command_queue());
         current_editor_world->handle_event(event);
     }
     return true;
@@ -592,7 +600,7 @@ void menu_state::draw() const noexcept
                 }
                 if (fullscreen != configs.fullscreen())
                 {
-                    if (!SDL_SetWindowFullscreen(ctx.ctx_window, fullscreen ? SDL_WINDOW_FULLSCREEN : 0))
+                    if (!SDL_SetWindowFullscreen(ctx.ctx_sdl->window, fullscreen ? SDL_WINDOW_FULLSCREEN : 0))
                     {
                         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Fullscreen change failed: %s", SDL_GetError());
                     }

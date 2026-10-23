@@ -50,11 +50,10 @@ public:
 
     struct context
     {
-        context(SDL_Window *window, font_manager &fonts, shader_manager &shaders,
+        context(font_manager &fonts, shader_manager &shaders,
                 texture_manager &textures, bloom_pass_manager &bloom_passes,
                 player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds, artifact_exporter_manager &artifacts);
 
-        SDL_Window *ctx_window;
         font_manager *ctx_fonts;
         shader_manager *ctx_shaders;
         texture_manager *ctx_textures;

@@ -75,10 +75,8 @@ static std::string gl_error_checker(const char *file, const int line) noexcept
 
 #define CHECK_GL_ERR() gl_error_checker(__FILE__, __LINE__)
 
-editor_world::editor_world(SDL_Window *window, font_manager &fonts, player *p,
-                           shader_manager &shaders, texture_manager &textures,
-                           const sdl_gl_helper *sdl, bloom_pass *bloom)
-    : world{window, fonts, p, shaders, textures, sdl, bloom}
+editor_world::editor_world(const world::builder &b)
+    : world{b}
 {
     auto &library = heightmap_library::instance();
     library.ensure_loaded();
@@ -494,7 +492,7 @@ void editor_world::reset_physics() noexcept
             auto body_def = b3DefaultBodyDef();
             body_def.type = b3_dynamicBody;
             body_def.position = {static_cast<float>(offset), static_cast<float>(y), 0.0f};
-                        const auto body = b3CreateBody(m_physics_world, &body_def);
+            const auto body = b3CreateBody(m_physics_world, &body_def);
             auto shape_def = b3DefaultShapeDef();
             shape_def.density = 0.5f;
             shape_def.baseMaterial.friction = 0.3f;
@@ -504,8 +502,7 @@ void editor_world::reset_physics() noexcept
             b3CreateHullShape(body, &shape_def, &voxel.base);
 
             const int material = y == height - 1 ? terrain_materials[static_cast<std::size_t>(column)] : 2;
-            constexpr std::array<std::array<float, 3>, 3> colors{{
-                {0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
+            constexpr std::array<std::array<float, 3>, 3> colors{{{0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
             m_physics_objects.push_back(
                 {body, false, material, colors[static_cast<std::size_t>(material % colors.size())]});
         }
@@ -660,7 +657,7 @@ void editor_world::add_physics_object(const bool sphere) noexcept
     auto body_def = b3DefaultBodyDef();
     body_def.type = b3_dynamicBody;
     body_def.position = {-4.0f + static_cast<float>(index % 9), m_physics_spawn_height, static_cast<float>(index % 5) * 2.0f - 4.0f};
-        const auto body = b3CreateBody(m_physics_world, &body_def);
+    const auto body = b3CreateBody(m_physics_world, &body_def);
 
     auto shape_def = b3DefaultShapeDef();
     shape_def.density = sphere ? 10.0f : 0.5f;
@@ -678,8 +675,7 @@ void editor_world::add_physics_object(const bool sphere) noexcept
         const auto box = b3MakeBoxHull(0.45f, 0.45f, 0.45f);
         b3CreateHullShape(body, &shape_def, &box.base);
     }
-    constexpr std::array<std::array<float, 3>, 3> colors{{
-        {0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
+    constexpr std::array<std::array<float, 3>, 3> colors{{{0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
     m_physics_objects.push_back({body, sphere, 4, colors[index % colors.size()]});
 }
 

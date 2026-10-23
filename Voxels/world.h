@@ -32,6 +32,20 @@ class world
     friend class player;
 
 public:
+    struct builder
+    {
+        builder(font_manager &fonts, shader_manager &shaders,
+                texture_manager &textures, bloom_pass_manager &bloom_passes,
+                player &active_player, sdl_gl_helper &sdl);
+
+        font_manager *build_fonts;
+        shader_manager *build_shaders;
+        texture_manager *build_textures;
+        bloom_pass_manager *build_bloom_passes;
+        player *build_player;
+        sdl_gl_helper *build_sdl;
+    };
+
     // Spatial arithmetic includes negative coordinates and radius offsets.
     static constexpr int CREATE_CHUNK_RADIUS{10};
     static constexpr int RENDER_CHUNK_RADIUS{20};
@@ -51,13 +65,7 @@ public:
     [[nodiscard]] static int chunked(float x) noexcept;
 
 protected:
-    explicit world(SDL_Window *window,
-                   font_manager &fonts,
-                   player *p,
-                   shader_manager &shaders,
-                   texture_manager &textures,
-                   const sdl_gl_helper *sdl,
-                   bloom_pass *bloom);
+    explicit world(const builder &b);
 
     world(const world &) = delete;
     world &operator=(const world &) = delete;
