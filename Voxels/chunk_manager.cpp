@@ -91,10 +91,8 @@ int world::hit_test(const int previous, const float x, const float y, const floa
     float vx, vy, vz;
     matrix::compute_sight_vector(rx, ry, std::ref(vx), std::ref(vy), std::ref(vz));
 
-    const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-    for (std::size_t i = 1; i < next_chunk_slot_in_view; ++i)
+    for (const chunk *c : active_chunks())
     {
-        const chunk *c = background_layer[i];
         if (c == nullptr || chunk_distance(c, p, q) > 1)
             continue;
         int hx, hy, hz;
@@ -242,10 +240,8 @@ void world::update_dirty_chunks_async() const noexcept
         std::lock_guard<std::mutex> lock(worker->mtx);
         if (worker->state == chunk::WorkerState::IDLE)
         {
-            const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-            for (std::size_t i = 1; i < next_chunk_slot_in_view && i < background_layer.size(); ++i)
+            for (chunk *c : active_chunks())
             {
-                chunk *c = background_layer[i];
                 if (c == nullptr || !c->dirty)
                     continue;
                 int index = (SDL_abs(c->p) ^ SDL_abs(c->q)) % chunk_workers.size();
@@ -348,6 +344,7 @@ void world::delete_chunks() noexcept
             break;
 
         detach_chunk_from_layer(c);
+        chunk_index.erase(chunk_key(c->p, c->q));
         c->release_buffers();
         delete c;
 
@@ -375,6 +372,7 @@ void world::delete_all_chunks() noexcept
         delete c;
         background_layer[i] = nullptr;
     }
+    chunk_index.clear();
     this->next_chunk_slot_in_view = 1;
     if (background_layer[0] != nullptr)
         background_layer[0]->children.clear();
@@ -722,14 +720,16 @@ int world::chunked(const float x) noexcept
 
 std::optional<chunk *> world::find_chunk(const int p, const int q) const noexcept
 {
-    const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-    for (std::size_t i = 1; i < next_chunk_slot_in_view && i < background_layer.size(); ++i)
-    {
-        chunk *c = background_layer[i];
-        if (c != nullptr && c->p == p && c->q == q)
-            return c;
-    }
+    if (const auto it = chunk_index.find(chunk_key(p, q)); it != chunk_index.end())
+        return it->second;
     return std::nullopt;
+}
+
+// Contiguous view of occupied slots; slot 0 is the root and is excluded.
+std::span<chunk *const> world::active_chunks() const noexcept
+{
+    const auto &layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
+    return std::span<chunk *const>{layer}.subspan(1, next_chunk_slot_in_view - 1);
 }
 
 bool world::chunk_visible(float planes[6][4], const int p, const int q,
@@ -756,6 +756,7 @@ void world::load_chunk(const chunk::worker_item *item) const noexcept
 void world::init_chunk(chunk *c, const int p, const int q) noexcept
 {
     c->initialize(p, q);
+    chunk_index[chunk_key(p, q)] = c;
     dirty_chunk(c);
     attach_chunk_to_layer(c, static_cast<int>(Layer::BACKGROUND));
 }

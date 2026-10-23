@@ -6,7 +6,9 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <bvhv2/bvh.h>
@@ -93,6 +95,7 @@ protected:
     [[nodiscard]] float get_daylight() const noexcept;
 
     [[nodiscard]] std::optional<chunk *> find_chunk(int p, int q) const noexcept;
+    [[nodiscard]] std::span<chunk *const> active_chunks() const noexcept;
     static int chunk_distance(const chunk *c, int p, int q) noexcept;
     bool chunk_visible(float planes[6][4], int p, int q, int miny, int maxy) const noexcept;
 
@@ -167,6 +170,14 @@ protected:
     std::array<std::array<chunk *, MAX_CHUNKS>, static_cast<std::size_t>(Layer::LAYER_COUNT)> scene_graph_layers;
 
     std::size_t next_chunk_slot_in_view;
+
+    // (p, q) -> chunk for O(1) lookup; mutated on the main thread only.
+    std::unordered_map<std::uint64_t, chunk *> chunk_index;
+    [[nodiscard]] static std::uint64_t chunk_key(int p, int q) noexcept
+    {
+        return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(p)) << 32) |
+               static_cast<std::uint32_t>(q);
+    }
 
     player *active_player;
 

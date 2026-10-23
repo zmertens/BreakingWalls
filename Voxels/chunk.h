@@ -1,23 +1,26 @@
 #ifndef CHUNK_H
 #define CHUNK_H
 
+#include <algorithm>
 #include <array>
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
 #include <memory>
 #include <ranges>
+#include <span>
 #include <thread>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
-#include "db.h"
 #include "craft_map.h"
+#include "db.h"
 #include "heightmap.h"
 
 // Unified voxel chunk: spatial scene-graph node + terrain/light data.
 struct chunk final
 {
-
     // 3x3 neighborhood of maps keyed by a * 3 + b. Owned copies are freed automatically;
     // borrowed entries use a non-owning shared_ptr and never free the map.
     class neighbor_maps
@@ -36,7 +39,11 @@ struct chunk final
         {
             m_slots[a * 3 + b] = std::shared_ptr<craft_map>(std::shared_ptr<void>{}, &src);
         }
-        void clear() noexcept { std::ranges::for_each(m_slots.begin(), m_slots.end(), [](auto &slot) { slot.reset(); }); }
+        void clear() noexcept
+        {
+            std::ranges::for_each(m_slots.begin(), m_slots.end(), [](auto &slot)
+                                  { slot.reset(); });
+        }
 
     private:
         std::array<std::shared_ptr<craft_map>, 9u> m_slots;
@@ -74,7 +81,28 @@ struct chunk final
         bool should_stop{};
     };
 
-    // Spatial hierarchy
+    [[nodiscard]] static int coordinate(float x) noexcept;
+    [[nodiscard]] int distance(int p, int q) const noexcept;
+    [[nodiscard]] static bool visible(float planes[6][4], int p, int q,
+                                      int miny, int maxy, bool orthographic) noexcept;
+
+    void initialize(int p, int q) noexcept;
+    void generate(worker_item *item) noexcept;
+    void release_buffers() noexcept;
+
+    static void load(const worker_item *item, bool enable_heightmap,
+                     float player_x, float player_z, const heightmap *constrained = nullptr,
+                     bool include_decorations = true, bool load_persisted_blocks = true) noexcept;
+    static void compute(worker_item *item) noexcept;
+
+    [[nodiscard]] bool intersects_bounds(const int min_x, const int min_z,
+                                         const int max_x, const int max_z) const noexcept
+    {
+        return !(bounds_max_x < min_x || bounds_min_x > max_x ||
+                 bounds_max_z < min_z || bounds_min_z > max_z);
+    }
+
+    std::span<chunk *> spatial_hierarchy{};
     chunk *parent{nullptr};
     std::vector<chunk *> children{};
     int bounds_min_x{0};
@@ -95,25 +123,6 @@ struct chunk final
     int maxy{0};
     std::uint32_t buffer{0};
     std::uint32_t sign_buffer{0};
-
-    [[nodiscard]] static int coordinate(float x) noexcept;
-    [[nodiscard]] int distance(int p, int q) const noexcept;
-    [[nodiscard]] static bool visible(float planes[6][4], int p, int q,
-                                      int miny, int maxy, bool orthographic) noexcept;
-    void initialize(int p, int q) noexcept;
-    void generate(worker_item *item) noexcept;
-    void release_buffers() noexcept;
-    static void load(const worker_item *item, bool enable_heightmap,
-                     float player_x, float player_z, const heightmap *constrained = nullptr,
-                     bool include_decorations = true, bool load_persisted_blocks = true) noexcept;
-    static void compute(worker_item *item) noexcept;
-
-    [[nodiscard]] bool intersects_bounds(const int min_x, const int min_z,
-                                         const int max_x, const int max_z) const noexcept
-    {
-        return !(bounds_max_x < min_x || bounds_min_x > max_x ||
-                 bounds_max_z < min_z || bounds_min_z > max_z);
-    }
 
 private:
     static void occlusion(char neighbors[27], char lights[27], float shades[27],
