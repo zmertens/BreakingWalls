@@ -15,6 +15,10 @@
 #include <ranges>
 #include <string>
 
+#include <bvhv2/bvh.h>
+#include <bvhv2/executor.h>
+#include <bvhv2/thread_pool.h>
+
 // ---------------------------------------------------------------------------
 // Hit tests / collision
 // ---------------------------------------------------------------------------
@@ -457,34 +461,26 @@ void world::force_chunks(player *_player) noexcept
     }
 }
 
-void world::ensure_chunks_worker(player *_player, chunk::worker *w) noexcept
+// Read-only scan: safe to run concurrently with other scans as long as the
+// scene graph is not mutated until all scans have finished.
+std::optional<std::pair<int, int>> world::select_chunk_for_worker(float planes[6][4], int p, int q,
+                                                                    int worker_index) const noexcept
 {
-    auto [width, height] = simple_direct_medialayer->get_window_size();
-    player::position *s = &_player->pos;
-    float matrix[16];
-    matrix::set_3d(matrix, width, height,
-                   s->x, s->y, s->z, s->rx, s->ry,
-                   active_player->get_configs().fov(),
-                   active_player->get_configs().ortho_scaling(),
-                   RENDER_CHUNK_RADIUS);
-    float planes[6][4];
-    matrix::frustum_planes(planes, RENDER_CHUNK_RADIUS, matrix);
-    const int p = chunked(s->x), q = chunked(s->z);
-
     int start = 0x0fffffff, best_score = start, best_a = 0, best_b = 0;
     for (int dp = -CREATE_CHUNK_RADIUS; dp <= CREATE_CHUNK_RADIUS; dp++)
     {
         for (int dq = -CREATE_CHUNK_RADIUS; dq <= CREATE_CHUNK_RADIUS; dq++)
         {
             int a = p + dp, b = q + dq;
-            int index = (SDL_abs(a) ^ SDL_abs(b)) % CHUNK_WORKERS_TOTAL;
-            if (index != w->index)
+            int index = (SDL_abs(a) ^ SDL_abs(b)) % chunk_thread_pool.get_thread_count();
+            if (index != worker_index)
             {
-                    continue;
+                continue;
             }
             auto chunk_opt = find_chunk(a, b);
             if (chunk_opt.has_value() && !chunk_opt.value()->dirty)
-            {    continue;
+            {
+                continue;
             }
             int distance = SDL_max(SDL_abs(dp), SDL_abs(dq));
             const auto invisible = ~static_cast<int>(chunk_visible(planes, a, b, 0, item::TOTAL_BLOCKS));
@@ -503,9 +499,14 @@ void world::ensure_chunks_worker(player *_player, chunk::worker *w) noexcept
         }
     }
     if (best_score == start)
-        return;
+        return std::nullopt;
+    return std::pair{best_a, best_b};
+}
 
-    int a = best_a, b = best_b, load = 0;
+// Mutates the scene graph and the worker; main thread only.
+void world::dispatch_chunk_to_worker(chunk::worker *w, int a, int b) noexcept
+{
+    int load = 0;
     auto chunk_opt = find_chunk(a, b);
     chunk *c = nullptr;
     if (!chunk_opt.has_value())
@@ -558,16 +559,54 @@ void world::ensure_chunks_worker(player *_player, chunk::worker *w) noexcept
 
 void world::ensure_chunks(player *_player) noexcept
 {
+    // Worker threads (world_workers.cpp) already compute chunks in parallel.
+    // Collecting their results touches the scene graph and uploads GL buffers,
+    // so it must happen once, on the calling (render) thread.
     check_workers();
+
     force_chunks(_player);
+
+    auto [width, height] = simple_direct_medialayer->get_window_size();
+    const player::position *s = &_player->pos;
+    float matrix[16];
+    matrix::set_3d(matrix, width, height,
+                   s->x, s->y, s->z, s->rx, s->ry,
+                   active_player->get_configs().fov(),
+                   active_player->get_configs().ortho_scaling(),
+                   RENDER_CHUNK_RADIUS);
+    float planes[6][4];
+    matrix::frustum_planes(planes, RENDER_CHUNK_RADIUS, matrix);
+    const int p = chunked(s->x), q = chunked(s->z);
+
+    // Only the main thread moves a worker out of IDLE, so this list stays valid.
+    std::vector<chunk::worker *> idle;
     for (auto &&w : chunk_workers)
     {
-        w->mtx.lock();
+        std::lock_guard<std::mutex> lock(w->mtx);
         if (w->state == chunk::WorkerState::IDLE)
-        {    
-            ensure_chunks_worker(_player, w.get());
+        {
+            idle.push_back(w.get());
         }
-        w->mtx.unlock();
+    }
+
+    // Phase 1: each idle worker's candidate search runs on the pool. The scene
+    // graph is only read here; the main thread waits before mutating it.
+    std::vector<std::optional<std::pair<int, int>>> picks(idle.size());
+    bvh::v2::ThreadPool::TaskGroup task_group{};
+    for (std::size_t i = 0; i < idle.size(); ++i)
+    {
+        chunk_thread_pool.push(task_group, [this, &picks, &planes, &idle, i, p, q](std::size_t)
+                               { picks[i] = select_chunk_for_worker(planes, p, q, idle[i]->index); });
+    }
+    chunk_thread_pool.wait(task_group);
+
+    // Phase 2: creating chunks and copying maps stays serial.
+    for (std::size_t i = 0; i < idle.size(); ++i)
+    {
+        if (!picks[i])
+            continue;
+        std::lock_guard<std::mutex> lock(idle[i]->mtx);
+        dispatch_chunk_to_worker(idle[i], picks[i]->first, picks[i]->second);
     }
 }
 

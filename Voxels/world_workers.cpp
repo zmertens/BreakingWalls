@@ -36,8 +36,7 @@ bool world::worker_run(chunk::worker *w) const noexcept
 
 void world::init_worker_threads() noexcept
 {
-    chunk_workers.reserve(CHUNK_WORKERS_TOTAL);
-    for (int i = 0; i < CHUNK_WORKERS_TOTAL; i++)
+    for (int i = 0; i < chunk_thread_pool.get_thread_count(); i++)
     {
         auto w = std::make_unique<chunk::worker>();
         w->index = i;
@@ -78,4 +77,5 @@ void world::cleanup_worker_threads() noexcept
         SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "worker thread %d finished!", w->index);
     }
     chunk_workers.clear();
+    chunk_thread_pool.wait_all();
 }

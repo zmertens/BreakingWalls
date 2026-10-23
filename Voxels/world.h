@@ -9,6 +9,10 @@
 #include <string>
 #include <vector>
 
+#include <bvhv2/bvh.h>
+#include <bvhv2/executor.h>
+#include <bvhv2/thread_pool.h>
+
 #include "bloom_pass.h"
 #include "chunk.h"
 #include "item.h"
@@ -24,8 +28,6 @@ namespace mazes
 {
     class randomizer;
 }
-
-struct worker;
 
 class world
 {
@@ -52,7 +54,6 @@ public:
     static constexpr int BUILD_CHUNK_SIZE{32};
     static constexpr int RENDER_SIGN_RADIUS{4};
     static constexpr int DELETE_CHUNK_RADIUS{14};
-    static constexpr auto CHUNK_WORKERS_TOTAL{4u};
 
     virtual ~world();
 
@@ -91,6 +92,7 @@ protected:
     [[nodiscard]] float time_of_day() const noexcept;
     [[nodiscard]] float get_daylight() const noexcept;
 
+    // Read-only; safe to call concurrently provided no thread mutates the scene graph meanwhile.
     [[nodiscard]] std::optional<chunk *> find_chunk(int p, int q) const noexcept;
     static int chunk_distance(const chunk *c, int p, int q) noexcept;
     bool chunk_visible(float planes[6][4], int p, int q, int miny, int maxy) const noexcept;
@@ -124,7 +126,9 @@ protected:
     void delete_all_chunks() noexcept;
     void force_chunks(player *player) noexcept;
     void check_workers() noexcept;
-    void ensure_chunks_worker(player *_player, chunk::worker *w) noexcept;
+    [[nodiscard]] std::optional<std::pair<int, int>> select_chunk_for_worker(float planes[6][4], int p, int q,
+                                                                             int worker_index) const noexcept;
+    void dispatch_chunk_to_worker(chunk::worker *w, int a, int b) noexcept;
     void ensure_chunks(player *_player) noexcept;
 
     void unset_sign(int x, int y, int z) const noexcept;
@@ -166,6 +170,7 @@ protected:
 
     player *active_player;
 
+    bvh::v2::ThreadPool chunk_thread_pool{};
     std::vector<std::unique_ptr<chunk::worker>> chunk_workers;
 
     bloom_pass *const m_bloom;
