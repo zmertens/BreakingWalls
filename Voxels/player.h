@@ -123,8 +123,8 @@ public:
     [[nodiscard]] std::uint32_t get_buffer() const noexcept;
     void set_buffer(std::uint32_t value) noexcept;
 
-    [[nodiscard]] std::int32_t get_item() const noexcept;
-    void set_item(std::int32_t value) noexcept;
+    [[nodiscard]] std::int32_t get_selected_item_index() const noexcept;
+    void set_selected_item_index(std::int32_t value) noexcept;
 
     void set_world(world *w) noexcept;
 
@@ -134,6 +134,7 @@ public:
 
     [[nodiscard]] std::int32_t get_font_index() const noexcept;
     void set_font_index(std::int32_t index) noexcept;
+    
     [[nodiscard]] const std::string &get_name() const noexcept;
     void set_name(const std::string &name);
 
@@ -163,8 +164,9 @@ private:
 
     std::uint32_t player_buffer;
 
-    std::int32_t current_item_index{0};
+    std::int32_t selected_item_index{0};
     std::int32_t selected_font_index{0};
+
     std::string my_name{"zm"};
 
     world *current_world{nullptr};

@@ -170,7 +170,7 @@ void editor_world::render_item(const std::uint32_t texture) const noexcept
     glUniform1f(s_block_attrib.timer, time_of_day());
     glUniform1i(s_block_attrib.extra4, 0);
 
-    if (const int w = active_player->get_item(); item::is_plant(w))
+    if (const int w = active_player->get_selected_item_index(); item::is_plant(w))
     {
         const GLuint buffer = sdl_gl_helper::gen_plant_buffer(0, 0, 0, 0.5f, w);
         sdl_gl_helper::draw_plant(&s_block_attrib, buffer);
@@ -185,7 +185,9 @@ void editor_world::render_item(const std::uint32_t texture) const noexcept
 
     glDepthMask(GL_TRUE);
     if (depth_was_enabled)
+    {
         glEnable(GL_DEPTH_TEST);
+    }
 }
 
 void editor_world::render_held_stick(const std::uint32_t texture) const noexcept

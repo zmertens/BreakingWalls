@@ -20,6 +20,7 @@
 #include "db.h"
 #include "font.h"
 #include "heightmap.h"
+#include "item.h"
 #include "player.h"
 #include "resource_manager.h"
 #include "shader.h"
@@ -456,19 +457,19 @@ bool editor_state::handle_event(SDL_Event &event) noexcept
     {
         request_stack_clear();
     }
+
+    auto *p{get_context().ctx_player};
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
     {
         auto *win{&get_context().ctx_sdl->window};
         const auto next_mouse_mode{!SDL_GetWindowRelativeMouseMode(*win)};
         SDL_SetWindowRelativeMouseMode(*win, next_mouse_mode);
-
-        get_context().ctx_player->set_active(next_mouse_mode);
-
+        p->set_active(next_mouse_mode);
     }
+
     if (current_editor_world)
     {
-        auto &&p{*get_context().ctx_player};
-        p.handle_event(event, current_editor_world->get_command_queue());
+        p->handle_event(event, current_editor_world->get_command_queue());
         current_editor_world->handle_event(event);
     }
     return true;
@@ -515,18 +516,6 @@ static ImVec2 menu_button_size() noexcept
 
 void menu_state::draw_heading() const noexcept
 {
-    constexpr ImVec4 heading_color{.745f, .863f, .498f, 1.f};
-
-    constexpr auto FLIPS_AND_ALE_STR{"{ Flips and Ale gamedev } "};
-    ImGui::TextColored(heading_color, "%s\n", FLIPS_AND_ALE_STR);
-    ImGui::SameLine();
-    const auto &icon = get_context().ctx_textures->get(TextureIdentifier::FLIPS_AND_ALE_ICON);
-    if (icon.gl_texture != 0 && icon.width > 0 && icon.height > 0)
-    {
-        auto &&font_size{ImGui::GetFontSize()};
-        ImGui::Image(reinterpret_cast<void *>(static_cast<intptr_t>(icon.gl_texture)), ImVec2(font_size * 2.535f, 1.0009535f * font_size));
-    }
-    ImGui::SameLine();
     if (ImGui::Button("Resume", menu_button_size()))
     {
         SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, true);
@@ -534,8 +523,8 @@ void menu_state::draw_heading() const noexcept
         request_stack_pop();
     }
     ImGui::SameLine();
-    if (ImGui::ColorButton("Close", ImVec4(1.f, 0.f, 0.f, 1.f),
-                           ImGuiColorEditFlags_NoTooltip, menu_button_size()))
+    ImGui::NextColumn();
+    if (ImGui::Button("Close", menu_button_size()))
     {
         request_stack_clear();
     }
@@ -547,46 +536,6 @@ void menu_state::draw_content(player *p, player_configs &configs, float content_
     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * golden_minor_ratio);
     if (ImGui::BeginTabBar("##tabs"))
     {
-        if (ImGui::BeginTabItem("Graphics"))
-        {
-            bool vsync = configs.vsync(), fullscreen = configs.fullscreen();
-            float exposure = configs.exposure_val(), font_scale = configs.gui_font_scale();
-            bool bloom = configs.use_bloom_effect();
-            bool show_stats = configs.show_stats_window();
-            ImGui::Checkbox("Show FPS Stats", &show_stats);
-            ImGui::Checkbox("Enable VSync", &vsync);
-            ImGui::Checkbox("Enable Fullscreen", &fullscreen);
-            ImGui::Checkbox("Enable Bloom Effect", &bloom);
-            ImGui::SliderFloat("Exposure", &exposure, .1f, 2.f);
-            ImGui::SliderFloat("Font Scale", &font_scale, .6f, 1.4f);
-            if (ImGui::BeginListBox("##FontList"))
-            {
-                for (const auto &[font_id, font_name] : selectable_fonts)
-                {
-                    if (ImGui::Selectable(font_name.data(),
-                                          p->get_font_index() == static_cast<int>(font_id)))
-                        p->set_font_index(static_cast<int>(font_id));
-                }
-                ImGui::EndListBox();
-            }
-            if (vsync != configs.vsync())
-            {
-                if (!SDL_GL_SetSwapInterval(vsync ? 1 : 0))
-                {
-                    SDL_LogError(SDL_LOG_CATEGORY_ERROR, "VSync change failed: %s", SDL_GetError());
-                }
-            }
-            if (fullscreen != configs.fullscreen())
-            {
-                if (!SDL_SetWindowFullscreen(get_context().ctx_sdl->window, fullscreen ? SDL_WINDOW_FULLSCREEN : 0))
-                {
-                    SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Fullscreen change failed: %s", SDL_GetError());
-                }
-            }
-            configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale).show_stats_window(show_stats);
-            ImGui::EndTabItem();
-        }
-
         draw_mode_tabs();
         if (ImGui::BeginTabItem("Physics"))
         {
@@ -673,6 +622,11 @@ void menu_state::draw_mode_sidebar(const float available_height) const noexcept
 {
     auto *active_player = get_context().ctx_player;
     {
+        constexpr ImVec4 heading_color{.745f, .863f, .498f, 1.f};
+        constexpr auto TITLE{"{Breaking Walls {gamedev}}"};
+        ImGui::TextColored(heading_color, "%s\n", TITLE);
+        ImGui::NewLine();
+        ImGui::Separator();
         ImGui::TextUnformatted("Key Bindings");
         const float row_height = ImGui::GetFrameHeightWithSpacing();
         if (ImGui::BeginTable("##keybinds", 2,
@@ -680,7 +634,7 @@ void menu_state::draw_mode_sidebar(const float available_height) const noexcept
                               ImVec2(-1.f, std::max(3.f * row_height, available_height - 300.f))))
         {
             ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.f);
+            ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 100.f);
             ImGui::TableHeadersRow();
             for (int index = 0; index < static_cast<int>(PlayerAction::COUNT); ++index)
             {
@@ -699,9 +653,9 @@ void menu_state::draw_mode_sidebar(const float available_height) const noexcept
             ImGui::EndTable();
         }
         ImGui::TextUnformatted("Mouse Actions");
-        ImGui::BulletText("Left Click: Destroy block");
-        ImGui::BulletText("Right Click: Build block");
-        ImGui::BulletText("Middle Click: Copy block type");
+        ImGui::BulletText("L Click: Destroy block");
+        ImGui::BulletText("R Click: Build block");
+        ImGui::BulletText("M Click: Copy block type");
         ImGui::BulletText("Scroll: Cycle block types");
     }
 }
@@ -817,6 +771,50 @@ void menu_state::draw_builder_tab() const noexcept
     }
 }
 
+void menu_state::draw_graphics_tab() const noexcept
+{
+    auto &&p = get_context().ctx_player;
+    auto &&configs = p->get_configs();
+
+    bool vsync = configs.vsync(), fullscreen = configs.fullscreen();
+    float exposure = configs.exposure_val(), font_scale = configs.gui_font_scale();
+    bool bloom = configs.use_bloom_effect();
+    bool show_stats = configs.show_stats_window();
+    ImGui::Checkbox("Show FPS Stats", &show_stats);
+    ImGui::Checkbox("Enable VSync", &vsync);
+    ImGui::Checkbox("Enable Fullscreen", &fullscreen);
+    ImGui::Checkbox("Enable Bloom Effect", &bloom);
+    ImGui::SliderFloat("Exposure", &exposure, .1f, 2.f);
+    ImGui::SliderFloat("Font Scale", &font_scale, .6f, 1.4f);
+    if (ImGui::BeginListBox("##FontList"))
+    {
+        for (const auto &[font_id, font_name] : selectable_fonts)
+        {
+            if (ImGui::Selectable(font_name.data(),
+                                  p->get_font_index() == static_cast<int>(font_id)))
+            {
+                p->set_font_index(static_cast<int>(font_id));
+            }
+        }
+        ImGui::EndListBox();
+    }
+    if (vsync != configs.vsync())
+    {
+        if (!SDL_GL_SetSwapInterval(vsync ? 1 : 0))
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "VSync change failed: %s", SDL_GetError());
+        }
+    }
+    if (fullscreen != configs.fullscreen())
+    {
+        if (!SDL_SetWindowFullscreen(get_context().ctx_sdl->window, fullscreen ? SDL_WINDOW_FULLSCREEN : 0))
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Fullscreen change failed: %s", SDL_GetError());
+        }
+    }
+    configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale).show_stats_window(show_stats);
+}
+
 void menu_state::draw_camera_tab() const noexcept
 {
     auto &&configs = get_context().ctx_player->get_configs();
@@ -835,8 +833,21 @@ void menu_state::draw_player_tab() const noexcept
     auto *active_player = get_context().ctx_player;
     ImGui::Text("Name: %s", active_player->get_name().c_str());
     ImGui::Text("Local time: %s", active_player->get_local_time().data());
-    ImGui::Text("X: %.2f   Y: %.2f   Z: %.2f", active_player->pos.x, active_player->pos.y, active_player->pos.z);
-    ImGui::Text("Selected block type: %d", active_player->get_item());
+    ImGui::Text("pos.x: %.2f\npos.y: %.2f\npos.z: %.2f\n",
+                active_player->pos.x, active_player->pos.y, active_player->pos.z);
+    ImGui::Text("Selected block: %s", item::to_block_name(
+                                          static_cast<item::BlockType>(active_player->get_selected_item_index()))
+                                          .data());
+
+    constexpr ImVec4 heading_color{.354f, .663f, .498f, 1.f};
+    constexpr auto FLIPS_AND_ALE_STR{"{ Flips and Ale }"};
+    ImGui::TextColored(heading_color, "%s\n", FLIPS_AND_ALE_STR);
+    const auto &icon = get_context().ctx_textures->get(TextureIdentifier::FLIPS_AND_ALE_ICON);
+    if (icon.gl_texture != 0 && icon.width > 0 && icon.height > 0)
+    {
+        auto &&font_size{ImGui::GetFontSize()};
+        ImGui::Image(reinterpret_cast<void *>(static_cast<intptr_t>(icon.gl_texture)), ImVec2(icon.width >> 1, icon.height >> 1));
+    }
 }
 
 void menu_state::draw_exports_tab() const noexcept
@@ -902,6 +913,11 @@ void menu_state::draw_mode_tabs() const noexcept
         draw_builder_tab();
         ImGui::EndTabItem();
     }
+    if (ImGui::BeginTabItem("Graphics"))
+    {
+        draw_graphics_tab();
+        ImGui::EndTabItem();
+    }
     if (ImGui::BeginTabItem("Camera"))
     {
         draw_camera_tab();
@@ -925,9 +941,9 @@ bool menu_state::handle_event(SDL_Event &event) noexcept
     {
         request_stack_clear();
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
+    if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE)
     {
-        // Do nothing on ESC key press here
+        get_context().ctx_player->set_active(false);
     }
     return event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED;
 }

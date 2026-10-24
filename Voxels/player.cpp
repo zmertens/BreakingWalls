@@ -144,25 +144,25 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
         if (event.wheel.y > SCROLL_THRESHOLD)
         {
             // Scroll up (backward through items)
-            if (current_item_index > 0)
+            if (selected_item_index > 0)
             {
-                current_item_index--;
+                selected_item_index--;
             }
             else
             {
-                current_item_index = MAX_ITEM_INDEX; // Wrap to last valid item
+                selected_item_index = MAX_ITEM_INDEX; // Wrap to last valid item
             }
         }
         else if (event.wheel.y < -SCROLL_THRESHOLD)
         {
             // Scroll down (forward through items)
-            if (current_item_index < MAX_ITEM_INDEX)
+            if (selected_item_index < MAX_ITEM_INDEX)
             {
-                current_item_index++;
+                selected_item_index++;
             }
             else
             {
-                current_item_index = 0; // Wrap to first item
+                selected_item_index = 0; // Wrap to first item
             }
         }
     }
@@ -343,20 +343,20 @@ void player::set_buffer(const std::uint32_t value) noexcept
     this->player_buffer = value;
 }
 
-std::int32_t player::get_item() const noexcept
+std::int32_t player::get_selected_item_index() const noexcept
 {
-    if (this->current_item_index >= 0 && this->current_item_index < item::ITEMS.size())
+    if (this->selected_item_index >= 0 && this->selected_item_index < item::ITEMS.size())
     {
-        return item::ITEMS.at(this->current_item_index);
+        return item::ITEMS.at(this->selected_item_index);
     }
     return -1;
 }
 
-void player::set_item(const std::int32_t value) noexcept
+void player::set_selected_item_index(const std::int32_t value) noexcept
 {
     if (value >= 0 && value < item::ITEMS.size())
     {
-        this->current_item_index = value;
+        this->selected_item_index = value;
     }
 }
 
@@ -614,7 +614,7 @@ void player::on_right_click() const noexcept
     {
         if (!world::player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz))
         {
-            current_world->set_block(hx, hy, hz, get_item());
+            current_world->set_block(hx, hy, hz, selected_item_index);
         }
     }
 }
@@ -626,7 +626,7 @@ void player::on_middle_click() noexcept
     const int hw = current_world->hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (const auto it = std::ranges::find(item::ITEMS, hw); it != item::ITEMS.end())
     {
-        current_item_index = static_cast<std::int32_t>(it - item::ITEMS.begin());
+        selected_item_index = static_cast<std::int32_t>(it - item::ITEMS.begin());
     }
 }
 

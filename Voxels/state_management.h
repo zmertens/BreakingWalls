@@ -186,6 +186,7 @@ public:
 private:
     void draw_mode_sidebar(float available_height) const noexcept;
     void draw_builder_tab() const noexcept;
+    void draw_graphics_tab() const noexcept;
     void draw_camera_tab() const noexcept;
     void draw_player_tab() const noexcept;
     void draw_exports_tab() const noexcept;

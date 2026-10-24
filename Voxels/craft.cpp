@@ -157,11 +157,10 @@ struct craft::craft_impl
                                                  ImGuiWindowFlags_NoNav |
                                                  ImGuiWindowFlags_NoMove;
 
-        if (this->active_player.get_configs().show_stats_window() && ImGui::Begin("FPS Overlay", nullptr, windowFlags))
+        if (this->active_player.get_configs().show_stats_window() && ImGui::Begin("FPS Stats", nullptr, windowFlags))
         {
             ImGui::Text("FPS: %d", smoothed_fps_counter);
             ImGui::Text("ms / frame: %.2f ms", fps_timer_smoothed);
-            ImGui::Text("Local time: %s\n", this->active_player.get_local_time().data());
             ImGui::End();
         }
     }
@@ -177,13 +176,6 @@ struct craft::craft_impl
             {
                 crafting_states->handle_event(event);
                 break;
-            }
-
-            // ESCAPE may trigger state change, process that early
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE)
-            {
-                crafting_states->handle_event(event);
-                continue;
             }
 
             // Resize and focus loss must reach the world even when ImGui captures input.
