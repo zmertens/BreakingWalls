@@ -114,10 +114,11 @@ editor_world::~editor_world()
 void editor_world::init() noexcept
 {
     auto &&configs{active_player->get_configs()};
-    configs.view_mode(player_configs::ViewMode::PERSPECTIVE).ortho_scaling(0);
+    configs.view_mode(player_configs::ViewMode::THIRD_PERSON).ortho_scaling(0);
     active_player->pos.rx = 0.0f;
     active_player->pos.ry = -matrix::to_radians(15.0f);
     active_player->vel = {};
+    active_player->set_active(true);
     if (world_heightmap)
     {
         active_player->pos.x = active_player->pos.z = static_cast<float>(world_heightmap->side) * 0.5f;
@@ -319,8 +320,11 @@ void editor_world::draw() const noexcept
     render_sign(signs_texture);
 
     render_wireframe();
-    render_crosshairs();
-    render_held_stick(atlas_texture);
+    if (this->active_player->get_configs().view_mode() == player_configs::ViewMode::FIRST_PERSON)
+    {
+        render_held_stick(atlas_texture);
+        render_crosshairs();
+    }
 
     const auto &configs{active_player->get_configs()};
     const float bloom_str = configs.use_bloom_effect() ? configs.exposure_val() : 0.0f;
@@ -444,6 +448,20 @@ void editor_world::handle_event(const SDL_Event &event) noexcept
     {
         m_swing_start_ms = SDL_GetTicks();
         m_swinging = true;
+    }
+    if (event.type == SDL_EVENT_KEY_DOWN)
+    {
+        switch (event.key.scancode)
+        {
+        case SDL_SCANCODE_ESCAPE: {
+            break;
+        }
+        case SDL_SCANCODE_R:
+            // Reset
+            break;
+        default:
+            break;
+        }
     }
     if (event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
     {

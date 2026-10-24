@@ -150,7 +150,7 @@ bool state::draw_menu_button() const noexcept
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration |
                          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav))
     {
-        clicked = ImGui::Button("MENU (ESC)");
+        clicked = ImGui::Button("MENU (PAUSE)");
     }
     ImGui::End();
     return clicked;
@@ -258,7 +258,7 @@ state::ptr state_stack::create_state(const StateIdentifier state_id)
 
 loading_state::loading_state(state_stack &stack, const context &context) : state{stack, context} {}
 
-void loading_state::load_resources() const noexcept
+void loading_state::load_resources(mazes::randomizer &rng) const noexcept
 {
     constexpr float font_size = 18.f;
     const auto &ctx = get_context();
@@ -277,6 +277,8 @@ void loading_state::load_resources() const noexcept
         {ShaderIdentifier::TEXT_SHADER, "Shaders/es/text_vertex.es.glsl", "Shaders/es/text_fragment.es.glsl"},
         {ShaderIdentifier::BLOOM_BLUR_SHADER, "Shaders/es/bloom_quad_vertex.es.glsl", "Shaders/es/bloom_blur_fragment.es.glsl"},
         {ShaderIdentifier::BLOOM_COMPOSITE_SHADER, "Shaders/es/bloom_quad_vertex.es.glsl", "Shaders/es/bloom_composite_fragment.es.glsl"},
+        {ShaderIdentifier::BLOOM_DEPTH_FIELD_SHADER, "Shaders/es/bloom_quad_vertex.es.glsl", "Shaders/es/depth_field_fragment.es.glsl"},
+        {ShaderIdentifier::BLOOM_GLASS_RESOLVE_SHADER, "Shaders/es/bloom_quad_vertex.es.glsl", "Shaders/es/glass_resolve_fragment.es.glsl"},
         {ShaderIdentifier::TRANSITION_BLUR_SHADER, "Shaders/es/bloom_quad_vertex.es.glsl", "Shaders/es/transition_blur_fragment.es.glsl"},
         {ShaderIdentifier::TRANSITION_PIXELATE_SHADER, "Shaders/es/bloom_quad_vertex.es.glsl", "Shaders/es/transition_pixelate_fragment.es.glsl"},
         {ShaderIdentifier::TRANSITION_WAVE_SHADER, "Shaders/es/bloom_quad_vertex.es.glsl", "Shaders/es/transition_wave_fragment.es.glsl"}};
@@ -288,6 +290,8 @@ void loading_state::load_resources() const noexcept
         {ShaderIdentifier::TEXT_SHADER, "Shaders/text_vertex.glsl", "Shaders/text_fragment.glsl"},
         {ShaderIdentifier::BLOOM_BLUR_SHADER, "Shaders/bloom_quad_vertex.glsl", "Shaders/bloom_blur_fragment.glsl"},
         {ShaderIdentifier::BLOOM_COMPOSITE_SHADER, "Shaders/bloom_quad_vertex.glsl", "Shaders/bloom_composite_fragment.glsl"},
+        {ShaderIdentifier::BLOOM_DEPTH_FIELD_SHADER, "Shaders/bloom_quad_vertex.glsl", "Shaders/depth_field_fragment.glsl"},
+        {ShaderIdentifier::BLOOM_GLASS_RESOLVE_SHADER, "Shaders/bloom_quad_vertex.glsl", "Shaders/glass_resolve_fragment.glsl"},
         {ShaderIdentifier::TRANSITION_BLUR_SHADER, "Shaders/bloom_quad_vertex.glsl", "Shaders/transition_blur_fragment.glsl"},
         {ShaderIdentifier::TRANSITION_PIXELATE_SHADER, "Shaders/bloom_quad_vertex.glsl", "Shaders/transition_pixelate_fragment.glsl"},
         {ShaderIdentifier::TRANSITION_WAVE_SHADER, "Shaders/bloom_quad_vertex.glsl", "Shaders/transition_wave_fragment.glsl"}};
@@ -300,7 +304,10 @@ void loading_state::load_resources() const noexcept
     const auto [width, height] = ctx.ctx_sdl->get_window_size_in_pixels();
     const auto blur = ctx.ctx_shaders->get(ShaderIdentifier::BLOOM_BLUR_SHADER).get();
     const auto composite = ctx.ctx_shaders->get(ShaderIdentifier::BLOOM_COMPOSITE_SHADER).get();
-    ctx.ctx_bloom_passes->load(BloomPassIdentifier::EDITOR, width, height, blur, composite);
+    const auto depth_field = ctx.ctx_shaders->get(ShaderIdentifier::BLOOM_DEPTH_FIELD_SHADER).get();
+    const auto glass_resolve = ctx.ctx_shaders->get(ShaderIdentifier::BLOOM_GLASS_RESOLVE_SHADER).get();
+    const auto coin_is_heads{static_cast<bool>(rng.get_int(0, 1))};
+    ctx.ctx_bloom_passes->load(BloomPassIdentifier::EDITOR, blur, composite, depth_field, glass_resolve, width, height, coin_is_heads);
 
     ctx.ctx_textures->load(TextureIdentifier::ATLAS, "Textures/atlas.png", static_cast<unsigned int>(TextureIdentifier::ATLAS));
     ctx.ctx_textures->load(TextureIdentifier::BITMAP_FONT, "Textures/bitmap_font.png", static_cast<unsigned int>(TextureIdentifier::BITMAP_FONT));
@@ -344,14 +351,14 @@ void loading_state::draw() const noexcept
     ImGui::End();
 }
 
-bool loading_state::update(float, mazes::randomizer &) noexcept
+bool loading_state::update(float, mazes::randomizer &rng) noexcept
 {
     if (!resources_loaded)
     {
         if (!get_stack().resources_have_loaded())
         {
-            const auto prog{mazes::progress<>::duration([this]()
-                                                        { load_resources(); })};
+            const auto prog{mazes::progress<>::duration([this, &rng]()
+                                                        { load_resources(std::ref(rng)); })};
             SDL_Log("Resource loading took: %.7f ms",
                     mazes::progress<>::to_double_from_duration(prog));
             get_stack().mark_resources_loaded();
@@ -385,6 +392,7 @@ void editor_state::draw() const noexcept
     }
     if (draw_menu_button())
     {
+        // No logner in editor_state , stop drawing menu button
         SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, false);
         request_stack_push(StateIdentifier::MENU);
     }
@@ -426,10 +434,6 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
                     *ctx.ctx_bloom_passes, active_player, *ctx.ctx_sdl});
 
             current_editor_world->init();
-            if (active)
-            {
-                SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, true);
-            }
             SDL_Log("Editor: World initialized after loading completed\n");
         }
     }
@@ -448,19 +452,22 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
 
 bool editor_state::handle_event(SDL_Event &event) noexcept
 {
-    auto &&p{*get_context().ctx_player};
     if (event.type == SDL_EVENT_QUIT)
     {
-        p.set_active(false);
         request_stack_clear();
     }
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
     {
         auto *win{&get_context().ctx_sdl->window};
-        SDL_SetWindowRelativeMouseMode(*win, !SDL_GetWindowRelativeMouseMode(*win));
+        const auto next_mouse_mode{!SDL_GetWindowRelativeMouseMode(*win)};
+        SDL_SetWindowRelativeMouseMode(*win, next_mouse_mode);
+
+        get_context().ctx_player->set_active(next_mouse_mode);
+
     }
     if (current_editor_world)
     {
+        auto &&p{*get_context().ctx_player};
         p.handle_event(event, current_editor_world->get_command_queue());
         current_editor_world->handle_event(event);
     }
@@ -523,6 +530,7 @@ void menu_state::draw_heading() const noexcept
     if (ImGui::Button("Resume", menu_button_size()))
     {
         SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, true);
+        get_context().ctx_player->set_active(true);
         request_stack_pop();
     }
     ImGui::SameLine();
@@ -915,7 +923,6 @@ bool menu_state::handle_event(SDL_Event &event) noexcept
 {
     if (event.type == SDL_EVENT_QUIT)
     {
-        get_context().ctx_player->set_active(false);
         request_stack_clear();
     }
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)

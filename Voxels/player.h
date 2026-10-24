@@ -15,14 +15,11 @@
 #include <MazeBuilder/configurator.h>
 
 #include "artifact_exporter.h"
-#include "db.h"
-#include "geometries.h"
 #include "item.h"
 #include "player configs.h"
-#include "craft_map.h"
-#include "world.h"
 
 class texture;
+class world;
 
 enum class PlayerAction
 {
@@ -48,8 +45,6 @@ enum class PlayerAction
 };
 
 union SDL_Event;
-
-class world;
 
 namespace mazes
 {
@@ -122,6 +117,9 @@ public:
     [[nodiscard]] bool is_on_ground() const noexcept;
     void set_on_ground(bool grounded) noexcept;
 
+    [[nodiscard]] bool is_auto_running() const noexcept;
+    void set_auto_running(bool auto_running) noexcept;
+
     [[nodiscard]] std::uint32_t get_buffer() const noexcept;
     void set_buffer(std::uint32_t value) noexcept;
 
@@ -147,11 +145,6 @@ public:
     void start_async_artifact_export() noexcept;
     [[nodiscard]] bool is_artifact_export_ready() const noexcept;
     [[nodiscard]] std::string get_artifact_export_result() noexcept;
-
-    // CAD Helper Functions
-    [[nodiscard]] static const char *get_block_name(item::BlockType block_type) noexcept;
-    [[nodiscard]] static const char *get_face_name(int face) noexcept;
-
 private:
     void initialize_actions();
     static bool is_realtime_action(PlayerAction action) noexcept;
@@ -166,17 +159,12 @@ private:
 
     std::unordered_map<PlayerAction, command> player_commands;
 
-    bool _is_active;
-    bool _is_on_ground;
-    bool _is_flying;
-    bool _is_auto_running;
-
     player_configs configs;
 
     std::uint32_t player_buffer;
 
-    std::int32_t current_item_index;
-    std::int32_t selected_font_index;
+    std::int32_t current_item_index{0};
+    std::int32_t selected_font_index{0};
     std::string my_name{"zm"};
 
     world *current_world{nullptr};

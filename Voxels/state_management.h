@@ -150,7 +150,7 @@ public:
     [[nodiscard]] bool resources_have_loaded() const noexcept;
 
 private:
-    void load_resources() const noexcept;
+    void load_resources(mazes::randomizer &rng) const noexcept;
 
     std::atomic<bool> resources_loaded{false};
 };

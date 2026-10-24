@@ -191,7 +191,7 @@ void editor_world::render_item(const std::uint32_t texture) const noexcept
 void editor_world::render_held_stick(const std::uint32_t texture) const noexcept
 {
     const auto &c = active_player->get_configs();
-    if (c.view_mode() != player_configs::ViewMode::PERSPECTIVE)
+    if (c.view_mode() != player_configs::ViewMode::FIRST_PERSON)
         return;
 
     constexpr float swing_ms = 280.0f;

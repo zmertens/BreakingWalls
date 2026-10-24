@@ -82,7 +82,7 @@ bool sdl_gl_helper::initialize(std::string_view title, int width, int height) no
         SDL_GL_SetSwapInterval(1);
 
         SDL_ShowWindow(window);
-        SDL_SetWindowRelativeMouseMode(window, false);
+        SDL_SetWindowRelativeMouseMode(window, true);
         SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
 #if !defined(__EMSCRIPTEN__)

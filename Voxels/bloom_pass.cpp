@@ -9,22 +9,22 @@
 #include <glad/gl.h>
 #endif
 
-// ---------------------------------------------------------------------------
-// render_pass implementation
-// ---------------------------------------------------------------------------
 
 bool bloom_pass::components::init(const int w, const int h,
                                   const int color_attachments,
                                   const bool depth, const bool normalized) noexcept
 {
-    // width and height members removed
+    static_assert(MAX_COLOR_ATTACHMENTS > 0, "MAX_COLOR_ATTACHMENTS must be greater than 0");
+    if (color_attachments < 1 || color_attachments > static_cast<int>(MAX_COLOR_ATTACHMENTS))
+        return false;
+
     num_color_attachments = color_attachments;
 
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
     GLenum draw_buffers[MAX_COLOR_ATTACHMENTS]{};
-    for (int i = 0; i < color_attachments; ++i)
+    for (int i = 0; i < num_color_attachments; ++i)
     {
         glGenTextures(1, &color_tex.at(static_cast<std::size_t>(i)));
         glBindTexture(GL_TEXTURE_2D, color_tex.at(static_cast<std::size_t>(i)));
@@ -41,7 +41,7 @@ bool bloom_pass::components::init(const int w, const int h,
                                color_tex.at(static_cast<std::size_t>(i)), 0);
         draw_buffers[i] = static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + i);
     }
-    glDrawBuffers(color_attachments, draw_buffers);
+    glDrawBuffers(num_color_attachments, draw_buffers);
 
     if (depth)
     {
@@ -101,17 +101,23 @@ bloom_pass::~bloom_pass() noexcept
     destroy();
 }
 
-bool bloom_pass::init(const int width, const int height,
-                      const std::uint32_t blur_program,
-                      const std::uint32_t composite_program) noexcept
+bool bloom_pass::init(
+    const std::uint32_t blur_program,
+    const std::uint32_t composite_program,
+    const std::uint32_t depth_field_program,
+    const std::uint32_t glass_resolve_program,
+    const std::uint32_t width, const std::uint32_t height,
+    const bool depth_effects) noexcept
 {
-    if (width <= 0 || height <= 0 || !blur_program || !composite_program || m_quad_vao)
+    if (width == 0 || height == 0 || !blur_program || !composite_program || !depth_field_program || !glass_resolve_program || m_quad_vao)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "bloom_pass: invalid initialization or pass already initialized");
         return false;
     }
     m_blur_program = blur_program;
     m_composite_program = composite_program;
+    m_depth_field_program = depth_field_program;
+    m_glass_resolve_program = glass_resolve_program;
 
     // Cache uniform locations to avoid per-frame queries.
     m_blur_loc_horizontal = glGetUniformLocation(blur_program, "horizontal");
@@ -119,8 +125,10 @@ bool bloom_pass::init(const int width, const int height,
     m_comp_loc_scene = glGetUniformLocation(composite_program, "scene");
     m_comp_loc_bloom = glGetUniformLocation(composite_program, "bloom_blur");
     m_comp_loc_strength = glGetUniformLocation(composite_program, "bloom_strength");
+    m_depth_field_loc_image = glGetUniformLocation(depth_field_program, "image");
+    m_glass_resolve_loc_image = glGetUniformLocation(glass_resolve_program, "image");
 
-    if (!create_fbos(width, height))
+    if (!create_fbos(static_cast<int>(width), static_cast<int>(height)))
     {
         destroy_fbos();
         m_width = m_height = 0;
@@ -133,6 +141,19 @@ bool bloom_pass::init(const int width, const int height,
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "bloom_pass: screen quad initialization failed");
         destroy();
         return false;
+    }
+    if (depth_effects)
+    {
+        try
+        {
+            init_depth_effects();
+        }
+        catch (const std::exception &e)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "bloom_pass: %s", e.what());
+            destroy();
+            return false;
+        }
     }
     return true;
 }
@@ -255,12 +276,12 @@ void bloom_pass::set_single_mode() const noexcept
 }
 
 void bloom_pass::set_transition_programs(
-    const std::array<std::uint32_t, static_cast<std::size_t>(TransitionEffect::COUNT)> &programs) noexcept
+    const std::array<std::uint32_t, static_cast<std::size_t>(ShaderEffect::COUNT)> &programs) noexcept
 {
     m_transition_programs = programs;
 }
 
-void bloom_pass::execute(const float strength, const int blur_iterations, const TransitionEffect effect,
+void bloom_pass::execute(const float strength, const int blur_iterations, const ShaderEffect effect,
                          const float progress, const float seconds) const noexcept
 {
     const auto transition_program = m_transition_programs.at(static_cast<std::size_t>(effect));
@@ -402,23 +423,15 @@ void bloom_pass::destroy() noexcept
 void bloom_pass::init_depth_effects()
 {
     if (m_depth_enabled)
+    {
         return;
-#if defined(__EMSCRIPTEN__)
-    constexpr auto quad = "Shaders/es/bloom_quad_vertex.es.glsl";
-    constexpr auto field = "Shaders/es/depth_field_fragment.es.glsl";
-    constexpr auto resolve = "Shaders/es/glass_resolve_fragment.es.glsl";
-#else
-    constexpr auto quad = "Shaders/bloom_quad_vertex.glsl";
-    constexpr auto field = "Shaders/depth_field_fragment.glsl";
-    constexpr auto resolve = "Shaders/glass_resolve_fragment.glsl";
-#endif
-    m_depth_field.load_program(quad, field);
-    m_glass_resolve.load_program(quad, resolve);
-    m_field_time = m_depth_field.uniform("seconds");
-    m_field_level = m_depth_field.uniform("level");
-    m_field_lights = m_depth_field.uniform("lights");
-    m_resolve_accumulation = m_glass_resolve.uniform("accumulation");
-    m_resolve_optical_depth = m_glass_resolve.uniform("optical_depth");
+    }
+
+    m_field_time = glGetUniformLocation(m_depth_field_program, "seconds");
+    m_field_level = glGetUniformLocation(m_depth_field_program, "level");
+    m_field_lights = glGetUniformLocation(m_depth_field_program, "lights");
+    m_resolve_accumulation = glGetUniformLocation(m_glass_resolve_program, "accumulation");
+    m_resolve_optical_depth = glGetUniformLocation(m_glass_resolve_program, "optical_depth");
     m_depth_enabled = true;
     destroy_fbos();
     if (!create_fbos(m_width, m_height))
@@ -430,7 +443,7 @@ void bloom_pass::draw_depth_field(const float seconds, const float level, const 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
-    glUseProgram(m_depth_field.get());
+    glUseProgram(m_depth_field_program);
     glUniform1f(m_field_time, seconds);
     glUniform1f(m_field_level, level);
     glUniform1f(m_field_lights, lights);
@@ -468,7 +481,7 @@ void bloom_pass::resolve_glass() const noexcept
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glUseProgram(m_glass_resolve.get());
+    glUseProgram(m_glass_resolve_program);
     glUniform1i(m_resolve_accumulation, 0);
     glUniform1i(m_resolve_optical_depth, 1);
     glActiveTexture(GL_TEXTURE0);

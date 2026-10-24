@@ -11,7 +11,7 @@ struct player_configs
 {
     enum class ViewMode : unsigned int
     {
-        PERSPECTIVE = 0,
+        FIRST_PERSON = 0,
         ISOMETRIC = 1,
         ORTHO = 2,
         THIRD_PERSON = 3
@@ -92,6 +92,30 @@ struct player_configs
     player_configs &view_mode(ViewMode view_mode)
     {
         opt_view_mode = view_mode;
+        return *this;
+    }
+
+    player_configs &is_active(bool enabled)
+    {
+        opt_is_active = enabled;
+        return *this;
+    }
+
+    player_configs &is_on_ground(bool enabled)
+    {
+        opt_is_on_ground = enabled;
+        return *this;
+    }
+
+    player_configs &is_flying(bool enabled)
+    {
+        opt_is_flying = enabled;
+        return *this;
+    }
+
+    player_configs &is_auto_running(bool enabled)
+    {
+        opt_is_auto_running = enabled;
         return *this;
     }
 
@@ -228,6 +252,26 @@ struct player_configs
         return opt_view_mode.value();
     }
 
+    bool is_active() const noexcept
+    {
+        return opt_is_active.value();
+    }
+
+    bool is_on_ground() const noexcept
+    {
+        return opt_is_on_ground.value();
+    }
+
+    bool is_flying() const noexcept
+    {
+        return opt_is_flying.value();
+    }
+
+    bool is_auto_running() const noexcept
+    {
+        return opt_is_auto_running.value();
+    }
+
 private:
     std::optional<bool> opt_fullscreen{false};
     std::optional<bool> opt_invert_mouse{false};
@@ -256,7 +300,12 @@ private:
     std::optional<float> opt_music_volume{1.0f};
     std::optional<float> opt_sfx_volume{1.0f};
 
-    std::optional<ViewMode> opt_view_mode{ViewMode::ORTHO};
+    std::optional<ViewMode> opt_view_mode{ViewMode::THIRD_PERSON};
+
+    std::optional<bool> opt_is_active{true};
+    std::optional<bool> opt_is_on_ground{true};
+    std::optional<bool> opt_is_flying{false};
+    std::optional<bool> opt_is_auto_running{false};
 }; // player_configs
 
 #endif // PLAYER_CONFIGS_H

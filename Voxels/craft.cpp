@@ -56,13 +56,9 @@ struct craft::craft_impl
     soundfx_manager world_sounds;
     artifact_exporter_manager artifact_exporters;
     texture_manager world_textures;
-    bloom_pass_manager world_bloom_passes;
+    bloom_pass_manager world_bloom_effects;
 
     std::unique_ptr<state_stack> crafting_states;
-
-    mutable double fps_timer{0.0};
-    mutable int smoothed_fps_counter{0};
-    mutable float fps_timer_smoothed{0.0f};
 
     craft_impl(std::string_view title, const int w, const int h)
     {
@@ -80,7 +76,7 @@ struct craft::craft_impl
             std::ref(game_fonts),
             std::ref(world_shaders),
             std::ref(world_textures),
-            std::ref(world_bloom_passes),
+            std::ref(world_bloom_effects),
             std::ref(active_player),
             std::ref(simple_direct_medialayer),
             std::ref(world_sounds),
@@ -135,6 +131,10 @@ struct craft::craft_impl
         const auto safe_elapsed = elapsed > 0.0 ? elapsed : 1.0;
         const auto fps = static_cast<int>(1000.0 / safe_elapsed);
         const auto frame_time = static_cast<float>(safe_elapsed);
+
+        static auto fps_timer{0.0};
+        static auto smoothed_fps_counter{0};
+        static auto fps_timer_smoothed{0.0f};
 
         // Update smoothed values periodically for display
         fps_timer += safe_elapsed;
@@ -350,7 +350,7 @@ bool craft::run(mazes::randomizer &rng) const noexcept
     }
 
     // Cleanup ImGui
-    app->world_bloom_passes.clear();
+    app->world_bloom_effects.clear();
     app->world_textures.clear();
     app->world_shaders.clear();
 

@@ -21,24 +21,19 @@ enum class ShaderIdentifier : unsigned int
     BLOOM_COMPOSITE_SHADER = 5,
     TRANSITION_BLUR_SHADER = 6,
     TRANSITION_PIXELATE_SHADER = 7,
-    TRANSITION_WAVE_SHADER = 8,
-    TOTAL = 9
+    BLOOM_DEPTH_FIELD_SHADER = 8,
+    BLOOM_GLASS_RESOLVE_SHADER = 9,
+    TRANSITION_WAVE_SHADER = 10,
+    TOTAL = 11
 };
 
-// Full-screen level-transition effects; each maps to a ShaderIdentifier.
-// Performance: they run only for the ~1.2s after a new level is generated, as one extra
-// full-screen pass over a lazily allocated RGBA8 target. Outside that window the
-// bloom composite goes straight to the screen with no extra cost or memory.
-enum class TransitionEffect : unsigned int
+enum class ShaderEffect : unsigned int
 {
     BLUR,
     PIXELATE,
     WAVE,
     COUNT
 };
-
-inline constexpr std::array<TransitionEffect, static_cast<std::size_t>(TransitionEffect::COUNT)> TRANSITION_EFFECTS{
-    TransitionEffect::BLUR, TransitionEffect::PIXELATE, TransitionEffect::WAVE};
 
 enum class TextureIdentifier : unsigned int
 {
