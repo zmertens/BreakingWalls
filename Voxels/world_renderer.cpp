@@ -1,6 +1,7 @@
 // Shared voxel mesh rendering.
 #include "world.h"
 
+#include "chunk.h"
 #include "matrix.h"
 #include "resource_identifiers.h"
 #include "sdl_gl_helper.h"

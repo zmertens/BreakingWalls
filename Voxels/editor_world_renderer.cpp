@@ -1,9 +1,11 @@
 // Editor overlays, sky, signs, and ghost render passes.
 #include "editor_world.h"
 
+#include "chunk.h"
 #include "geometries.h"
 #include "item.h"
 #include "matrix.h"
+#include "player.h"
 #include "texture.h"
 #include "resource_identifiers.h"
 #include "resource_manager.h"

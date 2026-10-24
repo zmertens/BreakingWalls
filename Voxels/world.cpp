@@ -1,7 +1,11 @@
 #include "world.h"
 
+#include "chunk.h"
+#include "craft_map.h"
 #include "resource_manager.h"
 #include "shader.h"
+#include "worker_traits.h"
+#include "world_builder.h"
 
 #if defined(__EMSCRIPTEN__)
 #include <GLES3/gl3.h>
@@ -13,15 +17,7 @@
 
 #include <stdexcept>
 
-world::builder::builder(font_manager &fonts, shader_manager &shaders,
-                        texture_manager &textures, bloom_pass_manager &bloom_passes,
-                        player &active_player, sdl_gl_helper &sdl)
-    : build_fonts{&fonts}, build_shaders{&shaders}, build_textures{&textures},
-      build_bloom_passes{&bloom_passes}, build_player{&active_player}, build_sdl{&sdl}
-{
-}
-
-world::world(const builder &b)
+world::world(const world_builder &b)
     : simple_direct_medialayer{b.build_sdl}, active_fonts{*b.build_fonts}, world_shaders{*b.build_shaders},
       world_textures{*b.build_textures}, scene_graph_layers{}, next_chunk_slot_in_view{1},
       active_player{b.build_player}, m_bloom{b.build_bloom_passes ? &b.build_bloom_passes->get(BloomPassIdentifier::EDITOR) : nullptr}

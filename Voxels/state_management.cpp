@@ -23,9 +23,11 @@
 #include "item.h"
 #include "player.h"
 #include "resource_manager.h"
+#include "sdl_gl_helper.h"
 #include "shader.h"
 #include "soundfx.h"
 #include "texture.h"
+#include "world_builder.h"
 
 #include <MazeBuilder/algos.h>
 #include <MazeBuilder/configurator.h>
@@ -429,10 +431,9 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
     {
         if (stack.resources_have_loaded())
         {
-            current_editor_world.emplace(
-                world::builder{
-                    *ctx.ctx_fonts, *ctx.ctx_shaders, *ctx.ctx_textures,
-                    *ctx.ctx_bloom_passes, active_player, *ctx.ctx_sdl});
+            const auto new_world{
+                world_builder{}.with_sdl(*ctx.ctx_sdl).with_fonts(*ctx.ctx_fonts).with_shaders(*ctx.ctx_shaders).with_textures(*ctx.ctx_textures).with_bloom_passes(*ctx.ctx_bloom_passes).with_player(active_player)};
+            current_editor_world.emplace(new_world);
 
             current_editor_world->init();
             SDL_Log("Editor: World initialized after loading completed\n");

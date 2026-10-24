@@ -7,6 +7,7 @@
 #include <MazeBuilder/randomizer.h>
 #include <MazeBuilder/runtime_app.h>
 
+#include "chunk.h"
 #include "item.h"
 #include "matrix.h"
 #include "texture.h"
@@ -75,7 +76,7 @@ static std::string gl_error_checker(const char *file, const int line) noexcept
 
 #define CHECK_GL_ERR() gl_error_checker(__FILE__, __LINE__)
 
-editor_world::editor_world(const world::builder &b)
+editor_world::editor_world(const world_builder &b)
     : world{b}
 {
     auto &library = heightmap_library::instance();

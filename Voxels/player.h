@@ -16,7 +16,7 @@
 
 #include "artifact_exporter.h"
 #include "item.h"
-#include "player configs.h"
+#include "player_configs.h"
 
 class texture;
 class world;
@@ -134,7 +134,7 @@ public:
 
     [[nodiscard]] std::int32_t get_font_index() const noexcept;
     void set_font_index(std::int32_t index) noexcept;
-    
+
     [[nodiscard]] const std::string &get_name() const noexcept;
     void set_name(const std::string &name);
 

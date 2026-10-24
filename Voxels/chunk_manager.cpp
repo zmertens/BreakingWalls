@@ -2,10 +2,15 @@
 #include "world.h"
 
 #include "chunk.h"
+#include "craft_map.h"
 #include "db.h"
+#include "geometries.h"
 #include "item.h"
 #include "matrix.h"
+#include "player.h"
 #include "sdl_gl_helper.h"
+#include "worker_traits.h"
+#include "world.h"
 
 #include <SDL3/SDL.h>
 
@@ -18,6 +23,32 @@
 #include <bvhv2/bvh.h>
 #include <bvhv2/executor.h>
 #include <bvhv2/thread_pool.h>
+
+namespace
+{
+    void load(const worker_item *item, const bool enable_heightmap,
+                     const float player_x, const float player_z, const heightmap *constrained,
+                     const bool include_decorations, const bool load_persisted_blocks) noexcept
+    {
+        const int p = item->p, q = item->q;
+        craft_map *block_map = item->block_maps.get(1, 1);
+        craft_map *light_map = item->light_maps.get(1, 1);
+
+        constexpr float FLATTEN_RADIUS = 256.0f;
+
+        geometries::create_voxel_world(
+            [](craft_map *m, int x, int y, int z, int w)
+            { m->set(x, y, z, w); },
+            block_map, p, q, world::BUILD_CHUNK_SIZE,
+            enable_heightmap, player_x, player_z, FLATTEN_RADIUS, constrained, include_decorations);
+
+        if (load_persisted_blocks)
+        {
+            db::load_blocks(block_map, p, q);
+            db::load_lights(light_map, p, q);
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Hit tests / collision
@@ -278,7 +309,7 @@ void world::update_dirty_chunks_async() const noexcept
     for (auto &&worker : chunk_workers)
     {
         std::lock_guard<std::mutex> lock(worker->mtx);
-        if (worker->state == chunk::WorkerState::IDLE)
+        if (worker->state == WorkerState::IDLE)
         {
             for (chunk *c : active_chunks())
             {
@@ -288,7 +319,7 @@ void world::update_dirty_chunks_async() const noexcept
                 if (index != worker->index)
                     continue;
 
-                chunk::worker_item *item = &worker->item;
+                worker_item *item = &worker->item;
                 item->p = c->p;
                 item->q = c->q;
                 item->load = 0;
@@ -312,7 +343,7 @@ void world::update_dirty_chunks_async() const noexcept
                         }
                     }
                 }
-                worker->state = chunk::WorkerState::BUSY;
+                worker->state = WorkerState::BUSY;
                 worker->cnd.notify_one();
                 break;
             }
@@ -326,7 +357,7 @@ void world::update_dirty_chunks_async() const noexcept
 
 void world::gen_chunk_buffer(chunk *c) const noexcept
 {
-    chunk::worker_item _item, *item = &_item;
+    worker_item _item, *item = &_item;
     item->p = c->p;
     item->q = c->q;
     for (int dp = -1; dp <= 1; dp++)
@@ -348,7 +379,7 @@ void world::gen_chunk_buffer(chunk *c) const noexcept
             }
         }
     }
-    chunk::compute(item);
+    // c->compute(item);
     c->generate(item);
     c->dirty = 0;
 }
@@ -356,7 +387,7 @@ void world::gen_chunk_buffer(chunk *c) const noexcept
 void world::create_chunk(chunk *c, const int p, const int q) noexcept
 {
     init_chunk(c, p, q);
-    chunk::worker_item _item, *item = &_item;
+    worker_item _item, *item = &_item;
     item->p = c->p;
     item->q = c->q;
     item->block_maps.borrow(1, 1, c->map);
@@ -427,9 +458,9 @@ void world::check_workers() noexcept
     for (auto &&w : chunk_workers)
     {
         w->mtx.lock();
-        if (w->state == chunk::WorkerState::DONE)
+        if (w->state == WorkerState::DONE)
         {
-            chunk::worker_item *item = &w->item;
+            worker_item *item = &w->item;
             if (auto chunk_opt = find_chunk(item->p, item->q); chunk_opt.has_value())
             {
                 chunk *c = chunk_opt.value();
@@ -447,7 +478,7 @@ void world::check_workers() noexcept
             }
             item->block_maps.clear();
             item->light_maps.clear();
-            w->state = chunk::WorkerState::IDLE;
+            w->state = WorkerState::IDLE;
         }
         w->mtx.unlock();
     }
@@ -525,7 +556,7 @@ std::optional<std::pair<int, int>> world::select_chunk_for_worker(float planes[6
 }
 
 // Mutates the scene graph and the worker; main thread only.
-void world::dispatch_chunk_to_worker(chunk::worker *w, int a, int b) noexcept
+void world::dispatch_chunk_to_worker(worker *w, int a, int b) noexcept
 {
     int load = 0;
     auto chunk_opt = find_chunk(a, b);
@@ -547,7 +578,7 @@ void world::dispatch_chunk_to_worker(chunk::worker *w, int a, int b) noexcept
     else
         c = chunk_opt.value();
 
-    chunk::worker_item *item = &w->item;
+    worker_item *item = &w->item;
     item->p = c->p;
     item->q = c->q;
     item->load = load;
@@ -569,15 +600,12 @@ void world::dispatch_chunk_to_worker(chunk::worker *w, int a, int b) noexcept
         }
     }
     c->dirty = 0;
-    w->state = chunk::WorkerState::BUSY;
+    w->state = WorkerState::BUSY;
     w->cnd.notify_one();
 }
 
 void world::ensure_chunks(player *_player) noexcept
 {
-    // Worker threads (world_workers.cpp) already compute chunks in parallel.
-    // Collecting their results touches the scene graph and uploads GL buffers,
-    // so it must happen once, on the calling (render) thread.
     check_workers();
 
     force_chunks(_player);
@@ -597,11 +625,11 @@ void world::ensure_chunks(player *_player) noexcept
     const int p = chunked(s->x), q = chunked(s->z);
 
     // Only the main thread moves a worker out of IDLE, so this list stays valid.
-    std::vector<chunk::worker *> idle;
+    std::vector<worker *> idle;
     for (auto &&w : chunk_workers)
     {
         std::lock_guard<std::mutex> lock(w->mtx);
-        if (w->state == chunk::WorkerState::IDLE)
+        if (w->state == WorkerState::IDLE)
         {
             idle.push_back(w.get());
         }
@@ -757,7 +785,9 @@ void world::traverse_chunks_in_bounds(const int min_p, const int min_q, const in
 
 int world::chunked(const float x) noexcept
 {
-    return chunk::coordinate(x);
+    auto coordinate = [](auto x)
+    { return static_cast<int>(SDL_floorf(SDL_roundf(x) / static_cast<float>(BUILD_CHUNK_SIZE))); };
+    return coordinate(x);
 }
 
 std::optional<chunk *> world::find_chunk(const int p, const int q) const noexcept
@@ -777,22 +807,66 @@ std::span<chunk *const> world::active_chunks() const noexcept
 bool world::chunk_visible(float planes[6][4], const int p, const int q,
                           const int miny, const int maxy) const noexcept
 {
-    return chunk::visible(planes, p, q, miny, maxy, active_player->get_configs().ortho_scaling() != 0);
+    auto visible = [](auto planes, auto p, auto q, auto miny, auto maxy, auto is_ortho)
+    {
+        const auto miny_f = static_cast<float>(miny);
+        const auto maxy_f = static_cast<float>(maxy);
+        const float x = static_cast<float>(p * world::BUILD_CHUNK_SIZE - 1);
+        const float z = static_cast<float>(q * world::BUILD_CHUNK_SIZE - 1);
+        const float d = static_cast<float>(world::BUILD_CHUNK_SIZE + 1);
+        const float points[8][3] = {
+            {x + 0.f, miny_f, z + 0.f}, {x + d, miny_f, z + 0.f}, {x + 0.f, miny_f, z + d}, {x + d, miny_f, z + d}, {x + 0.f, maxy_f, z + 0.f}, {x + d, maxy_f, z + 0.f}, {x + 0.f, maxy_f, z + d}, {x + d, maxy_f, z + d}};
+        const int n = is_ortho ? 4 : 6;
+        for (int i = 0; i < n; i++)
+        {
+            int in = 0, out = 0;
+            for (int j = 0; j < 8; j++)
+            {
+                const float d1 = planes[i][0] * points[j][0] + planes[i][1] * points[j][1] + planes[i][2] * points[j][2] + planes[i][3];
+                if (d1 < 0)
+                {
+                    out++;
+                }
+                else
+                {
+                    in++;
+                }
+                if (in && out)
+                {
+                    break;
+                }
+            }
+
+            if (in == 0)
+            {
+                return false;
+            }
+        }
+        return true;
+    };
+    return visible(planes, p, q, miny, maxy,
+                   active_player->get_configs().view_mode() == player_configs::ViewMode::ORTHO);
 }
 
 int world::chunk_distance(const chunk *c, const int p, const int q) noexcept
 {
-    return c->distance(p, q);
+    auto distance = [](const chunk *c, const int p, const int q)
+    {
+        const int dp = SDL_abs(c->p - p);
+        const int dq = SDL_abs(c->q - q);
+        return SDL_max(dp, dq);
+    };
+    return distance(c, p, q);
 }
 
-void world::load_chunk(const chunk::worker_item *item) const noexcept
+void world::load_chunk(const worker_item *item) const noexcept
 {
-    chunk::load(item, true,
-                active_player ? active_player->pos.x : 0.0f,
-                active_player ? active_player->pos.z : 0.0f,
-                world_heightmap.get(),
-                world_include_decorations,
-                world_load_persisted_blocks);
+    load(item, true,
+         active_player ? active_player->pos.x : 0.0f,
+         active_player ? active_player->pos.z : 0.0f,
+         world_heightmap.get(),
+         world_include_decorations,
+         world_load_persisted_blocks);
 }
 
 void world::init_chunk(chunk *c, const int p, const int q) noexcept

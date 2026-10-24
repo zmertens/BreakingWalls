@@ -1,0 +1,26 @@
+#ifndef WORLD_BUILDER_H
+#define WORLD_BUILDER_H
+
+#include "resource_identifiers.h"
+
+struct world_builder final
+{
+    friend class world;
+
+    world_builder &with_fonts(font_manager &fonts) noexcept;
+    world_builder &with_shaders(shader_manager &shaders) noexcept;
+    world_builder &with_textures(texture_manager &textures) noexcept;
+    world_builder &with_bloom_passes(bloom_pass_manager &bloom_passes) noexcept;
+    world_builder &with_player(player &active_player) noexcept;
+    world_builder &with_sdl(sdl_gl_helper &sdl) noexcept;
+
+private:
+    font_manager *build_fonts{nullptr};
+    shader_manager *build_shaders{nullptr};
+    texture_manager *build_textures{nullptr};
+    bloom_pass_manager *build_bloom_passes{nullptr};
+    player *build_player{nullptr};
+    sdl_gl_helper *build_sdl{nullptr};
+};
+
+#endif // WORLD_BUILDER_H

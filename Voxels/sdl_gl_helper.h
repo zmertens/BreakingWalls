@@ -9,7 +9,6 @@
 
 #include <SDL3/SDL.h>
 
-class player;
 struct chunk;
 struct SDL_Window;
 

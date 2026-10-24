@@ -20,7 +20,7 @@ class editor_world final : public world
     friend class player;
 
 public:
-    editor_world(const world::builder &b);
+    editor_world(const world_builder &b);
     ~editor_world() override;
 
     void init() noexcept override;

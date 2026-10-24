@@ -16,40 +16,29 @@
 #include <bvhv2/thread_pool.h>
 
 #include "bloom_pass.h"
-#include "chunk.h"
 #include "item.h"
-#include "player.h"
 #include "resource_identifiers.h"
 #include "sdl_gl_helper.h"
-#include "craft_map.h"
 #include "heightmap.h"
-
-union SDL_Event;
+#include "player.h"
 
 namespace mazes
 {
     class randomizer;
 }
 
+class craft_map;
+struct chunk;
+struct worker;
+struct worker_item;
+struct world_builder;
+union SDL_Event;
+
 class world
 {
     friend class player;
 
 public:
-    struct builder
-    {
-        builder(font_manager &fonts, shader_manager &shaders,
-                texture_manager &textures, bloom_pass_manager &bloom_passes,
-                player &active_player, sdl_gl_helper &sdl);
-
-        font_manager *build_fonts;
-        shader_manager *build_shaders;
-        texture_manager *build_textures;
-        bloom_pass_manager *build_bloom_passes;
-        player *build_player;
-        sdl_gl_helper *build_sdl;
-    };
-
     // Spatial arithmetic includes negative coordinates and radius offsets.
     static constexpr int CREATE_CHUNK_RADIUS{10};
     static constexpr int RENDER_CHUNK_RADIUS{20};
@@ -68,7 +57,7 @@ public:
     [[nodiscard]] static int chunked(float x) noexcept;
 
 protected:
-    explicit world(const builder &b);
+    explicit world(const world_builder &b);
 
     world(const world &) = delete;
     world &operator=(const world &) = delete;
@@ -85,7 +74,7 @@ protected:
     static void remove_chunk_from_spatial_tree(chunk *c) noexcept;
 
     // Worker functions
-    bool worker_run(chunk::worker *w) const noexcept;
+    bool worker_run(worker *w) const noexcept;
     void init_worker_threads() noexcept;
     void cleanup_worker_threads() noexcept;
 
@@ -118,7 +107,7 @@ protected:
 
     void gen_chunk_buffer(chunk *c) const noexcept;
 
-    void load_chunk(const chunk::worker_item *item) const noexcept;
+    void load_chunk(const worker_item *item) const noexcept;
 
     // Optional constrained terrain; fixed for the lifetime of the world so workers can read it unlocked.
     std::shared_ptr<const heightmap> world_heightmap;
@@ -132,7 +121,7 @@ protected:
     void check_workers() noexcept;
     [[nodiscard]] std::optional<std::pair<int, int>> select_chunk_for_worker(float planes[6][4], int p, int q,
                                                                              int worker_index) const noexcept;
-    void dispatch_chunk_to_worker(chunk::worker *w, int a, int b) noexcept;
+    void dispatch_chunk_to_worker(worker *w, int a, int b) noexcept;
     void ensure_chunks(player *_player) noexcept;
 
     void unset_sign(int x, int y, int z) const noexcept;
@@ -184,7 +173,7 @@ protected:
     player *active_player;
 
     bvh::v2::ThreadPool chunk_thread_pool{};
-    std::vector<std::unique_ptr<chunk::worker>> chunk_workers;
+    std::vector<std::unique_ptr<worker>> chunk_workers;
 
     bloom_pass *const m_bloom;
 };

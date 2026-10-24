@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+
+#include "chunk.h"
 #include "geometries.h"
 #include "shader.h"
 #include "world.h"
