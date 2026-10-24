@@ -56,6 +56,8 @@ public:
     // Used by player for artifact export coordinates
     [[nodiscard]] static int chunked(float x) noexcept;
 
+    static void terrain(worker_item *item) noexcept;
+
 protected:
     explicit world(const world_builder &b);
 
@@ -74,7 +76,7 @@ protected:
     static void remove_chunk_from_spatial_tree(chunk *c) noexcept;
 
     // Worker functions
-    bool worker_run(worker *w) const noexcept;
+    bool worker_run(worker *w, const std::function<void(worker_item *)> &terrain) const noexcept;
     void init_worker_threads() noexcept;
     void cleanup_worker_threads() noexcept;
 
