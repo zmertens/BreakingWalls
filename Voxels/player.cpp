@@ -614,7 +614,10 @@ void player::on_right_click() const noexcept
     {
         if (!world::player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz))
         {
-            current_world->set_block(hx, hy, hz, selected_item_index);
+            if (const int block = get_selected_item_index(); block >= 0)
+            {
+                current_world->set_block(hx, hy, hz, block);
+            }
         }
     }
 }

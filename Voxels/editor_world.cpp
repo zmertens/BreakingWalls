@@ -281,11 +281,15 @@ void editor_world::draw() const noexcept
         const float view[4]{eye.rx, eye.ry,
                             std::tan(active_player->get_configs().fov() * 0.5f * 3.14159265f / 180.0f),
                             static_cast<float>(window_width) / static_cast<float>(std::max(window_height, 1))};
+        const float max_height = world_heightmap ? static_cast<float>(world_heightmap->max_height) : 32.0f;
+        const float ocean[4]{eye.x, eye.y, eye.z, side};
+        const float sea_level = 1.0f + HEIGHTMAP_MATERIALS[0].max_elevation * (max_height - 1.0f) * 0.85f;
         environment.draw(0.0f, 1.0f, 0.0f, 0.0f,
                          1.0f, 1.0f, time_of_day() * static_cast<float>(active_player->get_configs().day_length()),
                          1.0f, 0.0f,
                          side * 0.5f / static_cast<float>(RENDER_CHUNK_RADIUS * BUILD_CHUNK_SIZE),
-                         true, active_player->get_configs().ortho_scaling() ? nullptr : view);
+                         true, active_player->get_configs().ortho_scaling() ? nullptr : view,
+                         ocean, sea_level);
     }
     else
     {
