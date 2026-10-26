@@ -325,6 +325,8 @@ void loading_state::load_resources(mazes::randomizer &rng) const noexcept
     ctx.ctx_sounds->load(SoundIdentifier::GAME_THEME_SONG_1, "SoundFX/GameThemeSong.ogg", 0.f, 1.f, 98.6f, true);
     ctx.ctx_sounds->load(SoundIdentifier::LOADING_THEME_SONG, "SoundFX/loading.ogg", 0.35f, 1.f, 87.215f, true);
     ctx.ctx_sounds->load(SoundIdentifier::BOINK, "SoundFX/boink.ogg", 0.f, 1.f, 23.035f, false);
+    // The physics arena is ~29 units wide: full volume within 4 units, gentle falloff beyond.
+    ctx.ctx_sounds->get(SoundIdentifier::BOINK).set_spatialization(4.0f, 0.5f);
     {
         const auto &configs = ctx.ctx_player->get_configs();
         ctx.ctx_sounds->get(SoundIdentifier::BOINK)
@@ -448,6 +450,31 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
     if (current_editor_world)
     {
         current_editor_world->update_physics(delta_time);
+        const auto impact = current_editor_world->take_pending_impact();
+        if (active)
+        {
+            auto *sounds = ctx.ctx_sounds;
+            const auto &sound_configs = ctx.ctx_player->get_configs();
+            auto &theme = sounds->get(SoundIdentifier::GAME_THEME_SONG_1);
+            if (!theme.is_playing(SoundIdentifier::GAME_THEME_SONG_1))
+            {
+                theme.set_volumes(sound_configs.master_volume(), sound_configs.music_volume(),
+                                  sound_configs.sfx_volume(), sound_configs.mute_audio());
+                theme.play(SoundIdentifier::GAME_THEME_SONG_1);
+            }
+            // One boink per cooldown window, at the impact nearest the player.
+            m_boink_cooldown_ms = std::max(0.0f, m_boink_cooldown_ms - delta_time);
+            if (impact && m_boink_cooldown_ms <= 0.0f)
+            {
+                const auto &eye = ctx.ctx_player->pos;
+                sounds->get(SoundIdentifier::BOINK).set_listener_position(eye.x, eye.y, eye.z);
+                auto &boink = sounds->get(SoundIdentifier::BOINK);
+                boink.set_volumes(sound_configs.master_volume(), sound_configs.music_volume(),
+                                  sound_configs.sfx_volume(), sound_configs.mute_audio());
+                boink.play_at(SoundIdentifier::BOINK, (*impact)[0], (*impact)[1], (*impact)[2]);
+                m_boink_cooldown_ms = 80.0f;
+            }
+        }
     }
     return true;
 }
@@ -840,9 +867,6 @@ void menu_state::draw_player_tab() const noexcept
                                           static_cast<item::BlockType>(active_player->get_selected_item_index()))
                                           .data());
 
-    constexpr ImVec4 heading_color{.354f, .663f, .498f, 1.f};
-    constexpr auto FLIPS_AND_ALE_STR{"{ Flips and Ale }"};
-    ImGui::TextColored(heading_color, "%s\n", FLIPS_AND_ALE_STR);
     const auto &icon = get_context().ctx_textures->get(TextureIdentifier::FLIPS_AND_ALE_ICON);
     if (icon.gl_texture != 0 && icon.width > 0 && icon.height > 0)
     {

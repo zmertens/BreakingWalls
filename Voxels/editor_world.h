@@ -7,6 +7,8 @@
 #include <box3d/box3d.h>
 
 #include <array>
+#include <optional>
+#include <utility>
 #include <cstdint>
 #include <vector>
 
@@ -29,6 +31,11 @@ public:
     void draw() const noexcept override;
     command_queue &get_command_queue() noexcept;
     void update_physics(float delta_time) noexcept;
+    // Nearest-to-player impact point (world space) since the last call, for positional sound effects.
+    [[nodiscard]] std::optional<std::array<float, 3>> take_pending_impact() noexcept
+    {
+        return std::exchange(m_physics_pending_impact, std::nullopt);
+    }
     void draw_physics_controls() const noexcept;
     [[nodiscard]] int rendered_terrain_faces() const noexcept { return m_rendered_terrain_faces; }
 
@@ -105,6 +112,8 @@ private:
     std::vector<physics_object> m_physics_objects;
     std::vector<physics_voxel_source> m_physics_voxel_sources;
     std::uint64_t m_physics_impact_count{};
+    std::optional<std::array<float, 3>> m_physics_pending_impact;
+    float m_physics_pending_impact_distance_sq{};
     std::array<std::uint32_t, 6> m_physics_cube_buffers{};
     std::array<std::uint32_t, 6> m_physics_sphere_buffers{};
     int m_physics_sphere_vertices{};

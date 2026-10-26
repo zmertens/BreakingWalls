@@ -1,5 +1,6 @@
 #include <cmath>
 #include <algorithm>
+#include <span>
 #include "editor_world.h"
 
 #include <MazeBuilder/algos.h>
@@ -162,6 +163,21 @@ void editor_world::init() noexcept
     s_line_attrib.matrix = glGetUniformLocation(s_line_attrib.program, "matrix");
     s_line_attrib.extra1 = glGetUniformLocation(s_line_attrib.program, "color");
 
+    if (m_bloom)
+    {
+        std::array<std::uint32_t, static_cast<std::size_t>(ShaderEffect::COUNT)> transition_programs{};
+        try
+        {
+            transition_programs[static_cast<std::size_t>(ShaderEffect::PIXELATE)] =
+                world_shaders.get(ShaderIdentifier::TRANSITION_PIXELATE_SHADER).get();
+        }
+        catch (const std::exception &error)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Pixelate transition unavailable: %s\n", error.what());
+        }
+        m_bloom->set_transition_programs(transition_programs);
+    }
+
     s_text_attrib.program = world_shaders.get(ShaderIdentifier::TEXT_SHADER).get();
     s_text_attrib.position = 0;
     s_text_attrib.uv = 1;
@@ -233,6 +249,25 @@ void editor_world::update(const float delta_time, mazes::randomizer &rng) noexce
     else
     {
         active_player->set_on_ground(false);
+    }
+
+    // Invisible, unbreakable wall along the terrain/ocean boundary (blocks span +-0.5 around each cell).
+    if (world_heightmap)
+    {
+        constexpr float wall_margin = 0.25f;
+        const float low = -0.5f + wall_margin;
+        const float high = static_cast<float>(world_heightmap->side) - 0.5f - wall_margin;
+        auto &p = active_player->pos;
+        if (p.x < low || p.x > high)
+        {
+            p.x = std::clamp(p.x, low, high);
+            active_player->vel.vx = 0.0f;
+        }
+        if (p.z < low || p.z > high)
+        {
+            p.z = std::clamp(p.z, low, high);
+            active_player->vel.vz = 0.0f;
+        }
     }
 
     delete_chunks();
@@ -333,7 +368,19 @@ void editor_world::draw() const noexcept
 
     const auto &configs{active_player->get_configs()};
     const float bloom_str = configs.use_bloom_effect() ? configs.exposure_val() : 0.0f;
-    m_bloom->execute(bloom_str);
+    // Pixelate the frame more strongly as the player nears the wall, blending terrain into ocean.
+    float blend_progress = 1.0f;
+    if (world_heightmap)
+    {
+        constexpr float blend_distance = 8.0f;
+        const auto &p = active_player->pos;
+        const float side = static_cast<float>(world_heightmap->side);
+        const float edge_distance = std::min({p.x + 0.5f, side - 0.5f - p.x, p.z + 0.5f, side - 0.5f - p.z});
+        const float closeness = std::clamp(edge_distance / blend_distance, 0.0f, 1.0f);
+        blend_progress = 0.5f + 0.5f * closeness;
+    }
+    m_bloom->execute(bloom_str, bloom_pass::BLUR_PASSES, ShaderEffect::PIXELATE, blend_progress,
+                     static_cast<float>(SDL_GetTicks()) / 1000.0f);
 }
 
 command_queue &editor_world::get_command_queue() noexcept
@@ -444,6 +491,22 @@ void editor_world::update_physics(const float delta_time) noexcept
         }
         const auto contacts = b3World_GetContactEvents(m_physics_world);
         m_physics_impact_count += static_cast<std::uint64_t>(contacts.hitCount);
+        const auto &listener = active_player->pos;
+        for (const auto &hit : std::span{contacts.hitEvents, static_cast<std::size_t>(contacts.hitCount)})
+        {
+            const float px = static_cast<float>(hit.point.x), pz = static_cast<float>(hit.point.z);
+            const std::array<float, 3> world_point{m_physics_origin_x + m_physics_right_x * px - m_physics_right_z * pz,
+                                                   static_cast<float>(hit.point.y),
+                                                   m_physics_origin_z + m_physics_right_z * px + m_physics_right_x * pz};
+            const float dx = world_point[0] - listener.x, dy = world_point[1] - listener.y,
+                        dz = world_point[2] - listener.z;
+            const float distance_sq = dx * dx + dy * dy + dz * dz;
+            if (!m_physics_pending_impact || distance_sq < m_physics_pending_impact_distance_sq)
+            {
+                m_physics_pending_impact = world_point;
+                m_physics_pending_impact_distance_sq = distance_sq;
+            }
+        }
         m_physics_step_ticks += t1 - t0;
         if (m_physics_step_counter % 120 == 0)
         {
@@ -499,6 +562,7 @@ void editor_world::reset_physics() noexcept
     m_physics_objects.clear();
     m_physics_accumulator = 0.0f;
     m_physics_impact_count = 0;
+    m_physics_pending_impact.reset();
 
     auto world_def = b3DefaultWorldDef();
     world_def.gravity = {0.0f, -9.8f, 0.0f};

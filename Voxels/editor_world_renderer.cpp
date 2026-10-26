@@ -440,6 +440,70 @@ void editor_world::render_player(const std::uint32_t texture) const noexcept
     sdl_gl_helper::draw_player(&s_block_attrib, player_buffer);
     sdl_gl_helper::del_buffer(player_buffer);
 
+    if (is_third_person && !use_isometric_fx)
+    {
+        // Blob shadow: find the first solid block below the player and draw a dark disc on its top face.
+        const int bx = static_cast<int>(SDL_roundf(px));
+        const int bz = static_cast<int>(SDL_roundf(pz));
+        const auto chunk_opt = find_chunk(chunked(px), chunked(pz));
+        if (chunk_opt.has_value())
+        {
+            const craft_map *map = &chunk_opt.value()->map;
+            constexpr int max_drop = 32;
+            int ground = -1;
+            bool found = false;
+            for (int y = static_cast<int>(SDL_roundf(py)); y >= static_cast<int>(SDL_roundf(py)) - max_drop; --y)
+            {
+                if (item::is_obstacle(map->get(bx, y, bz)))
+                {
+                    ground = y;
+                    found = true;
+                    break;
+                }
+            }
+            if (found)
+            {
+                const float ground_y = static_cast<float>(ground) + 0.5f + 0.01f;
+                const float height = SDL_max(py - ground_y, 0.0f);
+                const float radius = 0.45f / (1.0f + 0.15f * height);
+                const float alpha = SDL_clamp(0.5f - 0.03f * height, 0.1f, 0.5f);
+
+                constexpr int segments = 24;
+                std::array<float, (segments + 2) * 3> verts{};
+                verts[0] = px; verts[1] = ground_y; verts[2] = pz;
+                for (int i = 0; i <= segments; ++i)
+                {
+                    const float a = 2.0f * 3.14159265f * static_cast<float>(i) / segments;
+                    verts[(i + 1) * 3] = px + SDL_cosf(a) * radius;
+                    verts[(i + 1) * 3 + 1] = ground_y;
+                    verts[(i + 1) * 3 + 2] = pz + SDL_sinf(a) * radius;
+                }
+
+                float line_matrix[16];
+                begin_3d_pass(&s_line_attrib, line_matrix);
+                glUniform4f(s_line_attrib.extra1, 0.0f, 0.0f, 0.0f, alpha);
+                GLuint vbo = 0;
+                glGenBuffers(1, &vbo);
+                glBindBuffer(GL_ARRAY_BUFFER, vbo);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts.data(), GL_STREAM_DRAW);
+                glEnableVertexAttribArray(s_line_attrib.position);
+                glVertexAttribPointer(s_line_attrib.position, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glDisable(GL_CULL_FACE);
+                glEnable(GL_POLYGON_OFFSET_FILL);
+                glPolygonOffset(-1.0f, -1.0f);
+                glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
+                glDisable(GL_POLYGON_OFFSET_FILL);
+                glDisable(GL_BLEND);
+                if (cull_was_enabled) glEnable(GL_CULL_FACE);
+                glDisableVertexAttribArray(s_line_attrib.position);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glDeleteBuffers(1, &vbo);
+            }
+        }
+    }
+
     if (use_isometric_fx)
     {
         float line_matrix[16];

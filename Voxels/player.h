@@ -167,7 +167,7 @@ private:
     std::int32_t selected_item_index{0};
     std::int32_t selected_font_index{0};
 
-    std::string my_name{"zm"};
+    std::string my_name{"Flips and Ale"};
 
     world *current_world{nullptr};
 

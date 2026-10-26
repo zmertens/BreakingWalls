@@ -168,6 +168,7 @@ public:
     bool handle_event(SDL_Event &event) noexcept override;
 
 private:
+    float m_boink_cooldown_ms{0.0f};
     player &active_player;
     std::optional<editor_world> current_editor_world;
 };
