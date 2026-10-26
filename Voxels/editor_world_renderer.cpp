@@ -260,41 +260,69 @@ void editor_world::render_physics() const noexcept
     // Physics x/y/z map to the slice's right axis, world up, and depth axis.
     const float rx = m_physics_right_x, rz = m_physics_right_z;
 
-    for (const auto &object : m_physics_objects)
+    // Group by mesh so buffer binding and attribute setup happen once per slot, not once per body.
+    const auto draw_group = [&](const bool sphere, const std::size_t slot, const std::uint32_t buffer, const int count)
     {
-        const auto position = b3Body_GetPosition(object.body);
-        const float px = static_cast<float>(position.x);
-        const float py = static_cast<float>(position.y);
-        const float pz = static_cast<float>(position.z);
-        const float world_x = m_physics_origin_x + rx * px - rz * pz;
-        const float world_z = m_physics_origin_z + rz * px + rx * pz;
-
-        const auto q = b3Body_GetRotation(object.body);
-        const float qx = q.v.x, qy = q.v.y, qz = q.v.z, qw = q.s;
-        // Rotation matrix columns in physics space, then re-expressed in world axes.
-        const float local[3][3]{
-            {1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy + qz * qw), 2 * (qx * qz - qy * qw)},
-            {2 * (qx * qy - qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz + qx * qw)},
-            {2 * (qx * qz + qy * qw), 2 * (qy * qz - qx * qw), 1 - 2 * (qx * qx + qy * qy)}};
-        float transform[16]{};
-        for (int c = 0; c < 3; ++c)
+        bool bound = false;
+        for (const auto &object : m_physics_objects)
         {
-            transform[c * 4] = rx * local[c][0] - rz * local[c][2];
-            transform[c * 4 + 1] = local[c][1];
-            transform[c * 4 + 2] = rz * local[c][0] + rx * local[c][2];
+            if (object.sphere != sphere || static_cast<std::size_t>(object.block_type) != slot)
+                continue;
+            if (!bound)
+            {
+                glBindBuffer(GL_ARRAY_BUFFER, buffer);
+                glEnableVertexAttribArray(s_block_attrib.position);
+                glEnableVertexAttribArray(s_block_attrib.normal);
+                glEnableVertexAttribArray(s_block_attrib.uv);
+                glVertexAttribPointer(s_block_attrib.position, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 10, nullptr);
+                glVertexAttribPointer(s_block_attrib.normal, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 10,
+                                      reinterpret_cast<GLvoid *>(sizeof(GLfloat) * 3));
+                glVertexAttribPointer(s_block_attrib.uv, 4, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 10,
+                                      reinterpret_cast<GLvoid *>(sizeof(GLfloat) * 6));
+                bound = true;
+            }
+            const auto position = b3Body_GetPosition(object.body);
+            const float px = static_cast<float>(position.x);
+            const float py = static_cast<float>(position.y);
+            const float pz = static_cast<float>(position.z);
+            const float world_x = m_physics_origin_x + rx * px - rz * pz;
+            const float world_z = m_physics_origin_z + rz * px + rx * pz;
+
+            const auto q = b3Body_GetRotation(object.body);
+            const float qx = q.v.x, qy = q.v.y, qz = q.v.z, qw = q.s;
+            // Rotation matrix columns in physics space, then re-expressed in world axes.
+            const float local[3][3]{
+                {1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy + qz * qw), 2 * (qx * qz - qy * qw)},
+                {2 * (qx * qy - qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz + qx * qw)},
+                {2 * (qx * qz + qy * qw), 2 * (qy * qz - qx * qw), 1 - 2 * (qx * qx + qy * qy)}};
+            float transform[16]{};
+            for (int c = 0; c < 3; ++c)
+            {
+                transform[c * 4] = rx * local[c][0] - rz * local[c][2];
+                transform[c * 4 + 1] = local[c][1];
+                transform[c * 4 + 2] = rz * local[c][0] + rx * local[c][2];
+            }
+            transform[12] = world_x;
+            transform[13] = py;
+            transform[14] = world_z;
+            transform[15] = 1.0f;
+            float world_matrix[16];
+            matrix::multiply(world_matrix, projection, transform);
+            glUniformMatrix4fv(s_block_attrib.matrix, 1, GL_FALSE, world_matrix);
+            glDrawArrays(GL_TRIANGLES, 0, count);
         }
-        transform[12] = world_x;
-        transform[13] = py;
-        transform[14] = world_z;
-        transform[15] = 1.0f;
-        float world_matrix[16];
-        matrix::multiply(world_matrix, projection, transform);
-        glUniformMatrix4fv(s_block_attrib.matrix, 1, GL_FALSE, world_matrix);
-        const auto slot = static_cast<std::size_t>(object.block_type);
-        if (object.sphere)
-            sdl_gl_helper::draw_item(&s_block_attrib, m_physics_sphere_buffers[slot], m_physics_sphere_vertices);
-        else
-            sdl_gl_helper::draw_cube(&s_block_attrib, m_physics_cube_buffers[slot]);
+        if (bound)
+        {
+            glDisableVertexAttribArray(s_block_attrib.position);
+            glDisableVertexAttribArray(s_block_attrib.normal);
+            glDisableVertexAttribArray(s_block_attrib.uv);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+        }
+    };
+    for (std::size_t slot = 0; slot < m_physics_cube_buffers.size(); ++slot)
+    {
+        draw_group(false, slot, m_physics_cube_buffers[slot], 36);
+        draw_group(true, slot, m_physics_sphere_buffers[slot], m_physics_sphere_vertices);
     }
 }
 

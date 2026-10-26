@@ -109,6 +109,8 @@ private:
     std::array<std::uint32_t, 6> m_physics_sphere_buffers{};
     int m_physics_sphere_vertices{};
     float m_physics_accumulator{};
+    std::uint64_t m_physics_step_counter{};
+    std::uint64_t m_physics_step_ticks{};
     float m_physics_origin_x{};
     float m_physics_origin_z{};
     float m_physics_spawn_height{40.0f};

@@ -423,13 +423,15 @@ void editor_world::update_physics(const float delta_time) noexcept
     }
     if (!m_physics_paused && std::isfinite(dt_seconds) && dt_seconds > 0.0f)
     {
-        // Bounded catch-up so a slow frame cannot snowball into more steps.
-        m_physics_accumulator = std::min(m_physics_accumulator + dt_seconds, 3.0f * PHYSICS_STEP);
-        while (m_physics_accumulator >= PHYSICS_STEP)
+        // One variable-length step per frame: catch-up loops make slow frames slower.
+        const float step = std::min(dt_seconds, 1.0f / 30.0f);
+        const auto t0 = SDL_GetPerformanceCounter();
+        sync_physics_player();
+        b3World_Step(m_physics_world, step, 2);
+        const auto t1 = SDL_GetPerformanceCounter();
+        // Bodies that roll off the arena edge are dropped back in rather than blocked by walls.
+        if (++m_physics_step_counter % 8 == 0)
         {
-            sync_physics_player();
-            b3World_Step(m_physics_world, PHYSICS_STEP, 4);
-            // Bodies that roll off the arena edge are dropped back in rather than blocked by walls.
             for (const auto &object : m_physics_objects)
             {
                 if (b3Body_GetPosition(object.body).y < -10.0f)
@@ -439,9 +441,17 @@ void editor_world::update_physics(const float delta_time) noexcept
                     b3Body_SetAngularVelocity(object.body, {0.0f, 0.0f, 0.0f});
                 }
             }
-            const auto contacts = b3World_GetContactEvents(m_physics_world);
-            m_physics_impact_count += static_cast<std::uint64_t>(contacts.hitCount);
-            m_physics_accumulator -= PHYSICS_STEP;
+        }
+        const auto contacts = b3World_GetContactEvents(m_physics_world);
+        m_physics_impact_count += static_cast<std::uint64_t>(contacts.hitCount);
+        m_physics_step_ticks += t1 - t0;
+        if (m_physics_step_counter % 120 == 0)
+        {
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "b3World_Step avg %.3f ms over 120 steps (%zu bodies)",
+                         static_cast<double>(m_physics_step_ticks) * 1000.0 /
+                             static_cast<double>(SDL_GetPerformanceFrequency()) / 120.0,
+                         m_physics_objects.size());
+            m_physics_step_ticks = 0;
         }
     }
 }
@@ -586,10 +596,12 @@ void editor_world::reset_physics() noexcept
     constexpr float floor_half_width = static_cast<float>(half_columns) + 0.5f;
     constexpr float arena_half_depth = 14.0f;
     // Off-slice terrain: static columns matching the visible voxel heights so bodies don't sink.
+    constexpr int arena_depth = static_cast<int>(arena_half_depth);
     for (int column = 0; column < columns; ++column)
     {
         const int offset = column - half_columns;
-        for (int depth = -static_cast<int>(arena_half_depth); depth <= static_cast<int>(arena_half_depth); ++depth)
+        std::array<int, 2 * arena_depth + 1> heights{};
+        for (int depth = -arena_depth; depth <= arena_depth; ++depth)
         {
             if (depth == 0)
                 continue;
@@ -599,15 +611,27 @@ void editor_world::reset_physics() noexcept
             const int world_z = static_cast<int>(SDL_roundf(
                 m_physics_origin_z + m_physics_right_z * static_cast<float>(offset) +
                 m_physics_right_x * static_cast<float>(depth)));
-            if (!world_heightmap || !world_heightmap->contains(world_x, world_z))
-                continue;
-            const int height = world_heightmap->column_height(world_x, world_z);
-            if (height <= 0)
-                continue;
-            const float half = static_cast<float>(height) * 0.5f;
-            const auto box = b3MakeOffsetBoxHull(0.5f, half, 0.5f,
-                                                 {static_cast<float>(offset), half - 0.5f, static_cast<float>(depth)});
-            b3CreateHullShape(terrain_body, &terrain_shape_def, &box.base);
+            if (world_heightmap && world_heightmap->contains(world_x, world_z))
+                heights[static_cast<std::size_t>(depth + arena_depth)] =
+                    std::max(0, world_heightmap->column_height(world_x, world_z));
+        }
+        // Merge runs of equal height along depth into one box to keep the static broadphase small.
+        for (std::size_t i = 0; i < heights.size();)
+        {
+            const int height = heights[i];
+            const auto run_end = std::find_if(heights.begin() + static_cast<std::ptrdiff_t>(i), heights.end(),
+                                              [height](const int h) { return h != height; });
+            const auto run = static_cast<std::size_t>(run_end - (heights.begin() + static_cast<std::ptrdiff_t>(i)));
+            if (height > 0)
+            {
+                const float half = static_cast<float>(height) * 0.5f;
+                const float run_half = static_cast<float>(run) * 0.5f;
+                const float center_depth = static_cast<float>(static_cast<int>(i) - arena_depth) + run_half - 0.5f;
+                const auto box = b3MakeOffsetBoxHull(0.5f, half, run_half,
+                                                     {static_cast<float>(offset), half - 0.5f, center_depth});
+                b3CreateHullShape(terrain_body, &terrain_shape_def, &box.base);
+            }
+            i += run;
         }
     }
     const auto floor = b3MakeOffsetBoxHull(floor_half_width, 0.05f, arena_half_depth,
