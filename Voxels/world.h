@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "bloom_pass.h"
@@ -152,7 +153,16 @@ protected:
     texture_manager &world_textures;
 
     static constexpr auto MAX_CHUNKS = 8192;
-    std::array<std::array<chunk *, MAX_CHUNKS>, static_cast<std::size_t>(Layer::LAYER_COUNT)> scene_graph_layers;
+    // Layers own their chunks; index 0 of the background layer is the root.
+    std::array<std::array<std::unique_ptr<chunk>, MAX_CHUNKS>, static_cast<std::size_t>(Layer::LAYER_COUNT)> scene_graph_layers;
+
+    // O(1) (p, q) -> chunk lookup; non-owning.
+    [[nodiscard]] static std::uint64_t chunk_key(const int p, const int q) noexcept
+    {
+        return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(p)) << 32) |
+               static_cast<std::uint32_t>(q);
+    }
+    std::unordered_map<std::uint64_t, chunk *> chunk_index;
 
     std::size_t next_chunk_slot_in_view;
 

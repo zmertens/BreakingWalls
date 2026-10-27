@@ -90,7 +90,7 @@ int world::hit_test(const int previous, const float x, const float y, const floa
     const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
     for (std::size_t i = 1; i < next_chunk_slot_in_view; ++i)
     {
-        const chunk *c = background_layer[i];
+        const chunk *c = background_layer[i].get();
         if (c == nullptr || chunk_distance(c, p, q) > 1)
             continue;
         int hx, hy, hz;
@@ -241,7 +241,7 @@ void world::update_dirty_chunks_async() const noexcept
             const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
             for (std::size_t i = 1; i < next_chunk_slot_in_view && i < background_layer.size(); ++i)
             {
-                chunk *c = background_layer[i];
+                chunk *c = background_layer[i].get();
                 if (c == nullptr || !c->dirty)
                     continue;
                 int index = (SDL_abs(c->p) ^ SDL_abs(c->q)) % chunk_workers.size();
@@ -348,7 +348,7 @@ void world::delete_chunks() noexcept
 
     for (std::size_t i = 1; i < count; ++i)
     {
-        chunk *c = background_layer[i];
+        chunk *c = background_layer[i].get();
         if (c == nullptr)
             continue;
         if (chunk_distance(c, p, q) < DELETE_CHUNK_RADIUS)
@@ -356,15 +356,14 @@ void world::delete_chunks() noexcept
 
         detach_chunk_from_layer(c);
         c->release_buffers();
-        delete c;
+        background_layer[i].reset();
 
         --count;
         if (i != count)
         {
-            background_layer[i] = background_layer[count];
+            background_layer[i] = std::move(background_layer[count]);
             --i;
         }
-        background_layer[count] = nullptr;
     }
     this->next_chunk_slot_in_view = count;
 }
@@ -374,13 +373,12 @@ void world::delete_all_chunks() noexcept
     auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
     for (std::size_t i = 1; i < this->next_chunk_slot_in_view; ++i)
     {
-        chunk *c = background_layer[i];
+        chunk *c = background_layer[i].get();
         if (c == nullptr)
             continue;
         detach_chunk_from_layer(c);
         c->release_buffers();
-        delete c;
-        background_layer[i] = nullptr;
+        background_layer[i].reset();
     }
     this->next_chunk_slot_in_view = 1;
     if (background_layer[0] != nullptr)
@@ -447,8 +445,9 @@ void world::force_chunks(player *_player) noexcept
             else if (this->next_chunk_slot_in_view < MAX_CHUNKS)
             {
                 auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-                chunk *c = new chunk{};
-                background_layer[this->next_chunk_slot_in_view] = c;
+                auto owned = std::make_unique<chunk>();
+                chunk *c = owned.get();
+                background_layer[this->next_chunk_slot_in_view] = std::move(owned);
                 ++this->next_chunk_slot_in_view;
                 create_chunk(c, a, b);
                 gen_chunk_buffer(c);
@@ -511,8 +510,9 @@ void world::ensure_chunks_worker(player *_player, worker *w) noexcept
         if (this->next_chunk_slot_in_view < MAX_CHUNKS)
         {
             auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-            c = new chunk{};
-            background_layer[this->next_chunk_slot_in_view] = c;
+            auto owned = std::make_unique<chunk>();
+            c = owned.get();
+            background_layer[this->next_chunk_slot_in_view] = std::move(owned);
             ++this->next_chunk_slot_in_view;
             init_chunk(c, a, b);
         }
@@ -574,18 +574,21 @@ void world::build_scene()
 {
     auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
 
-    chunk *root = new chunk{};
+    auto owned_root = std::make_unique<chunk>();
+    chunk *root = owned_root.get();
     root->bounds_min_x = -10000;
     root->bounds_min_z = -10000;
     root->bounds_max_x = 10000;
     root->bounds_max_z = 10000;
     root->parent = nullptr;
-    background_layer[0] = root;
+    background_layer[0] = std::move(owned_root);
 
-    std::fill(background_layer.begin() + 1, background_layer.end(), nullptr);
+    for (std::size_t i = 1; i < background_layer.size(); ++i)
+        background_layer[i].reset();
+    chunk_index.clear();
 
-    auto &foreground_layer = scene_graph_layers[static_cast<std::size_t>(Layer::FOREGROUND)];
-    std::ranges::fill(foreground_layer, nullptr);
+    for (auto &node : scene_graph_layers[static_cast<std::size_t>(Layer::FOREGROUND)])
+        node.reset();
 }
 
 void world::attach_chunk_to_layer(chunk *c, int layer_index) noexcept
@@ -599,12 +602,17 @@ void world::attach_chunk_to_layer(chunk *c, int layer_index) noexcept
     c->bounds_max_x = (c->p + 1) * CHUNK_SIZE - 1;
     c->bounds_max_z = (c->q + 1) * CHUNK_SIZE - 1;
 
+    chunk_index[chunk_key(c->p, c->q)] = c;
     insert_chunk_into_spatial_tree(c);
 }
 
 void world::detach_chunk_from_layer(chunk *c) noexcept
 {
-    if (c == nullptr || c->parent == nullptr)
+    if (c == nullptr)
+        return;
+    if (const auto it = chunk_index.find(chunk_key(c->p, c->q)); it != chunk_index.end() && it->second == c)
+        chunk_index.erase(it);
+    if (c->parent == nullptr)
         return;
     remove_chunk_from_spatial_tree(c);
 }
@@ -614,7 +622,7 @@ void world::insert_chunk_into_spatial_tree(chunk *c) const noexcept
     if (c == nullptr)
         return;
 
-    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
+    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0).get();
     if (root == nullptr)
         return;
 
@@ -639,7 +647,7 @@ void world::remove_chunk_from_spatial_tree(chunk *c) noexcept
 
 void world::traverse_chunks(const std::function<void(chunk *)> &callback) const noexcept
 {
-    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
+    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0).get();
     if (root == nullptr)
         return;
 
@@ -667,7 +675,7 @@ void world::traverse_chunks_in_bounds(const int min_p, const int min_q, const in
     const int max_x = (max_p + 1) * CHUNK_SIZE - 1;
     const int max_z = (max_q + 1) * CHUNK_SIZE - 1;
 
-    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
+    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0).get();
     if (root == nullptr)
         return;
 
@@ -700,13 +708,8 @@ int world::chunked(const float x) noexcept
 
 std::optional<chunk *> world::find_chunk(const int p, const int q) const noexcept
 {
-    const auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-    for (std::size_t i = 1; i < next_chunk_slot_in_view && i < background_layer.size(); ++i)
-    {
-        chunk *c = background_layer[i];
-        if (c != nullptr && c->p == p && c->q == q)
-            return c;
-    }
+    if (const auto it = chunk_index.find(chunk_key(p, q)); it != chunk_index.end())
+        return it->second;
     return std::nullopt;
 }
 

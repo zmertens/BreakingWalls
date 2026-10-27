@@ -27,9 +27,7 @@ world::~world()
 {
     cleanup_worker_threads();
     delete_all_chunks();
-    auto &root = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)][0];
-    delete root;
-    root = nullptr;
+    scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)][0].reset();
 }
 
 void world::init_voxel_engine() noexcept
