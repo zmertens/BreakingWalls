@@ -17,7 +17,7 @@
 
 #include <SDL3/SDL.h>
 
-#include "db.h"
+#include "db_manager.h"
 #include "font.h"
 #include "heightmap.h"
 #include "player.h"
@@ -126,10 +126,11 @@ namespace
 
 state::context::context(SDL_Window *window, font_manager &fonts, shader_manager &shaders,
                         texture_manager &textures, bloom_pass_manager &bloom_passes,
-                        player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds, artifact_exporter_manager &artifacts)
+                        player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds, artifact_exporter_manager &artifacts,
+                        db_manager &db)
     : ctx_window{window}, ctx_fonts{&fonts}, ctx_shaders{&shaders},
       ctx_textures{&textures}, ctx_bloom_passes{&bloom_passes},
-      ctx_player{&active_player}, ctx_sdl{&sdl}, ctx_sounds{&sounds}, ctx_artifacts{&artifacts}
+      ctx_player{&active_player}, ctx_sdl{&sdl}, ctx_sounds{&sounds}, ctx_artifacts{&artifacts}, ctx_db{&db}
 {
 }
 
@@ -261,6 +262,18 @@ void loading_state::load_resources() const noexcept
 {
     constexpr float font_size = 18.f;
     const auto &ctx = get_context();
+
+    // The connection outlives this state; craft closes it before SDL shuts down.
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+    constexpr auto db_path = ":memory:";
+#else
+    constexpr auto db_path = "breakingwalls.db";
+#endif
+    if (ctx.ctx_db && !ctx.ctx_db->is_open() && !ctx.ctx_db->open(db_path))
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Database initialization failed; progress will not be saved\n");
+    }
+
     ctx.ctx_fonts->load(FontIdentifier::COUSINE_REGULAR, Cousine_Regular_compressed_data, Cousine_Regular_compressed_size, font_size);
     ctx.ctx_fonts->load(FontIdentifier::LIMELIGHT, Limelight_Regular_compressed_data, Limelight_Regular_compressed_size, font_size);
     ctx.ctx_fonts->load(FontIdentifier::NUNITO_SANS, NunitoSans_compressed_data, NunitoSans_compressed_size, font_size);
@@ -401,7 +414,10 @@ void editor_state::rebuild_world() noexcept
 {
     // Only an explicit "Make New World" discards saved edits; normal teardown keeps them.
     current_editor_world.reset();
-    db::flush();
+    if (const auto &ctx = get_context(); ctx.ctx_db)
+    {
+        ctx.ctx_db->flush();
+    }
 }
 
 bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexcept
@@ -417,7 +433,7 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
             configs.show_crosshair_details(true);
             current_editor_world.emplace(ctx.ctx_window, *ctx.ctx_fonts, &active_player,
                                          *ctx.ctx_shaders, *ctx.ctx_textures, ctx.ctx_sdl,
-                                         &ctx.ctx_bloom_passes->get(BloomPassIdentifier::EDITOR));
+                                         &ctx.ctx_bloom_passes->get(BloomPassIdentifier::EDITOR), ctx.ctx_db);
             current_editor_world->init();
             if (active)
             {
@@ -789,7 +805,7 @@ void menu_state::draw_mode_tabs() const noexcept
             params.apply_maze = apply_maze;
             params.maze = configs.maze();
             params.seed = rng.get_int(0, SEED);
-            heightmap_library::instance().add(params);
+            heightmap_library::instance().add(params, get_context().ctx_db);
             rebuild_world_requested = true;
         }
         ImGui::EndTabItem();
@@ -837,10 +853,10 @@ void menu_state::draw_mode_tabs() const noexcept
         ImGui::BeginDisabled(library.entries().empty());
         if (ImGui::Button("Delete Selected"))
         {
-            library.remove(library.selected());
+            library.remove(library.selected(), get_context().ctx_db);
             if (!library.current())
             {
-                library.add(heightmap_params{});
+                library.add(heightmap_params{}, get_context().ctx_db);
             }
             rebuild_world_requested = true;
         }

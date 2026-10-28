@@ -1,5 +1,6 @@
 #include "chunk.h"
 
+#include "db_manager.h"
 #include "geometries.h"
 #include "item.h"
 #include "sdl_gl_helper.h"
@@ -311,7 +312,8 @@ void chunk::generate(worker_item *item) noexcept
 
 void chunk::load(const worker_item *item, const bool enable_heightmap,
                  const float player_x, const float player_z, const heightmap *constrained,
-                 const bool include_decorations, const bool load_persisted_blocks) noexcept
+                 const bool include_decorations, const bool load_persisted_blocks,
+                 db_manager *db) noexcept
 {
     const int p = item->p, q = item->q;
     craft_map *block_map = item->block_maps[1][1];
@@ -324,21 +326,24 @@ void chunk::load(const worker_item *item, const bool enable_heightmap,
         block_map, p, q, world::BUILD_CHUNK_SIZE,
         enable_heightmap, player_x, player_z, flatten_radius, constrained, include_decorations);
 
-    if (load_persisted_blocks)
+    if (load_persisted_blocks && db)
     {
-        db::load_blocks(block_map, p, q);
-        db::load_lights(light_map, p, q);
+        db->load_blocks(block_map, p, q);
+        db->load_lights(light_map, p, q);
     }
 }
 
-void chunk::initialize(const int chunk_p, const int chunk_q) noexcept
+void chunk::initialize(const int chunk_p, const int chunk_q, db_manager *db) noexcept
 {
     p = chunk_p; q = chunk_q;
     faces = 0; sign_faces = 0;
     buffer = 0; sign_buffer = 0;
     dirty = 1;
     db::sign_list_alloc(&signs, 16);
-    db::load_signs(&signs, p, q);
+    if (db)
+    {
+        db->load_signs(&signs, p, q);
+    }
     craft_map *block_map = &map;
     craft_map *light_map = &lights;
     const int dx = p * world::BUILD_CHUNK_SIZE - 1;

@@ -17,6 +17,7 @@
 struct SDL_Window;
 union SDL_Event;
 
+class db_manager;
 class player;
 class sdl_gl_helper;
 
@@ -52,7 +53,8 @@ public:
     {
         context(SDL_Window *window, font_manager &fonts, shader_manager &shaders,
                 texture_manager &textures, bloom_pass_manager &bloom_passes,
-                player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds, artifact_exporter_manager &artifacts);
+                player &active_player, sdl_gl_helper &sdl, soundfx_manager &sounds, artifact_exporter_manager &artifacts,
+                db_manager &db);
 
         SDL_Window *ctx_window;
         font_manager *ctx_fonts;
@@ -63,6 +65,7 @@ public:
         sdl_gl_helper *ctx_sdl;
         soundfx_manager *ctx_sounds;
         artifact_exporter_manager *ctx_artifacts;
+        db_manager *ctx_db;
     };
 
     state(state_stack &stack, const context &context);

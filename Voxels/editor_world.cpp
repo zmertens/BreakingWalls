@@ -7,6 +7,7 @@
 #include <MazeBuilder/randomizer.h>
 #include <MazeBuilder/runtime_app.h>
 
+#include "db_manager.h"
 #include "item.h"
 #include "matrix.h"
 #include "texture.h"
@@ -77,14 +78,14 @@ static std::string gl_error_checker(const char *file, const int line) noexcept
 
 editor_world::editor_world(SDL_Window *window, font_manager &fonts, player *p,
                            shader_manager &shaders, texture_manager &textures,
-                           const sdl_gl_helper *sdl, bloom_pass *bloom)
-    : world{window, fonts, p, shaders, textures, sdl, bloom}
+                           const sdl_gl_helper *sdl, bloom_pass *bloom, db_manager *db)
+    : world{window, fonts, p, shaders, textures, sdl, bloom, db}
 {
     auto &library = heightmap_library::instance();
-    library.ensure_loaded();
+    library.ensure_loaded(world_db);
     if (!library.current())
     {
-        library.add(heightmap_params{});
+        library.add(heightmap_params{}, world_db);
     }
     world_heightmap = library.current();
     if (active_player)

@@ -2,7 +2,7 @@
 #include "world.h"
 #include "chunk_worker.h"
 
-#include "db.h"
+#include "db_manager.h"
 #include "item.h"
 #include "matrix.h"
 #include "sdl_gl_helper.h"
@@ -728,12 +728,13 @@ void world::load_chunk(const worker_item *item) const noexcept
                 active_player ? active_player->pos.z : 0.0f,
                 world_heightmap.get(),
                 world_include_decorations,
-                world_load_persisted_blocks);
+                world_load_persisted_blocks,
+                world_db);
 }
 
 void world::init_chunk(chunk *c, const int p, const int q) noexcept
 {
-    c->initialize(p, q);
+    c->initialize(p, q, world_db);
     dirty_chunk(c);
     attach_chunk_to_layer(c, static_cast<int>(Layer::BACKGROUND));
 }

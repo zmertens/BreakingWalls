@@ -12,11 +12,12 @@
 
 world::world(SDL_Window *, font_manager &fonts, player *p,
              shader_manager &shaders, texture_manager &textures,
-             const sdl_gl_helper *sdl, bloom_pass *bloom)
+             const sdl_gl_helper *sdl, bloom_pass *bloom, db_manager *db)
     : simple_direct_medialayer{sdl}, active_fonts{fonts}, world_shaders{shaders},
       world_textures{textures}, scene_graph_layers{}, next_chunk_slot_in_view{1},
       active_player{p}, m_bloom{bloom}
 {
+    world_db = db;
     if (!m_bloom)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "world: a loaded bloom pass is required");

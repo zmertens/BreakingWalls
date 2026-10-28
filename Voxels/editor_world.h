@@ -22,7 +22,7 @@ class editor_world final : public world
 public:
     editor_world(SDL_Window *window, font_manager &fonts, player *p,
                  shader_manager &shaders, texture_manager &textures,
-                 const sdl_gl_helper *sdl, bloom_pass *bloom);
+                 const sdl_gl_helper *sdl, bloom_pass *bloom, db_manager *db);
     ~editor_world() override;
 
     void init() noexcept override;

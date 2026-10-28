@@ -57,7 +57,8 @@ protected:
                    shader_manager &shaders,
                    texture_manager &textures,
                    const sdl_gl_helper *sdl,
-                   bloom_pass *bloom);
+                   bloom_pass *bloom,
+                   db_manager *db);
 
     world(const world &) = delete;
     world &operator=(const world &) = delete;
@@ -110,6 +111,8 @@ protected:
     std::shared_ptr<const heightmap> world_heightmap;
     bool world_include_decorations{true};
     bool world_load_persisted_blocks{true};
+    // Non-owning; the application keeps it alive for as long as any world exists.
+    db_manager *world_db{nullptr};
     void init_chunk(chunk *c, int p, int q) noexcept;
     void create_chunk(chunk *c, int p, int q) noexcept;
     void delete_chunks() noexcept;
