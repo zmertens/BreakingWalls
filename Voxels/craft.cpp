@@ -294,7 +294,7 @@ bool craft::run(mazes::randomizer &rng) const noexcept
         const auto commit_elapsed = static_cast<double>(current - last_commit) * 1000.0 / perf_frequency;
         if (commit_elapsed > COMMIT_INTERVAL)
         {
-            app.world_db.commit();
+            app->world_db.commit();
             last_commit = current;
         }
 
@@ -336,7 +336,7 @@ bool craft::run(mazes::randomizer &rng) const noexcept
 
     // States are gone, so nothing else touches the database; close it before SDL goes away.
     SDL_Log("Closing database...\n");
-    app.world_db.close();
+    app->world_db.close();
 
     // Cleanup SDL (this must be last)
     SDL_Log("Shutting down SDL...\n");
