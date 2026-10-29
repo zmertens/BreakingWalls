@@ -61,6 +61,26 @@ struct heightmap_params
     mazes::configurator maze{};
 };
 
+/// Wall raster of a maze: (2 * columns + 1) x (2 * rows + 1) pixels; cell (r, c) is pixel (2c + 1, 2r + 1).
+struct maze_layout
+{
+    unsigned int rows{};
+    unsigned int columns{};
+    std::vector<std::uint8_t> walls; // 255 = wall, 0 = open
+
+    [[nodiscard]] int width() const noexcept { return static_cast<int>(columns) * 2 + 1; }
+    [[nodiscard]] int height() const noexcept { return static_cast<int>(rows) * 2 + 1; }
+    [[nodiscard]] bool is_wall(const int x, const int y) const noexcept
+    {
+        return x < 0 || y < 0 || x >= width() || y >= height() ||
+               walls[static_cast<std::size_t>(y) * static_cast<std::size_t>(width()) + static_cast<std::size_t>(x)] != 0u;
+    }
+};
+
+/// Asks the mazes::runtime_app singleton for an OBJ maze and rasterizes its walls.
+/// Returns nullopt if the runtime is unavailable or its output cannot be parsed.
+[[nodiscard]] std::optional<maze_layout> generate_maze_layout(const mazes::configurator &maze, int seed);
+
 /// Writes a grayscale (PGM) maze image under the system temp directory; walls are white.
 [[nodiscard]] std::filesystem::path write_maze_image(const mazes::configurator &maze, int side);
 

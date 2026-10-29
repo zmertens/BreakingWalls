@@ -37,6 +37,10 @@ public:
         return std::exchange(m_physics_pending_impact, std::nullopt);
     }
     void draw_physics_controls() const noexcept;
+    /// Builds a maze from the mazes::runtime_app singleton as static physics walls on a platform in the
+    /// physics slice and drops a dynamic sphere into its first cell. Returns false on failure.
+    /// Walls live in the current physics world, so reset_physics() discards them.
+    bool spawn_physics_maze(const mazes::configurator &maze, int seed) noexcept;
     [[nodiscard]] int rendered_terrain_faces() const noexcept { return m_rendered_terrain_faces; }
 
 private:

@@ -33,6 +33,8 @@ extern "C" {
 
 void seed(unsigned int x);
 
+float noise3(float x, float y, float z);
+
 float simplex2(
     float x, float y,
     int octaves, float persistence, float lacunarity);

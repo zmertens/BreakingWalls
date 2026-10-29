@@ -70,14 +70,7 @@ namespace
         return bytes;
     }
 
-    struct maze_obj
-    {
-        unsigned int rows{};
-        unsigned int columns{};
-        std::vector<std::uint8_t> walls;
-    };
-
-    std::optional<maze_obj> parse_maze_obj(const std::string_view obj)
+    std::optional<maze_layout> parse_maze_obj(const std::string_view obj)
     {
         std::istringstream input{std::string{obj}};
         std::string line;
@@ -115,7 +108,7 @@ namespace
 
         const int width = static_cast<int>(columns) * 2 + 1;
         const int height = static_cast<int>(rows) * 2 + 1;
-        maze_obj result{rows, columns, std::vector<std::uint8_t>(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0u)};
+        maze_layout result{rows, columns, std::vector<std::uint8_t>(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0u)};
         const auto mark = [&](const int x, const int y)
         {
             if (x >= 0 && x < width && y >= 0 && y < height)
@@ -182,45 +175,51 @@ const heightmap_material &heightmap::material_for(const float elevation) noexcep
     return HEIGHTMAP_MATERIALS.back();
 }
 
-std::filesystem::path write_maze_image(const mazes::configurator &config, const int side)
+std::optional<maze_layout> generate_maze_layout(const mazes::configurator &config, const int seed)
 {
-    namespace fs = std::filesystem;
     const auto app = mazes::runtime_app::instance();
     if (!app)
     {
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze image: MazeBuilder runtime is unavailable\n");
-        return {};
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze: MazeBuilder runtime is unavailable\n");
+        return std::nullopt;
     }
 
-    thread_local mazes::randomizer rng{};
     const std::string request = "--rows=" + std::to_string(config.rows()) +
                                 " --columns=" + std::to_string(config.columns()) +
                                 " --levels=1 --algo=" + std::string{mazes::to_sv_from_algo(config.algo_id())} +
-                                " --seed=" + std::to_string(rng.get_int(0, 1'000)) +
+                                " --seed=" + std::to_string(seed) +
                                 " --output=obj";
 
-    // Reconstruct the wall raster from MazeBuilder's Wavefront OBJ output.
-    const auto topo = parse_maze_obj(app->apply(request));
+    // apply() returns a string_view; parse it before the next call can invalidate it.
+    auto layout = parse_maze_obj(app->apply(request));
+    if (!layout)
+        return std::nullopt;
+
+    for (unsigned int row = 0; row < layout->rows; ++row)
+    {
+        for (unsigned int col = 0; col < layout->columns; ++col)
+        {
+            layout->walls[static_cast<std::size_t>(row * 2 + 1) * static_cast<std::size_t>(layout->width()) +
+                          static_cast<std::size_t>(col * 2 + 1)] = 0u;
+        }
+    }
+    return layout;
+}
+
+std::filesystem::path write_maze_image(const mazes::configurator &config, const int side)
+{
+    namespace fs = std::filesystem;
+    thread_local mazes::randomizer rng{};
+    const auto topo = generate_maze_layout(config, rng.get_int(0, 1'000));
     if (!topo)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Maze image: failed to generate maze layout\n");
         return {};
     }
 
-    const int width = static_cast<int>(topo->columns) * 2 + 1;
-    const int height = static_cast<int>(topo->rows) * 2 + 1;
-    auto walls = topo->walls;
-    const auto open = [&](const int x, const int y)
-    { walls[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)] = 0u; };
-    for (unsigned int row = 0; row < topo->rows; ++row)
-    {
-        for (unsigned int col = 0; col < topo->columns; ++col)
-        {
-            const int x = static_cast<int>(col) * 2 + 1;
-            const int y = static_cast<int>(row) * 2 + 1;
-            open(x, y);
-        }
-    }
+    const int width = topo->width();
+    const int height = topo->height();
+    const auto &walls = topo->walls;
 
     std::error_code ec;
     const auto directory = fs::temp_directory_path(ec) / "breakingwalls_maze";

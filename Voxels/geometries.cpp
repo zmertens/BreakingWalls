@@ -427,6 +427,40 @@ void geometries::make_sphere(float *data, float r, int detail) noexcept
     }
 }
 
+namespace
+{
+    // Equivalent to simplex3(x, y, z, 8, 0.5f, 2.0f) > 0.75f, but stops once the
+    // remaining octaves (each bounded by +/-amp) can no longer reach the threshold.
+    bool cloud_density_exceeds(const float x, const float y, const float z) noexcept
+    {
+        constexpr int octaves = 8;
+        constexpr float persistence = 0.5f, lacunarity = 2.0f, threshold = 0.75f;
+        constexpr float bound_margin = 1.05f;
+        float max_total = 0.f, amp = 1.f;
+        for (int i = 0; i < octaves; ++i)
+        {
+            max_total += amp;
+            amp *= persistence;
+        }
+        float freq = 1.f, a = 1.f, max = 1.f;
+        float total = noise3(x, y, z);
+        float remaining = max_total - 1.f;
+        for (int i = 1; i < octaves; ++i)
+        {
+            if ((1.f + (total + remaining * bound_margin) / max_total) / 2.f <= threshold)
+            {
+                return false;
+            }
+            freq *= lacunarity;
+            a *= persistence;
+            max += a;
+            remaining -= a;
+            total += noise3(x * freq, y * freq, z * freq) * a;
+        }
+        return (1.f + total / max) / 2.f > threshold;
+    }
+} // namespace
+
 void geometries::create_voxel_world(const std::function<void(craft_map *, int, int, int, int)> &setter,
                                     craft_map *m, const int p, const int q, const int chunk_size,
                                     bool enable_heightmap,
@@ -484,10 +518,9 @@ void geometries::create_voxel_world(const std::function<void(craft_map *, int, i
                 // Keep constrained heightmaps bounded while preserving the voxel-cloud sky layer.
                 for (int y = 64; include_decorations && y < 72; ++y)
                 {
-                    if (simplex3(static_cast<float>(x) * 0.01f,
-                                 static_cast<float>(y) * 0.1f,
-                                 static_cast<float>(z) * 0.01f,
-                                 8, 0.5f, 2.0f) > 0.75f)
+                    if (cloud_density_exceeds(static_cast<float>(x) * 0.01f,
+                                         static_cast<float>(y) * 0.1f,
+                                         static_cast<float>(z) * 0.01f))
                     {
                         setter(m, x, y, z, static_cast<int>(item::BlockType::CLOUD) * flag);
                     }
@@ -603,13 +636,10 @@ void geometries::create_voxel_world(const std::function<void(craft_map *, int, i
             // clouds
             for (int y = 64; y < 72; y++)
             {
-                if (simplex3(
+                if (cloud_density_exceeds(
                         static_cast<float>(x) * 0.01f,
                         static_cast<float>(y) * 0.1f,
-                        static_cast<float>(z) * 0.01f,
-                        8,
-                        0.5f,
-                        2.0f) > 0.75f)
+                        static_cast<float>(z) * 0.01f))
                 {
                     setter(m, x, y, z, 16 * flag);
                 }

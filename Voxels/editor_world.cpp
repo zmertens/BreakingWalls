@@ -808,6 +808,75 @@ void editor_world::jolt_physics_blocks() noexcept
     }
 }
 
+bool editor_world::spawn_physics_maze(const mazes::configurator &maze, const int seed) noexcept
+{
+    if (!B3_IS_NON_NULL(m_physics_world) || m_physics_objects.size() >= MAX_PHYSICS_OBJECTS)
+        return false;
+
+    // The physics slice is 29 columns wide and 28 deep, so mazes up to 13x13 cells (27x27 pixels) fit.
+    constexpr unsigned int max_cells = 13;
+    if (maze.rows() == 0 || maze.columns() == 0 || maze.rows() > max_cells || maze.columns() > max_cells)
+        return false;
+
+    const auto layout = generate_maze_layout(maze, seed);
+    if (!layout)
+        return false;
+
+    const int width = layout->width();
+    const int height = layout->height();
+    const float half_w = static_cast<float>(width) * 0.5f;
+    const float half_h = static_cast<float>(height) * 0.5f;
+    constexpr float wall_half_height = 1.0f;
+    const float platform_y = m_physics_spawn_height - 3.0f;
+
+    auto static_def = b3DefaultBodyDef();
+    static_def.position = {0.0f, platform_y, 0.0f};
+    const auto body = b3CreateBody(m_physics_world, &static_def);
+    auto shape_def = b3DefaultShapeDef();
+    shape_def.baseMaterial.friction = 0.6f;
+
+    const auto floor = b3MakeOffsetBoxHull(half_w, 0.25f, half_h, {0.0f, -0.75f, 0.0f});
+    b3CreateHullShape(body, &shape_def, &floor.base);
+
+    // One box per horizontal run of wall pixels keeps the shape count small.
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width;)
+        {
+            if (!layout->is_wall(x, y))
+            {
+                ++x;
+                continue;
+            }
+            int end = x;
+            while (end < width && layout->is_wall(end, y))
+                ++end;
+            const float run_half = static_cast<float>(end - x) * 0.5f;
+            const auto box = b3MakeOffsetBoxHull(
+                run_half, wall_half_height, 0.5f,
+                {static_cast<float>(x) + run_half - half_w, wall_half_height - 0.5f,
+                 static_cast<float>(y) + 0.5f - half_h});
+            b3CreateHullShape(body, &shape_def, &box.base);
+            x = end;
+        }
+    }
+
+    // First cell is pixel (1, 1).
+    auto body_def = b3DefaultBodyDef();
+    body_def.type = b3_dynamicBody;
+    body_def.position = {1.5f - half_w, platform_y + 1.0f, 1.5f - half_h};
+    const auto ball = b3CreateBody(m_physics_world, &body_def);
+    auto ball_shape_def = b3DefaultShapeDef();
+    ball_shape_def.density = 10.0f;
+    ball_shape_def.baseMaterial.friction = 0.2f;
+    ball_shape_def.baseMaterial.restitution = 0.2f;
+    ball_shape_def.enableHitEvents = true;
+    const b3Sphere sphere{{0.0f, 0.0f, 0.0f}, 0.4f};
+    b3CreateSphereShape(ball, &ball_shape_def, &sphere);
+    m_physics_objects.push_back({ball, true, 4, {1.0f, 1.0f, 1.0f}});
+    return true;
+}
+
 void editor_world::add_physics_object(const bool sphere) noexcept
 {
     if (m_physics_objects.size() >= MAX_PHYSICS_OBJECTS)
