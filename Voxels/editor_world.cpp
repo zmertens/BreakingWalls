@@ -474,6 +474,7 @@ void editor_world::update_physics(const float delta_time) noexcept
         const float step = std::min(dt_seconds, 1.0f / 30.0f);
         const auto t0 = SDL_GetPerformanceCounter();
         sync_physics_player();
+        steer_maze_bodies(step);
         b3World_Step(m_physics_world, step, 2);
         const auto t1 = SDL_GetPerformanceCounter();
         // Bodies that roll off the arena edge are dropped back in rather than blocked by walls.
@@ -560,6 +561,7 @@ void editor_world::reset_physics() noexcept
     if (B3_IS_NON_NULL(m_physics_world))
         b3DestroyWorld(m_physics_world);
     m_physics_objects.clear();
+    m_maze_flow = {};
     m_physics_accumulator = 0.0f;
     m_physics_impact_count = 0;
     m_physics_pending_impact.reset();
@@ -808,7 +810,38 @@ void editor_world::jolt_physics_blocks() noexcept
     }
 }
 
-bool editor_world::spawn_physics_maze(const mazes::configurator &maze, const int seed) noexcept
+void editor_world::steer_maze_bodies(const float dt_seconds) noexcept
+{
+    if (m_maze_flow.empty())
+        return;
+    constexpr float roll_speed = 3.0f;
+    const float blend = std::min(1.0f, 4.0f * dt_seconds);
+    for (const auto &object : m_physics_objects)
+    {
+        if (!object.follows_maze_path)
+            continue;
+        const auto position = b3Body_GetPosition(object.body);
+        const float px = static_cast<float>(position.x) + m_maze_half_w;
+        const float py = static_cast<float>(position.z) + m_maze_half_h;
+        const float remaining = m_maze_flow.sample(px, py);
+        if (remaining >= 0.0f && remaining < 0.75f)
+        {
+            b3Body_SetTransform(object.body, {object.spawn[0], object.spawn[1], object.spawn[2]}, b3Quat_identity);
+            b3Body_SetLinearVelocity(object.body, {0.0f, 0.0f, 0.0f});
+            b3Body_SetAngularVelocity(object.body, {0.0f, 0.0f, 0.0f});
+            continue;
+        }
+        const auto heading = m_maze_flow.direction(px, py);
+        auto velocity = b3Body_GetLinearVelocity(object.body);
+        // Steer only the horizontal velocity; gravity and collisions keep control of y.
+        velocity.x += (heading[0] * roll_speed - velocity.x) * blend;
+        velocity.z += (heading[1] * roll_speed - velocity.z) * blend;
+        b3Body_SetAwake(object.body, true);
+        b3Body_SetLinearVelocity(object.body, velocity);
+    }
+}
+
+bool editor_world::spawn_physics_maze(const mazes::configurator &maze, const int seed, const int body_count) noexcept
 {
     if (!B3_IS_NON_NULL(m_physics_world) || m_physics_objects.size() >= MAX_PHYSICS_OBJECTS)
         return false;
@@ -861,19 +894,46 @@ bool editor_world::spawn_physics_maze(const mazes::configurator &maze, const int
         }
     }
 
-    // First cell is pixel (1, 1).
-    auto body_def = b3DefaultBodyDef();
-    body_def.type = b3_dynamicBody;
-    body_def.position = {1.5f - half_w, platform_y + 1.0f, 1.5f - half_h};
-    const auto ball = b3CreateBody(m_physics_world, &body_def);
-    auto ball_shape_def = b3DefaultShapeDef();
-    ball_shape_def.density = 10.0f;
-    ball_shape_def.baseMaterial.friction = 0.2f;
-    ball_shape_def.baseMaterial.restitution = 0.2f;
-    ball_shape_def.enableHitEvents = true;
-    const b3Sphere sphere{{0.0f, 0.0f, 0.0f}, 0.4f};
-    b3CreateSphereShape(ball, &ball_shape_def, &sphere);
-    m_physics_objects.push_back({ball, true, 4, {1.0f, 1.0f, 1.0f}});
+    // Goal is the last cell; followers start in the cells farthest from it, spread across that set.
+    const int goal_x = width - 2, goal_y = height - 2;
+    m_maze_flow = build_maze_flow_field(*layout, goal_x, goal_y);
+    m_maze_half_w = half_w;
+    m_maze_half_h = half_h;
+    m_maze_platform_y = platform_y;
+
+    std::vector<std::pair<float, std::pair<int, int>>> cells;
+    for (unsigned int row = 0; row < layout->rows; ++row)
+    {
+        for (unsigned int col = 0; col < layout->columns; ++col)
+        {
+            const int x = static_cast<int>(col) * 2 + 1, y = static_cast<int>(row) * 2 + 1;
+            if (const float d = m_maze_flow.at(x, y); d > 0.0f)
+                cells.push_back({d, {x, y}});
+        }
+    }
+    if (cells.empty())
+        return false;
+    std::ranges::sort(cells, [](const auto &l, const auto &r) { return l.first > r.first; });
+    const std::size_t pool = std::max<std::size_t>(1, cells.size() / 2);
+    const auto count = static_cast<std::size_t>(std::max(1, body_count));
+    for (std::size_t i = 0; i < count && m_physics_objects.size() < MAX_PHYSICS_OBJECTS; ++i)
+    {
+        const auto &[px, py] = cells[i * pool / count].second;
+        const std::array<float, 3> spawn{static_cast<float>(px) + 0.5f - half_w, platform_y + 1.0f,
+                                         static_cast<float>(py) + 0.5f - half_h};
+        auto body_def = b3DefaultBodyDef();
+        body_def.type = b3_dynamicBody;
+        body_def.position = {spawn[0], spawn[1], spawn[2]};
+        const auto ball = b3CreateBody(m_physics_world, &body_def);
+        auto ball_shape_def = b3DefaultShapeDef();
+        ball_shape_def.density = 10.0f;
+        ball_shape_def.baseMaterial.friction = 0.2f;
+        ball_shape_def.baseMaterial.restitution = 0.2f;
+        ball_shape_def.enableHitEvents = true;
+        const b3Sphere sphere{{0.0f, 0.0f, 0.0f}, 0.4f};
+        b3CreateSphereShape(ball, &ball_shape_def, &sphere);
+        m_physics_objects.push_back({ball, true, 4, {1.0f, 0.4f, 0.2f}, true, spawn});
+    }
     return true;
 }
 

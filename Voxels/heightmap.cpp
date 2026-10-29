@@ -206,6 +206,83 @@ std::optional<maze_layout> generate_maze_layout(const mazes::configurator &confi
     return layout;
 }
 
+float maze_flow_field::at(const int x, const int y) const noexcept
+{
+    if (x < 0 || y < 0 || x >= width || y >= height)
+        return -1.0f;
+    return distance[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)];
+}
+
+float maze_flow_field::sample(const float x, const float y) const noexcept
+{
+    const float fx = x - 0.5f, fy = y - 0.5f;
+    const int x0 = static_cast<int>(std::floor(fx)), y0 = static_cast<int>(std::floor(fy));
+    const float tx = fx - static_cast<float>(x0), ty = fy - static_cast<float>(y0);
+    float sum = 0.0f, weight = 0.0f;
+    // Only open corners contribute, so walls never pull the heading into them.
+    for (int j = 0; j < 2; ++j)
+    {
+        for (int i = 0; i < 2; ++i)
+        {
+            const float d = at(x0 + i, y0 + j);
+            if (d < 0.0f)
+                continue;
+            const float w = (i ? tx : 1.0f - tx) * (j ? ty : 1.0f - ty);
+            sum += d * w;
+            weight += w;
+        }
+    }
+    return weight > 1e-4f ? sum / weight : -1.0f;
+}
+
+std::array<float, 2> maze_flow_field::direction(const float x, const float y) const noexcept
+{
+    constexpr float eps = 0.5f;
+    const float here = sample(x, y);
+    if (here <= 0.0f)
+        return {0.0f, 0.0f};
+    // Missing neighbours fall back to the centre value so the gradient stays inside the corridor.
+    const auto probe = [&](const float px, const float py)
+    {
+        const float d = sample(px, py);
+        return d < 0.0f ? here : d;
+    };
+    const float gx = probe(x + eps, y) - probe(x - eps, y);
+    const float gy = probe(x, y + eps) - probe(x, y - eps);
+    const float length = std::sqrt(gx * gx + gy * gy);
+    if (length < 1e-4f)
+        return {0.0f, 0.0f};
+    return {-gx / length, -gy / length};
+}
+
+maze_flow_field build_maze_flow_field(const maze_layout &layout, const int goal_x, const int goal_y)
+{
+    maze_flow_field field;
+    field.width = layout.width();
+    field.height = layout.height();
+    field.distance.assign(static_cast<std::size_t>(field.width) * static_cast<std::size_t>(field.height), -1.0f);
+    if (layout.is_wall(goal_x, goal_y))
+        return field;
+
+    std::vector<std::pair<int, int>> queue{{goal_x, goal_y}};
+    field.distance[static_cast<std::size_t>(goal_y) * static_cast<std::size_t>(field.width) + static_cast<std::size_t>(goal_x)] = 0.0f;
+    for (std::size_t head = 0; head < queue.size(); ++head)
+    {
+        const auto [x, y] = queue[head];
+        const float next = field.at(x, y) + 1.0f;
+        constexpr int offsets[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (const auto &o : offsets)
+        {
+            const int nx = x + o[0], ny = y + o[1];
+            if (layout.is_wall(nx, ny) || field.at(nx, ny) >= 0.0f)
+                continue;
+            field.distance[static_cast<std::size_t>(ny) * static_cast<std::size_t>(field.width) + static_cast<std::size_t>(nx)] = next;
+            queue.emplace_back(nx, ny);
+        }
+    }
+    return field;
+}
+
 std::filesystem::path write_maze_image(const mazes::configurator &config, const int side)
 {
     namespace fs = std::filesystem;

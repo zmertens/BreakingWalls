@@ -81,6 +81,25 @@ struct maze_layout
 /// Returns nullopt if the runtime is unavailable or its output cannot be parsed.
 [[nodiscard]] std::optional<maze_layout> generate_maze_layout(const mazes::configurator &maze, int seed);
 
+/// Distance-to-goal field over a maze raster, interpolated bilinearly between open pixels.
+/// Following `direction` downhill walks the shortest corridor path with a smooth heading.
+struct maze_flow_field
+{
+    int width{0};
+    int height{0};
+    std::vector<float> distance; // pixels to goal; negative for walls and unreachable pixels
+
+    [[nodiscard]] bool empty() const noexcept { return distance.empty(); }
+    [[nodiscard]] float at(int x, int y) const noexcept;
+    /// Continuous position; pixel (x, y) has its centre at (x + 0.5, y + 0.5). Negative if no open pixel is near.
+    [[nodiscard]] float sample(float x, float y) const noexcept;
+    /// Unit vector (x, y) pointing toward the goal, or (0, 0) at the goal or inside solid wall.
+    [[nodiscard]] std::array<float, 2> direction(float x, float y) const noexcept;
+};
+
+/// Breadth-first (4-connected) distance field from pixel (goal_x, goal_y).
+[[nodiscard]] maze_flow_field build_maze_flow_field(const maze_layout &layout, int goal_x, int goal_y);
+
 /// Writes a grayscale (PGM) maze image under the system temp directory; walls are white.
 [[nodiscard]] std::filesystem::path write_maze_image(const mazes::configurator &maze, int side);
 

@@ -2,6 +2,7 @@
 #define EDITOR_WORLD_H
 
 #include "game_environment.h"
+#include "heightmap.h"
 #include "world.h"
 
 #include <box3d/box3d.h>
@@ -40,7 +41,9 @@ public:
     /// Builds a maze from the mazes::runtime_app singleton as static physics walls on a platform in the
     /// physics slice and drops a dynamic sphere into its first cell. Returns false on failure.
     /// Walls live in the current physics world, so reset_physics() discards them.
-    bool spawn_physics_maze(const mazes::configurator &maze, int seed) noexcept;
+    /// `body_count` spheres start in the cells farthest from the goal (the last cell) and roll along the
+    /// shortest path to it, acting as moving obstacles; they restart at their spawn cell on arrival.
+    bool spawn_physics_maze(const mazes::configurator &maze, int seed, int body_count = 3) noexcept;
     [[nodiscard]] int rendered_terrain_faces() const noexcept { return m_rendered_terrain_faces; }
 
 private:
@@ -84,6 +87,8 @@ private:
         bool sphere{false};
         int block_type{};
         std::array<float, 3> color{};
+        bool follows_maze_path{false};
+        std::array<float, 3> spawn{}; // where a path follower restarts after reaching the goal
     };
 
     struct physics_voxel_source
@@ -136,8 +141,14 @@ private:
     mutable bool m_add_physics_sphere_requested{false};
     mutable bool m_physics_jolt_requested{false};
     std::uint32_t m_physics_jolt_seed{1};
+    // Maze flow field in pixels; pixel (x, y) maps to physics-plane (x - half_w, y - half_h).
+    maze_flow_field m_maze_flow;
+    float m_maze_half_w{};
+    float m_maze_half_h{};
+    float m_maze_platform_y{};
 
     void jolt_physics_blocks() noexcept;
+    void steer_maze_bodies(float dt_seconds) noexcept;
     // Plane coordinates of a world point: along the slice, and distance from it.
     [[nodiscard]] std::pair<float, float> physics_plane_coords(float x, float z) const noexcept;
     void sync_physics_player() noexcept;
