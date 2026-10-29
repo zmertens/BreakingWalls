@@ -244,7 +244,7 @@ void editor_world::render_held_stick(const std::uint32_t texture) const noexcept
 
 void editor_world::render_physics() const noexcept
 {
-    if (m_physics_objects.empty() || !B3_IS_NON_NULL(m_physics_world))
+    if ((m_physics_objects.empty() && m_maze_walls.empty()) || !B3_IS_NON_NULL(m_physics_world))
         return;
 
     float projection[16];
@@ -319,6 +319,46 @@ void editor_world::render_physics() const noexcept
             glBindBuffer(GL_ARRAY_BUFFER, 0);
         }
     };
+    // Maze walls are two stone cubes tall, in the same physics-plane frame as the bodies.
+    if (!m_maze_walls.empty())
+    {
+        constexpr std::size_t wall_slot = 2;
+        glBindBuffer(GL_ARRAY_BUFFER, m_physics_cube_buffers[wall_slot]);
+        glEnableVertexAttribArray(s_block_attrib.position);
+        glEnableVertexAttribArray(s_block_attrib.normal);
+        glEnableVertexAttribArray(s_block_attrib.uv);
+        glVertexAttribPointer(s_block_attrib.position, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 10, nullptr);
+        glVertexAttribPointer(s_block_attrib.normal, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 10,
+                              reinterpret_cast<GLvoid *>(sizeof(GLfloat) * 3));
+        glVertexAttribPointer(s_block_attrib.uv, 4, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 10,
+                              reinterpret_cast<GLvoid *>(sizeof(GLfloat) * 6));
+        for (const auto &[wx, wy] : m_maze_walls)
+        {
+            const float px = static_cast<float>(wx) + 0.5f - m_maze_half_w;
+            const float pz = static_cast<float>(wy) + 0.5f - m_maze_half_h;
+            for (int layer = 0; layer < 2; ++layer)
+            {
+                float transform[16]{};
+                transform[0] = rx;
+                transform[2] = rz;
+                transform[5] = 1.0f;
+                transform[8] = -rz;
+                transform[10] = rx;
+                transform[12] = m_physics_origin_x + rx * px - rz * pz;
+                transform[13] = m_maze_platform_y + static_cast<float>(layer);
+                transform[14] = m_physics_origin_z + rz * px + rx * pz;
+                transform[15] = 1.0f;
+                float world_matrix[16];
+                matrix::multiply(world_matrix, projection, transform);
+                glUniformMatrix4fv(s_block_attrib.matrix, 1, GL_FALSE, world_matrix);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+            }
+        }
+        glDisableVertexAttribArray(s_block_attrib.position);
+        glDisableVertexAttribArray(s_block_attrib.normal);
+        glDisableVertexAttribArray(s_block_attrib.uv);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
     for (std::size_t slot = 0; slot < m_physics_cube_buffers.size(); ++slot)
     {
         draw_group(false, slot, m_physics_cube_buffers[slot], 36);
@@ -329,32 +369,13 @@ void editor_world::render_physics() const noexcept
 void editor_world::draw_physics_controls() const noexcept
 {
     ImGui::Checkbox("Paused", &m_physics_paused);
-    ImGui::Text("Blocks: %zu  Spheres: %zu  /  %zu",
-                static_cast<std::size_t>(std::ranges::count_if(
-                    m_physics_objects, [](const physics_object &object) { return !object.sphere; })),
-                static_cast<std::size_t>(std::ranges::count_if(
-                    m_physics_objects, [](const physics_object &object) { return object.sphere; })),
-                MAX_PHYSICS_OBJECTS);
+    ImGui::Text("Path followers: %zu  Wall cells: %zu",
+                m_physics_objects.size(), m_maze_walls.size());
     ImGui::Text("Collision impacts: %llu",
                 static_cast<unsigned long long>(m_physics_impact_count));
-    if (m_physics_objects.size() < MAX_PHYSICS_OBJECTS)
-    {
-        if (ImGui::Button("Add block"))
-            m_add_physics_block_requested = true;
-        ImGui::SameLine();
-        const auto sphere_count = std::ranges::count_if(
-            m_physics_objects, [](const physics_object &object) { return object.sphere; });
-        ImGui::BeginDisabled(sphere_count >= MAX_PHYSICS_SPHERES);
-        if (ImGui::Button("Add sphere"))
-            m_add_physics_sphere_requested = true;
-        ImGui::EndDisabled();
-    }
-    if (ImGui::Button("Jolt blocks"))
-        m_physics_jolt_requested = true;
-    ImGui::SameLine();
-    if (ImGui::Button("Reset stack"))
+    if (ImGui::Button("New maze"))
         m_physics_reset_requested = true;
-    ImGui::TextUnformatted("Heightmap voxels above y=1 are dynamic; y=0 and y=1 stay fixed.");
+    ImGui::TextUnformatted("Spheres roll the shortest path to the maze goal and restart on arrival.");
 }
 
 void editor_world::render_player(const std::uint32_t texture) const noexcept

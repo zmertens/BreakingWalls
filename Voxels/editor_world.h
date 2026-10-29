@@ -91,14 +91,6 @@ private:
         std::array<float, 3> spawn{}; // where a path follower restarts after reaching the goal
     };
 
-    struct physics_voxel_source
-    {
-        int x{};
-        int y{};
-        int z{};
-        int block_type{};
-    };
-
     // Spring-damper "soft body" that trails the player so the third-person model wobbles, leans and squashes.
     struct player_body
     {
@@ -113,13 +105,12 @@ private:
     void update_player_body(float dt_seconds) noexcept;
 
     static constexpr std::size_t MAX_PHYSICS_OBJECTS = 4096;
-    static constexpr std::size_t MAX_PHYSICS_SPHERES = 64;
+    static constexpr int MAZE_HEADING_SCALE = 2;
     static constexpr float PHYSICS_STEP = 1.0f / 60.0f;
     b3WorldId m_physics_world{b3_nullWorldId};
     // Kinematic capsule that mirrors the player while they are inside the physics slice.
     b3BodyId m_physics_player{b3_nullBodyId};
     std::vector<physics_object> m_physics_objects;
-    std::vector<physics_voxel_source> m_physics_voxel_sources;
     std::uint64_t m_physics_impact_count{};
     std::optional<std::array<float, 3>> m_physics_pending_impact;
     float m_physics_pending_impact_distance_sq{};
@@ -131,32 +122,33 @@ private:
     std::uint64_t m_physics_step_ticks{};
     float m_physics_origin_x{};
     float m_physics_origin_z{};
-    float m_physics_spawn_height{40.0f};
     float m_physics_right_x{1.0f};
     float m_physics_right_z{};
     float m_physics_yaw{};
     mutable bool m_physics_paused{false};
     mutable bool m_physics_reset_requested{false};
-    mutable bool m_add_physics_block_requested{false};
-    mutable bool m_add_physics_sphere_requested{false};
-    mutable bool m_physics_jolt_requested{false};
-    std::uint32_t m_physics_jolt_seed{1};
+    int m_physics_maze_seed{1};
+    struct maze_heading
+    {
+        float x{}, y{};
+        bool goal{false};
+    };
+    std::vector<maze_heading> m_maze_headings; // MAZE_HEADING_SCALE^2 samples per maze pixel
+    std::vector<std::pair<int, int>> m_maze_walls; // wall pixels, for rendering
     // Maze flow field in pixels; pixel (x, y) maps to physics-plane (x - half_w, y - half_h).
     maze_flow_field m_maze_flow;
     float m_maze_half_w{};
     float m_maze_half_h{};
     float m_maze_platform_y{};
 
-    void jolt_physics_blocks() noexcept;
     void steer_maze_bodies(float dt_seconds) noexcept;
     // Plane coordinates of a world point: along the slice, and distance from it.
     [[nodiscard]] std::pair<float, float> physics_plane_coords(float x, float z) const noexcept;
     void sync_physics_player() noexcept;
     void support_player_on_physics() noexcept;
+    [[nodiscard]] bool player_in_maze(float along, float depth) const noexcept;
 
     void reset_physics() noexcept;
-    void add_physics_object(bool sphere) noexcept;
-    void restore_physics_voxels() noexcept;
 };
 
 #endif // EDITOR_WORLD_H

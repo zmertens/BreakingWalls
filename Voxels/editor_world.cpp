@@ -38,8 +38,6 @@ namespace
     // The player's position is the eye; the voxel collider puts the feet this far below it.
     constexpr float PLAYER_FEET_OFFSET = 1.25f;
     constexpr float PLAYER_RADIUS = 0.4f;
-    // Half the slice thickness plus the capsule radius, plus a little margin.
-    constexpr float PLAYER_SLICE_REACH = 14.0f + PLAYER_RADIUS;
     constexpr std::uint64_t PLAYER_CATEGORY = 0x2;
 }
 
@@ -97,7 +95,6 @@ editor_world::~editor_world()
 {
     // Workers read player settings and must finish before the player is detached.
     cleanup_worker_threads();
-    restore_physics_voxels();
     if (B3_IS_NON_NULL(m_physics_world))
         b3DestroyWorld(m_physics_world);
     for (const auto buffer : m_physics_cube_buffers)
@@ -154,7 +151,7 @@ void editor_world::init() noexcept
         m_physics_cube_buffers[i] = sdl_gl_helper::gen_cube_buffer(
             0, 0, 0, i < HEIGHTMAP_MATERIALS.size() ? 0.5f : 0.45f, block_types[i]);
         m_physics_sphere_buffers[i] =
-            sdl_gl_helper::gen_voxel_sphere_buffer(0.65f, 7, block_types[i], m_physics_sphere_vertices);
+            sdl_gl_helper::gen_voxel_sphere_buffer(0.4f, 7, block_types[i], m_physics_sphere_vertices);
     }
     reset_physics();
 
@@ -450,23 +447,6 @@ void editor_world::update_physics(const float delta_time) noexcept
     {
         reset_physics();
         m_physics_reset_requested = false;
-        m_add_physics_block_requested = false;
-        m_add_physics_sphere_requested = false;
-    }
-    if (m_physics_jolt_requested)
-    {
-        jolt_physics_blocks();
-        m_physics_jolt_requested = false;
-    }
-    if (m_add_physics_block_requested)
-    {
-        add_physics_object(false);
-        m_add_physics_block_requested = false;
-    }
-    if (m_add_physics_sphere_requested)
-    {
-        add_physics_object(true);
-        m_add_physics_sphere_requested = false;
     }
     if (!m_physics_paused && std::isfinite(dt_seconds) && dt_seconds > 0.0f)
     {
@@ -477,19 +457,7 @@ void editor_world::update_physics(const float delta_time) noexcept
         steer_maze_bodies(step);
         b3World_Step(m_physics_world, step, 2);
         const auto t1 = SDL_GetPerformanceCounter();
-        // Bodies that roll off the arena edge are dropped back in rather than blocked by walls.
-        if (++m_physics_step_counter % 8 == 0)
-        {
-            for (const auto &object : m_physics_objects)
-            {
-                if (b3Body_GetPosition(object.body).y < -10.0f)
-                {
-                    b3Body_SetTransform(object.body, {0.0f, m_physics_spawn_height, 0.0f}, b3Quat_identity);
-                    b3Body_SetLinearVelocity(object.body, {0.0f, 0.0f, 0.0f});
-                    b3Body_SetAngularVelocity(object.body, {0.0f, 0.0f, 0.0f});
-                }
-            }
-        }
+        ++m_physics_step_counter;
         const auto contacts = b3World_GetContactEvents(m_physics_world);
         m_physics_impact_count += static_cast<std::uint64_t>(contacts.hitCount);
         const auto &listener = active_player->pos;
@@ -557,11 +525,12 @@ void editor_world::handle_event(const SDL_Event &event) noexcept
 
 void editor_world::reset_physics() noexcept
 {
-    restore_physics_voxels();
     if (B3_IS_NON_NULL(m_physics_world))
         b3DestroyWorld(m_physics_world);
     m_physics_objects.clear();
     m_maze_flow = {};
+    m_maze_headings.clear();
+    m_maze_walls.clear();
     m_physics_accumulator = 0.0f;
     m_physics_impact_count = 0;
     m_physics_pending_impact.reset();
@@ -584,148 +553,13 @@ void editor_world::reset_physics() noexcept
     const b3Capsule player_capsule{{0.0f, -PLAYER_FEET_OFFSET + PLAYER_RADIUS, 0.0f}, {0.0f, 0.2f, 0.0f}, PLAYER_RADIUS};
     b3CreateCapsuleShape(m_physics_player, &player_shape_def, &player_capsule);
 
-    auto terrain_shape_def = b3DefaultShapeDef();
-    terrain_shape_def.baseMaterial.friction = 0.85f;
-    auto terrain_body_def = b3DefaultBodyDef();
-    const auto terrain_body = b3CreateBody(m_physics_world, &terrain_body_def);
-    constexpr int half_columns = 14;
-    constexpr int columns = half_columns * 2 + 1;
-    std::array<int, columns> terrain_materials{};
-    int maximum_height = 1;
-    m_physics_objects.reserve(MAX_PHYSICS_OBJECTS);
-    m_physics_voxel_sources.reserve(MAX_PHYSICS_OBJECTS);
-
-    for (int column = 0; column < columns; ++column)
-    {
-        const int offset = column - half_columns;
-        const int world_x = static_cast<int>(
-            SDL_roundf(m_physics_origin_x + m_physics_right_x * static_cast<float>(offset)));
-        const int world_z = static_cast<int>(
-            SDL_roundf(m_physics_origin_z + m_physics_right_z * static_cast<float>(offset)));
-        const bool inside = world_heightmap && world_heightmap->contains(world_x, world_z);
-        const int height = inside ? world_heightmap->column_height(world_x, world_z) : 0;
-        maximum_height = std::max(maximum_height, height);
-        terrain_materials[static_cast<std::size_t>(column)] =
-            inside ? static_cast<int>(&heightmap::material_for(world_heightmap->elevation(world_x, world_z)) -
-                                      HEIGHTMAP_MATERIALS.data())
-                   : 0;
-
-        if (height <= 0)
-            continue;
-
-        const auto foundation_at = [&](const float y)
-        {
-            const auto box = b3MakeOffsetBoxHull(0.5f, 0.5f, 0.5f,
-                                                 {static_cast<float>(offset), y, 0.0f});
-            b3CreateHullShape(terrain_body, &terrain_shape_def, &box.base);
-        };
-        foundation_at(0.0f);
-        if (height > 1)
-            foundation_at(1.0f);
-
-        const auto source_chunk = find_chunk(chunked(static_cast<float>(world_x)),
-                                             chunked(static_cast<float>(world_z)));
-        if (!inside || !source_chunk)
-            continue;
-
-        for (int y = 2; y < height; ++y)
-        {
-            const int block_type = y == height - 1
-                                       ? heightmap::material_for(world_heightmap->elevation(world_x, world_z)).block
-                                       : static_cast<int>(item::BlockType::STONE);
-            if (get_block(world_x, y, world_z) != block_type ||
-                !source_chunk.value()->map.set(world_x, y, world_z, 0))
-                continue;
-
-            m_physics_voxel_sources.push_back({world_x, y, world_z, block_type});
-            dirty_chunk(source_chunk.value());
-
-            auto body_def = b3DefaultBodyDef();
-            body_def.type = b3_dynamicBody;
-            body_def.position = {static_cast<float>(offset), static_cast<float>(y), 0.0f};
-            const auto body = b3CreateBody(m_physics_world, &body_def);
-            auto shape_def = b3DefaultShapeDef();
-            shape_def.density = 0.5f;
-            shape_def.baseMaterial.friction = 0.3f;
-            shape_def.baseMaterial.restitution = 0.04f;
-            shape_def.enableHitEvents = true;
-            const auto voxel = b3MakeBoxHull(0.5f, 0.5f, 0.5f);
-            b3CreateHullShape(body, &shape_def, &voxel.base);
-
-            const int material = y == height - 1 ? terrain_materials[static_cast<std::size_t>(column)] : 2;
-            constexpr std::array<std::array<float, 3>, 3> colors{{{0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
-            m_physics_objects.push_back(
-                {body, false, material, colors[static_cast<std::size_t>(material % colors.size())]});
-        }
-    }
-
-    constexpr float floor_half_width = static_cast<float>(half_columns) + 0.5f;
-    constexpr float arena_half_depth = 14.0f;
-    // Off-slice terrain: static columns matching the visible voxel heights so bodies don't sink.
-    constexpr int arena_depth = static_cast<int>(arena_half_depth);
-    for (int column = 0; column < columns; ++column)
-    {
-        const int offset = column - half_columns;
-        std::array<int, 2 * arena_depth + 1> heights{};
-        for (int depth = -arena_depth; depth <= arena_depth; ++depth)
-        {
-            if (depth == 0)
-                continue;
-            const int world_x = static_cast<int>(SDL_roundf(
-                m_physics_origin_x + m_physics_right_x * static_cast<float>(offset) -
-                m_physics_right_z * static_cast<float>(depth)));
-            const int world_z = static_cast<int>(SDL_roundf(
-                m_physics_origin_z + m_physics_right_z * static_cast<float>(offset) +
-                m_physics_right_x * static_cast<float>(depth)));
-            if (world_heightmap && world_heightmap->contains(world_x, world_z))
-                heights[static_cast<std::size_t>(depth + arena_depth)] =
-                    std::max(0, world_heightmap->column_height(world_x, world_z));
-        }
-        // Merge runs of equal height along depth into one box to keep the static broadphase small.
-        for (std::size_t i = 0; i < heights.size();)
-        {
-            const int height = heights[i];
-            const auto run_end = std::find_if(heights.begin() + static_cast<std::ptrdiff_t>(i), heights.end(),
-                                              [height](const int h) { return h != height; });
-            const auto run = static_cast<std::size_t>(run_end - (heights.begin() + static_cast<std::ptrdiff_t>(i)));
-            if (height > 0)
-            {
-                const float half = static_cast<float>(height) * 0.5f;
-                const float run_half = static_cast<float>(run) * 0.5f;
-                const float center_depth = static_cast<float>(static_cast<int>(i) - arena_depth) + run_half - 0.5f;
-                const auto box = b3MakeOffsetBoxHull(0.5f, half, run_half,
-                                                     {static_cast<float>(offset), half - 0.5f, center_depth});
-                b3CreateHullShape(terrain_body, &terrain_shape_def, &box.base);
-            }
-            i += run;
-        }
-    }
-    const auto floor = b3MakeOffsetBoxHull(floor_half_width, 0.05f, arena_half_depth,
-                                           {0.0f, -0.55f, 0.0f});
-    b3CreateHullShape(terrain_body, &terrain_shape_def, &floor.base);
-    m_physics_spawn_height = static_cast<float>(maximum_height) + 5.0f;
-
-    constexpr int startup_spheres = 24;
-    for (int i = 0; i < startup_spheres; ++i)
-    {
-        const float x = -9.0f + static_cast<float>(i % 8) * 2.6f;
-        const float z = -3.0f + static_cast<float>((i / 8) % 3) * 3.0f;
-        auto body_def = b3DefaultBodyDef();
-        body_def.type = b3_dynamicBody;
-        body_def.position = {x, m_physics_spawn_height + static_cast<float>(i / 8) * 2.0f, z};
-        body_def.linearVelocity = {x < 0.0f ? 6.0f : -6.0f, 0.0f, z < 0.0f ? 4.0f : (z > 0.0f ? -4.0f : 1.5f * static_cast<float>(i % 3 - 1))};
-        const auto body = b3CreateBody(m_physics_world, &body_def);
-        auto shape_def = b3DefaultShapeDef();
-        shape_def.density = 10.0f;
-        shape_def.baseMaterial.friction = 0.2f;
-        shape_def.baseMaterial.restitution = 0.35f;
-        shape_def.enableHitEvents = true;
-        const b3Sphere sphere{{0.0f, 0.0f, 0.0f}, 0.65f};
-        b3CreateSphereShape(body, &shape_def, &sphere);
-        m_physics_objects.push_back({body, true, i % 6, {1.0f, 1.0f, 1.0f}});
-    }
-    m_physics_jolt_seed = 1;
-    jolt_physics_blocks();
+    // Hand the maze a copy clamped to what fits the slice.
+    auto maze = active_player->get_configs().maze();
+    constexpr unsigned int max_cells = 13;
+    maze.rows(std::clamp<unsigned int>(maze.rows(), 2u, max_cells))
+        .columns(std::clamp<unsigned int>(maze.columns(), 2u, max_cells));
+    if (!spawn_physics_maze(maze, m_physics_maze_seed++))
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Physics maze could not be built\n");
 }
 
 std::pair<float, float> editor_world::physics_plane_coords(const float x, const float z) const noexcept
@@ -736,13 +570,18 @@ std::pair<float, float> editor_world::physics_plane_coords(const float x, const 
             -dx * m_physics_right_z + dz * m_physics_right_x};
 }
 
+bool editor_world::player_in_maze(const float along, const float depth) const noexcept
+{
+    return std::abs(along) <= m_maze_half_w + PLAYER_RADIUS && std::abs(depth) <= m_maze_half_h + PLAYER_RADIUS;
+}
+
 void editor_world::sync_physics_player() noexcept
 {
     if (!active_player || !B3_IS_NON_NULL(m_physics_player))
         return;
     const auto &pos = active_player->pos;
     const auto [along, depth] = physics_plane_coords(pos.x, pos.z);
-    if (std::abs(depth) > PLAYER_SLICE_REACH)
+    if (!player_in_maze(along, depth))
     {
         if (b3Body_IsEnabled(m_physics_player))
             b3Body_Disable(m_physics_player);
@@ -774,7 +613,7 @@ void editor_world::support_player_on_physics() noexcept
         return;
     auto &pos = active_player->pos;
     const auto [along, depth] = physics_plane_coords(pos.x, pos.z);
-    if (std::abs(depth) > PLAYER_SLICE_REACH)
+    if (!player_in_maze(along, depth))
         return;
 
     auto filter = b3DefaultQueryFilter();
@@ -792,50 +631,36 @@ void editor_world::support_player_on_physics() noexcept
     }
 }
 
-void editor_world::jolt_physics_blocks() noexcept
-{
-    // Deterministic LCG so every reset produces the same wobble.
-    const auto next = [this]
-    {
-        m_physics_jolt_seed = m_physics_jolt_seed * 1664525u + 1013904223u;
-        return static_cast<float>(m_physics_jolt_seed >> 8) / static_cast<float>(1u << 24) * 2.0f - 1.0f;
-    };
-    for (const auto &object : m_physics_objects)
-    {
-        if (object.sphere)
-            continue;
-        b3Body_SetAwake(object.body, true);
-        b3Body_SetLinearVelocity(object.body, {next() * 2.5f, 1.0f + next() * 1.5f, next() * 2.5f});
-        b3Body_SetAngularVelocity(object.body, {next() * 3.0f, next() * 3.0f, next() * 3.0f});
-    }
-}
-
 void editor_world::steer_maze_bodies(const float dt_seconds) noexcept
 {
-    if (m_maze_flow.empty())
+    if (m_maze_headings.empty())
         return;
     constexpr float roll_speed = 3.0f;
     const float blend = std::min(1.0f, 4.0f * dt_seconds);
+    const int columns = m_maze_flow.width * MAZE_HEADING_SCALE;
+    const int rows = m_maze_flow.height * MAZE_HEADING_SCALE;
     for (const auto &object : m_physics_objects)
     {
         if (!object.follows_maze_path)
             continue;
         const auto position = b3Body_GetPosition(object.body);
-        const float px = static_cast<float>(position.x) + m_maze_half_w;
-        const float py = static_cast<float>(position.z) + m_maze_half_h;
-        const float remaining = m_maze_flow.sample(px, py);
-        if (remaining >= 0.0f && remaining < 0.75f)
+        const int cx = static_cast<int>(std::floor((static_cast<float>(position.x) + m_maze_half_w) * MAZE_HEADING_SCALE));
+        const int cy = static_cast<int>(std::floor((static_cast<float>(position.z) + m_maze_half_h) * MAZE_HEADING_SCALE));
+        const bool outside = cx < 0 || cy < 0 || cx >= columns || cy >= rows ||
+                             static_cast<float>(position.y) < m_maze_platform_y - 10.0f;
+        const maze_heading *heading =
+            outside ? nullptr : &m_maze_headings[static_cast<std::size_t>(cy * columns + cx)];
+        if (outside || heading->goal)
         {
             b3Body_SetTransform(object.body, {object.spawn[0], object.spawn[1], object.spawn[2]}, b3Quat_identity);
             b3Body_SetLinearVelocity(object.body, {0.0f, 0.0f, 0.0f});
             b3Body_SetAngularVelocity(object.body, {0.0f, 0.0f, 0.0f});
             continue;
         }
-        const auto heading = m_maze_flow.direction(px, py);
         auto velocity = b3Body_GetLinearVelocity(object.body);
         // Steer only the horizontal velocity; gravity and collisions keep control of y.
-        velocity.x += (heading[0] * roll_speed - velocity.x) * blend;
-        velocity.z += (heading[1] * roll_speed - velocity.z) * blend;
+        velocity.x += (heading->x * roll_speed - velocity.x) * blend;
+        velocity.z += (heading->y * roll_speed - velocity.z) * blend;
         b3Body_SetAwake(object.body, true);
         b3Body_SetLinearVelocity(object.body, velocity);
     }
@@ -848,6 +673,7 @@ bool editor_world::spawn_physics_maze(const mazes::configurator &maze, const int
 
     // The physics slice is 29 columns wide and 28 deep, so mazes up to 13x13 cells (27x27 pixels) fit.
     constexpr unsigned int max_cells = 13;
+    m_maze_walls.clear();
     if (maze.rows() == 0 || maze.columns() == 0 || maze.rows() > max_cells || maze.columns() > max_cells)
         return false;
 
@@ -860,7 +686,18 @@ bool editor_world::spawn_physics_maze(const mazes::configurator &maze, const int
     const float half_w = static_cast<float>(width) * 0.5f;
     const float half_h = static_cast<float>(height) * 0.5f;
     constexpr float wall_half_height = 1.0f;
-    const float platform_y = m_physics_spawn_height - 3.0f;
+    // Sit the floor flush with the highest terrain under the maze footprint.
+    int terrain_top = 0;
+    for (float along = -half_w; along <= half_w; along += 3.0f)
+    {
+        for (float depth = -half_h; depth <= half_h; depth += 3.0f)
+        {
+            terrain_top = std::max(terrain_top,
+                                   highest_block(m_physics_origin_x + m_physics_right_x * along - m_physics_right_z * depth,
+                                                 m_physics_origin_z + m_physics_right_z * along + m_physics_right_x * depth));
+        }
+    }
+    const float platform_y = static_cast<float>(terrain_top) + 1.0f;
 
     auto static_def = b3DefaultBodyDef();
     static_def.position = {0.0f, platform_y, 0.0f};
@@ -884,6 +721,8 @@ bool editor_world::spawn_physics_maze(const mazes::configurator &maze, const int
             int end = x;
             while (end < width && layout->is_wall(end, y))
                 ++end;
+            for (int wx = x; wx < end; ++wx)
+                m_maze_walls.emplace_back(wx, y);
             const float run_half = static_cast<float>(end - x) * 0.5f;
             const auto box = b3MakeOffsetBoxHull(
                 run_half, wall_half_height, 0.5f,
@@ -900,6 +739,20 @@ bool editor_world::spawn_physics_maze(const mazes::configurator &maze, const int
     m_maze_half_w = half_w;
     m_maze_half_h = half_h;
     m_maze_platform_y = platform_y;
+
+    // Bake headings and goal zones once so each step is a single array lookup per body.
+    m_maze_headings.assign(static_cast<std::size_t>(width * MAZE_HEADING_SCALE) * static_cast<std::size_t>(height * MAZE_HEADING_SCALE), {});
+    for (int cy = 0; cy < height * MAZE_HEADING_SCALE; ++cy)
+    {
+        for (int cx = 0; cx < width * MAZE_HEADING_SCALE; ++cx)
+        {
+            const float fx = (static_cast<float>(cx) + 0.5f) / MAZE_HEADING_SCALE;
+            const float fy = (static_cast<float>(cy) + 0.5f) / MAZE_HEADING_SCALE;
+            const auto d = m_maze_flow.direction(fx, fy);
+            m_maze_headings[static_cast<std::size_t>(cy * width * MAZE_HEADING_SCALE + cx)] =
+                {d[0], d[1], [&] { const float r = m_maze_flow.sample(fx, fy); return r >= 0.0f && r < 0.75f; }()};
+        }
+    }
 
     std::vector<std::pair<float, std::pair<int, int>>> cells;
     for (unsigned int row = 0; row < layout->rows; ++row)
@@ -936,54 +789,3 @@ bool editor_world::spawn_physics_maze(const mazes::configurator &maze, const int
     }
     return true;
 }
-
-void editor_world::add_physics_object(const bool sphere) noexcept
-{
-    if (m_physics_objects.size() >= MAX_PHYSICS_OBJECTS)
-        return;
-    if (sphere && std::ranges::count_if(m_physics_objects, [](const physics_object &object)
-                                        { return object.sphere; }) >= MAX_PHYSICS_SPHERES)
-        return;
-
-    const auto index = m_physics_objects.size();
-    auto body_def = b3DefaultBodyDef();
-    body_def.type = b3_dynamicBody;
-    body_def.position = {-4.0f + static_cast<float>(index % 9), m_physics_spawn_height, static_cast<float>(index % 5) * 2.0f - 4.0f};
-    const auto body = b3CreateBody(m_physics_world, &body_def);
-
-    auto shape_def = b3DefaultShapeDef();
-    shape_def.density = sphere ? 10.0f : 0.5f;
-    shape_def.baseMaterial.friction = 0.25f;
-    shape_def.baseMaterial.restitution = 0.12f;
-    shape_def.enableHitEvents = true;
-    if (sphere)
-    {
-        const b3Sphere circle{{0.0f, 0.0f, 0.0f}, 0.65f};
-        b3CreateSphereShape(body, &shape_def, &circle);
-        b3Body_SetLinearVelocity(body, {index % 2 == 0 ? 6.0f : -6.0f, 0.0f, index % 3 == 0 ? 4.0f : -4.0f});
-    }
-    else
-    {
-        const auto box = b3MakeBoxHull(0.45f, 0.45f, 0.45f);
-        b3CreateHullShape(body, &shape_def, &box.base);
-    }
-    constexpr std::array<std::array<float, 3>, 3> colors{{{0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
-    m_physics_objects.push_back({body, sphere, 4, colors[index % colors.size()]});
-}
-
-void editor_world::restore_physics_voxels() noexcept
-{
-    for (const auto &voxel : m_physics_voxel_sources)
-    {
-        if (get_block(voxel.x, voxel.y, voxel.z) != 0)
-            continue;
-        if (auto source_chunk = find_chunk(chunked(static_cast<float>(voxel.x)),
-                                           chunked(static_cast<float>(voxel.z)));
-            source_chunk && source_chunk.value()->map.set(voxel.x, voxel.y, voxel.z, voxel.block_type))
-        {
-            dirty_chunk(source_chunk.value());
-        }
-    }
-    m_physics_voxel_sources.clear();
-}
-
