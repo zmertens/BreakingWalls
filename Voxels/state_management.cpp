@@ -261,7 +261,7 @@ state::ptr state_stack::create_state(const StateIdentifier state_id)
 
 loading_state::loading_state(state_stack &stack, const context &context) : state{stack, context} {}
 
-void loading_state::load_resources(mazes::randomizer &rng) const noexcept
+void loading_state::load_resources() const noexcept
 {
     constexpr float font_size = 18.f;
     const auto &ctx = get_context();
@@ -309,8 +309,7 @@ void loading_state::load_resources(mazes::randomizer &rng) const noexcept
     const auto composite = ctx.ctx_shaders->get(ShaderIdentifier::BLOOM_COMPOSITE_SHADER).get();
     const auto depth_field = ctx.ctx_shaders->get(ShaderIdentifier::BLOOM_DEPTH_FIELD_SHADER).get();
     const auto glass_resolve = ctx.ctx_shaders->get(ShaderIdentifier::BLOOM_GLASS_RESOLVE_SHADER).get();
-    const auto coin_is_heads{static_cast<bool>(rng.get_int(0, 1))};
-    ctx.ctx_bloom_passes->load(BloomPassIdentifier::EDITOR, blur, composite, depth_field, glass_resolve, width, height, coin_is_heads);
+    ctx.ctx_bloom_passes->load(BloomPassIdentifier::EDITOR, blur, composite, depth_field, glass_resolve, width, height, true);
 
     ctx.ctx_textures->load(TextureIdentifier::ATLAS, "Textures/atlas.png", static_cast<unsigned int>(TextureIdentifier::ATLAS));
     ctx.ctx_textures->load(TextureIdentifier::BITMAP_FONT, "Textures/bitmap_font.png", static_cast<unsigned int>(TextureIdentifier::BITMAP_FONT));
@@ -356,14 +355,14 @@ void loading_state::draw() const noexcept
     ImGui::End();
 }
 
-bool loading_state::update(float, mazes::randomizer &rng) noexcept
+bool loading_state::update(float, mazes::randomizer &) noexcept
 {
     if (!resources_loaded)
     {
         if (!get_stack().resources_have_loaded())
         {
-            const auto prog{mazes::progress<>::duration([this, &rng]()
-                                                        { load_resources(std::ref(rng)); })};
+            const auto prog{mazes::progress<>::duration([this]()
+                                                        { load_resources(); })};
             SDL_Log("Resource loading took: %.7f ms",
                     mazes::progress<>::to_double_from_duration(prog));
             get_stack().mark_resources_loaded();

@@ -1,7 +1,8 @@
 // Showcases basic voxel editing capabilities in gameplay
 // Follows game development patterns like State Stacks
 // Creates mazes with Maze Builder library
-// Originally written in C99, and then it got ported to C++20
+// Physics using box3d
+// Originally written in C99, and then it was ported to C++20
 
 #include "craft.h"
 
@@ -32,15 +33,12 @@
 #include "world.h"
 
 #include <MazeBuilder/buildinfo.h>
-#include <MazeBuilder/grid_interface.h>
 #include <MazeBuilder/randomizer.h>
 #include <MazeBuilder/runtime_app.h>
 
 #include <algorithm>
 #include <cmath>
 #include <functional>
-#include <list>
-#include <map>
 #include <memory>
 #include <optional>
 #include <ranges>
