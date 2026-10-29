@@ -1,14 +1,14 @@
 #include "world.h"
 
-#include "chunk_worker.h"
+#include "geometries.h"
+#include "worker_traits.h"
 
 #include <SDL3/SDL.h>
 
-// ---------------------------------------------------------------------------
-// Worker threads
-// ---------------------------------------------------------------------------
+#include <functional>
+#include <vector>
 
-bool world::worker_run(worker *w) const noexcept
+bool world::worker_run(worker *w, const std::function<void(worker_item *)> &terrain) const noexcept
 {
     while (true)
     {
@@ -25,9 +25,8 @@ bool world::worker_run(worker *w) const noexcept
         if (item->load)
         {
             this->load_chunk(item);
-            
         }
-        chunk::compute(item);
+        terrain(item);
 
         std::lock_guard<std::mutex> done_lock(w->mtx);
         w->state = WorkerState::DONE;
@@ -37,17 +36,17 @@ bool world::worker_run(worker *w) const noexcept
 
 void world::init_worker_threads() noexcept
 {
-    chunk_workers.reserve(CHUNK_WORKERS_TOTAL);
-    for (int i = 0; i < CHUNK_WORKERS_TOTAL; i++)
+    for (int i = 0; i < chunk_thread_pool.get_thread_count(); i++)
     {
         auto w = std::make_unique<worker>();
-        w->index       = i;
-        w->state       = WorkerState::IDLE;
+        w->index = i;
+        w->state = WorkerState::IDLE;
         w->should_stop = false;
         chunk_workers.emplace_back(std::move(w));
         worker *worker_ptr = chunk_workers.back().get();
         worker_ptr->thrd = std::thread([this, worker_ptr]()
-                                       { this->worker_run(worker_ptr); });
+                                       { this->worker_run(static_cast<worker *>(worker_ptr), [this](worker_item *item)
+                                                          { this->terrain(item); }); });
     }
 }
 
@@ -67,16 +66,9 @@ void world::cleanup_worker_threads() noexcept
             w->thrd.join();
         }
         SDL_free(w->item.data);
-        for (int a = 0; a < 3; ++a)
-        {
-            for (int b = 0; b < 3; ++b)
-            {
-                delete w->item.block_maps[a][b];
-                delete w->item.light_maps[a][b];
-            }
-        }
         w->item = {};
         SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "worker thread %d finished!", w->index);
     }
     chunk_workers.clear();
+    chunk_thread_pool.wait_all();
 }

@@ -121,6 +121,8 @@ void game_environment::init(const std::uint32_t seed)
     m_static_horizon = m_background.uniform("static_horizon");
     m_view = m_background.uniform("view");
     m_use_view = m_background.uniform("use_view");
+    m_ocean = m_background.uniform("ocean");
+    m_sea_level = m_background.uniform("sea_level");
     m_ready = true;
     SDL_Log("Game environment: procedural noise cubemap ready");
 }
@@ -136,7 +138,8 @@ void game_environment::draw(const float rotation, const float zoom,
                             const float scale_x, const float scale_y,
                             const float seconds, const float level,
                             const float lights, const float board_radius,
-                            const bool static_horizon, const float *view) const noexcept
+                            const bool static_horizon, const float *view,
+                            const float *ocean, const float sea_level) const noexcept
 {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -153,6 +156,10 @@ void game_environment::draw(const float rotation, const float zoom,
     glUniform1i(m_use_view, view != nullptr);
     if (view)
         glUniform4fv(m_view, 1, view);
+    // Eye below the sea level (or no ocean data) disables the water plane.
+    const float no_ocean[4]{0.0f, -1.0e9f, 0.0f, 0.0f};
+    glUniform4fv(m_ocean, 1, ocean ? ocean : no_ocean);
+    glUniform1f(m_sea_level, sea_level);
     glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);

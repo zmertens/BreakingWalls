@@ -47,6 +47,7 @@ target_compile_definitions(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<OR:$<STREQUAL
 target_compile_features(${BREAKING_WALLS_APP_NAME} PRIVATE cxx_std_20)
 
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:Extlibs/glad_3_0/include> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/Extlibs/glad_3_0/include>)
+target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:Extlibs/bvhv2> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/Extlibs/bvhv2>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:Extlibs/dearimgui> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/Extlibs/dearimgui>)
 target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:Extlibs> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/Extlibs>)
 
@@ -99,15 +100,12 @@ if(EMSCRIPTEN)
     set(EMSCRIPTEN_DEP_PATH ${CMAKE_SOURCE_DIR}/Extlibs/emscripten_local)
     target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:${EMSCRIPTEN_DEP_PATH}> $<BUILD_INTERFACE:${EMSCRIPTEN_DEP_PATH}>)
 
-    # Compile flags for atomics and bulk-memory features
-    target_compile_options(${BREAKING_WALLS_APP_NAME} PRIVATE "SHELL:-matomics -mbulk-memory")
-
     target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE
-            "SHELL:-pthread -s PTHREAD_POOL_SIZE=12 -s ENVIRONMENT=web,worker"
+            "SHELL:-pthread -s PTHREAD_POOL_SIZE=20 -s PROXY_TO_PTHREAD=1 -s OFFSCREENCANVAS_SUPPORT=1"
             "SHELL:-s STACK_SIZE=5242880 -s DEFAULT_PTHREAD_STACK_SIZE=2097152"
             "SHELL:-s INITIAL_MEMORY=268435456 -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=1073741824"
             "SHELL:-s FULL_ES3=1 -s MAX_WEBGL_VERSION=2 -s MODULARIZE=1 -s EXPORT_ES6=1 -s WASM=1"
-            "SHELL:-matomics -mbulk-memory"
+            "SHELL:-matomics -mbulk-memory -s ENVIRONMENT=web,worker"
             "SHELL:-s EXPORTED_RUNTIME_METHODS=HEAPF32,HEAPU8,HEAP32"
             "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/Extlibs/emscripten_local/shell_minimal.html"
             "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/Shaders@/Shaders"

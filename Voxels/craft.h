@@ -2,21 +2,27 @@
 #define CRAFT_H
 
 #include <memory>
-#include <string>
+#include <string_view>
 
-#include <MazeBuilder/grid_interface.h>
-#include <MazeBuilder/randomizer.h>
 #include <MazeBuilder/singleton_base.h>
+
+namespace mazes
+{
+    class randomizer;
+}
 
 /// @brief Coordinates the voxel subsystems and game logic
 /// @file craft.h
 class craft final : mazes::singleton_base<craft> {
     friend class singleton_base;
 public:
-    craft(const std::string& title, int w, int h);
+    // Necessary cnstr/dstrct for pimpl idiom
+    explicit craft();
     ~craft();
 
-    bool run(mazes::grid_interface* g, mazes::randomizer& rng) const noexcept;
+    void initialize(std::string_view title, const unsigned int w, const unsigned int h) noexcept;
+
+    bool run(mazes::randomizer& rng) const noexcept;
 
     // -----------------------------------------------------------------------
     // Synchronous legacy path (kept for backward compatibility).

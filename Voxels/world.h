@@ -6,26 +6,34 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+#include <bvhv2/bvh.h>
+#include <bvhv2/executor.h>
+#include <bvhv2/thread_pool.h>
+
 #include "bloom_pass.h"
-#include "chunk.h"
 #include "item.h"
-#include "player.h"
 #include "resource_identifiers.h"
 #include "sdl_gl_helper.h"
-#include "craft_map.h"
 #include "heightmap.h"
-
-union SDL_Event;
+#include "player.h"
 
 namespace mazes
 {
     class randomizer;
 }
 
+class craft_map;
+struct chunk;
 struct worker;
+struct worker_item;
+struct world_builder;
+class db_manager;
+union SDL_Event;
 
 class world
 {
@@ -38,7 +46,6 @@ public:
     static constexpr int BUILD_CHUNK_SIZE{32};
     static constexpr int RENDER_SIGN_RADIUS{4};
     static constexpr int DELETE_CHUNK_RADIUS{14};
-    static constexpr auto CHUNK_WORKERS_TOTAL{4u};
 
     virtual ~world();
 
@@ -50,15 +57,10 @@ public:
     // Used by player for artifact export coordinates
     [[nodiscard]] static int chunked(float x) noexcept;
 
+    static void terrain(worker_item *item) noexcept;
+
 protected:
-    explicit world(SDL_Window *window,
-                   font_manager &fonts,
-                   player *p,
-                   shader_manager &shaders,
-                   texture_manager &textures,
-                   const sdl_gl_helper *sdl,
-                   bloom_pass *bloom,
-                   db_manager *db);
+    explicit world(const world_builder &b);
 
     world(const world &) = delete;
     world &operator=(const world &) = delete;
@@ -75,7 +77,7 @@ protected:
     static void remove_chunk_from_spatial_tree(chunk *c) noexcept;
 
     // Worker functions
-    bool worker_run(worker *w) const noexcept;
+    bool worker_run(worker *w, const std::function<void(worker_item *)> &terrain) const noexcept;
     void init_worker_threads() noexcept;
     void cleanup_worker_threads() noexcept;
 
@@ -85,6 +87,7 @@ protected:
     [[nodiscard]] float get_daylight() const noexcept;
 
     [[nodiscard]] std::optional<chunk *> find_chunk(int p, int q) const noexcept;
+    [[nodiscard]] std::span<chunk *const> active_chunks() const noexcept;
     static int chunk_distance(const chunk *c, int p, int q) noexcept;
     bool chunk_visible(float planes[6][4], int p, int q, int miny, int maxy) const noexcept;
 
@@ -94,6 +97,8 @@ protected:
     int hit_test(int previous, float x, float y, float z,
                  float rx, float ry, int *bx, int *by, int *bz) const noexcept;
     int hit_test_face(int *x, int *y, int *z, int *face) const noexcept;
+    [[nodiscard]] std::array<float, 2> camera_rotation() const noexcept;
+    [[nodiscard]] std::array<float, 3> camera_position() const noexcept;
     int collide(int height, float *x, float *y, float *z) const noexcept;
     [[nodiscard]] static bool player_intersects_block(int height, float x, float y, float z,
                                                       int hx, int hy, int hz) noexcept;
@@ -110,16 +115,17 @@ protected:
     // Optional constrained terrain; fixed for the lifetime of the world so workers can read it unlocked.
     std::shared_ptr<const heightmap> world_heightmap;
     bool world_include_decorations{true};
-    bool world_load_persisted_blocks{true};
-    // Non-owning; the application keeps it alive for as long as any world exists.
     db_manager *world_db{nullptr};
+    bool world_load_persisted_blocks{true};
     void init_chunk(chunk *c, int p, int q) noexcept;
     void create_chunk(chunk *c, int p, int q) noexcept;
     void delete_chunks() noexcept;
     void delete_all_chunks() noexcept;
     void force_chunks(player *player) noexcept;
     void check_workers() noexcept;
-    void ensure_chunks_worker(player *_player, worker *w) noexcept;
+    [[nodiscard]] std::optional<std::pair<int, int>> select_chunk_for_worker(float planes[6][4], int p, int q,
+                                                                             int worker_index) const noexcept;
+    void dispatch_chunk_to_worker(worker *w, int a, int b) noexcept;
     void ensure_chunks(player *_player) noexcept;
 
     void unset_sign(int x, int y, int z) const noexcept;
@@ -139,7 +145,6 @@ protected:
     [[nodiscard]] int render_chunks(std::uint32_t texture) const noexcept;
     // Matrix setup helpers — bind shader program, upload projection matrix uniform.
     std::pair<int, int> begin_3d_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
-    sdl_gl_helper::attrib s_block_attrib{};
 
     enum class Layer
     {
@@ -150,6 +155,8 @@ protected:
 
     const sdl_gl_helper *simple_direct_medialayer;
 
+    sdl_gl_helper::attrib s_block_attrib{};
+
     font_manager &active_fonts;
     shader_manager &world_shaders;
     texture_manager &world_textures;
@@ -159,8 +166,17 @@ protected:
 
     std::size_t next_chunk_slot_in_view;
 
+    // (p, q) -> chunk for O(1) lookup; mutated on the main thread only.
+    std::unordered_map<std::uint64_t, chunk *> chunk_index;
+    [[nodiscard]] static std::uint64_t chunk_key(int p, int q) noexcept
+    {
+        return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(p)) << 32) |
+               static_cast<std::uint32_t>(q);
+    }
+
     player *active_player;
 
+    bvh::v2::ThreadPool chunk_thread_pool{};
     std::vector<std::unique_ptr<worker>> chunk_workers;
 
     bloom_pass *const m_bloom;

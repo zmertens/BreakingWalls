@@ -3,21 +3,17 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
-#include <string>
+#include <string_view>
 
-#include <MazeBuilder/buildinfo.h>
 #include <MazeBuilder/randomizer.h>
 
 #include "craft.h"
 
-// Run the SDL app
-static constexpr auto WINDOW_WIDTH = 1200, WINDOW_HEIGHT = 800;
+static constexpr auto WINDOW_WIDTH = 1200u, WINDOW_HEIGHT = 800u;
 
-constexpr auto TITLE{"Breaking Walls"};
+constexpr std::string_view TITLE{"Breaking Walls"};
 
-// Avoid function-local static initialization on wasm main thread.
-// Eager init sidesteps __cxa_guard_acquire/pthread_cond_wait warnings.
-std::shared_ptr<craft> VOXEL_ENGINE = std::make_shared<craft>(TITLE, WINDOW_WIDTH, WINDOW_HEIGHT);
+auto VOXEL_ENGINE = std::make_shared<craft>();
 
 // Setup for Emscripten/WebAssembly
 // Bind a getter method from C++ so that it can be accessed in the frontend with JS
@@ -37,9 +33,8 @@ EMSCRIPTEN_BINDINGS(craft_module)
 
     emscripten::class_<craft>("craft")
         .smart_ptr<std::shared_ptr<craft>>("std::shared_ptr<craft>")
-        // craft(TITLE, width, height) – construction is handled by the global VOXEL_ENGINE;
         // JS should use Module.get() rather than constructing a second instance.
-        .constructor<const std::string &, int, int>()
+        .constructor<>()
         // ── Legacy synchronous download path ─────────────────────────────────
         // inst.artifacts() → full Wavefront OBJ string; may block if called before ready.
         .function("artifacts", &craft::artifacts)
@@ -66,8 +61,9 @@ int main()
 {
     try
     {
+        VOXEL_ENGINE->initialize(TITLE, WINDOW_WIDTH, WINDOW_HEIGHT);
         mazes::randomizer rng;
-        if (!VOXEL_ENGINE->run(nullptr, std::ref(rng)))
+        if (!VOXEL_ENGINE->run(std::ref(rng)))
         {
             throw std::runtime_error("Running Voxels app failed.");
         }

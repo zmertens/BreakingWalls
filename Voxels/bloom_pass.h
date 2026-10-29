@@ -5,7 +5,8 @@
 #include <cstdint>
 
 #include "resource_identifiers.h"
-#include "shader.h"
+
+class shader;
 
 // Gaussian bloom compositor inspired by OGRE3D's Compositor system.
 //
@@ -31,9 +32,12 @@ public:
     bloom_pass(bloom_pass &&) = delete;
     bloom_pass &operator=(bloom_pass &&) = delete;
 
-    [[nodiscard]] bool init(int width, int height,
-                            std::uint32_t blur_program,
-                            std::uint32_t composite_program) noexcept;
+    [[nodiscard]] bool init(std::uint32_t bloom,
+                            std::uint32_t composite,
+                            std::uint32_t depth_field,
+                            std::uint32_t glass_resolve,
+                            std::uint32_t width,
+                            std::uint32_t height, bool depth_effects = false) noexcept;
 
     // Bind scene MRT FBO and activate both draw buffers.
     void bind_scene() const noexcept;
@@ -49,9 +53,9 @@ public:
     // When progress is in (0, 1) the composite is rendered to an offscreen target and then
     // drawn to the screen through the chosen transition effect, fading out as progress -> 1.
     void execute(float strength = BLOOM_STRENGTH, int blur_iterations = BLUR_PASSES,
-                 TransitionEffect effect = TransitionEffect::BLUR, float progress = 0.0f,
+                 ShaderEffect effect = ShaderEffect::BLUR, float progress = 0.0f,
                  float seconds = 0.0f) const noexcept;
-    void set_transition_programs(const std::array<std::uint32_t, static_cast<std::size_t>(TransitionEffect::COUNT)> &programs) noexcept;
+    void set_transition_programs(const std::array<std::uint32_t, static_cast<std::size_t>(ShaderEffect::COUNT)> &programs) noexcept;
 
     // Recreate FBOs at a new resolution (call on window resize).
     [[nodiscard]] bool resize(int new_width, int new_height) noexcept;
@@ -67,7 +71,7 @@ public:
 private:
     struct components final
     {
-        static constexpr int MAX_COLOR_ATTACHMENTS = 2;
+        static constexpr std::uint32_t MAX_COLOR_ATTACHMENTS = 2u;
 
         std::uint32_t fbo{};
         std::array<std::uint32_t, MAX_COLOR_ATTACHMENTS> color_tex{};
@@ -83,8 +87,8 @@ private:
         components(components &&) noexcept = delete;
 
         [[nodiscard]] bool init(int w, int h,
-                                int color_attachments = 1,
-                                bool depth = true, bool normalized = false) noexcept;
+                                int color_attachments,
+                                bool depth = false, bool normalized = false) noexcept;
     };
 
     [[nodiscard]] bool create_fbos(int w, int h) noexcept;
@@ -99,9 +103,14 @@ private:
     // Allocated on first use so games that never transition pay nothing.
     mutable components m_transition_pass{};
     mutable bool m_transition_ready{};
-    std::array<std::uint32_t, static_cast<std::size_t>(TransitionEffect::COUNT)> m_transition_programs{};
-    shader m_depth_field;
-    shader m_glass_resolve;
+    std::array<std::uint32_t, static_cast<std::size_t>(ShaderEffect::COUNT)> m_transition_programs{};
+
+    // GL program ids
+    std::uint32_t m_blur_program{};
+    std::uint32_t m_composite_program{};
+    std::uint32_t m_depth_field_program{};
+    std::uint32_t m_glass_resolve_program{};
+
     bool m_depth_enabled{};
     int m_field_time{-1}, m_field_level{-1}, m_field_lights{-1};
     int m_resolve_accumulation{-1}, m_resolve_optical_depth{-1};
@@ -113,16 +122,14 @@ private:
     std::uint32_t m_quad_vao{};
     std::uint32_t m_quad_vbo{};
 
-    // Cached GL program handles.
-    std::uint32_t m_blur_program{};
-    std::uint32_t m_composite_program{};
-
     // Cached uniform locations (set during init to avoid per-frame queries).
     std::uint32_t m_blur_loc_horizontal{-1u};
     std::uint32_t m_blur_loc_image{-1u};
     std::uint32_t m_comp_loc_scene{-1u};
     std::uint32_t m_comp_loc_bloom{-1u};
     std::uint32_t m_comp_loc_strength{-1u};
+    std::uint32_t m_depth_field_loc_image{-1u};
+    std::uint32_t m_glass_resolve_loc_image{-1u};
 
     std::uint32_t m_width{};
     std::uint32_t m_height{};

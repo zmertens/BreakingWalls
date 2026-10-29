@@ -27,8 +27,10 @@ public:
 
     void load(Identifier id, std::string_view v, std::string_view f);
 
-    void load(Identifier id, int width, int height,
+    void load(Identifier id,
               std::uint32_t blur_program, std::uint32_t composite_program,
+              std::uint32_t depth_field_program, std::uint32_t glass_resolve_program,
+              std::uint32_t width, std::uint32_t height,
               bool depth_effects = false);
 
     template <typename Parameter1, typename Parameter2, typename PixelSize = float>
@@ -67,7 +69,7 @@ void resource_manager<Resource, Identifier>::load(SDL_Window *window, Identifier
     }
 
     // If loading successful, insert resource to map
-    insert_resource(id, std::move(resource));
+    insert_resource(id, std::shared_ptr<Resource>(resource.release()));
 }
 
 template <typename Resource, typename Identifier>
@@ -83,7 +85,7 @@ void resource_manager<Resource, Identifier>::load(Identifier id, unsigned int w,
     }
 
     // If loading successful, insert resource to map
-    insert_resource(id, std::move(resource));
+    insert_resource(id, std::shared_ptr<Resource>(resource.release()));
 }
 
 template <typename Resource, typename Identifier>
@@ -98,7 +100,7 @@ void resource_manager<Resource, Identifier>::load(Identifier id, std::string_vie
     }
 
     // If loading successful, insert resource to map
-    insert_resource(id, std::move(resource));
+    insert_resource(id, std::shared_ptr<Resource>(resource.release()));
 }
 
 template <typename Resource, typename Identifier>
@@ -113,23 +115,22 @@ void resource_manager<Resource, Identifier>::load(Identifier id, std::string_vie
     }
 
     // If loading successful, insert resource to map
-    insert_resource(id, std::move(resource));
+    insert_resource(id, std::shared_ptr<Resource>(resource.release()));
 }
 
 template <typename Resource, typename Identifier>
-void resource_manager<Resource, Identifier>::load(Identifier id, int width, int height,
-                                                  std::uint32_t blur_program, std::uint32_t composite_program, bool depth_effects)
+void resource_manager<Resource, Identifier>::load(Identifier id,
+                                                  std::uint32_t blur_program, std::uint32_t composite_program,
+                                                  std::uint32_t depth_field_program, std::uint32_t glass_resolve_program,
+                                                  std::uint32_t width, std::uint32_t height,
+                                                  bool depth_effects)
 {
     auto resource = std::make_unique<Resource>();
-    if (!resource->init(width, height, blur_program, composite_program))
+    if (!resource->init(blur_program, composite_program, depth_field_program, glass_resolve_program, width, height, depth_effects))
     {
         throw std::runtime_error("resource_manager::load - Failed to initialize bloom pass");
     }
-    if (depth_effects)
-    {
-        resource->init_depth_effects();
-    }
-    insert_resource(id, std::move(resource));
+    insert_resource(id, std::shared_ptr<Resource>(resource.release()));
 }
 
 template <typename Resource, typename Identifier>
@@ -142,7 +143,7 @@ void resource_manager<Resource, Identifier>::load(Identifier id, const Parameter
         throw std::runtime_error("resource_manager::load - Failed to load font from memory");
     }
 
-    insert_resource(id, std::move(resource));
+    insert_resource(id, std::shared_ptr<Resource>(resource.release()));
 }
 
 // Load sound effect

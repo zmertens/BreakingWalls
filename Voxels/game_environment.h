@@ -25,14 +25,15 @@ public:
               float seconds = 0.0f, float level = 1.0f,
               float lights = 0.0f, float board_radius = 0.8f,
               bool static_horizon = false,
-              const float *view = nullptr) const noexcept;
+              const float *view = nullptr,
+              const float *ocean = nullptr, float sea_level = 0.0f) const noexcept;
     [[nodiscard]] bool ready() const noexcept { return m_ready; }
 
 private:
     shader m_background;
     std::uint32_t m_cubemap{}, m_vao{};
     int m_sampler{-1}, m_rotation{-1}, m_zoom{-1}, m_pan{-1}, m_viewport_scale{-1};
-    int m_animation{-1}, m_static_horizon{-1}, m_view{-1}, m_use_view{-1};
+    int m_animation{-1}, m_static_horizon{-1}, m_view{-1}, m_use_view{-1}, m_ocean{-1}, m_sea_level{-1};
     bool m_ready{};
 };
 

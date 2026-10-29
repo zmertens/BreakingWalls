@@ -1,9 +1,11 @@
 // Editor overlays, sky, signs, and ghost render passes.
 #include "editor_world.h"
 
+#include "chunk.h"
 #include "geometries.h"
 #include "item.h"
 #include "matrix.h"
+#include "player.h"
 #include "texture.h"
 #include "resource_identifiers.h"
 #include "resource_manager.h"
@@ -21,6 +23,8 @@
 #include <algorithm>
 #include <array>
 #include <vector>
+
+#include <bvhv2/bvh.h>
 
 // ---------------------------------------------------------------------------
 // Matrix setup helpers
@@ -153,47 +157,6 @@ void editor_world::render_crosshairs() const noexcept
     sdl_gl_helper::del_buffer(crosshair_buffer);
 }
 
-void editor_world::render_hover_info() const noexcept
-{
-    if (!active_player->get_configs().show_crosshair_details() || !current_projected_plane.has_valid_target)
-     {SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "No hover info");   return;
-     }
-
-    int viewport_width, viewport_height;
-    SDL_GetWindowSizeInPixels(simple_direct_medialayer->window, &viewport_width, &viewport_height);
-
-    const int hx = current_projected_plane.target_x;
-    const int hy = current_projected_plane.target_y;
-    const int hz = current_projected_plane.target_z;
-    const int face = current_projected_plane.target_face;
-    const int block_type = get_block(hx, hy, hz);
-
-    const float dx = active_player->pos.x - static_cast<float>(hx);
-    const float dy = active_player->pos.y - static_cast<float>(hy);
-    const float dz = active_player->pos.z - static_cast<float>(hz);
-    const float distance = SDL_sqrt(dx * dx + dy * dy + dz * dz);
-
-    const float x_offset   = static_cast<float>(viewport_width) * 0.5f + 30.0f;
-    const float y_base      = static_cast<float>(viewport_height) * 0.5f;
-    const float line_height = 15.0f;
-
-    char info_buffer[256];
-    const auto font_tex = world_textures.get(TextureIdentifier::BITMAP_FONT).gl_texture;
-
-    SDL_snprintf(info_buffer, sizeof(info_buffer), "Block: %s",
-                 player::get_block_name(item::get_block_type(block_type)));
-    render_text(font_tex, 0, x_offset, y_base - line_height * 2, 10.0f, info_buffer);
-
-    SDL_snprintf(info_buffer, sizeof(info_buffer), "Pos: (%d, %d, %d)", hx, hy, hz);
-    render_text(font_tex, 0, x_offset, y_base - line_height, 10.0f, info_buffer);
-
-    SDL_snprintf(info_buffer, sizeof(info_buffer), "Face: %s", player::get_face_name(face));
-    render_text(font_tex, 0, x_offset, y_base, 10.0f, info_buffer);
-
-    SDL_snprintf(info_buffer, sizeof(info_buffer), "Dist: %.1f", distance);
-    render_text(font_tex, 0, x_offset, y_base + line_height, 10.0f, info_buffer);
-}
-
 void editor_world::render_item(const std::uint32_t texture) const noexcept
 {
     const GLboolean depth_was_enabled = glIsEnabled(GL_DEPTH_TEST);
@@ -209,7 +172,7 @@ void editor_world::render_item(const std::uint32_t texture) const noexcept
     glUniform1f(s_block_attrib.timer, time_of_day());
     glUniform1i(s_block_attrib.extra4, 0);
 
-    if (const int w = active_player->get_item(); item::is_plant(w))
+    if (const int w = active_player->get_selected_item_index(); item::is_plant(w))
     {
         const GLuint buffer = sdl_gl_helper::gen_plant_buffer(0, 0, 0, 0.5f, w);
         sdl_gl_helper::draw_plant(&s_block_attrib, buffer);
@@ -224,13 +187,15 @@ void editor_world::render_item(const std::uint32_t texture) const noexcept
 
     glDepthMask(GL_TRUE);
     if (depth_was_enabled)
+    {
         glEnable(GL_DEPTH_TEST);
+    }
 }
 
 void editor_world::render_held_stick(const std::uint32_t texture) const noexcept
 {
     const auto &c = active_player->get_configs();
-    if (c.view_mode() != player_configs::ViewMode::PERSPECTIVE)
+    if (c.view_mode() != player_configs::ViewMode::FIRST_PERSON)
         return;
 
     constexpr float swing_ms = 280.0f;
@@ -287,48 +252,77 @@ void editor_world::render_physics() const noexcept
     const auto &player_position = active_player->pos;
     glActiveTexture(GL_TEXTURE0 + static_cast<unsigned int>(TextureIdentifier::ATLAS));
     glBindTexture(GL_TEXTURE_2D, world_textures.get(TextureIdentifier::ATLAS).gl_texture);
-    glUniform3f(s_block_attrib.camera, player_position.x, player_position.y, player_position.z);
+    const auto cam = camera_position();
+    glUniform3f(s_block_attrib.camera, cam[0], cam[1], cam[2]);
     glUniform1i(s_block_attrib.sampler, 0);
     glUniform1f(s_block_attrib.timer, time_of_day());
 
     // Physics x/y/z map to the slice's right axis, world up, and depth axis.
     const float rx = m_physics_right_x, rz = m_physics_right_z;
 
-    for (const auto &object : m_physics_objects)
+    // Group by mesh so buffer binding and attribute setup happen once per slot, not once per body.
+    const auto draw_group = [&](const bool sphere, const std::size_t slot, const std::uint32_t buffer, const int count)
     {
-        const auto position = b3Body_GetPosition(object.body);
-        const float px = static_cast<float>(position.x);
-        const float py = static_cast<float>(position.y);
-        const float pz = static_cast<float>(position.z);
-        const float world_x = m_physics_origin_x + rx * px - rz * pz;
-        const float world_z = m_physics_origin_z + rz * px + rx * pz;
-
-        const auto q = b3Body_GetRotation(object.body);
-        const float qx = q.v.x, qy = q.v.y, qz = q.v.z, qw = q.s;
-        // Rotation matrix columns in physics space, then re-expressed in world axes.
-        const float local[3][3]{
-            {1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy + qz * qw), 2 * (qx * qz - qy * qw)},
-            {2 * (qx * qy - qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz + qx * qw)},
-            {2 * (qx * qz + qy * qw), 2 * (qy * qz - qx * qw), 1 - 2 * (qx * qx + qy * qy)}};
-        float transform[16]{};
-        for (int c = 0; c < 3; ++c)
+        bool bound = false;
+        for (const auto &object : m_physics_objects)
         {
-            transform[c * 4] = rx * local[c][0] - rz * local[c][2];
-            transform[c * 4 + 1] = local[c][1];
-            transform[c * 4 + 2] = rz * local[c][0] + rx * local[c][2];
+            if (object.sphere != sphere || static_cast<std::size_t>(object.block_type) != slot)
+                continue;
+            if (!bound)
+            {
+                glBindBuffer(GL_ARRAY_BUFFER, buffer);
+                glEnableVertexAttribArray(s_block_attrib.position);
+                glEnableVertexAttribArray(s_block_attrib.normal);
+                glEnableVertexAttribArray(s_block_attrib.uv);
+                glVertexAttribPointer(s_block_attrib.position, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 10, nullptr);
+                glVertexAttribPointer(s_block_attrib.normal, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 10,
+                                      reinterpret_cast<GLvoid *>(sizeof(GLfloat) * 3));
+                glVertexAttribPointer(s_block_attrib.uv, 4, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 10,
+                                      reinterpret_cast<GLvoid *>(sizeof(GLfloat) * 6));
+                bound = true;
+            }
+            const auto position = b3Body_GetPosition(object.body);
+            const float px = static_cast<float>(position.x);
+            const float py = static_cast<float>(position.y);
+            const float pz = static_cast<float>(position.z);
+            const float world_x = m_physics_origin_x + rx * px - rz * pz;
+            const float world_z = m_physics_origin_z + rz * px + rx * pz;
+
+            const auto q = b3Body_GetRotation(object.body);
+            const float qx = q.v.x, qy = q.v.y, qz = q.v.z, qw = q.s;
+            // Rotation matrix columns in physics space, then re-expressed in world axes.
+            const float local[3][3]{
+                {1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy + qz * qw), 2 * (qx * qz - qy * qw)},
+                {2 * (qx * qy - qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz + qx * qw)},
+                {2 * (qx * qz + qy * qw), 2 * (qy * qz - qx * qw), 1 - 2 * (qx * qx + qy * qy)}};
+            float transform[16]{};
+            for (int c = 0; c < 3; ++c)
+            {
+                transform[c * 4] = rx * local[c][0] - rz * local[c][2];
+                transform[c * 4 + 1] = local[c][1];
+                transform[c * 4 + 2] = rz * local[c][0] + rx * local[c][2];
+            }
+            transform[12] = world_x;
+            transform[13] = py;
+            transform[14] = world_z;
+            transform[15] = 1.0f;
+            float world_matrix[16];
+            matrix::multiply(world_matrix, projection, transform);
+            glUniformMatrix4fv(s_block_attrib.matrix, 1, GL_FALSE, world_matrix);
+            glDrawArrays(GL_TRIANGLES, 0, count);
         }
-        transform[12] = world_x;
-        transform[13] = py;
-        transform[14] = world_z;
-        transform[15] = 1.0f;
-        float world_matrix[16];
-        matrix::multiply(world_matrix, projection, transform);
-        glUniformMatrix4fv(s_block_attrib.matrix, 1, GL_FALSE, world_matrix);
-        const auto slot = static_cast<std::size_t>(object.block_type);
-        if (object.sphere)
-            sdl_gl_helper::draw_item(&s_block_attrib, m_physics_sphere_buffers[slot], m_physics_sphere_vertices);
-        else
-            sdl_gl_helper::draw_cube(&s_block_attrib, m_physics_cube_buffers[slot]);
+        if (bound)
+        {
+            glDisableVertexAttribArray(s_block_attrib.position);
+            glDisableVertexAttribArray(s_block_attrib.normal);
+            glDisableVertexAttribArray(s_block_attrib.uv);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+        }
+    };
+    for (std::size_t slot = 0; slot < m_physics_cube_buffers.size(); ++slot)
+    {
+        draw_group(false, slot, m_physics_cube_buffers[slot], 36);
+        draw_group(true, slot, m_physics_sphere_buffers[slot], m_physics_sphere_vertices);
     }
 }
 
@@ -366,7 +360,8 @@ void editor_world::draw_physics_controls() const noexcept
 void editor_world::render_player(const std::uint32_t texture) const noexcept
 {
     const auto &c = active_player->get_configs();
-    if (c.ortho_scaling() < 1)
+    const bool is_third_person = c.view_mode() == player_configs::ViewMode::THIRD_PERSON;
+    if (c.ortho_scaling() < 1 && !is_third_person)
         return;
 
     float matrix[16];
@@ -374,7 +369,8 @@ void editor_world::render_player(const std::uint32_t texture) const noexcept
     const player::position *s = &active_player->pos;
     glActiveTexture(GL_TEXTURE0 + static_cast<unsigned int>(TextureIdentifier::ATLAS));
     glBindTexture(GL_TEXTURE_2D, texture);
-    glUniform3f(s_block_attrib.camera, s->x, s->y, s->z);
+    const auto cam = camera_position();
+    glUniform3f(s_block_attrib.camera, cam[0], cam[1], cam[2]);
     glUniform1i(s_block_attrib.sampler, 0);
     glUniform1f(s_block_attrib.timer, time_of_day());
 
@@ -402,6 +398,14 @@ void editor_world::render_player(const std::uint32_t texture) const noexcept
         py = s->y + vy * marker_distance - 0.35f + 0.16f * SDL_sinf(t * 3.0f);
         pz = s->z + vz * marker_distance;
     }
+    else if (is_third_person)
+    {
+        // The camera eye is the player's position; the body hangs just below it.
+        const auto &body = m_player_body;
+        px = s->x + body.ox;
+        py = s->y - 0.5f + body.oy;
+        pz = s->z + body.oz;
+    }
     else
     {
         constexpr float offset_distance = 3.0f;
@@ -420,9 +424,85 @@ void editor_world::render_player(const std::uint32_t texture) const noexcept
     const GLboolean cull_was_enabled  = glIsEnabled(GL_CULL_FACE);
     if (use_isometric_fx) { glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); }
 
-    const GLuint player_buffer = sdl_gl_helper::gen_player_buffer(px, py, pz, animated_rx, animated_ry);
+    float sx = 1.0f, sy = 1.0f, sz = 1.0f, lean_x = 0.0f, lean_z = 0.0f;
+    float model_rx = animated_rx;
+    if (is_third_person)
+    {
+        const auto &body = m_player_body;
+        sy = 1.0f + body.squash;
+        sx = sz = 1.0f / std::sqrt(sy);
+        lean_x = -body.ox * 0.8f;
+        lean_z = -body.oz * 0.8f;
+        model_rx = body.yaw_offset;
+    }
+    const GLuint player_buffer = sdl_gl_helper::gen_player_buffer(px, py, pz, model_rx, animated_ry, sx, sy, sz,
+                                                                  lean_x, lean_z);
     sdl_gl_helper::draw_player(&s_block_attrib, player_buffer);
     sdl_gl_helper::del_buffer(player_buffer);
+
+    if (is_third_person && !use_isometric_fx)
+    {
+        // Blob shadow: find the first solid block below the player and draw a dark disc on its top face.
+        const int bx = static_cast<int>(SDL_roundf(px));
+        const int bz = static_cast<int>(SDL_roundf(pz));
+        const auto chunk_opt = find_chunk(chunked(px), chunked(pz));
+        if (chunk_opt.has_value())
+        {
+            const craft_map *map = &chunk_opt.value()->map;
+            constexpr int max_drop = 32;
+            int ground = -1;
+            bool found = false;
+            for (int y = static_cast<int>(SDL_roundf(py)); y >= static_cast<int>(SDL_roundf(py)) - max_drop; --y)
+            {
+                if (item::is_obstacle(map->get(bx, y, bz)))
+                {
+                    ground = y;
+                    found = true;
+                    break;
+                }
+            }
+            if (found)
+            {
+                const float ground_y = static_cast<float>(ground) + 0.5f + 0.01f;
+                const float height = SDL_max(py - ground_y, 0.0f);
+                const float radius = 0.45f / (1.0f + 0.15f * height);
+                const float alpha = SDL_clamp(0.5f - 0.03f * height, 0.1f, 0.5f);
+
+                constexpr int segments = 24;
+                std::array<float, (segments + 2) * 3> verts{};
+                verts[0] = px; verts[1] = ground_y; verts[2] = pz;
+                for (int i = 0; i <= segments; ++i)
+                {
+                    const float a = 2.0f * 3.14159265f * static_cast<float>(i) / segments;
+                    verts[(i + 1) * 3] = px + SDL_cosf(a) * radius;
+                    verts[(i + 1) * 3 + 1] = ground_y;
+                    verts[(i + 1) * 3 + 2] = pz + SDL_sinf(a) * radius;
+                }
+
+                float line_matrix[16];
+                begin_3d_pass(&s_line_attrib, line_matrix);
+                glUniform4f(s_line_attrib.extra1, 0.0f, 0.0f, 0.0f, alpha);
+                GLuint vbo = 0;
+                glGenBuffers(1, &vbo);
+                glBindBuffer(GL_ARRAY_BUFFER, vbo);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts.data(), GL_STREAM_DRAW);
+                glEnableVertexAttribArray(s_line_attrib.position);
+                glVertexAttribPointer(s_line_attrib.position, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glDisable(GL_CULL_FACE);
+                glEnable(GL_POLYGON_OFFSET_FILL);
+                glPolygonOffset(-1.0f, -1.0f);
+                glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
+                glDisable(GL_POLYGON_OFFSET_FILL);
+                glDisable(GL_BLEND);
+                if (cull_was_enabled) glEnable(GL_CULL_FACE);
+                glDisableVertexAttribArray(s_line_attrib.position);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glDeleteBuffers(1, &vbo);
+            }
+        }
+    }
 
     if (use_isometric_fx)
     {

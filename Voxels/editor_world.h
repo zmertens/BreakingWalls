@@ -7,6 +7,8 @@
 #include <box3d/box3d.h>
 
 #include <array>
+#include <optional>
+#include <utility>
 #include <cstdint>
 #include <vector>
 
@@ -20,9 +22,7 @@ class editor_world final : public world
     friend class player;
 
 public:
-    editor_world(SDL_Window *window, font_manager &fonts, player *p,
-                 shader_manager &shaders, texture_manager &textures,
-                 const sdl_gl_helper *sdl, bloom_pass *bloom, db_manager *db);
+    editor_world(const world_builder &b);
     ~editor_world() override;
 
     void init() noexcept override;
@@ -31,12 +31,15 @@ public:
     void draw() const noexcept override;
     command_queue &get_command_queue() noexcept;
     void update_physics(float delta_time) noexcept;
+    // Nearest-to-player impact point (world space) since the last call, for positional sound effects.
+    [[nodiscard]] std::optional<std::array<float, 3>> take_pending_impact() noexcept
+    {
+        return std::exchange(m_physics_pending_impact, std::nullopt);
+    }
     void draw_physics_controls() const noexcept;
     [[nodiscard]] int rendered_terrain_faces() const noexcept { return m_rendered_terrain_faces; }
 
 private:
-    void update_projected_plane() noexcept;
-
     void render_signs(std::uint32_t sign) const noexcept;
     void render_sign(std::uint32_t sign) const noexcept;
     void render_sky(std::uint32_t buffer, std::uint32_t sky_tex) const noexcept;
@@ -46,23 +49,12 @@ private:
     void render_player(std::uint32_t texture) const noexcept;
     void render_held_stick(std::uint32_t texture) const noexcept;
     void render_physics() const noexcept;
-    void render_hover_info() const noexcept;
     void render_text(std::uint32_t font, int justify,
                      float x, float y, float n, std::string_view text) const noexcept;
 
     std::pair<int, int> begin_sky_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
     std::pair<int, int> begin_item_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
     std::pair<int, int> begin_2d_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
-
-    // Face under the crosshair; feeds the hover info.
-    struct projected_plane
-    {
-        int target_x{0};
-        int target_y{0};
-        int target_z{0};
-        int target_face{0};
-        bool has_valid_target{false};
-    } current_projected_plane{};
 
     command_queue world_commands;
     game_environment environment;
@@ -98,6 +90,19 @@ private:
         int block_type{};
     };
 
+    // Spring-damper "soft body" that trails the player so the third-person model wobbles, leans and squashes.
+    struct player_body
+    {
+        float ox{}, oy{}, oz{};
+        float vx{}, vy{}, vz{};
+        float yaw_offset{}, yaw_velocity{};
+        float squash{}, squash_velocity{};
+        float last_x{}, last_y{}, last_z{}, last_av_y{};
+        bool last_grounded{true};
+        bool initialized{false};
+    } m_player_body;
+    void update_player_body(float dt_seconds) noexcept;
+
     static constexpr std::size_t MAX_PHYSICS_OBJECTS = 4096;
     static constexpr std::size_t MAX_PHYSICS_SPHERES = 64;
     static constexpr float PHYSICS_STEP = 1.0f / 60.0f;
@@ -107,10 +112,14 @@ private:
     std::vector<physics_object> m_physics_objects;
     std::vector<physics_voxel_source> m_physics_voxel_sources;
     std::uint64_t m_physics_impact_count{};
+    std::optional<std::array<float, 3>> m_physics_pending_impact;
+    float m_physics_pending_impact_distance_sq{};
     std::array<std::uint32_t, 6> m_physics_cube_buffers{};
     std::array<std::uint32_t, 6> m_physics_sphere_buffers{};
     int m_physics_sphere_vertices{};
     float m_physics_accumulator{};
+    std::uint64_t m_physics_step_counter{};
+    std::uint64_t m_physics_step_ticks{};
     float m_physics_origin_x{};
     float m_physics_origin_z{};
     float m_physics_spawn_height{40.0f};

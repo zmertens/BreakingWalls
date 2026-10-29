@@ -2,6 +2,12 @@
 
 #include "db_manager.h"
 
+#include <bvhv2/bvh.h>
+#include <bvhv2/default_builder.h>
+#include <bvhv2/executor.h>
+#include <bvhv2/stack.h>
+#include <bvhv2/thread_pool.h>
+
 #include <MazeBuilder/algos.h>
 #include <MazeBuilder/randomizer.h>
 #include <MazeBuilder/runtime_app.h>
@@ -109,8 +115,7 @@ namespace
 
         const int width = static_cast<int>(columns) * 2 + 1;
         const int height = static_cast<int>(rows) * 2 + 1;
-        maze_obj result{rows, columns, std::vector<std::uint8_t>(
-                                         static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0u)};
+        maze_obj result{rows, columns, std::vector<std::uint8_t>(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0u)};
         const auto mark = [&](const int x, const int y)
         {
             if (x >= 0 && x < width && y >= 0 && y < height)
@@ -233,7 +238,8 @@ std::filesystem::path write_maze_image(const mazes::configurator &config, const 
     }
 
     // Nearest-neighbour upscale to the heightmap resolution.
-    out << "P5\n" << side << ' ' << side << "\n255\n";
+    out << "P5\n"
+        << side << ' ' << side << "\n255\n";
     std::vector<char> row_bytes(static_cast<std::size_t>(side));
     for (int py = 0; py < side; ++py)
     {
@@ -331,6 +337,126 @@ heightmap generate_heightmap(const heightmap_params &params)
             map.data[index] = std::clamp(elevation * island_factor(x, z, map.side, params.edge_factor, params.edge_dropoff), 0.0f, 1.0f);
         } });
     return map;
+}
+
+struct heightmap_bvh::impl
+{
+    using Node = bvh::v2::Node<float, 3>;
+    using Bvh = bvh::v2::Bvh<Node>;
+    using Vec3 = bvh::v2::Vec<float, 3>;
+    using BBox = bvh::v2::BBox<float, 3>;
+    using Ray = bvh::v2::Ray<float, 3>;
+
+    Bvh bvh;
+    std::vector<BBox> boxes; // permuted into BVH primitive order
+    std::vector<std::pair<int, int>> columns;
+};
+
+heightmap_bvh::heightmap_bvh() = default;
+heightmap_bvh::~heightmap_bvh() = default;
+heightmap_bvh::heightmap_bvh(heightmap_bvh &&) noexcept = default;
+heightmap_bvh &heightmap_bvh::operator=(heightmap_bvh &&) noexcept = default;
+
+bool heightmap_bvh::empty() const noexcept
+{
+    return !m_impl || m_impl->boxes.empty();
+}
+
+void heightmap_bvh::build(const heightmap &map, bvh::v2::ThreadPool &pool)
+{
+    using Vec3 = impl::Vec3;
+    const auto side = static_cast<std::size_t>(map.side);
+    const std::size_t count = side * side;
+    if (count == 0)
+    {
+        m_impl.reset();
+        return;
+    }
+
+    std::vector<impl::BBox> bboxes(count);
+    std::vector<Vec3> centers(count);
+    bvh::v2::ParallelExecutor executor(pool);
+    executor.for_each(0, count, [&](std::size_t begin, std::size_t end)
+                      {
+        for (std::size_t i = begin; i < end; ++i)
+        {
+            const int x = static_cast<int>(i % side), z = static_cast<int>(i / side);
+            const auto fx = static_cast<float>(x), fz = static_cast<float>(z);
+            bboxes[i] = impl::BBox{Vec3{fx, 0.0f, fz}, Vec3{fx + 1.0f, static_cast<float>(map.column_height(x, z)), fz + 1.0f}};
+            centers[i] = bboxes[i].get_center();
+        } });
+
+    using Builder = bvh::v2::DefaultBuilder<impl::Node>;
+    Builder::Config config;
+    config.quality = Builder::Quality::Medium;
+
+    auto next = std::make_unique<impl>();
+    next->bvh = Builder::build(pool, bboxes, centers, config);
+
+    // Permute so the leaf callback reads primitives sequentially.
+    next->boxes.resize(count);
+    next->columns.resize(count);
+    executor.for_each(0, count, [&](std::size_t begin, std::size_t end)
+                      {
+        for (std::size_t i = begin; i < end; ++i)
+        {
+            const std::size_t j = next->bvh.prim_ids[i];
+            next->boxes[i] = bboxes[j];
+            next->columns[i] = {static_cast<int>(j % side), static_cast<int>(j / side)};
+        } });
+    m_impl = std::move(next);
+}
+
+std::optional<heightmap_bvh::hit> heightmap_bvh::raycast(const float origin[3], const float dir[3],
+                                                         const float max_distance) const
+{
+    if (empty())
+        return std::nullopt;
+    using Vec3 = impl::Vec3;
+    const float len = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+    if (len <= 0.0f)
+        return std::nullopt;
+
+    impl::Ray ray{Vec3{origin[0], origin[1], origin[2]}, Vec3{dir[0] / len, dir[1] / len, dir[2] / len}, 0.0f, max_distance};
+    const auto inv = ray.get_inv_dir<true>();
+
+    constexpr std::size_t none = static_cast<std::size_t>(-1);
+    std::size_t best = none;
+    bvh::v2::SmallStack<impl::Bvh::Index, 64> stack;
+    m_impl->bvh.intersect<false, false>(ray, m_impl->bvh.get_root().index, stack,
+                                        [&](std::size_t begin, std::size_t end)
+                                        {
+        for (std::size_t i = begin; i < end; ++i)
+        {
+            // Slab test against the column box; shrinking tmax keeps only the closest hit.
+            const auto &b = m_impl->boxes[i];
+            float t0 = ray.tmin, t1 = ray.tmax;
+            for (std::size_t a = 0; a < 3; ++a)
+            {
+                float n = (b.min[a] - ray.org[a]) * inv[a];
+                float f = (b.max[a] - ray.org[a]) * inv[a];
+                if (n > f)
+                    std::swap(n, f);
+                t0 = std::max(t0, n);
+                t1 = std::min(t1, f);
+            }
+            if (t0 <= t1)
+            {
+                ray.tmax = t0;
+                best = i;
+            }
+        }
+        return best != none; });
+
+    if (best == none)
+        return std::nullopt;
+    hit h;
+    h.x = m_impl->columns[best].first;
+    h.z = m_impl->columns[best].second;
+    h.t = ray.tmax;
+    for (int a = 0; a < 3; ++a)
+        h.point[a] = origin[a] + ray.dir[a] * ray.tmax;
+    return h;
 }
 
 heightmap_library &heightmap_library::instance()

@@ -1,5 +1,6 @@
 #include <cmath>
 #include <algorithm>
+#include <span>
 #include "editor_world.h"
 
 #include <MazeBuilder/algos.h>
@@ -7,6 +8,7 @@
 #include <MazeBuilder/randomizer.h>
 #include <MazeBuilder/runtime_app.h>
 
+#include "chunk.h"
 #include "db_manager.h"
 #include "item.h"
 #include "matrix.h"
@@ -76,10 +78,8 @@ static std::string gl_error_checker(const char *file, const int line) noexcept
 
 #define CHECK_GL_ERR() gl_error_checker(__FILE__, __LINE__)
 
-editor_world::editor_world(SDL_Window *window, font_manager &fonts, player *p,
-                           shader_manager &shaders, texture_manager &textures,
-                           const sdl_gl_helper *sdl, bloom_pass *bloom, db_manager *db)
-    : world{window, fonts, p, shaders, textures, sdl, bloom, db}
+editor_world::editor_world(const world_builder &b)
+    : world{b}
 {
     auto &library = heightmap_library::instance();
     library.ensure_loaded(world_db);
@@ -117,10 +117,11 @@ editor_world::~editor_world()
 void editor_world::init() noexcept
 {
     auto &&configs{active_player->get_configs()};
-    configs.view_mode(player_configs::ViewMode::PERSPECTIVE).ortho_scaling(0);
+    configs.view_mode(player_configs::ViewMode::THIRD_PERSON).ortho_scaling(0);
     active_player->pos.rx = 0.0f;
     active_player->pos.ry = -matrix::to_radians(15.0f);
     active_player->vel = {};
+    active_player->set_active(true);
     if (world_heightmap)
     {
         active_player->pos.x = active_player->pos.z = static_cast<float>(world_heightmap->side) * 0.5f;
@@ -162,6 +163,21 @@ void editor_world::init() noexcept
     s_line_attrib.position = 0;
     s_line_attrib.matrix = glGetUniformLocation(s_line_attrib.program, "matrix");
     s_line_attrib.extra1 = glGetUniformLocation(s_line_attrib.program, "color");
+
+    if (m_bloom)
+    {
+        std::array<std::uint32_t, static_cast<std::size_t>(ShaderEffect::COUNT)> transition_programs{};
+        try
+        {
+            transition_programs[static_cast<std::size_t>(ShaderEffect::PIXELATE)] =
+                world_shaders.get(ShaderIdentifier::TRANSITION_PIXELATE_SHADER).get();
+        }
+        catch (const std::exception &error)
+        {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Pixelate transition unavailable: %s\n", error.what());
+        }
+        m_bloom->set_transition_programs(transition_programs);
+    }
 
     s_text_attrib.program = world_shaders.get(ShaderIdentifier::TEXT_SHADER).get();
     s_text_attrib.position = 0;
@@ -236,7 +252,24 @@ void editor_world::update(const float delta_time, mazes::randomizer &rng) noexce
         active_player->set_on_ground(false);
     }
 
-    update_projected_plane();
+    // Invisible, unbreakable wall along the terrain/ocean boundary (blocks span +-0.5 around each cell).
+    if (world_heightmap)
+    {
+        constexpr float wall_margin = 0.25f;
+        const float low = -0.5f + wall_margin;
+        const float high = static_cast<float>(world_heightmap->side) - 0.5f - wall_margin;
+        auto &p = active_player->pos;
+        if (p.x < low || p.x > high)
+        {
+            p.x = std::clamp(p.x, low, high);
+            active_player->vel.vx = 0.0f;
+        }
+        if (p.z < low || p.z > high)
+        {
+            p.z = std::clamp(p.z, low, high);
+            active_player->vel.vz = 0.0f;
+        }
+    }
 
     delete_chunks();
     sdl_gl_helper::del_buffer(active_player->get_buffer());
@@ -284,11 +317,15 @@ void editor_world::draw() const noexcept
         const float view[4]{eye.rx, eye.ry,
                             std::tan(active_player->get_configs().fov() * 0.5f * 3.14159265f / 180.0f),
                             static_cast<float>(window_width) / static_cast<float>(std::max(window_height, 1))};
+        const float max_height = world_heightmap ? static_cast<float>(world_heightmap->max_height) : 32.0f;
+        const float ocean[4]{eye.x, eye.y, eye.z, side};
+        const float sea_level = 1.0f + HEIGHTMAP_MATERIALS[0].max_elevation * (max_height - 1.0f) * 0.85f;
         environment.draw(0.0f, 1.0f, 0.0f, 0.0f,
                          1.0f, 1.0f, time_of_day() * static_cast<float>(active_player->get_configs().day_length()),
                          1.0f, 0.0f,
                          side * 0.5f / static_cast<float>(RENDER_CHUNK_RADIUS * BUILD_CHUNK_SIZE),
-                         true, active_player->get_configs().ortho_scaling() ? nullptr : view);
+                         true, active_player->get_configs().ortho_scaling() ? nullptr : view,
+                         ocean, sea_level);
     }
     else
     {
@@ -324,13 +361,27 @@ void editor_world::draw() const noexcept
     render_sign(signs_texture);
 
     render_wireframe();
-    render_crosshairs();
-    render_hover_info();
-    render_held_stick(atlas_texture);
+    if (this->active_player->get_configs().view_mode() == player_configs::ViewMode::FIRST_PERSON)
+    {
+        render_held_stick(atlas_texture);
+        render_crosshairs();
+    }
 
     const auto &configs{active_player->get_configs()};
     const float bloom_str = configs.use_bloom_effect() ? configs.exposure_val() : 0.0f;
-    m_bloom->execute(bloom_str);
+    // Pixelate the frame more strongly as the player nears the wall, blending terrain into ocean.
+    float blend_progress = 1.0f;
+    if (world_heightmap)
+    {
+        constexpr float blend_distance = 8.0f;
+        const auto &p = active_player->pos;
+        const float side = static_cast<float>(world_heightmap->side);
+        const float edge_distance = std::min({p.x + 0.5f, side - 0.5f - p.x, p.z + 0.5f, side - 0.5f - p.z});
+        const float closeness = std::clamp(edge_distance / blend_distance, 0.0f, 1.0f);
+        blend_progress = 0.5f + 0.5f * closeness;
+    }
+    m_bloom->execute(bloom_str, bloom_pass::BLUR_PASSES, ShaderEffect::PIXELATE, blend_progress,
+                     static_cast<float>(SDL_GetTicks()) / 1000.0f);
 }
 
 command_queue &editor_world::get_command_queue() noexcept
@@ -338,8 +389,63 @@ command_queue &editor_world::get_command_queue() noexcept
     return world_commands;
 }
 
+void editor_world::update_player_body(const float dt_seconds) noexcept
+{
+    auto &b = m_player_body;
+    const auto &p = active_player->pos;
+    const bool grounded = active_player->is_on_ground();
+    const float dt = std::min(dt_seconds, 1.0f / 30.0f);
+    if (!b.initialized || std::abs(p.x - b.last_x) > 4.0f || std::abs(p.z - b.last_z) > 4.0f ||
+        std::abs(p.y - b.last_y) > 4.0f)
+    {
+        b = player_body{};
+        b.last_x = p.x;
+        b.last_y = p.y;
+        b.last_z = p.z;
+        b.last_grounded = grounded;
+        b.initialized = true;
+        return;
+    }
+    if (dt <= 0.0f)
+        return;
+
+    // Anchor velocity from actual motion, so collisions and flying are covered too.
+    const float av_x = (p.x - b.last_x) / dt, av_y = (p.y - b.last_y) / dt, av_z = (p.z - b.last_z) / dt;
+    b.last_x = p.x;
+    b.last_y = p.y;
+    b.last_z = p.z;
+
+    constexpr float stiffness = 120.0f, damping = 9.0f, restitution = 0.35f, floor_offset = -0.15f;
+    b.vx += (-stiffness * b.ox - damping * (b.vx - av_x)) * dt;
+    b.vy += (-stiffness * b.oy - damping * (b.vy - av_y)) * dt;
+    b.vz += (-stiffness * b.oz - damping * (b.vz - av_z)) * dt;
+    b.ox += (b.vx - av_x) * dt;
+    b.oy += (b.vy - av_y) * dt;
+    b.oz += (b.vz - av_z) * dt;
+    if (b.oy < floor_offset)
+    {
+        b.oy = floor_offset;
+        if (b.vy - av_y < 0.0f)
+            b.vy = av_y - (b.vy - av_y) * restitution;
+    }
+
+    float yaw_error = p.rx - b.yaw_offset;
+    yaw_error = std::remainder(yaw_error, 2.0f * 3.14159265f);
+    b.yaw_velocity += (60.0f * yaw_error - 8.0f * b.yaw_velocity) * dt;
+    b.yaw_offset += b.yaw_velocity * dt;
+
+    if (grounded != b.last_grounded)
+        b.squash_velocity += grounded ? std::max(b.last_av_y, -20.0f) * 0.6f : 4.0f;
+    b.last_grounded = grounded;
+    b.last_av_y = av_y;
+    const float stretch_target = grounded ? 0.0f : std::clamp(std::abs(av_y) * 0.02f, 0.0f, 0.3f);
+    b.squash_velocity += (-150.0f * (b.squash - stretch_target) - 10.0f * b.squash_velocity) * dt;
+    b.squash = std::clamp(b.squash + b.squash_velocity * dt, -0.45f, 0.45f);
+}
+
 void editor_world::update_physics(const float delta_time) noexcept
 {
+    update_player_body(delta_time / 1000.0f);
     const float dt_seconds = delta_time / 1000.0f;
     if (m_physics_reset_requested)
     {
@@ -365,13 +471,15 @@ void editor_world::update_physics(const float delta_time) noexcept
     }
     if (!m_physics_paused && std::isfinite(dt_seconds) && dt_seconds > 0.0f)
     {
-        // Bounded catch-up so a slow frame cannot snowball into more steps.
-        m_physics_accumulator = std::min(m_physics_accumulator + dt_seconds, 3.0f * PHYSICS_STEP);
-        while (m_physics_accumulator >= PHYSICS_STEP)
+        // One variable-length step per frame: catch-up loops make slow frames slower.
+        const float step = std::min(dt_seconds, 1.0f / 30.0f);
+        const auto t0 = SDL_GetPerformanceCounter();
+        sync_physics_player();
+        b3World_Step(m_physics_world, step, 2);
+        const auto t1 = SDL_GetPerformanceCounter();
+        // Bodies that roll off the arena edge are dropped back in rather than blocked by walls.
+        if (++m_physics_step_counter % 8 == 0)
         {
-            sync_physics_player();
-            b3World_Step(m_physics_world, PHYSICS_STEP, 4);
-            // Bodies that roll off the arena edge are dropped back in rather than blocked by walls.
             for (const auto &object : m_physics_objects)
             {
                 if (b3Body_GetPosition(object.body).y < -10.0f)
@@ -381,9 +489,33 @@ void editor_world::update_physics(const float delta_time) noexcept
                     b3Body_SetAngularVelocity(object.body, {0.0f, 0.0f, 0.0f});
                 }
             }
-            const auto contacts = b3World_GetContactEvents(m_physics_world);
-            m_physics_impact_count += static_cast<std::uint64_t>(contacts.hitCount);
-            m_physics_accumulator -= PHYSICS_STEP;
+        }
+        const auto contacts = b3World_GetContactEvents(m_physics_world);
+        m_physics_impact_count += static_cast<std::uint64_t>(contacts.hitCount);
+        const auto &listener = active_player->pos;
+        for (const auto &hit : std::span{contacts.hitEvents, static_cast<std::size_t>(contacts.hitCount)})
+        {
+            const float px = static_cast<float>(hit.point.x), pz = static_cast<float>(hit.point.z);
+            const std::array<float, 3> world_point{m_physics_origin_x + m_physics_right_x * px - m_physics_right_z * pz,
+                                                   static_cast<float>(hit.point.y),
+                                                   m_physics_origin_z + m_physics_right_z * px + m_physics_right_x * pz};
+            const float dx = world_point[0] - listener.x, dy = world_point[1] - listener.y,
+                        dz = world_point[2] - listener.z;
+            const float distance_sq = dx * dx + dy * dy + dz * dz;
+            if (!m_physics_pending_impact || distance_sq < m_physics_pending_impact_distance_sq)
+            {
+                m_physics_pending_impact = world_point;
+                m_physics_pending_impact_distance_sq = distance_sq;
+            }
+        }
+        m_physics_step_ticks += t1 - t0;
+        if (m_physics_step_counter % 120 == 0)
+        {
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "b3World_Step avg %.3f ms over 120 steps (%zu bodies)",
+                         static_cast<double>(m_physics_step_ticks) * 1000.0 /
+                             static_cast<double>(SDL_GetPerformanceFrequency()) / 120.0,
+                         m_physics_objects.size());
+            m_physics_step_ticks = 0;
         }
     }
 }
@@ -395,6 +527,20 @@ void editor_world::handle_event(const SDL_Event &event) noexcept
     {
         m_swing_start_ms = SDL_GetTicks();
         m_swinging = true;
+    }
+    if (event.type == SDL_EVENT_KEY_DOWN)
+    {
+        switch (event.key.scancode)
+        {
+        case SDL_SCANCODE_ESCAPE: {
+            break;
+        }
+        case SDL_SCANCODE_R:
+            // Reset
+            break;
+        default:
+            break;
+        }
     }
     if (event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
     {
@@ -417,6 +563,7 @@ void editor_world::reset_physics() noexcept
     m_physics_objects.clear();
     m_physics_accumulator = 0.0f;
     m_physics_impact_count = 0;
+    m_physics_pending_impact.reset();
 
     auto world_def = b3DefaultWorldDef();
     world_def.gravity = {0.0f, -9.8f, 0.0f};
@@ -495,7 +642,7 @@ void editor_world::reset_physics() noexcept
             auto body_def = b3DefaultBodyDef();
             body_def.type = b3_dynamicBody;
             body_def.position = {static_cast<float>(offset), static_cast<float>(y), 0.0f};
-                        const auto body = b3CreateBody(m_physics_world, &body_def);
+            const auto body = b3CreateBody(m_physics_world, &body_def);
             auto shape_def = b3DefaultShapeDef();
             shape_def.density = 0.5f;
             shape_def.baseMaterial.friction = 0.3f;
@@ -505,8 +652,7 @@ void editor_world::reset_physics() noexcept
             b3CreateHullShape(body, &shape_def, &voxel.base);
 
             const int material = y == height - 1 ? terrain_materials[static_cast<std::size_t>(column)] : 2;
-            constexpr std::array<std::array<float, 3>, 3> colors{{
-                {0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
+            constexpr std::array<std::array<float, 3>, 3> colors{{{0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
             m_physics_objects.push_back(
                 {body, false, material, colors[static_cast<std::size_t>(material % colors.size())]});
         }
@@ -515,10 +661,12 @@ void editor_world::reset_physics() noexcept
     constexpr float floor_half_width = static_cast<float>(half_columns) + 0.5f;
     constexpr float arena_half_depth = 14.0f;
     // Off-slice terrain: static columns matching the visible voxel heights so bodies don't sink.
+    constexpr int arena_depth = static_cast<int>(arena_half_depth);
     for (int column = 0; column < columns; ++column)
     {
         const int offset = column - half_columns;
-        for (int depth = -static_cast<int>(arena_half_depth); depth <= static_cast<int>(arena_half_depth); ++depth)
+        std::array<int, 2 * arena_depth + 1> heights{};
+        for (int depth = -arena_depth; depth <= arena_depth; ++depth)
         {
             if (depth == 0)
                 continue;
@@ -528,15 +676,27 @@ void editor_world::reset_physics() noexcept
             const int world_z = static_cast<int>(SDL_roundf(
                 m_physics_origin_z + m_physics_right_z * static_cast<float>(offset) +
                 m_physics_right_x * static_cast<float>(depth)));
-            if (!world_heightmap || !world_heightmap->contains(world_x, world_z))
-                continue;
-            const int height = world_heightmap->column_height(world_x, world_z);
-            if (height <= 0)
-                continue;
-            const float half = static_cast<float>(height) * 0.5f;
-            const auto box = b3MakeOffsetBoxHull(0.5f, half, 0.5f,
-                                                 {static_cast<float>(offset), half - 0.5f, static_cast<float>(depth)});
-            b3CreateHullShape(terrain_body, &terrain_shape_def, &box.base);
+            if (world_heightmap && world_heightmap->contains(world_x, world_z))
+                heights[static_cast<std::size_t>(depth + arena_depth)] =
+                    std::max(0, world_heightmap->column_height(world_x, world_z));
+        }
+        // Merge runs of equal height along depth into one box to keep the static broadphase small.
+        for (std::size_t i = 0; i < heights.size();)
+        {
+            const int height = heights[i];
+            const auto run_end = std::find_if(heights.begin() + static_cast<std::ptrdiff_t>(i), heights.end(),
+                                              [height](const int h) { return h != height; });
+            const auto run = static_cast<std::size_t>(run_end - (heights.begin() + static_cast<std::ptrdiff_t>(i)));
+            if (height > 0)
+            {
+                const float half = static_cast<float>(height) * 0.5f;
+                const float run_half = static_cast<float>(run) * 0.5f;
+                const float center_depth = static_cast<float>(static_cast<int>(i) - arena_depth) + run_half - 0.5f;
+                const auto box = b3MakeOffsetBoxHull(0.5f, half, run_half,
+                                                     {static_cast<float>(offset), half - 0.5f, center_depth});
+                b3CreateHullShape(terrain_body, &terrain_shape_def, &box.base);
+            }
+            i += run;
         }
     }
     const auto floor = b3MakeOffsetBoxHull(floor_half_width, 0.05f, arena_half_depth,
@@ -661,7 +821,7 @@ void editor_world::add_physics_object(const bool sphere) noexcept
     auto body_def = b3DefaultBodyDef();
     body_def.type = b3_dynamicBody;
     body_def.position = {-4.0f + static_cast<float>(index % 9), m_physics_spawn_height, static_cast<float>(index % 5) * 2.0f - 4.0f};
-        const auto body = b3CreateBody(m_physics_world, &body_def);
+    const auto body = b3CreateBody(m_physics_world, &body_def);
 
     auto shape_def = b3DefaultShapeDef();
     shape_def.density = sphere ? 10.0f : 0.5f;
@@ -679,8 +839,7 @@ void editor_world::add_physics_object(const bool sphere) noexcept
         const auto box = b3MakeBoxHull(0.45f, 0.45f, 0.45f);
         b3CreateHullShape(body, &shape_def, &box.base);
     }
-    constexpr std::array<std::array<float, 3>, 3> colors{{
-        {0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
+    constexpr std::array<std::array<float, 3>, 3> colors{{{0.95f, 0.37f, 0.16f}, {0.2f, 0.65f, 0.95f}, {0.88f, 0.72f, 0.2f}}};
     m_physics_objects.push_back({body, sphere, 4, colors[index % colors.size()]});
 }
 
@@ -700,15 +859,3 @@ void editor_world::restore_physics_voxels() noexcept
     m_physics_voxel_sources.clear();
 }
 
-void editor_world::update_projected_plane() noexcept
-{
-    int hx, hy, hz, face;
-    current_projected_plane.has_valid_target = hit_test_face(&hx, &hy, &hz, &face) != 0;
-    if (current_projected_plane.has_valid_target)
-    {
-        current_projected_plane.target_x = hx;
-        current_projected_plane.target_y = hy;
-        current_projected_plane.target_z = hz;
-        current_projected_plane.target_face = face;
-    }
-}

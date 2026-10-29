@@ -1,5 +1,5 @@
 #version 300 es
-precision highp float;
+precision mediump float;
 
 uniform samplerCube environment_map;
 uniform float rotation;
@@ -12,6 +12,9 @@ uniform bool static_horizon;
 // camera yaw, pitch, tan(fov / 2), aspect; used when use_view is set to look through the world-fixed cubemap
 uniform vec4 view;
 uniform bool use_view;
+// camera position, heightmap side (world units); the map spans [0, side] on x and z
+uniform vec4 ocean;
+uniform float sea_level;
 in vec2 screen_position;
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 brightColor;
@@ -33,6 +36,35 @@ vec3 neon_field(vec2 world) {
     return radiance * (1.0 + animation.z * 0.035);
 }
 
+// Rings of water spread outward from the heightmap edge, like transition_wave but on a sea plane.
+vec3 ocean_surface(vec3 direction, vec3 sky) {
+    // Branch-free so no driver has to translate early returns or ternaries.
+    float valid = step(direction.y, -0.002) * (1.0 - step(ocean.y, sea_level));
+    float dy = min(direction.y, -0.002);
+    float t = (sea_level - ocean.y) / dy;
+    vec2 hit = ocean.xz + direction.xz * t;
+    vec2 centered = hit - vec2(ocean.w * 0.5);
+    vec2 outside = max(abs(centered) - vec2(ocean.w * 0.5), 0.0);
+    float edge = length(outside);
+    vec2 outward = outside * sign(centered) / max(edge, 1e-4);
+    float travel = edge * 1.6 - animation.x * 1.8;
+    float envelope = smoothstep(-0.5, 1.5, edge) * exp(-edge * 0.035);
+    // Cross ripples keep the open water from looking like perfectly straight rings.
+    float slope = (cos(travel) * 0.35 + cos(edge * 3.1 - animation.x * 2.7) * 0.12) * envelope
+                + 0.04 * cos(hit.x * 0.9 + animation.x * 1.1) * cos(hit.y * 0.8 - animation.x * 0.9);
+    vec3 normal = normalize(vec3(-outward.x * slope, 1.0, -outward.y * slope));
+    float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(normal, -direction), 0.0), 5.0);
+    vec3 reflected = texture(environment_map, reflect(direction, normal)).rgb * 0.9 + vec3(0.01, 0.015, 0.04);
+    vec3 deep = vec3(0.02, 0.18, 0.30);
+    vec3 shallow = vec3(0.10, 0.50, 0.55);
+    vec3 water = mix(deep, shallow, exp(-edge * 0.25));
+    vec3 color = mix(water, reflected, clamp(fresnel + 0.2, 0.0, 1.0));
+    float foam = smoothstep(0.55, 1.0, sin(travel)) * exp(-edge * 0.7) * smoothstep(-0.2, 0.3, edge);
+    color += vec3(0.85, 0.95, 1.0) * foam * 0.45;
+    // Distant water melts into the horizon sky.
+    return mix(sky, color, valid * (1.0 - smoothstep(40.0, 260.0, t)));
+}
+
 void view_sky() {
     const float pi = 3.14159265359;
     vec3 forward = vec3(cos(view.x - pi * 0.5) * cos(view.y), sin(view.y), sin(view.x - pi * 0.5) * cos(view.y));
@@ -47,6 +79,7 @@ void view_sky() {
     float sun = 1.0 - smoothstep(0.045, 0.07, angle);
     float halo = 1.0 - smoothstep(0.06, 0.26, angle);
     radiance += vec3(1.0, 0.50, 0.16) * halo * 0.25 + vec3(1.0, 0.88, 0.58) * sun * 2.0;
+    radiance = ocean_surface(direction, radiance);
     fragColor = vec4(radiance, 1.0);
     brightColor = vec4(0.0, 0.0, 0.0, 1.0);
 }

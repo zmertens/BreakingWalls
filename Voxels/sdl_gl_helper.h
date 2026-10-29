@@ -9,7 +9,6 @@
 
 #include <SDL3/SDL.h>
 
-class player;
 struct chunk;
 struct SDL_Window;
 
@@ -66,7 +65,9 @@ public:
                                                                int &out_vertices) noexcept;
     [[nodiscard]] static std::uint32_t gen_cube_buffer(float x, float y, float z, float n, int w) noexcept;
     [[nodiscard]] static std::uint32_t gen_plant_buffer(float x, float y, float z, float n, int w) noexcept;
-    [[nodiscard]] static std::uint32_t gen_player_buffer(float x, float y, float z, float rx, float ry) noexcept;
+    [[nodiscard]] static std::uint32_t gen_player_buffer(float x, float y, float z, float rx, float ry,
+                                                          float sx = 1.0f, float sy = 1.0f, float sz = 1.0f,
+                                                          float lean_x = 0.0f, float lean_z = 0.0f) noexcept;
     [[nodiscard]] static std::uint32_t gen_text_buffer(float x, float y, float n, std::string_view text) noexcept;
     [[nodiscard]] static int _gen_sign_buffer(float *data, float x, float y, float z, int face, std::string_view text) noexcept;
     static void gen_sign_buffer(chunk *chunk) noexcept;

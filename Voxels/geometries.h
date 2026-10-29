@@ -29,7 +29,9 @@ public:
 
     static void make_player(
         float *data,
-        float x, float y, float z, float rx, float ry) noexcept;
+        float x, float y, float z, float rx, float ry,
+        float sx = 1.0f, float sy = 1.0f, float sz = 1.0f,
+        float lean_x = 0.0f, float lean_z = 0.0f) noexcept;
 
     static void make_cube_wireframe(
         float *data, float x, float y, float z, float n) noexcept;

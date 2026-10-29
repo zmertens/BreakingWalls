@@ -1,5 +1,7 @@
 #include "world.h"
 
+#include "chunk.h"
+#include "db.h"
 #include "db_manager.h"
 
 // ---------------------------------------------------------------------------

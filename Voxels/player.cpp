@@ -11,6 +11,7 @@
 #include "matrix.h"
 #include "texture.h"
 #include "editor_world.h"
+#include "world.h"
 
 #include <SDL3/SDL.h>
 
@@ -25,7 +26,6 @@ constexpr auto ORTHO_MIN_SCALE = 8;
 constexpr auto ORTHO_MAX_SCALE = 96;
 
 player::player()
-    : _is_active{true}, _is_on_ground{false}, _is_flying{false}, _is_auto_running{false}, player_buffer{}, current_item_index{0}, selected_font_index{0}, current_world{nullptr}
 {
     // Movement key bindings
     assign_key(PlayerAction::MOVE_LEFT, SDL_SCANCODE_A);
@@ -51,47 +51,18 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
 {
     if (event.type == SDL_EVENT_QUIT)
     {
-        _is_active = false;
+        this->set_active(false);
     }
 
-    if (event.type == SDL_EVENT_MOUSE_WHEEL)
+    if (!is_active())
     {
-        constexpr std::int32_t MAX_ITEM_INDEX = item::TOTAL_ITEMS - 1;
-
-        if (event.wheel.y > SCROLL_THRESHOLD)
-        {
-            // Scroll up (backward through items)
-            if (current_item_index > 0)
-            {
-                current_item_index--;
-            }
-            else
-            {
-                current_item_index = MAX_ITEM_INDEX; // Wrap to last valid item
-            }
-        }
-        else if (event.wheel.y < -SCROLL_THRESHOLD)
-        {
-            // Scroll down (forward through items)
-            if (current_item_index < MAX_ITEM_INDEX)
-            {
-                current_item_index++;
-            }
-            else
-            {
-                current_item_index = 0; // Wrap to first item
-            }
-        }
+        return;
     }
+
     if (event.type == SDL_EVENT_KEY_DOWN)
     {
         switch (event.key.scancode)
         {
-        case SDL_SCANCODE_H:
-            this->configs.show_crosshair_details(!this->configs.show_crosshair_details());
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Crosshair Details [H]: %s",
-                        configs.show_crosshair_details() ? "ON" : "OFF");
-            return;
         case SDL_SCANCODE_O:
         {
             const char *view_name = "Perspective";
@@ -102,9 +73,13 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
                 view_name = "Ortho View";
                 break;
             case player_configs::ViewMode::ORTHO:
-                configs.view_mode(player_configs::ViewMode::PERSPECTIVE).ortho_scaling(0);
+                configs.view_mode(player_configs::ViewMode::FIRST_PERSON).ortho_scaling(0);
                 break;
-            case player_configs::ViewMode::PERSPECTIVE:
+            case player_configs::ViewMode::FIRST_PERSON:
+                configs.view_mode(player_configs::ViewMode::THIRD_PERSON).ortho_scaling(0);
+                view_name = "Third Person";
+                break;
+            case player_configs::ViewMode::THIRD_PERSON:
                 configs.view_mode(player_configs::ViewMode::ISOMETRIC).ortho_scaling(ORTHO_MIN_SCALE);
                 view_name = "Isometric View";
                 break;
@@ -149,7 +124,7 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
             if (found->second == PlayerAction::JUMP)
             {
                 // Only allow jumping when on ground
-                if (_is_on_ground)
+                if (is_on_ground())
                 {
                     commands.push(binding->second);
                 }
@@ -161,6 +136,37 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
     if (event.type == SDL_EVENT_KEY_UP)
     {
     }
+
+    if (event.type == SDL_EVENT_MOUSE_WHEEL)
+    {
+        constexpr std::int32_t MAX_ITEM_INDEX = item::TOTAL_ITEMS - 1;
+
+        if (event.wheel.y > SCROLL_THRESHOLD)
+        {
+            // Scroll up (backward through items)
+            if (selected_item_index > 0)
+            {
+                selected_item_index--;
+            }
+            else
+            {
+                selected_item_index = MAX_ITEM_INDEX; // Wrap to last valid item
+            }
+        }
+        else if (event.wheel.y < -SCROLL_THRESHOLD)
+        {
+            // Scroll down (forward through items)
+            if (selected_item_index < MAX_ITEM_INDEX)
+            {
+                selected_item_index++;
+            }
+            else
+            {
+                selected_item_index = 0; // Wrap to first item
+            }
+        }
+    }
+
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
     {
         if (event.button.button == SDL_BUTTON_LEFT)
@@ -219,6 +225,10 @@ void player::handle_event(const SDL_Event &event, command_queue &commands) noexc
 
 void player::update([[maybe_unused]] float delta_time, [[maybe_unused]] mazes::randomizer &rng) noexcept
 {
+    if (is_auto_running())
+    {
+        // Implement auto-running logic here
+    }
 }
 
 void player::draw() const noexcept
@@ -230,7 +240,7 @@ void player::handle_realtime_input(command_queue &commands)
     int numKeys = 0;
     const auto *keyState = SDL_GetKeyboardState(&numKeys);
 
-    if (_is_auto_running)
+    if (is_auto_running())
     {
         if (const auto binding = player_commands.find(PlayerAction::MOVE_FORWARD);
             binding != player_commands.cend() && binding->second.action)
@@ -245,12 +255,12 @@ void player::handle_realtime_input(command_queue &commands)
         if (is_realtime_action(action))
         {
             // Skip JUMP if not flying
-            if (action == PlayerAction::JUMP && !_is_flying)
+            if (action == PlayerAction::JUMP && !is_flying())
             {
                 continue;
             }
 
-            if (action == PlayerAction::MOVE_FORWARD && _is_auto_running)
+            if (action == PlayerAction::MOVE_FORWARD && is_auto_running())
             {
                 continue;
             }
@@ -262,14 +272,6 @@ void player::handle_realtime_input(command_queue &commands)
                     binding != player_commands.cend() && binding->second.action)
                 {
                     commands.push(binding->second);
-                }
-                // Check for disablement
-                if (_is_auto_running &&
-                    (action == PlayerAction::MOVE_LEFT ||
-                     action == PlayerAction::MOVE_RIGHT ||
-                     action == PlayerAction::MOVE_BACKWARD))
-                {
-                    _is_auto_running = false;
                 }
             }
         }
@@ -293,32 +295,42 @@ void player::assign_key(const PlayerAction action, const std::uint32_t key)
 
 bool player::is_active() const noexcept
 {
-    return _is_active;
+    return this->configs.is_active();
 }
 
 void player::set_active(bool active) noexcept
 {
-    this->_is_active = active;
+    this->configs.is_active(active);
 }
 
 bool player::is_flying() const noexcept
 {
-    return _is_flying;
+    return this->configs.is_flying();
 }
 
 void player::set_flying(const bool flying) noexcept
 {
-    this->_is_flying = flying;
+    this->configs.is_flying(flying);
 }
 
 bool player::is_on_ground() const noexcept
 {
-    return _is_on_ground;
+    return this->configs.is_on_ground();
 }
 
 void player::set_on_ground(const bool grounded) noexcept
 {
-    this->_is_on_ground = grounded;
+    this->configs.is_on_ground(grounded);
+}
+
+bool player::is_auto_running() const noexcept
+{
+    return this->configs.is_auto_running();
+}
+
+void player::set_auto_running(bool auto_running) noexcept
+{
+    this->configs.is_auto_running(auto_running);
 }
 
 std::uint32_t player::get_buffer() const noexcept
@@ -331,20 +343,20 @@ void player::set_buffer(const std::uint32_t value) noexcept
     this->player_buffer = value;
 }
 
-std::int32_t player::get_item() const noexcept
+std::int32_t player::get_selected_item_index() const noexcept
 {
-    if (this->current_item_index >= 0 && this->current_item_index < item::ITEMS.size())
+    if (this->selected_item_index >= 0 && this->selected_item_index < item::ITEMS.size())
     {
-        return item::ITEMS.at(this->current_item_index);
+        return item::ITEMS.at(this->selected_item_index);
     }
     return -1;
 }
 
-void player::set_item(const std::int32_t value) noexcept
+void player::set_selected_item_index(const std::int32_t value) noexcept
 {
     if (value >= 0 && value < item::ITEMS.size())
     {
-        this->current_item_index = value;
+        this->selected_item_index = value;
     }
 }
 
@@ -445,24 +457,24 @@ void player::initialize_actions()
     player_commands[PlayerAction::MOVE_AUTO].action = derived_action<player>(
         [](player &p, const float dt, mazes::randomizer &rng)
         {
-            p._is_auto_running = !p._is_auto_running;
+            p.configs.is_auto_running(!p.configs.is_auto_running());
         });
 
     player_commands[PlayerAction::JUMP].action = derived_action<player>(
         [](player &p, float dt, mazes::randomizer &rng)
         {
-            if (p._is_flying)
+            if (p.configs.is_flying())
             {
                 // In flying mode, move up
                 constexpr float flySpeed = 0.15f;
                 p.vel.vy = flySpeed;
             }
-            else if (p._is_on_ground)
+            else if (p.configs.is_on_ground())
             {
                 // Normal jump when on ground
                 constexpr float jumpVelocity = 8.0f;
                 p.vel.vy = jumpVelocity;
-                p._is_on_ground = false;
+                p.configs.is_on_ground(false);
             }
         });
 
@@ -478,7 +490,7 @@ void player::initialize_actions()
     player_commands[PlayerAction::MOVE_DOWN].action = derived_action<player>(
         [](player &p, float dt, mazes::randomizer &rng)
         {
-            if (p._is_flying)
+            if (p.configs.is_flying())
             {
                 constexpr float flySpeed = 4.85f;
                 p.vel.vy = -flySpeed;
@@ -488,22 +500,24 @@ void player::initialize_actions()
     player_commands[PlayerAction::MOVE_UP].action = derived_action<player>(
         [](player &p, float dt, mazes::randomizer &rng)
         {
-            if (p._is_flying)
+            if (p.configs.is_flying())
             {
                 constexpr float flySpeed = 4.85f;
                 p.vel.vy = flySpeed;
             }
         });
 
+#if defined(BREAKING_WALLS_DEBUG_DEF)
     player_commands[PlayerAction::FLY].action = derived_action<player>(
         [](player &p, float dt, mazes::randomizer &rng)
         {
-            p._is_flying = !p._is_flying;
-            if (p._is_flying)
+            p.configs.is_flying(!p.configs.is_flying());
+            if (p.configs.is_flying())
             {
                 p.vel.vy = 0.0f;
             }
         });
+#endif
 
     player_commands[PlayerAction::BUILD_BLOCK].action = derived_action<player>(
         [](const player &p, float dt, mazes::randomizer &rng)
@@ -600,7 +614,10 @@ void player::on_right_click() const noexcept
     {
         if (!world::player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz))
         {
-            current_world->set_block(hx, hy, hz, get_item());
+            if (const int block = get_selected_item_index(); block >= 0)
+            {
+                current_world->set_block(hx, hy, hz, block);
+            }
         }
     }
 }
@@ -612,7 +629,7 @@ void player::on_middle_click() noexcept
     const int hw = current_world->hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (const auto it = std::ranges::find(item::ITEMS, hw); it != item::ITEMS.end())
     {
-        current_item_index = static_cast<std::int32_t>(it - item::ITEMS.begin());
+        selected_item_index = static_cast<std::int32_t>(it - item::ITEMS.begin());
     }
 }
 
@@ -656,7 +673,6 @@ std::string player::artifacts() const noexcept
 // ============================================================================
 // Async Artifact Export
 // ============================================================================
-
 void player::start_async_artifact_export() noexcept
 {
     // Don't start a new export if one is already running
@@ -709,36 +725,6 @@ std::string player::get_artifact_export_result() noexcept
         return "";
     }
     return m_exporter.get_result();
-}
-
-// ============================================================================
-// CAD Helper Functions (Tier 1)
-// ============================================================================
-
-const char *player::get_block_name(item::BlockType block_type) noexcept
-{
-    return item::to_block_name(block_type).data();
-}
-
-const char *player::get_face_name(const int face) noexcept
-{
-    switch (face)
-    {
-    case 0:
-        return "Left";
-    case 1:
-        return "Right";
-    case 2:
-        return "Top";
-    case 3:
-        return "Bottom";
-    case 4:
-        return "Front";
-    case 5:
-        return "Back";
-    default:
-        return "Unknown";
-    }
 }
 
 const player_configs &player::get_configs() const noexcept

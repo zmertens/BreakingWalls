@@ -6,6 +6,7 @@
 #include <deque>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -71,6 +72,38 @@ struct heightmap_params
 
 /// Builds a heightmap, splitting rows over worker threads.
 [[nodiscard]] heightmap generate_heightmap(const heightmap_params &params);
+
+namespace bvh::v2
+{
+    class ThreadPool;
+}
+
+/// Proof of concept: BVH v2 over one AABB per heightmap column, for ray picking against the terrain.
+/// Built in parallel on the given pool; queries are const and safe from multiple threads.
+class heightmap_bvh
+{
+public:
+    struct hit
+    {
+        int x{0}, z{0};  // column hit
+        float t{0.0f};   // distance along the (normalized) ray
+        float point[3]{}; // world-space entry point, voxel units (column x spans [x, x + 1))
+    };
+
+    heightmap_bvh();
+    ~heightmap_bvh();
+    heightmap_bvh(heightmap_bvh &&) noexcept;
+    heightmap_bvh &operator=(heightmap_bvh &&) noexcept;
+
+    void build(const heightmap &map, bvh::v2::ThreadPool &pool);
+    [[nodiscard]] bool empty() const noexcept;
+    /// Closest column hit within [0, max_distance]; `dir` need not be normalized.
+    [[nodiscard]] std::optional<hit> raycast(const float origin[3], const float dir[3], float max_distance) const;
+
+private:
+    struct impl;
+    std::unique_ptr<impl> m_impl;
+};
 
 /// Process-wide list of generated heightmaps, persisted through db.
 class heightmap_library

@@ -14,4 +14,5 @@ endif()
 
 set(BREAKING_WALLS_APP_NAME "Breaking_Walls_App")
 
+add_subdirectory(Extlibs/bvhv2)
 add_subdirectory(Voxels)

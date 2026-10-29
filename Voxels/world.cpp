@@ -1,23 +1,28 @@
 #include "world.h"
-#include "chunk_worker.h"
+
+#include "chunk.h"
+#include "craft_map.h"
 #include "resource_manager.h"
 #include "shader.h"
+#include "worker_traits.h"
+#include "world_builder.h"
+
 #if defined(__EMSCRIPTEN__)
 #include <GLES3/gl3.h>
 #else
 #include <glad/gl.h>
 #endif
+
 #include <SDL3/SDL.h>
+
 #include <stdexcept>
 
-world::world(SDL_Window *, font_manager &fonts, player *p,
-             shader_manager &shaders, texture_manager &textures,
-             const sdl_gl_helper *sdl, bloom_pass *bloom, db_manager *db)
-    : simple_direct_medialayer{sdl}, active_fonts{fonts}, world_shaders{shaders},
-      world_textures{textures}, scene_graph_layers{}, next_chunk_slot_in_view{1},
-      active_player{p}, m_bloom{bloom}
+world::world(const world_builder &b)
+    : simple_direct_medialayer{b.build_sdl}, active_fonts{*b.build_fonts}, world_shaders{*b.build_shaders},
+      world_textures{*b.build_textures}, scene_graph_layers{}, next_chunk_slot_in_view{1},
+      active_player{b.build_player}, m_bloom{b.build_bloom_passes ? &b.build_bloom_passes->get(BloomPassIdentifier::EDITOR) : nullptr}
 {
-    world_db = db;
+    world_db = b.build_db;
     if (!m_bloom)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "world: a loaded bloom pass is required");
@@ -46,22 +51,20 @@ void world::init_voxel_engine() noexcept
     s_block_attrib.position = 0;
     s_block_attrib.normal = 1;
     s_block_attrib.uv = 2;
-    s_block_attrib.matrix   = glGetUniformLocation(s_block_attrib.program, "matrix");
-    s_block_attrib.sampler  = glGetUniformLocation(s_block_attrib.program, "sampler");
-    s_block_attrib.extra1   = glGetUniformLocation(s_block_attrib.program, "sky_sampler");
-    s_block_attrib.extra2   = glGetUniformLocation(s_block_attrib.program, "daylight");
-    s_block_attrib.extra3   = glGetUniformLocation(s_block_attrib.program, "fog_distance");
-    s_block_attrib.extra4   = glGetUniformLocation(s_block_attrib.program, "is_ortho");
-    s_block_attrib.camera   = glGetUniformLocation(s_block_attrib.program, "camera");
-    s_block_attrib.timer    = glGetUniformLocation(s_block_attrib.program, "timer");
+    s_block_attrib.matrix = glGetUniformLocation(s_block_attrib.program, "matrix");
+    s_block_attrib.sampler = glGetUniformLocation(s_block_attrib.program, "sampler");
+    s_block_attrib.extra1 = glGetUniformLocation(s_block_attrib.program, "sky_sampler");
+    s_block_attrib.extra2 = glGetUniformLocation(s_block_attrib.program, "daylight");
+    s_block_attrib.extra3 = glGetUniformLocation(s_block_attrib.program, "fog_distance");
+    s_block_attrib.extra4 = glGetUniformLocation(s_block_attrib.program, "is_ortho");
+    s_block_attrib.camera = glGetUniformLocation(s_block_attrib.program, "camera");
+    s_block_attrib.timer = glGetUniformLocation(s_block_attrib.program, "timer");
 }
 
 // Get current time in seconds
 double world::get_time_s() const noexcept
 {
-    return (static_cast<double>(SDL_GetTicks())
-            + static_cast<double>(active_player->get_configs().start_time())
-            - static_cast<double>(active_player->get_configs().start_ticks())) / 1000.0;
+    return (static_cast<double>(SDL_GetTicks()) + static_cast<double>(active_player->get_configs().start_time()) - static_cast<double>(active_player->get_configs().start_ticks())) / 1000.0;
 }
 
 // Returns time of day as fraction of day

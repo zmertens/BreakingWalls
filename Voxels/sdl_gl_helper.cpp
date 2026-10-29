@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+
+#include "chunk.h"
 #include "geometries.h"
 #include "shader.h"
 #include "world.h"
@@ -82,7 +84,7 @@ bool sdl_gl_helper::initialize(std::string_view title, int width, int height) no
         SDL_GL_SetSwapInterval(1);
 
         SDL_ShowWindow(window);
-        SDL_SetWindowRelativeMouseMode(window, false);
+        SDL_SetWindowRelativeMouseMode(window, true);
         SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
 #if !defined(__EMSCRIPTEN__)
@@ -444,10 +446,11 @@ std::uint32_t sdl_gl_helper::gen_plant_buffer(const float x, const float y, cons
 }
 
 std::uint32_t sdl_gl_helper::gen_player_buffer(const float x, const float y, const float z, const float rx,
-                                               const float ry) noexcept
+                                               const float ry, const float sx, const float sy, const float sz,
+                                               const float lean_x, const float lean_z) noexcept
 {
     GLfloat* data = malloc_faces(10, 6);
-    geometries::make_player(data, x, y, z, rx, ry);
+    geometries::make_player(data, x, y, z, rx, ry, sx, sy, sz, lean_x, lean_z);
     return gen_faces(10, 6, data);
 }
 
