@@ -12,6 +12,8 @@
 
 #include <MazeBuilder/configurator.h>
 
+class db_manager;
+
 /// Surface material shared by the editor (authoring) and the game world (consumer).
 /// Elevation bands pick the block type; the colour/shininess are exported with the OBJ materials.
 struct heightmap_material
@@ -116,18 +118,18 @@ public:
     };
 
     /// Loads persisted heightmaps once.
-    void ensure_loaded();
+    void ensure_loaded(db_manager *db);
     /// Generates, stores, and selects a new heightmap.
-    std::shared_ptr<const heightmap> add(const heightmap_params &params);
+    std::shared_ptr<const heightmap> add(const heightmap_params &params, db_manager *db);
     void select(std::size_t index);
-    void remove(std::size_t index);
+    void remove(std::size_t index, db_manager *db);
 
     [[nodiscard]] const std::vector<entry> &entries() const noexcept { return m_entries; }
     [[nodiscard]] std::size_t selected() const noexcept { return m_selected; }
     [[nodiscard]] std::shared_ptr<const heightmap> current() const noexcept;
 
     /// Play queue for the game world: saved heightmaps first, otherwise freshly generated ones.
-    [[nodiscard]] std::deque<std::shared_ptr<const heightmap>> make_play_queue(std::size_t count);
+    [[nodiscard]] std::deque<std::shared_ptr<const heightmap>> make_play_queue(std::size_t count, db_manager *db);
 
 private:
     std::vector<entry> m_entries;

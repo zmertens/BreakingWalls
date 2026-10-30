@@ -2,6 +2,7 @@
 
 #include "chunk.h"
 #include "db.h"
+#include "db_manager.h"
 
 // ---------------------------------------------------------------------------
 // Block / sign / light manipulation
@@ -17,12 +18,14 @@ void world::unset_sign(const int x, const int y, const int z) const noexcept
         if (auto *signs = &c->signs; db::sign_list_remove_all(signs, x, y, z))
         {
             c->dirty = 1;
-            db::delete_signs(x, y, z);
+            if (world_db)
+                world_db->delete_signs(x, y, z);
         }
     }
     else
     {
-        db::delete_signs(x, y, z);
+        if (world_db)
+            world_db->delete_signs(x, y, z);
     }
 }
 
@@ -36,12 +39,14 @@ void world::unset_sign_face(const int x, const int y, const int z, const int fac
         if (auto *signs = &c->signs; db::sign_list_remove(signs, x, y, z, face))
         {
             c->dirty = 1;
-            db::delete_sign(x, y, z, face);
+            if (world_db)
+                world_db->delete_sign(x, y, z, face);
         }
     }
     else
     {
-        db::delete_sign(x, y, z, face);
+        if (world_db)
+            world_db->delete_sign(x, y, z, face);
     }
 }
 
@@ -61,7 +66,8 @@ void world::_set_sign(const int p, const int q, const int x, const int y, const 
         if (dirty)
             c->dirty = 1;
     }
-    db::insert_sign(p, q, x, y, z, face, text.data());
+    if (world_db)
+        world_db->insert_sign(p, q, x, y, z, face, text.data());
 }
 
 void world::set_sign(const int x, const int y, const int z, const int face, const std::string_view text) const noexcept
@@ -81,7 +87,8 @@ void world::toggle_light(int x, int y, int z) const noexcept
         craft_map *map = &c->lights;
         const int w = map->get(x, y, z) ? 0 : 15;
         map->set(x, y, z, w);
-        db::insert_light(p, q, x, y, z, w);
+        if (world_db)
+            world_db->insert_light(p, q, x, y, z, w);
         dirty_chunk(c);
     }
 }
@@ -94,12 +101,14 @@ void world::set_light(int p, int q, int x, int y, int z, int w) const noexcept
         if (craft_map *map = &c->lights; map->set(x, y, z, w))
         {
             dirty_chunk(c);
-            db::insert_light(p, q, x, y, z, w);
+            if (world_db)
+                world_db->insert_light(p, q, x, y, z, w);
         }
     }
     else
     {
-        db::insert_light(p, q, x, y, z, w);
+        if (world_db)
+            world_db->insert_light(p, q, x, y, z, w);
     }
 }
 
@@ -112,12 +121,14 @@ void world::_set_block(const int p, int q, int x, int y, int z, const int w, con
         {
             if (dirty)
                 dirty_chunk(c);
-            db::insert_block(p, q, x, y, z, w);
+            if (world_db)
+                world_db->insert_block(p, q, x, y, z, w);
         }
     }
     else
     {
-        db::insert_block(p, q, x, y, z, w);
+        if (world_db)
+            world_db->insert_block(p, q, x, y, z, w);
     }
     if (w == 0 && chunked(static_cast<float>(x)) == p && chunked(static_cast<float>(z)) == q)
     {

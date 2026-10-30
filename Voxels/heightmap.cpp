@@ -1,6 +1,6 @@
 #include "heightmap.h"
 
-#include "db.h"
+#include "db_manager.h"
 
 #include <bvhv2/bvh.h>
 #include <bvhv2/default_builder.h>
@@ -465,12 +465,14 @@ heightmap_library &heightmap_library::instance()
     return library;
 }
 
-void heightmap_library::ensure_loaded()
+void heightmap_library::ensure_loaded(db_manager *db)
 {
     if (m_loaded)
         return;
     m_loaded = true;
-    for (auto &record : db::load_heightmaps())
+    if (!db)
+        return;
+    for (auto &record : db->load_heightmaps())
     {
         auto map = std::make_shared<heightmap>();
         map->name = std::move(record.name);
@@ -484,11 +486,11 @@ void heightmap_library::ensure_loaded()
     m_selected = m_entries.empty() ? 0 : m_entries.size() - 1;
 }
 
-std::shared_ptr<const heightmap> heightmap_library::add(const heightmap_params &params)
+std::shared_ptr<const heightmap> heightmap_library::add(const heightmap_params &params, db_manager *db)
 {
-    ensure_loaded();
+    ensure_loaded(db);
     auto map = std::make_shared<heightmap>(generate_heightmap(params));
-    const int id = db::save_heightmap(map->name, map->side, map->max_height, quantize(map->data));
+    const int id = db ? db->save_heightmap(map->name, map->side, map->max_height, quantize(map->data)) : 0;
     m_entries.push_back({id, map});
     m_selected = m_entries.size() - 1;
     return map;
@@ -500,11 +502,12 @@ void heightmap_library::select(const std::size_t index)
         m_selected = index;
 }
 
-void heightmap_library::remove(const std::size_t index)
+void heightmap_library::remove(const std::size_t index, db_manager *db)
 {
     if (index >= m_entries.size())
         return;
-    db::delete_heightmap(m_entries[index].id);
+    if (db)
+        db->delete_heightmap(m_entries[index].id);
     m_entries.erase(m_entries.begin() + static_cast<std::ptrdiff_t>(index));
     if (m_selected > index || m_selected >= m_entries.size())
         m_selected = m_selected > 0 ? m_selected - 1 : 0;
@@ -515,9 +518,9 @@ std::shared_ptr<const heightmap> heightmap_library::current() const noexcept
     return m_selected < m_entries.size() ? m_entries[m_selected].map : nullptr;
 }
 
-std::deque<std::shared_ptr<const heightmap>> heightmap_library::make_play_queue(const std::size_t count)
+std::deque<std::shared_ptr<const heightmap>> heightmap_library::make_play_queue(const std::size_t count, db_manager *db)
 {
-    ensure_loaded();
+    ensure_loaded(db);
     std::deque<std::shared_ptr<const heightmap>> queue;
     for (const auto &entry : m_entries)
         queue.push_back(entry.map);

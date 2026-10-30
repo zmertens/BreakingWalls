@@ -9,6 +9,7 @@
 #include <MazeBuilder/runtime_app.h>
 
 #include "chunk.h"
+#include "db_manager.h"
 #include "item.h"
 #include "matrix.h"
 #include "texture.h"
@@ -81,10 +82,10 @@ editor_world::editor_world(const world_builder &b)
     : world{b}
 {
     auto &library = heightmap_library::instance();
-    library.ensure_loaded();
+    library.ensure_loaded(world_db);
     if (!library.current())
     {
-        library.add(heightmap_params{});
+        library.add(heightmap_params{}, world_db);
     }
     world_heightmap = library.current();
     if (active_player)

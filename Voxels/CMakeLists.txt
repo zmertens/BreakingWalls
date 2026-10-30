@@ -19,6 +19,7 @@ set(CRAFT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/craft.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/craft_map.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/db.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/db_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_world.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_world_renderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/font.cpp

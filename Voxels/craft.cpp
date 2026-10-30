@@ -19,7 +19,7 @@
 
 #include <SDL3/SDL.h>
 
-#include "db.h"
+#include "db_manager.h"
 #include "font.h"
 #include "geometries.h"
 #include "player.h"
@@ -52,6 +52,8 @@ struct craft::craft_impl
     sdl_gl_helper simple_direct_medialayer;
     shader_manager world_shaders;
     soundfx_manager world_sounds;
+    // Declared after the SDL layer so it is destroyed first; run() also closes it explicitly.
+    db_manager world_db;
     artifact_exporter_manager artifact_exporters;
     texture_manager world_textures;
     bloom_pass_manager world_bloom_effects;
@@ -78,7 +80,8 @@ struct craft::craft_impl
             std::ref(active_player),
             std::ref(simple_direct_medialayer),
             std::ref(world_sounds),
-            std::ref(artifact_exporters)});
+            std::ref(artifact_exporters),
+            std::ref(world_db)});
 
         register_states();
 
@@ -254,24 +257,6 @@ bool craft::run(mazes::randomizer &rng) const noexcept
         return false;
     }
 
-    static constexpr auto USE_DATABASE{true};
-    if constexpr (USE_DATABASE)
-    {
-        db::enable();
-        std::string db_file;
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
-        db_file = ":memory:";
-#else
-        db_file = "breakingwalls.db";
-#endif
-
-        if (db::init(db_file.data()) != 0)
-        {
-            SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Database initialization failed\n");
-            return false;
-        }
-    }
-
     SDL_Log("Using Maze Builder library v%s\n", get_version().c_str());
     SDL_Log("%s\n", maze("--rows=8 --columns=8 --algo=dfs -d[0:7]").c_str());
 
@@ -307,9 +292,9 @@ bool craft::run(mazes::randomizer &rng) const noexcept
         // FLUSH DATABASE
         static constexpr auto COMMIT_INTERVAL = 5000u;
         const auto commit_elapsed = static_cast<double>(current - last_commit) * 1000.0 / perf_frequency;
-        if (USE_DATABASE && commit_elapsed > COMMIT_INTERVAL)
+        if (commit_elapsed > COMMIT_INTERVAL)
         {
-            db::commit();
+            app->world_db.commit();
             last_commit = current;
         }
 
@@ -349,13 +334,9 @@ bool craft::run(mazes::randomizer &rng) const noexcept
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
-    // Cleanup database
+    // States are gone, so nothing else touches the database; close it before SDL goes away.
     SDL_Log("Closing database...\n");
-    if constexpr (USE_DATABASE)
-    {
-        db::close();
-        db::disable();
-    }
+    app->world_db.close();
 
     // Cleanup SDL (this must be last)
     SDL_Log("Shutting down SDL...\n");

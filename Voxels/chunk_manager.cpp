@@ -5,6 +5,7 @@
 #include "craft_map.h"
 #include "db.h"
 #include "geometries.h"
+#include "db_manager.h"
 #include "item.h"
 #include "matrix.h"
 #include "player.h"
@@ -27,7 +28,8 @@ namespace
 {
     void load(const worker_item *item, const bool enable_heightmap,
               const float player_x, const float player_z, const heightmap *constrained,
-              const bool include_decorations, const bool load_persisted_blocks) noexcept
+              const bool include_decorations, const bool load_persisted_blocks,
+              db_manager *db) noexcept
     {
         const int p = item->p, q = item->q;
         craft_map *block_map = item->block_maps.get(1, 1);
@@ -41,10 +43,10 @@ namespace
             block_map, p, q, world::BUILD_CHUNK_SIZE,
             enable_heightmap, player_x, player_z, FLATTEN_RADIUS, constrained, include_decorations);
 
-        if (load_persisted_blocks)
+        if (load_persisted_blocks && db)
         {
-            db::load_blocks(block_map, p, q);
-            db::load_lights(light_map, p, q);
+            db->load_blocks(block_map, p, q);
+            db->load_lights(light_map, p, q);
         }
     }
 
@@ -1143,12 +1145,13 @@ void world::load_chunk(const worker_item *item) const noexcept
          active_player ? active_player->pos.z : 0.0f,
          world_heightmap.get(),
          world_include_decorations,
-         world_load_persisted_blocks);
+         world_load_persisted_blocks,
+         world_db);
 }
 
 void world::init_chunk(chunk *c, const int p, const int q) noexcept
 {
-    c->initialize(p, q);
+    c->initialize(p, q, world_db);
     chunk_index[chunk_key(p, q)] = c;
     dirty_chunk(c);
     attach_chunk_to_layer(c, static_cast<int>(Layer::BACKGROUND));

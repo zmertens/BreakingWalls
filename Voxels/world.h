@@ -32,6 +32,7 @@ struct chunk;
 struct worker;
 struct worker_item;
 struct world_builder;
+class db_manager;
 union SDL_Event;
 
 class world
@@ -114,6 +115,7 @@ protected:
     // Optional constrained terrain; fixed for the lifetime of the world so workers can read it unlocked.
     std::shared_ptr<const heightmap> world_heightmap;
     bool world_include_decorations{true};
+    db_manager *world_db{nullptr};
     bool world_load_persisted_blocks{true};
     void init_chunk(chunk *c, int p, int q) noexcept;
     void create_chunk(chunk *c, int p, int q) noexcept;

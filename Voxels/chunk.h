@@ -19,11 +19,12 @@
 #include "heightmap.h"
 
 struct worker_item;
+class db_manager;
 
 // Unified voxel chunk: spatial scene-graph node + terrain/light data.
 struct chunk final
 {
-    void initialize(int p, int q) noexcept;
+    void initialize(int p, int q, db_manager *db = nullptr) noexcept;
 
     void generate(worker_item *item) noexcept;
 

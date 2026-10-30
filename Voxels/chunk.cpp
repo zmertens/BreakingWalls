@@ -2,6 +2,7 @@
 
 #include "geometries.h"
 #include "item.h"
+#include "db_manager.h"
 #include "player.h"
 #include "sdl_gl_helper.h"
 #include "worker_traits.h"
@@ -21,14 +22,17 @@ void chunk::generate(worker_item *item) noexcept
     sdl_gl_helper::gen_sign_buffer(this);
 }
 
-void chunk::initialize(const int chunk_p, const int chunk_q) noexcept
+void chunk::initialize(const int chunk_p, const int chunk_q, db_manager *db) noexcept
 {
     p = chunk_p; q = chunk_q;
     faces = 0; sign_faces = 0;
     buffer = 0; sign_buffer = 0;
     dirty = 1;
     db::sign_list_alloc(&signs, 16);
-    db::load_signs(&signs, p, q);
+    if (db)
+    {
+        db->load_signs(&signs, p, q);
+    }
     craft_map *block_map = &map;
     craft_map *light_map = &lights;
     const int dx = p * world::BUILD_CHUNK_SIZE - 1;

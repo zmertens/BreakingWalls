@@ -22,6 +22,7 @@ world::world(const world_builder &b)
       world_textures{*b.build_textures}, scene_graph_layers{}, next_chunk_slot_in_view{1},
       active_player{b.build_player}, m_bloom{b.build_bloom_passes ? &b.build_bloom_passes->get(BloomPassIdentifier::EDITOR) : nullptr}
 {
+    world_db = b.build_db;
     if (!m_bloom)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "world: a loaded bloom pass is required");

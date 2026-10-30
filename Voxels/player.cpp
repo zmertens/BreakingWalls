@@ -5,7 +5,7 @@
 #include <ranges>
 #include <sstream>
 
-#include "db.h"
+#include "db_manager.h"
 #include "geometries.h"
 #include "item.h"
 #include "matrix.h"
@@ -646,8 +646,8 @@ void player::on_tag_sign() const noexcept
 /// @return Wavefront .obj data as a string, or empty if not ready
 std::string player::artifacts() const noexcept
 {
-    // Check if database is enabled
-    if (!db::is_enabled())
+    db_manager *db = current_world ? current_world->world_db : nullptr;
+    if (!db || !db->is_open())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Database not enabled for artifacts export\n");
         return "";
@@ -659,7 +659,7 @@ std::string player::artifacts() const noexcept
     // Query blocks from nearby chunks - increased radius for better coverage
     // Radius of 4 chunks = 9x9 chunk area (~2304 blocks if fully populated)
     constexpr int chunk_radius = 4;
-    const auto blocks = db::query_blocks_near_chunks(player_chunk_p, player_chunk_q, chunk_radius);
+    const auto blocks = db->query_blocks_near_chunks(player_chunk_p, player_chunk_q, chunk_radius);
 
     if (blocks.empty())
     {
@@ -684,19 +684,23 @@ void player::start_async_artifact_export() noexcept
 
     SDL_Log("Starting async artifact export...\n");
 
-    if (!db::is_enabled())
+    db_manager *db = current_world ? current_world->world_db : nullptr;
+    if (!db || !db->is_open())
     {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Database not enabled for artifacts export\n");
         m_exporter.start_async({});
         return;
     }
 
+    // Query blocks on the calling (main) thread.
+    // SQLite is not safe to call from std::async worker threads in Emscripten
+    // (SQLITE_THREADSAFE=0 builds), so the query stays on this thread.
     const int player_chunk_p = world::chunked(pos.x);
     const int player_chunk_q = world::chunked(pos.z);
 
     SDL_Log("Async export: Querying database for blocks...\n");
     constexpr int chunk_radius = 4;
-    auto blocks = db::query_blocks_near_chunks(player_chunk_p, player_chunk_q, chunk_radius);
+    auto blocks = db->query_blocks_near_chunks(player_chunk_p, player_chunk_q, chunk_radius);
 
     if (blocks.empty())
     {
