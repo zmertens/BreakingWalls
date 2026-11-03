@@ -1,8 +1,8 @@
 #include "world.h"
 
 #include "chunk.h"
-#include "db.h"
 #include "db_manager.h"
+#include "sign_data.h"
 
 // ---------------------------------------------------------------------------
 // Block / sign / light manipulation
@@ -15,7 +15,7 @@ void world::unset_sign(const int x, const int y, const int z) const noexcept
     if (const auto chunk_opt = find_chunk(p, q); chunk_opt.has_value())
     {
         chunk *c = chunk_opt.value();
-        if (auto *signs = &c->signs; db::sign_list_remove_all(signs, x, y, z))
+        if (sign_data::sign_list_remove_all(c->signs, x, y, z))
         {
             c->dirty = 1;
             if (world_db)
@@ -36,7 +36,7 @@ void world::unset_sign_face(const int x, const int y, const int z, const int fac
     if (const auto chunk_opt = find_chunk(p, q); chunk_opt.has_value())
     {
         chunk *c = chunk_opt.value();
-        if (auto *signs = &c->signs; db::sign_list_remove(signs, x, y, z, face))
+        if (sign_data::sign_list_remove(c->signs, x, y, z, face))
         {
             c->dirty = 1;
             if (world_db)
@@ -61,8 +61,7 @@ void world::_set_sign(const int p, const int q, const int x, const int y, const 
     if (const auto chunk_opt = find_chunk(p, q); chunk_opt.has_value())
     {
         chunk *c = chunk_opt.value();
-        auto *signs = &c->signs;
-        db::sign_list_add(signs, x, y, z, face, text.data());
+        sign_data::sign_list_add(c->signs, x, y, z, face, text.data());
         if (dirty)
             c->dirty = 1;
     }
@@ -121,13 +120,13 @@ void world::_set_block(const int p, int q, int x, int y, int z, const int w, con
         {
             if (dirty)
                 dirty_chunk(c);
-            if (world_db)
+            if (world_db && !arena_active.load())
                 world_db->insert_block(p, q, x, y, z, w);
         }
     }
     else
     {
-        if (world_db)
+        if (world_db && !arena_active.load())
             world_db->insert_block(p, q, x, y, z, w);
     }
     if (w == 0 && chunked(static_cast<float>(x)) == p && chunked(static_cast<float>(z)) == q)

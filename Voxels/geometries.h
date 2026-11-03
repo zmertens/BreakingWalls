@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 class craft_map;
@@ -47,11 +48,9 @@ public:
 
     static void create_voxel_world(const std::function<void(craft_map *, int, int, int, int)> &setter,
                                    craft_map *m, const int p, const int q, const int chunk_size,
-                                   bool enable_heightmap = true,
-                                   float player_x = 0.0f, float player_z = 0.0f,
-                                   float flatten_radius = 128.0f,
-                                   const heightmap *constrained = nullptr,
-                                   bool include_decorations = true) noexcept;
+                                   float player_x, float player_z,
+                                   float flatten_radius, const heightmap *constrained, bool include_decorations,
+                                   std::string_view::const_iterator text_iter) noexcept;
 
 private:
     static int _make_sphere(

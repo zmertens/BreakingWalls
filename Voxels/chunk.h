@@ -15,16 +15,15 @@
 #include <vector>
 
 #include "craft_map.h"
-#include "db.h"
-#include "heightmap.h"
+#include "sign_data.h"
 
-struct worker_item;
 class db_manager;
+struct worker_item;
 
 // Unified voxel chunk: spatial scene-graph node + terrain/light data.
 struct chunk final
 {
-    void initialize(int p, int q, db_manager *db = nullptr) noexcept;
+    void initialize(int p, int q, db_manager *sign_data = nullptr) noexcept;
 
     void generate(worker_item *item) noexcept;
 
@@ -48,7 +47,7 @@ struct chunk final
     // Voxel data
     craft_map map{};
     craft_map lights{};
-    db::sign_list signs{};
+    std::vector<sign_data::sign> signs{};
     int p{0};
     int q{0};
     int faces{0};

@@ -123,6 +123,7 @@ void game_environment::init(const std::uint32_t seed)
     m_use_view = m_background.uniform("use_view");
     m_ocean = m_background.uniform("ocean");
     m_sea_level = m_background.uniform("sea_level");
+    m_parallax = m_background.uniform("parallax");
     m_ready = true;
     SDL_Log("Game environment: procedural noise cubemap ready");
 }
@@ -139,7 +140,8 @@ void game_environment::draw(const float rotation, const float zoom,
                             const float seconds, const float level,
                             const float lights, const float board_radius,
                             const bool static_horizon, const float *view,
-                            const float *ocean, const float sea_level) const noexcept
+                            const float *ocean, const float sea_level,
+                            const float parallax_x, const float parallax_y) const noexcept
 {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -160,6 +162,7 @@ void game_environment::draw(const float rotation, const float zoom,
     const float no_ocean[4]{0.0f, -1.0e9f, 0.0f, 0.0f};
     glUniform4fv(m_ocean, 1, ocean ? ocean : no_ocean);
     glUniform1f(m_sea_level, sea_level);
+    glUniform2f(m_parallax, parallax_x, parallax_y);
     glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);

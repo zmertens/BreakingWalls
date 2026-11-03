@@ -2,14 +2,52 @@
 
 #include <array>
 #include <mutex>
+#include <string>
+#include <string_view>
 
 #include <SDL3/SDL.h>
 
+#include <MazeBuilder/runtime_app.h>
+
 #include <noise/noise.h>
 
-#include "item.h"
 #include "heightmap.h"
+#include "item.h"
 #include "matrix.h"
+
+namespace
+{
+    // Equivalent to simplex3(x, y, z, 8, 0.5f, 2.0f) > 0.75f, but stops once the
+    // remaining octaves (each bounded by +/-amp) can no longer reach the threshold.
+    bool cloud_density_exceeds(const float x, const float y, const float z) noexcept
+    {
+        constexpr int octaves = 8;
+        constexpr float persistence = 0.5f, lacunarity = 2.0f, threshold = 0.75f;
+        constexpr float bound_margin = 1.05f;
+        float max_total = 0.f, amp = 1.f;
+        for (int i = 0; i < octaves; ++i)
+        {
+            max_total += amp;
+            amp *= persistence;
+        }
+        float freq = 1.f, a = 1.f, max = 1.f;
+        float total = noise3(x, y, z);
+        float remaining = max_total - 1.f;
+        for (int i = 1; i < octaves; ++i)
+        {
+            if ((1.f + (total + remaining * bound_margin) / max_total) / 2.f <= threshold)
+            {
+                return false;
+            }
+            freq *= lacunarity;
+            a *= persistence;
+            max += a;
+            remaining -= a;
+            total += noise3(x * freq, y * freq, z * freq) * a;
+        }
+        return (1.f + total / max) / 2.f > threshold;
+    }
+} // namespace
 
 void geometries::make_cube_faces(
     float *data, float ao[6][4], float light[6][4],
@@ -429,12 +467,22 @@ void geometries::make_sphere(float *data, float r, int detail) noexcept
 
 void geometries::create_voxel_world(const std::function<void(craft_map *, int, int, int, int)> &setter,
                                     craft_map *m, const int p, const int q, const int chunk_size,
-                                    bool enable_heightmap,
                                     float player_x, float player_z,
                                     float flatten_radius,
-                                    const heightmap *constrained,
-                                    const bool include_decorations) noexcept
+                                    const heightmap *constrained, const bool include_decorations,
+                                    std::string_view::const_iterator text_iter) noexcept
 {
+    // The maze runtime is a shared singleton, so chunk workers must not enter it concurrently.
+    static std::mutex maze_runtime_mutex;
+    {
+        const auto size = std::to_string(chunk_size);
+        const std::string args = "-r " + size + " -c " + size + " -a dfs -d [0:-1]";
+        std::lock_guard<std::mutex> lock(maze_runtime_mutex);
+        auto result{mazes::runtime_app::instance()->apply(args).substr(static_cast<int>(text_iter - std::string_view::const_iterator{}))};
+        // Update the text iterator to the new position after processing the result
+        text_iter += result.size();
+    }
+
     if (constrained)
     {
         // Voxels exist only inside the heightmap; everything outside is empty for performance.
@@ -484,10 +532,8 @@ void geometries::create_voxel_world(const std::function<void(craft_map *, int, i
                 // Keep constrained heightmaps bounded while preserving the voxel-cloud sky layer.
                 for (int y = 64; include_decorations && y < 72; ++y)
                 {
-                    if (simplex3(static_cast<float>(x) * 0.01f,
-                                 static_cast<float>(y) * 0.1f,
-                                 static_cast<float>(z) * 0.01f,
-                                 8, 0.5f, 2.0f) > 0.75f)
+                    if (simplex3(static_cast<float>(x) * 0.01f, static_cast<float>(y) * 0.1f,
+                                 static_cast<float>(z) * 0.01f, 8, 0.5f, 2.0f) > 0.75f)
                     {
                         setter(m, x, y, z, static_cast<int>(item::BlockType::CLOUD) * flag);
                     }
@@ -514,7 +560,7 @@ void geometries::create_voxel_world(const std::function<void(craft_map *, int, i
             const float dist_to_player = SDL_sqrtf(
                 (static_cast<float>(x) - player_x) * (static_cast<float>(x) - player_x) +
                 (static_cast<float>(z) - player_z) * (static_cast<float>(z) - player_z));
-            const bool should_flatten = !enable_heightmap && dist_to_player <= flatten_radius;
+            const bool should_flatten = flatten_radius > 0.0f && dist_to_player <= flatten_radius;
 
             // Build the environment
             const float f = simplex2(static_cast<float>(x) * 0.01f, static_cast<float>(z) * 0.01f,
@@ -530,7 +576,7 @@ void geometries::create_voxel_world(const std::function<void(craft_map *, int, i
                 w = 2;
             }
 
-            // Apply flattening if within range and heightmap disabled
+            // Apply flattening if within range
             if (should_flatten)
             {
                 h = 12; // Flatten to water level

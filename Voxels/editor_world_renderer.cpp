@@ -10,6 +10,7 @@
 #include "resource_identifiers.h"
 #include "resource_manager.h"
 #include "sdl_gl_helper.h"
+#include "sign_data.h"
 
 #if defined(__EMSCRIPTEN__)
 #include <GLES3/gl3.h>
@@ -108,9 +109,9 @@ void editor_world::render_sign(const std::uint32_t sign) const noexcept
     glBindTexture(GL_TEXTURE_2D, sign);
     glUniform1i(s_text_attrib.sampler, static_cast<unsigned int>(TextureIdentifier::SIGNS));
     glUniform1i(s_text_attrib.extra1, 1);
-    char text[db::MAX_SIGN_LENGTH];
-    SDL_strlcpy(text, active_player->get_configs().tag().c_str(), db::MAX_SIGN_LENGTH);
-    text[db::MAX_SIGN_LENGTH - 1] = '\0';
+    char text[sign_data::MAX_SIGN_LENGTH];
+    SDL_strlcpy(text, active_player->get_configs().tag().c_str(), sign_data::MAX_SIGN_LENGTH);
+    text[sign_data::MAX_SIGN_LENGTH - 1] = '\0';
     GLfloat *data = sdl_gl_helper::malloc_faces(5, SDL_strlen(text));
     const int length = sdl_gl_helper::_gen_sign_buffer(data, static_cast<float>(x), static_cast<float>(y),
                                                        static_cast<float>(z), face, text);
@@ -354,7 +355,7 @@ void editor_world::draw_physics_controls() const noexcept
     ImGui::SameLine();
     if (ImGui::Button("Reset stack"))
         m_physics_reset_requested = true;
-    ImGui::TextUnformatted("Heightmap voxels above y=1 are dynamic; y=0 and y=1 stay fixed.");
+    ImGui::TextUnformatted("Bodies spawn at random maze cells each level.");
 }
 
 void editor_world::render_player(const std::uint32_t texture) const noexcept
@@ -391,12 +392,10 @@ void editor_world::render_player(const std::uint32_t texture) const noexcept
     float px = s->x, py = s->y - 0.5f, pz = s->z;
     if (use_isometric_fx)
     {
-        float vx, vy, vz;
-        matrix::compute_sight_vector(s->rx, s->ry, vx, vy, vz);
-        constexpr float marker_distance = 3.0f;
-        px = s->x + vx * marker_distance;
-        py = s->y + vy * marker_distance - 0.35f + 0.16f * SDL_sinf(t * 3.0f);
-        pz = s->z + vz * marker_distance;
+        // Stand the marker on the actual body position; a parallel projection hides any offset along the view ray.
+        px = s->x;
+        py = s->y - 0.5f + (active_player->is_flying() ? 0.16f * SDL_sinf(t * 3.0f) : 0.0f);
+        pz = s->z;
     }
     else if (is_third_person)
     {
@@ -568,6 +567,56 @@ void editor_world::render_player(const std::uint32_t texture) const noexcept
 
         if (depth_was_enabled) glEnable(GL_DEPTH_TEST);
         if (cull_was_enabled)  glEnable(GL_CULL_FACE);
+    }
+}
+
+void editor_world::render_ticker(const std::uint32_t font) const noexcept
+{
+    if (!ticker.enabled() || ticker.get_message().empty())
+    {
+        return;
+    }
+    const auto [w, h] = simple_direct_medialayer->get_window_size();
+    constexpr float MAX_WIDTH_FRACTION = 0.12f;
+    const float n = 14.0f * std::max(1.0f, ImGui::GetIO().FontGlobalScale);
+    const auto max_chars = static_cast<std::size_t>(std::max(1.0f, MAX_WIDTH_FRACTION * static_cast<float>(w) / n));
+    const auto text = ticker.visible_text(max_chars);
+    if (text.empty())
+    {
+        return;
+    }
+    // Sits under the MENU button (12px margin); the 2D pass has its origin at the bottom-left.
+    const float top = 12.0f + ImGui::GetFrameHeight() + 16.0f;
+    const float y = static_cast<float>(h) - top - n;
+    render_text(font, 0, 12.0f + n * 0.5f, y, n, text);
+}
+
+void editor_world::render_arcade_hud(const std::uint32_t font) const noexcept
+{
+    if (!arcade.active())
+    {
+        return;
+    }
+    const auto [w, h] = simple_direct_medialayer->get_window_size();
+    const float n = 16.0f * std::max(1.0f, ImGui::GetIO().FontGlobalScale);
+    auto centered_left = [&](const std::string &text, const float y)
+    {
+        constexpr float x = 16.0f;
+        render_text(font, 0, x, y, n, text);
+    };
+
+    const std::string status = "LEVEL " + std::to_string(arcade.level_number()) + "  SCORE " +
+                               std::to_string(arcade.score()) + "  TIME " +
+                               std::to_string(static_cast<int>(arcade.time_left()));
+    centered_left(status, static_cast<float>(h) - 128.0f - n);
+
+    if (arcade.state() == arcade_state::PAUSED)
+    {
+        centered_left("PAUSED - PRESS Q OR CLICK TO PLAY", static_cast<float>(h) * 0.5f);
+    }
+    else if (arcade.state() == arcade_state::WON)
+    {
+        centered_left("LEVEL CLEAR - PRESS Q", static_cast<float>(h) * 0.5f);
     }
 }
 

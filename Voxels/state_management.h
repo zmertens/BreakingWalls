@@ -163,14 +163,21 @@ class editor_state final : public state
 public:
     editor_state(state_stack &stack, const context &context);
 
-    void draw_preview3D(int fbo, int width, int height) const noexcept;
     void draw_physics_controls() const noexcept;
+    [[nodiscard]] bool physics_enabled() const noexcept;
     void draw() const noexcept override;
     void rebuild_world() noexcept;
     bool update(float delta_time, mazes::randomizer &rng) noexcept override;
     bool handle_event(SDL_Event &event) noexcept override;
 
+    // Arcade control from the menu; the world is touched on the next update.
+    void request_arcade(bool start) noexcept { m_arcade_request = start ? 1 : 2; }
+    [[nodiscard]] arcade_game *arcade() const noexcept { return current_editor_world ? &current_editor_world->arcade : nullptr; }
+    // Single place that pauses/resumes arcade play from mouse capture changes.
+    void set_mouse_capture(bool captured) noexcept;
+
 private:
+    int m_arcade_request{0}; // 1 start, 2 stop
     float m_boink_cooldown_ms{0.0f};
     player &active_player;
     std::optional<editor_world> current_editor_world;
@@ -192,6 +199,8 @@ private:
     void draw_builder_tab() const noexcept;
     void draw_graphics_tab() const noexcept;
     void draw_camera_tab() const noexcept;
+    void draw_controller_tab() const noexcept;
+    void draw_arcade_tab() const noexcept;
     void draw_player_tab() const noexcept;
     void draw_exports_tab() const noexcept;
     void draw_mode_tabs() const noexcept;

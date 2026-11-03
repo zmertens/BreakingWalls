@@ -19,7 +19,7 @@
 
 world::world(const world_builder &b)
     : simple_direct_medialayer{b.build_sdl}, active_fonts{*b.build_fonts}, world_shaders{*b.build_shaders},
-      world_textures{*b.build_textures}, scene_graph_layers{}, next_chunk_slot_in_view{1},
+      world_textures{*b.build_textures}, next_chunk_slot_in_view{1},
       active_player{b.build_player}, m_bloom{b.build_bloom_passes ? &b.build_bloom_passes->get(BloomPassIdentifier::EDITOR) : nullptr}
 {
     world_db = b.build_db;
@@ -27,15 +27,13 @@ world::world(const world_builder &b)
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "world: a loaded bloom pass is required");
     }
+    scene_graph.resize(MAX_CHUNKS);
 }
 
 world::~world()
 {
     cleanup_worker_threads();
     delete_all_chunks();
-    auto &root = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)][0];
-    delete root;
-    root = nullptr;
 }
 
 void world::init_voxel_engine() noexcept

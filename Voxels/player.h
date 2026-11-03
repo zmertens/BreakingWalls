@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <future>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <queue>
@@ -15,6 +16,7 @@
 #include <MazeBuilder/configurator.h>
 
 #include "artifact_exporter.h"
+#include "gamepad_manager.h"
 #include "item.h"
 #include "player_configs.h"
 
@@ -78,7 +80,7 @@ class player final
 public:
     struct position
     {
-        float x, y, z, rx, ry, t;
+        float x, y, z, rx, ry;
     } pos{};
 
     struct velocity
@@ -108,6 +110,14 @@ public:
 
     [[nodiscard]] std::uint32_t get_assigned_key(PlayerAction action) const;
 
+    /// Controller bindings use SDL_GamepadButton values; -1 means unbound. A button belongs to one action.
+    void assign_gamepad_button(PlayerAction action, int button);
+    [[nodiscard]] int get_assigned_gamepad_button(PlayerAction action) const;
+    void reset_gamepad_bindings();
+    [[nodiscard]] gamepad_manager &get_gamepads() const noexcept { return gamepads; }
+    /// Rumbles the active controller if the player enabled haptics.
+    void rumble(float low, float high, std::uint32_t duration_ms) const noexcept;
+
     [[nodiscard]] bool is_active() const noexcept;
     void set_active(bool active) noexcept;
 
@@ -132,6 +142,13 @@ public:
     [[nodiscard]] player_configs &get_configs() noexcept;
     void set_configs(const player_configs &cfg);
 
+    /// Flattens persistent configs, font, selected block and position into key/value strings.
+    [[nodiscard]] std::map<std::string, std::string> export_settings() const;
+    /// Applies previously exported settings; unknown or malformed entries are ignored.
+    void import_settings(const std::map<std::string, std::string> &settings);
+    /// Position restored from storage; returned once, then cleared.
+    [[nodiscard]] std::optional<position> take_saved_position() noexcept;
+
     [[nodiscard]] std::int32_t get_font_index() const noexcept;
     void set_font_index(std::int32_t index) noexcept;
 
@@ -150,6 +167,13 @@ private:
     void initialize_actions();
     static bool is_realtime_action(PlayerAction action) noexcept;
 
+    void handle_gamepad_button(int button, command_queue &commands) noexcept;
+    void push_action(PlayerAction action, command_queue &commands) const;
+    void cycle_view_mode() noexcept;
+    void zoom_iso_view(bool zoom_in) noexcept;
+    void step_selected_item(int direction) noexcept;
+    void apply_gamepad_settings() const noexcept;
+
     void on_light() const noexcept;
     void on_left_click() const noexcept;
     void on_right_click() const noexcept;
@@ -159,8 +183,13 @@ private:
     std::unordered_map<std::uint32_t, PlayerAction> keyboard_bindings;
 
     std::unordered_map<PlayerAction, command> player_commands;
+    std::unordered_map<PlayerAction, int> gamepad_bindings;
+    mutable gamepad_manager gamepads;
+    bool m_left_trigger_down{false};
+    bool m_right_trigger_down{false};
 
     player_configs configs;
+    std::optional<position> saved_position;
 
     std::uint32_t player_buffer;
 

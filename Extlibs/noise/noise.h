@@ -28,18 +28,21 @@ SOFTWARE.
 #define _noise_h_
 
 #if defined(__cplusplus)
-extern "C" {
+extern "C"
+{
 #endif
 
-void seed(unsigned int x);
+    void seed(unsigned int x);
 
-float simplex2(
-    float x, float y,
-    int octaves, float persistence, float lacunarity);
+    float noise3(float x, float y, float z);
 
-float simplex3(
-    float x, float y, float z,
-    int octaves, float persistence, float lacunarity);
+    float simplex2(
+        float x, float y,
+        int octaves, float persistence, float lacunarity);
+
+    float simplex3(
+        float x, float y, float z,
+        int octaves, float persistence, float lacunarity);
 
 #if defined(__cplusplus)
 }

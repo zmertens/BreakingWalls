@@ -2,6 +2,7 @@
 #define WORLD_H
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -21,6 +22,9 @@
 #include "sdl_gl_helper.h"
 #include "heightmap.h"
 #include "player.h"
+#include "tickerbox.h"
+#include "arcade_game.h"
+#include "particle_system.h"
 
 namespace mazes
 {
@@ -28,11 +32,11 @@ namespace mazes
 }
 
 class craft_map;
+class db_manager;
 struct chunk;
 struct worker;
 struct worker_item;
 struct world_builder;
-class db_manager;
 union SDL_Event;
 
 class world
@@ -46,6 +50,7 @@ public:
     static constexpr int BUILD_CHUNK_SIZE{32};
     static constexpr int RENDER_SIGN_RADIUS{4};
     static constexpr int DELETE_CHUNK_RADIUS{14};
+    static constexpr int MAX_CHUNKS{8192};
 
     virtual ~world();
 
@@ -53,6 +58,21 @@ public:
     virtual void handle_event(const SDL_Event &event) noexcept = 0;
     virtual void update(float delta_time, mazes::randomizer &rng) noexcept = 0;
     virtual void draw() const noexcept = 0;
+
+    // Arcade mode: a flat maze arena stamped over the terrain. The session lives on the main thread;
+    // the immutable level is shared with chunk workers.
+    mutable arcade_game arcade;
+    // Fire, trail and spark effects; GL state is touched on the main thread only.
+    mutable particle_system particles;
+    void spawn_particles(float x, float y, float z, int count, particle_system::kind k) const noexcept;
+    void start_arcade(int level, mazes::randomizer &rng) noexcept;
+    void stop_arcade() noexcept;
+    // Q / start button: pause, resume, or advance to the next level after a win.
+    void arcade_primary_action(mazes::randomizer &rng) noexcept;
+    bool arcade_collect() noexcept;
+    void apply_arcade_changes(std::vector<arcade_block_change> &changes) const noexcept;
+    // Writes the arena into a chunk being generated; safe to call from workers.
+    void stamp_arena(craft_map *map, int p, int q) const noexcept;
 
     // Used by player for artifact export coordinates
     [[nodiscard]] static int chunked(float x) noexcept;
@@ -68,7 +88,7 @@ protected:
 
     // Scene graph methods
     void build_scene();
-    void attach_chunk_to_layer(chunk *c, int layer_index) noexcept;
+    void attach_chunk_to_layer(chunk *c) noexcept;
     void detach_chunk_from_layer(chunk *c) noexcept;
     void traverse_chunks(const std::function<void(chunk *)> &callback) const noexcept;
     void traverse_chunks_in_bounds(int min_p, int min_q, int max_p, int max_q,
@@ -87,7 +107,7 @@ protected:
     [[nodiscard]] float get_daylight() const noexcept;
 
     [[nodiscard]] std::optional<chunk *> find_chunk(int p, int q) const noexcept;
-    [[nodiscard]] std::span<chunk *const> active_chunks() const noexcept;
+    [[nodiscard]] std::span<std::shared_ptr<chunk> const> active_chunks() const noexcept;
     static int chunk_distance(const chunk *c, int p, int q) noexcept;
     bool chunk_visible(float planes[6][4], int p, int q, int miny, int maxy) const noexcept;
 
@@ -116,6 +136,11 @@ protected:
     std::shared_ptr<const heightmap> world_heightmap;
     bool world_include_decorations{true};
     db_manager *world_db{nullptr};
+    // Status messages shown in the top-left ticker.
+    mutable tickerbox ticker;
+    // Set while an arcade arena exists; arena edits are never persisted.
+    std::shared_ptr<const arcade_level> arena; // accessed via std::atomic_load/store (libc++ lacks atomic<shared_ptr>)
+    std::atomic<bool> arena_active{false};
     bool world_load_persisted_blocks{true};
     void init_chunk(chunk *c, int p, int q) noexcept;
     void create_chunk(chunk *c, int p, int q) noexcept;
@@ -146,13 +171,6 @@ protected:
     // Matrix setup helpers — bind shader program, upload projection matrix uniform.
     std::pair<int, int> begin_3d_pass(const sdl_gl_helper::attrib *a, float matrix[16]) const noexcept;
 
-    enum class Layer
-    {
-        BACKGROUND = 0,
-        FOREGROUND = 1,
-        LAYER_COUNT = 2
-    };
-
     const sdl_gl_helper *simple_direct_medialayer;
 
     sdl_gl_helper::attrib s_block_attrib{};
@@ -161,8 +179,7 @@ protected:
     shader_manager &world_shaders;
     texture_manager &world_textures;
 
-    static constexpr auto MAX_CHUNKS = 8192;
-    std::array<std::array<chunk *, MAX_CHUNKS>, static_cast<std::size_t>(Layer::LAYER_COUNT)> scene_graph_layers;
+    std::vector<std::shared_ptr<chunk>> scene_graph{};
 
     std::size_t next_chunk_slot_in_view;
 

@@ -19,7 +19,6 @@
 
 #include "db_manager.h"
 #include "font.h"
-#include "heightmap.h"
 #include "item.h"
 #include "player.h"
 #include "resource_manager.h"
@@ -277,6 +276,19 @@ void loading_state::load_resources() const noexcept
     {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Database initialization failed; progress will not be saved\n");
     }
+    if (ctx.ctx_db && ctx.ctx_db->is_open())
+    {
+        if (const auto stored = ctx.ctx_db->load_settings(); !stored.empty())
+        {
+            ctx.ctx_player->import_settings(stored);
+            const auto &saved = ctx.ctx_player->get_configs();
+            SDL_GL_SetSwapInterval(saved.vsync() ? 1 : 0);
+            if (saved.fullscreen())
+            {
+                SDL_SetWindowFullscreen(ctx.ctx_sdl->window, true);
+            }
+        }
+    }
 
     ctx.ctx_fonts->load(FontIdentifier::COUSINE_REGULAR, Cousine_Regular_compressed_data, Cousine_Regular_compressed_size, font_size);
     ctx.ctx_fonts->load(FontIdentifier::LIMELIGHT, Limelight_Regular_compressed_data, Limelight_Regular_compressed_size, font_size);
@@ -410,6 +422,10 @@ void editor_state::draw() const noexcept
     if (draw_menu_button())
     {
         // No logner in editor_state , stop drawing menu button
+        if (auto *game = arcade())
+        {
+            game->pause();
+        }
         SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, false);
         request_stack_push(StateIdentifier::MENU);
     }
@@ -425,6 +441,11 @@ void editor_state::draw_physics_controls() const noexcept
     {
         ImGui::TextUnformatted("Physics sandbox is still loading.");
     }
+}
+
+bool editor_state::physics_enabled() const noexcept
+{
+    return current_editor_world && current_editor_world->physics_enabled();
 }
 
 void editor_state::rebuild_world() noexcept
@@ -454,7 +475,23 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
 
             current_editor_world->init();
             SDL_Log("Editor: World initialized after loading completed\n");
+#if defined(BREAKING_WALLS_DEBUG_DEF)
+            // Debug builds always boot straight into arcade mode.
+            m_arcade_request = 1;
+#endif
         }
+    }
+    if (current_editor_world && m_arcade_request)
+    {
+        if (m_arcade_request == 1)
+        {
+            current_editor_world->begin_arcade(1, rng);
+        }
+        else
+        {
+            current_editor_world->end_arcade();
+        }
+        m_arcade_request = 0;
     }
     if (current_editor_world && active)
     {
@@ -494,6 +531,19 @@ bool editor_state::update(const float delta_time, mazes::randomizer &rng) noexce
     return true;
 }
 
+void editor_state::set_mouse_capture(const bool captured) noexcept
+{
+    SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, captured);
+    get_context().ctx_player->set_active(captured);
+    if (auto *game = arcade())
+    {
+        if (captured)
+            game->resume();
+        else
+            game->pause();
+    }
+}
+
 bool editor_state::handle_event(SDL_Event &event) noexcept
 {
     if (event.type == SDL_EVENT_QUIT)
@@ -504,10 +554,13 @@ bool editor_state::handle_event(SDL_Event &event) noexcept
     auto *p{get_context().ctx_player};
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
     {
-        auto *win{&get_context().ctx_sdl->window};
-        const auto next_mouse_mode{!SDL_GetWindowRelativeMouseMode(*win)};
-        SDL_SetWindowRelativeMouseMode(*win, next_mouse_mode);
-        p->set_active(next_mouse_mode);
+        set_mouse_capture(!SDL_GetWindowRelativeMouseMode(get_context().ctx_sdl->window));
+    }
+    else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
+             !SDL_GetWindowRelativeMouseMode(get_context().ctx_sdl->window) && !ImGui::GetIO().WantCaptureMouse)
+    {
+        set_mouse_capture(true);
+        return true;
     }
 
     if (current_editor_world)
@@ -538,6 +591,12 @@ menu_state::menu_state(state_stack &stack, const context &context)
 
 menu_state::~menu_state()
 {
+    // Menu widgets edit the configs directly; closing the menu is the point where they are persisted.
+    // save_settings skips unchanged entries, so reopening and closing without edits writes nothing.
+    if (const auto &ctx = get_context(); ctx.ctx_db)
+    {
+        ctx.ctx_db->save_settings(ctx.ctx_player->export_settings());
+    }
     if (m_preview_texture)
     {
         glDeleteTextures(1, &m_preview_texture);
@@ -565,12 +624,6 @@ void menu_state::draw_heading() const noexcept
         get_context().ctx_player->set_active(true);
         request_stack_pop();
     }
-    ImGui::SameLine();
-    ImGui::NextColumn();
-    if (ImGui::Button("Close", menu_button_size()))
-    {
-        request_stack_clear();
-    }
 }
 
 void menu_state::draw_content(player *p, player_configs &configs, float content_width, float available_height) const noexcept
@@ -580,14 +633,6 @@ void menu_state::draw_content(player *p, player_configs &configs, float content_
     if (ImGui::BeginTabBar("##tabs"))
     {
         draw_mode_tabs();
-        if (ImGui::BeginTabItem("Physics"))
-        {
-            if (auto *editor = get_stack().peek_state<editor_state *>())
-                editor->draw_physics_controls();
-            else
-                ImGui::TextUnformatted("Physics sandbox is only available in the editor.");
-            ImGui::EndTabItem();
-        }
         if (ImGui::BeginTabItem("Audio"))
         {
             float master = configs.master_volume(), music = configs.music_volume(), sfx = configs.sfx_volume();
@@ -700,6 +745,14 @@ void menu_state::draw_mode_sidebar(const float available_height) const noexcept
         ImGui::BulletText("R Click: Build block");
         ImGui::BulletText("M Click: Copy block type");
         ImGui::BulletText("Scroll: Cycle block types");
+
+        ImGui::Separator();
+        ImGui::NewLine();
+        ImGui::NewLine();
+        if (ImGui::Button("Close", menu_button_size()))
+        {
+            request_stack_clear();
+        }
     }
 }
 
@@ -823,7 +876,11 @@ void menu_state::draw_graphics_tab() const noexcept
     float exposure = configs.exposure_val(), font_scale = configs.gui_font_scale();
     bool bloom = configs.use_bloom_effect();
     bool show_stats = configs.show_stats_window();
+    bool ticker = configs.show_tickerbox();
+    bool particles_on = configs.show_particles();
     ImGui::Checkbox("Show FPS Stats", &show_stats);
+    ImGui::Checkbox("Enable status tickerbox", &ticker);
+    ImGui::Checkbox("Enable particle effects", &particles_on);
     ImGui::Checkbox("Enable VSync", &vsync);
     ImGui::Checkbox("Enable Fullscreen", &fullscreen);
     ImGui::Checkbox("Enable Bloom Effect", &bloom);
@@ -855,7 +912,7 @@ void menu_state::draw_graphics_tab() const noexcept
             SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Fullscreen change failed: %s", SDL_GetError());
         }
     }
-    configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale).show_stats_window(show_stats);
+    configs.vsync(vsync).fullscreen(fullscreen).use_bloom_effect(bloom).exposure_val(exposure).gui_font_scale(font_scale).show_stats_window(show_stats).show_tickerbox(ticker).show_particles(particles_on);
 }
 
 void menu_state::draw_camera_tab() const noexcept
@@ -869,6 +926,83 @@ void menu_state::draw_camera_tab() const noexcept
     ImGui::SliderInt("Orthographic Scale", &ortho, 0, 64);
     ImGui::SliderInt("Day Length (s)", &day, 60, 1800);
     configs.invert_mouse(invert).fov(fov).ortho_scaling(ortho).day_length(day);
+}
+
+void menu_state::draw_controller_tab() const noexcept
+{
+    auto *p = get_context().ctx_player;
+    auto &&configs = p->get_configs();
+    const auto &pads = p->get_gamepads();
+    if (pads.connected())
+    {
+        ImGui::Text("Connected: %s%s", pads.name().c_str(), pads.is_fallback() ? " (raw joystick, limited mapping)" : "");
+    }
+    else
+    {
+        ImGui::TextUnformatted("No controller detected. Plug one in; it is picked up automatically.");
+    }
+
+    bool rumble = configs.rumble_enabled();
+    float look = configs.gamepad_look_speed(), dead_zone = configs.gamepad_dead_zone();
+    ImGui::Checkbox("Enable haptic feedback (rumble)", &rumble);
+    ImGui::SliderFloat("Look Speed", &look, 0.5f, 6.0f);
+    ImGui::SliderFloat("Stick Dead Zone", &dead_zone, 0.05f, 0.6f);
+    configs.rumble_enabled(rumble).gamepad_look_speed(look).gamepad_dead_zone(dead_zone);
+    ImGui::BeginDisabled(!pads.connected() || !rumble);
+    if (ImGui::Button("Test Rumble"))
+    {
+        p->rumble(0.6f, 0.9f, 250);
+    }
+    ImGui::EndDisabled();
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Fixed: left stick moves, right stick looks, triggers build/destroy, shoulders cycle blocks.");
+    if (ImGui::BeginTable("##padbinds", 2, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg))
+    {
+        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 160.f);
+        ImGui::TableHeadersRow();
+        for (int index = 0; index < static_cast<int>(PlayerAction::COUNT); ++index)
+        {
+            const auto action = static_cast<PlayerAction>(index);
+            if (action == PlayerAction::DONE || action == PlayerAction::BUILD_BLOCK || action == PlayerAction::DESTROY_BLOCK)
+            {
+                continue;
+            }
+            const int current = p->get_assigned_gamepad_button(action);
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(action_label(action));
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-1.f);
+            const char *preview = current >= 0 ? SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(current)) : "None";
+            if (ImGui::BeginCombo((std::string{"##pad"} + std::to_string(index)).c_str(), preview))
+            {
+                if (ImGui::Selectable("None", current < 0))
+                {
+                    p->assign_gamepad_button(action, -1);
+                }
+                // Shoulders are reserved for block cycling; only face, stick, back/start and d-pad buttons are offered.
+                for (int b = 0; b <= SDL_GAMEPAD_BUTTON_DPAD_RIGHT; ++b)
+                {
+                    if (b == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER || b == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)
+                    {
+                        continue;
+                    }
+                    if (ImGui::Selectable(SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(b)), b == current))
+                    {
+                        p->assign_gamepad_button(action, b);
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+        ImGui::EndTable();
+    }
+    if (ImGui::Button("Reset Controller Bindings", menu_button_size()))
+    {
+        p->reset_gamepad_bindings();
+    }
 }
 
 void menu_state::draw_player_tab() const noexcept
@@ -946,6 +1080,68 @@ void menu_state::draw_exports_tab() const noexcept
     ImGui::TextWrapped("%s", m_cached_artifacts.empty() ? "No artifacts generated yet." : m_cached_artifacts.substr(0, 512).c_str());
 }
 
+void menu_state::draw_arcade_tab() const noexcept
+{
+    auto *editor = get_stack().peek_state<editor_state *>();
+    auto *game = editor ? editor->arcade() : nullptr;
+    ImGui::TextWrapped("Reach the bottom-right corner of the maze. Moving into a wall breaks it for a penalty; "
+                       "left click (or the trigger) on a nearby block that matches your selected block scores points. "
+                       "Q or a click starts and pauses.");
+    ImGui::Separator();
+    if (ImGui::Button(game && game->active() ? "Restart Arcade" : "Start Arcade", menu_button_size()) && editor)
+    {
+        editor->request_arcade(true);
+        SDL_SetWindowRelativeMouseMode(get_context().ctx_sdl->window, true);
+        get_context().ctx_player->set_active(true);
+        request_stack_pop();
+        return;
+    }
+    if (game && game->active() && ImGui::Button("End Arcade", menu_button_size()))
+    {
+        editor->request_arcade(false);
+    }
+    if (game)
+    {
+        auto &rules = game->rules;
+        ImGui::SliderInt("Wall penalty", &rules.wall_penalty, 0, 100);
+        ImGui::SliderInt("Point block score", &rules.block_points, 1, 200);
+        ImGui::SliderInt("Time bonus / second", &rules.time_bonus_per_second, 0, 20);
+        ImGui::SliderFloat("Time limit (s)", &rules.time_limit, 30.0f, 600.0f);
+    }
+    if (editor)
+    {
+        ImGui::Separator();
+        ImGui::TextUnformatted("Physics");
+        editor->draw_physics_controls();
+    }
+    ImGui::Separator();
+    ImGui::TextUnformatted("High scores");
+    if (auto *db = get_context().ctx_db)
+    {
+        if (ImGui::BeginTable("##scores", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter))
+        {
+            ImGui::TableSetupColumn("Score");
+            ImGui::TableSetupColumn("Level");
+            ImGui::TableSetupColumn("Time");
+            ImGui::TableSetupColumn("Walls");
+            ImGui::TableHeadersRow();
+            for (const auto &entry : db->load_highscores(10))
+            {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text("%d", entry.score);
+                ImGui::TableNextColumn();
+                ImGui::Text("%d", entry.level);
+                ImGui::TableNextColumn();
+                ImGui::Text("%.1fs", static_cast<double>(entry.time_ms) / 1000.0);
+                ImGui::TableNextColumn();
+                ImGui::Text("%d", entry.walls);
+            }
+            ImGui::EndTable();
+        }
+    }
+}
+
 void menu_state::draw_mode_tabs() const noexcept
 {
     if (ImGui::BeginTabItem("Builder"))
@@ -961,6 +1157,16 @@ void menu_state::draw_mode_tabs() const noexcept
     if (ImGui::BeginTabItem("Camera"))
     {
         draw_camera_tab();
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Arcade"))
+    {
+        draw_arcade_tab();
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Controller"))
+    {
+        draw_controller_tab();
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Player"))

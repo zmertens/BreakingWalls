@@ -7,7 +7,9 @@
 #include <box3d/box3d.h>
 
 #include <array>
+#include <memory>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <cstdint>
 #include <vector>
@@ -37,6 +39,10 @@ public:
         return std::exchange(m_physics_pending_impact, std::nullopt);
     }
     void draw_physics_controls() const noexcept;
+    [[nodiscard]] bool physics_enabled() const noexcept { return B3_IS_NON_NULL(m_physics_world); }
+    // Enters arcade mode: ORTHO camera, maze arena, cursor-driven player.
+    void begin_arcade(int level, mazes::randomizer &rng) noexcept;
+    void end_arcade() noexcept;
     [[nodiscard]] int rendered_terrain_faces() const noexcept { return m_rendered_terrain_faces; }
 
 private:
@@ -49,6 +55,9 @@ private:
     void render_player(std::uint32_t texture) const noexcept;
     void render_held_stick(std::uint32_t texture) const noexcept;
     void render_physics() const noexcept;
+    void render_ticker(std::uint32_t font) const noexcept;
+    void render_arcade_hud(std::uint32_t font) const noexcept;
+    void update_arcade(float delta_time_ms, mazes::randomizer &rng) noexcept;
     void render_text(std::uint32_t font, int justify,
                      float x, float y, float n, std::string_view text) const noexcept;
 
@@ -71,6 +80,13 @@ private:
     int block_center{-1};
 
     mutable int m_rendered_terrain_faces{};
+    // Full-screen effect triggered by gameplay events; progress runs 0 -> 1 over its duration.
+    ShaderEffect m_fx_effect{ShaderEffect::WAVE};
+    float m_fx_remaining{0.0f};
+    float m_fx_duration{1.0f};
+    void trigger_effect(ShaderEffect effect, float seconds) noexcept;
+    std::array<float, 3> m_last_trail_position{};
+    std::vector<arcade_block_change> m_arcade_changes;
     std::uint64_t m_swing_start_ms{0};
     bool m_swinging{false};
 
@@ -80,14 +96,6 @@ private:
         bool sphere{false};
         int block_type{};
         std::array<float, 3> color{};
-    };
-
-    struct physics_voxel_source
-    {
-        int x{};
-        int y{};
-        int z{};
-        int block_type{};
     };
 
     // Spring-damper "soft body" that trails the player so the third-person model wobbles, leans and squashes.
@@ -109,8 +117,10 @@ private:
     b3WorldId m_physics_world{b3_nullWorldId};
     // Kinematic capsule that mirrors the player while they are inside the physics slice.
     b3BodyId m_physics_player{b3_nullBodyId};
+    b3BodyId m_physics_static{b3_nullBodyId};
     std::vector<physics_object> m_physics_objects;
-    std::vector<physics_voxel_source> m_physics_voxel_sources;
+    std::unordered_map<int, b3ShapeId> m_physics_walls;
+    std::shared_ptr<const arcade_level> m_physics_level;
     std::uint64_t m_physics_impact_count{};
     std::optional<std::array<float, 3>> m_physics_pending_impact;
     float m_physics_pending_impact_distance_sq{};
@@ -126,6 +136,7 @@ private:
     float m_physics_right_x{1.0f};
     float m_physics_right_z{};
     float m_physics_yaw{};
+    float m_bump_cooldown{};
     mutable bool m_physics_paused{false};
     mutable bool m_physics_reset_requested{false};
     mutable bool m_add_physics_block_requested{false};
@@ -140,8 +151,11 @@ private:
     void support_player_on_physics() noexcept;
 
     void reset_physics() noexcept;
+    void destroy_physics() noexcept;
+    void bump_player_with_spheres(float dt) noexcept;
+    void release_physics_walls(const std::vector<arcade_block_change> &changes) noexcept;
+    [[nodiscard]] std::array<float, 3> random_maze_spawn() noexcept;
     void add_physics_object(bool sphere) noexcept;
-    void restore_physics_voxels() noexcept;
 };
 
 #endif // EDITOR_WORLD_H

@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <ranges>
+#include <string_view>
 #include <thread>
 
 struct worker_item final
@@ -53,6 +54,7 @@ public:
     int maxy{};
     int faces{};
     float *data{};
+    std::string_view::const_iterator text_iter{};
 };
 
 enum class WorkerState : int

@@ -18,11 +18,11 @@ set(CRAFT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/chunk_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/craft.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/craft_map.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/db.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/db_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_world.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_world_renderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/font.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/gamepad_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/game_environment.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/geometries.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/heightmap.cpp
@@ -32,11 +32,16 @@ set(CRAFT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/player.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sdl_gl_helper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/shader.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/sign_data.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/state_management.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/soundfx.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/texture.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tickerbox.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/arcade_game.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/particle_system.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/world.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/world_blocks.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/world_arcade.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/world_workers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/world_renderer.cpp)
 
@@ -60,19 +65,26 @@ FetchContent_Declare(SDL GIT_REPOSITORY https://github.com/libsdl-org/SDL.git GI
 FetchContent_MakeAvailable(SDL)
 set_property(DIRECTORY "${CMAKE_BINARY_DIR}/_deps/sdl-src" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
+# Get SDL mixer
+set(SDL3MIXER_VORBIS "STB" CACHE STRING "Use stb_vorbis for OGG audio decoding" FORCE)
+FetchContent_Declare(SDL_MIXER GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git GIT_TAG release-3.2.4)
+set(SDL_MIXER_SHARED FALSE CACHE BOOL "Build a SDL_mixer shared library (if available)")
+set(SDL_MIXER_STATIC TRUE CACHE BOOL "Build a SDL_mixer static library (if available)")
+FetchContent_MakeAvailable(SDL_MIXER)
+set_property(DIRECTORY "${CMAKE_BINARY_DIR}/_deps/sdl_mixer-src" PROPERTY EXCLUDE_FROM_ALL TRUE)
+
 # Get SFML
 set(GET_SFML_REPO_URL https://github.com/zmertens/SFML.git)
-set(GET_SFML_VERSION almostv3)
-set(SFML_BUILD_AUDIO ON)
-set(SFML_BUILD_NETWORK OFF)
+set(GET_SFML_VERSION apr310)
+set(SFML_BUILD_AUDIO OFF)
+set(SFML_BUILD_NETWORK ON)
 set(SFML_BUILD_GRAPHICS OFF)
 set(SFML_BUILD_WINDOW OFF)
 set(SFML_USE_SYSTEM_DEPS OFF)
+
 # Disable SFML's internal thread finding since we provide our own
 set(SFML_DISABLE_FIND_THREADS ON)
-# Disable problematic audio dependencies for builds
 set(SFML_USE_DRM OFF CACHE BOOL "Use DRM for audio")
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries")
 FetchContent_Declare(SFML GIT_REPOSITORY ${GET_SFML_REPO_URL} GIT_TAG ${GET_SFML_VERSION})
 FetchContent_MakeAvailable(SFML)
 
@@ -87,12 +99,13 @@ set(BOX3D_VERSION v0.1.0)
 FetchContent_Declare(box3d GIT_REPOSITORY ${BOX3D_REPO_URL} GIT_TAG ${BOX3D_VERSION})
 FetchContent_MakeAvailable(box3d)
 set_property(TARGET box3d PROPERTY COMPILE_WARNING_AS_ERROR OFF)
+
 # Unoptimized Box3D is ~7x slower per step; keep it optimized even in Debug.
 if(NOT MSVC)
     target_compile_options(box3d PRIVATE "$<$<CONFIG:Debug>:-O2>")
 endif()
 
-target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE MazeBuilder::MazeBuilder SDL3::SDL3 box3d::box3d SFML::Audio)
+target_link_libraries(${BREAKING_WALLS_APP_NAME} PRIVATE MazeBuilder::MazeBuilder SDL3::SDL3 SDL3_mixer::SDL3_mixer box3d::box3d SFML::Network)
 
 if(EMSCRIPTEN)
     message(INFO ": Building ${BREAKING_WALLS_APP_NAME} for the Web!")
@@ -101,16 +114,17 @@ if(EMSCRIPTEN)
     target_include_directories(${BREAKING_WALLS_APP_NAME} PRIVATE $<INSTALL_INTERFACE:${EMSCRIPTEN_DEP_PATH}> $<BUILD_INTERFACE:${EMSCRIPTEN_DEP_PATH}>)
 
     target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE
-            "SHELL:-pthread -s PTHREAD_POOL_SIZE=20 -s PROXY_TO_PTHREAD=1 -s OFFSCREENCANVAS_SUPPORT=1"
-            "SHELL:-s STACK_SIZE=5242880 -s DEFAULT_PTHREAD_STACK_SIZE=2097152"
-            "SHELL:-s INITIAL_MEMORY=268435456 -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=1073741824"
-            "SHELL:-s FULL_ES3=1 -s MAX_WEBGL_VERSION=2 -s MODULARIZE=1 -s EXPORT_ES6=1 -s WASM=1"
-            "SHELL:-matomics -mbulk-memory -s ENVIRONMENT=web,worker"
-            "SHELL:-s EXPORTED_RUNTIME_METHODS=HEAPF32,HEAPU8,HEAP32"
-            "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/Extlibs/emscripten_local/shell_minimal.html"
-            "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/Shaders@/Shaders"
-            "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/SoundFX@/SoundFX"
-            "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/Textures@/Textures")
+        "SHELL:-s AUDIO_WORKLET=0 -s WASM_WORKERS=1 -s ASYNCIFY=0"
+        "SHELL:-pthread -s PTHREAD_POOL_SIZE=20 -s PROXY_TO_PTHREAD=0 -s OFFSCREENCANVAS_SUPPORT=0"
+        "SHELL:-s STACK_SIZE=5242880 -s DEFAULT_PTHREAD_STACK_SIZE=2097152"
+        "SHELL:-s INITIAL_MEMORY=268435456 -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=1073741824"
+        "SHELL:-s FULL_ES3=1 -s MAX_WEBGL_VERSION=2 -s MODULARIZE=1 -s EXPORT_ES6=1 -s WASM=1"
+        "SHELL:-matomics -mbulk-memory -s ENVIRONMENT=web,worker"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=HEAPF32,HEAPU8,HEAP32"
+        "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/Extlibs/emscripten_local/shell_minimal.html"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/Shaders@/Shaders"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/SoundFX@/SoundFX"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/Textures@/Textures")
     target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<CONFIG:Debug>:SHELL:-s STACK_OVERFLOW_CHECK=2 -s ASSERTIONS=2 -gsource-map --profile>")
     target_link_options(${BREAKING_WALLS_APP_NAME} PRIVATE "$<$<CONFIG:Release>:SHELL:-O3>")
 
@@ -118,44 +132,43 @@ if(EMSCRIPTEN)
 
     add_custom_command(TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_SOURCE_DIR}/Textures/favicon.ico"
-            "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/favicon.ico"
-        VERBATIM)
-
-
-    add_custom_command(TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_SOURCE_DIR}/secure_http_server.py"
-            "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/secure_http_server.py"
+        "${CMAKE_SOURCE_DIR}/Textures/favicon.ico"
+        "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/favicon.ico"
         VERBATIM)
 else()
-
     message(INFO ": Building ${BREAKING_WALLS_APP_NAME} for the Desktop!")
 
     add_custom_command(TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_SOURCE_DIR}/Shaders"
-            "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/Shaders"
+        "${CMAKE_SOURCE_DIR}/Shaders"
+        "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/Shaders"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_SOURCE_DIR}/Textures"
-            "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/Textures"
+        "${CMAKE_SOURCE_DIR}/Textures"
+        "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/Textures"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_SOURCE_DIR}/SoundFX"
-            "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/SoundFX"
+        "${CMAKE_SOURCE_DIR}/SoundFX"
+        "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/SoundFX"
         VERBATIM)
 
     # Copy shared/dlls on Windows only
-    if (WIN32)
+    if(WIN32)
         # If the SDL3 imported target exists, copy its DLL into the target directory.
-        if (TARGET SDL3::SDL3-shared)
+        if(TARGET SDL3::SDL3-shared)
             add_custom_command(TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>"
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "$<TARGET_FILE:SDL3::SDL3-shared>"
-                    "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/$<TARGET_FILE_NAME:SDL3::SDL3-shared>"
+                "$<TARGET_FILE:SDL3::SDL3-shared>"
+                "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/$<TARGET_FILE_NAME:SDL3::SDL3-shared>"
                 VERBATIM)
         endif()
 
+        if(TARGET SDL3_mixer::SDL3_mixer-shared)
+            add_custom_command(TARGET ${BREAKING_WALLS_APP_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:SDL3_mixer::SDL3_mixer-shared>"
+                "$<TARGET_FILE_DIR:${BREAKING_WALLS_APP_NAME}>/$<TARGET_FILE_NAME:SDL3_mixer::SDL3_mixer-shared>"
+                VERBATIM)
+        endif()
     endif()
-
 endif()

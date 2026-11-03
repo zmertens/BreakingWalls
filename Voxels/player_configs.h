@@ -41,6 +41,18 @@ struct player_configs
         return *this;
     }
 
+    player_configs &show_particles(bool enabled)
+    {
+        opt_show_particles = enabled;
+        return *this;
+    }
+
+    player_configs &show_tickerbox(bool enabled)
+    {
+        opt_show_tickerbox = enabled;
+        return *this;
+    }
+
     player_configs &use_bloom_effect(bool enabled)
     {
         opt_use_bloom_effect = enabled;
@@ -161,6 +173,28 @@ struct player_configs
         return *this;
     }
 
+    player_configs &rumble_enabled(bool enabled)
+    {
+        opt_rumble_enabled = enabled;
+        return *this;
+    }
+
+    player_configs &gamepad_look_speed(float radians_per_second)
+    {
+        opt_gamepad_look_speed = std::clamp(radians_per_second, 0.5f, 6.0f);
+        return *this;
+    }
+
+    player_configs &gamepad_dead_zone(float value)
+    {
+        opt_gamepad_dead_zone = std::clamp(value, 0.05f, 0.6f);
+        return *this;
+    }
+
+    bool rumble_enabled() const noexcept { return opt_rumble_enabled.value_or(true); }
+    float gamepad_look_speed() const noexcept { return opt_gamepad_look_speed.value_or(2.5f); }
+    float gamepad_dead_zone() const noexcept { return opt_gamepad_dead_zone.value_or(0.2f); }
+
     float master_volume() const noexcept { return opt_master_volume.value_or(1.0f); }
     float music_volume() const noexcept { return opt_music_volume.value_or(1.0f); }
     float sfx_volume() const noexcept { return opt_sfx_volume.value_or(1.0f); }
@@ -195,6 +229,16 @@ struct player_configs
     bool show_stats_window() const noexcept
     {
         return opt_show_stats_window.value();
+    }
+
+    bool show_particles() const noexcept
+    {
+        return opt_show_particles.value();
+    }
+
+    bool show_tickerbox() const noexcept
+    {
+        return opt_show_tickerbox.value();
     }
 
     bool use_bloom_effect() const noexcept
@@ -276,6 +320,8 @@ private:
     std::optional<bool> opt_fullscreen{false};
     std::optional<bool> opt_invert_mouse{false};
     std::optional<bool> opt_show_stats_window{true};
+    std::optional<bool> opt_show_tickerbox{true};
+    std::optional<bool> opt_show_particles{true};
     std::optional<bool> opt_use_bloom_effect{true};
     std::optional<bool> opt_vsync{true};
 
@@ -295,6 +341,9 @@ private:
 
     std::optional<std::uint64_t> opt_start_time{0};
     std::optional<std::uint64_t> opt_start_ticks{0};
+    std::optional<bool> opt_rumble_enabled{true};
+    std::optional<float> opt_gamepad_look_speed{2.5f};
+    std::optional<float> opt_gamepad_dead_zone{0.2f};
     std::optional<bool> opt_mute_audio{false};
     std::optional<float> opt_master_volume{1.0f};
     std::optional<float> opt_music_volume{1.0f};

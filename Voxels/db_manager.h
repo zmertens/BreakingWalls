@@ -1,9 +1,12 @@
 #ifndef DB_MANAGER_H
 #define DB_MANAGER_H
 
-#include "db.h"
+#include "player.h"
+#include "sign_data.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -22,11 +25,6 @@ class db_manager final
 {
 public:
 	using block_record = std::tuple<int, int, int, int, int, int>; // p, q, x, y, z, w
-
-	struct player_state
-	{
-		float x{}, y{}, z{}, rx{}, ry{};
-	};
 
 	struct heightmap_record
 	{
@@ -52,8 +50,25 @@ public:
 	/// Clears world tables; blocks until the worker has applied it.
 	void flush();
 
-	void save_state(float x, float y, float z, float rx, float ry);
-	[[nodiscard]] std::optional<player_state> load_state();
+	/// Key/value player settings (graphics, audio, camera, position, ...).
+	using settings_map = std::map<std::string, std::string>;
+
+	/// Writes only the entries whose value differs from what the database already holds (or last
+	/// received); returns how many rows were written. Cheap to call often.
+	std::size_t save_settings(const settings_map &settings);
+	/// Reads every stored setting and primes the change-detection cache.
+	[[nodiscard]] settings_map load_settings();
+
+	/// Arcade results, ranked by score (highest first), then time (fastest first).
+	struct highscore_record
+	{
+		int level{0};
+		int score{0};
+		int time_ms{0};
+		int walls{0};
+	};
+	void save_highscore(const highscore_record &record);
+	[[nodiscard]] std::vector<highscore_record> load_highscores(int limit = 10);
 
 	void insert_block(int p, int q, int x, int y, int z, int w);
 	void insert_blocks(const std::vector<block_record> &blocks);
@@ -68,7 +83,7 @@ public:
 
 	void load_blocks(craft_map *map, int p, int q);
 	void load_lights(craft_map *map, int p, int q);
-	void load_signs(db::sign_list *list, int p, int q);
+	void load_signs(std::vector<sign_data::sign> &list, int p, int q);
 	[[nodiscard]] std::vector<std::tuple<int, int, int, int>> query_blocks_near_chunks(int center_p, int center_q, int radius);
 
 	void insert_preview_blocks(int preview_id, const std::vector<block_record> &blocks);

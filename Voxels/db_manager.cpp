@@ -20,6 +20,12 @@ namespace
         "create table if not exists state ("
         "   x float not null, y float not null, z float not null, rx float not null, ry float not null"
         ");"
+        "create table if not exists settings (key text primary key not null, value text not null);"
+        "create table if not exists highscores ("
+        "    id integer primary key autoincrement,"
+        "    level int not null, score int not null, time_ms int not null, walls int not null,"
+        "    timestamp datetime default current_timestamp"
+        ");"
         "create table if not exists block ("
         "    p int not null, q int not null, x int not null, y int not null, z int not null, w int not null"
         ");"
@@ -154,6 +160,9 @@ struct db_manager::impl
 
     // Serializes every use of the connection and its statements.
     std::mutex db_mtx;
+
+    // Last values known to be in the settings table; guarded by db_mtx.
+    db_manager::settings_map settings_cache;
 
     std::mutex queue_mtx;
     std::condition_variable queue_cv;
@@ -373,44 +382,99 @@ void db_manager::flush()
     }
 }
 
-void db_manager::save_state(const float x, const float y, const float z, const float rx, const float ry)
+std::size_t db_manager::save_settings(const settings_map &settings)
 {
     if (!is_open())
     {
-        return;
+        return 0;
     }
     std::lock_guard lock(m_impl->db_mtx);
-    exec(m_impl->conn, "delete from state;");
+    auto &cache = m_impl->settings_cache;
     statement stmt;
-    if (!stmt.prepare(m_impl->conn, "insert into state (x, y, z, rx, ry) values (?, ?, ?, ?, ?);"))
+    std::size_t written = 0;
+    for (const auto &[key, value] : settings)
     {
-        return;
+        if (const auto found = cache.find(key); found != cache.end() && found->second == value)
+        {
+            continue;
+        }
+        if (written == 0 && !stmt.prepare(m_impl->conn, "insert or replace into settings (key, value) values (?, ?);"))
+        {
+            return 0;
+        }
+        sqlite3_reset(stmt.get());
+        sqlite3_bind_text(stmt.get(), 1, key.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 2, value.c_str(), -1, SQLITE_TRANSIENT);
+        stmt.run();
+        cache[key] = value;
+        ++written;
     }
-    sqlite3_bind_double(stmt.get(), 1, x);
-    sqlite3_bind_double(stmt.get(), 2, y);
-    sqlite3_bind_double(stmt.get(), 3, z);
-    sqlite3_bind_double(stmt.get(), 4, rx);
-    sqlite3_bind_double(stmt.get(), 5, ry);
-    stmt.run();
+    return written;
 }
 
-std::optional<db_manager::player_state> db_manager::load_state()
+db_manager::settings_map db_manager::load_settings()
 {
+    settings_map result;
     if (!is_open())
     {
-        return std::nullopt;
+        return result;
     }
     std::lock_guard lock(m_impl->db_mtx);
     statement stmt;
-    if (!stmt.prepare(m_impl->conn, "select x, y, z, rx, ry from state;") || sqlite3_step(stmt.get()) != SQLITE_ROW)
+    if (stmt.prepare(m_impl->conn, "select key, value from settings;"))
     {
-        return std::nullopt;
+        while (sqlite3_step(stmt.get()) == SQLITE_ROW)
+        {
+            const auto *key = sqlite3_column_text(stmt.get(), 0);
+            const auto *value = sqlite3_column_text(stmt.get(), 1);
+            if (key && value)
+            {
+                result.emplace(reinterpret_cast<const char *>(key), reinterpret_cast<const char *>(value));
+            }
+        }
     }
-    return player_state{static_cast<float>(sqlite3_column_double(stmt.get(), 0)),
-                        static_cast<float>(sqlite3_column_double(stmt.get(), 1)),
-                        static_cast<float>(sqlite3_column_double(stmt.get(), 2)),
-                        static_cast<float>(sqlite3_column_double(stmt.get(), 3)),
-                        static_cast<float>(sqlite3_column_double(stmt.get(), 4))};
+    m_impl->settings_cache = result;
+    return result;
+}
+
+void db_manager::save_highscore(const highscore_record &record)
+{
+    if (!is_open())
+    {
+        return;
+    }
+    std::lock_guard lock(m_impl->db_mtx);
+    statement stmt;
+    if (stmt.prepare(m_impl->conn, "insert into highscores (level, score, time_ms, walls) values (?, ?, ?, ?);"))
+    {
+        sqlite3_bind_int(stmt.get(), 1, record.level);
+        sqlite3_bind_int(stmt.get(), 2, record.score);
+        sqlite3_bind_int(stmt.get(), 3, record.time_ms);
+        sqlite3_bind_int(stmt.get(), 4, record.walls);
+        stmt.run();
+    }
+}
+
+std::vector<db_manager::highscore_record> db_manager::load_highscores(const int limit)
+{
+    std::vector<highscore_record> result;
+    if (!is_open())
+    {
+        return result;
+    }
+    std::lock_guard lock(m_impl->db_mtx);
+    statement stmt;
+    if (stmt.prepare(m_impl->conn,
+                     "select level, score, time_ms, walls from highscores order by score desc, time_ms asc limit ?;"))
+    {
+        sqlite3_bind_int(stmt.get(), 1, limit);
+        while (sqlite3_step(stmt.get()) == SQLITE_ROW)
+        {
+            result.push_back({sqlite3_column_int(stmt.get(), 0), sqlite3_column_int(stmt.get(), 1),
+                              sqlite3_column_int(stmt.get(), 2), sqlite3_column_int(stmt.get(), 3)});
+        }
+    }
+    return result;
 }
 
 void db_manager::insert_block(const int p, const int q, const int x, const int y, const int z, const int w)
@@ -518,7 +582,7 @@ void db_manager::load_lights(craft_map *map, const int p, const int q)
     impl::load_into(m_impl->load_lights, map, p, q);
 }
 
-void db_manager::load_signs(db::sign_list *list, const int p, const int q)
+void db_manager::load_signs(std::vector<sign_data::sign> &list, const int p, const int q)
 {
     if (!is_open())
     {
@@ -531,7 +595,7 @@ void db_manager::load_signs(db::sign_list *list, const int p, const int q)
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         const auto *text = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
-        db::sign_list_add(list, sqlite3_column_int(stmt, 0), sqlite3_column_int(stmt, 1),
+        sign_data::sign_list_add(list, sqlite3_column_int(stmt, 0), sqlite3_column_int(stmt, 1),
                           sqlite3_column_int(stmt, 2), sqlite3_column_int(stmt, 3), text ? text : "");
     }
     sqlite3_reset(stmt);

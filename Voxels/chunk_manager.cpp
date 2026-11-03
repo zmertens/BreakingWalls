@@ -3,9 +3,8 @@
 
 #include "chunk.h"
 #include "craft_map.h"
-#include "db.h"
-#include "geometries.h"
 #include "db_manager.h"
+#include "geometries.h"
 #include "item.h"
 #include "matrix.h"
 #include "player.h"
@@ -26,7 +25,7 @@
 
 namespace
 {
-    void load(const worker_item *item, const bool enable_heightmap,
+    void load(const worker_item *item,
               const float player_x, const float player_z, const heightmap *constrained,
               const bool include_decorations, const bool load_persisted_blocks,
               db_manager *db) noexcept
@@ -35,13 +34,15 @@ namespace
         craft_map *block_map = item->block_maps.get(1, 1);
         craft_map *light_map = item->light_maps.get(1, 1);
 
-        constexpr float FLATTEN_RADIUS = 256.0f;
+        // Flattening is disabled; the heightmap (or natural noise) defines the terrain.
+        constexpr float FLATTEN_RADIUS = 0.0f;
 
         geometries::create_voxel_world(
             [](craft_map *m, int x, int y, int z, int w)
             { m->set(x, y, z, w); },
             block_map, p, q, world::BUILD_CHUNK_SIZE,
-            enable_heightmap, player_x, player_z, FLATTEN_RADIUS, constrained, include_decorations);
+            player_x, player_z, FLATTEN_RADIUS, constrained, include_decorations,
+            item->text_iter);
 
         if (load_persisted_blocks && db)
         {
@@ -400,12 +401,12 @@ int world::hit_test(const int previous, const float x, const float y, const floa
     float vx, vy, vz;
     matrix::compute_sight_vector(rx, ry, std::ref(vx), std::ref(vy), std::ref(vz));
 
-    for (const chunk *c : active_chunks())
+    for (std::shared_ptr<chunk> c : active_chunks())
     {
-        if (c == nullptr || chunk_distance(c, p, q) > 1)
+        if (c == nullptr || chunk_distance(c.get(), p, q) > 1)
             continue;
         int hx, hy, hz;
-        const int hw = _hit_test(&c->map, 8, previous, x, y, z, vx, vy, vz, &hx, &hy, &hz);
+        const int hw = _hit_test(&c.get()->map, 8, previous, x, y, z, vx, vy, vz, &hx, &hy, &hz);
         if (hw > 0)
         {
             if (const auto dist = SDL_sqrtf(SDL_powf(static_cast<float>(hx) - x, 2) + SDL_powf(static_cast<float>(hy) - y, 2) + SDL_powf(static_cast<float>(hz) - z, 2));
@@ -589,9 +590,9 @@ void world::update_dirty_chunks_async() const noexcept
         std::lock_guard<std::mutex> lock(worker->mtx);
         if (worker->state == WorkerState::IDLE)
         {
-            for (chunk *c : active_chunks())
+            for (std::shared_ptr<chunk> c : active_chunks())
             {
-                if (c == nullptr || !c->dirty)
+                if (!c || !c->dirty)
                     continue;
                 int index = (SDL_abs(c->p) ^ SDL_abs(c->q)) % chunk_workers.size();
                 if (index != worker->index)
@@ -606,7 +607,7 @@ void world::update_dirty_chunks_async() const noexcept
                 {
                     for (int dq = -1; dq <= 1; dq++)
                     {
-                        chunk *other = c;
+                        chunk *other = c.get();
                         if (dp || dq)
                         {
                             if (auto other_opt = find_chunk(c->p + dp, c->q + dq); !other_opt.has_value())
@@ -681,50 +682,47 @@ void world::delete_chunks() noexcept
 {
     std::size_t count = this->next_chunk_slot_in_view;
     const player::position *s1 = &active_player->pos;
-    auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
     const int p = chunked(s1->x), q = chunked(s1->z);
 
     for (std::size_t i = 1; i < count; ++i)
     {
-        chunk *c = background_layer[i];
+        std::shared_ptr<chunk> c = scene_graph[i];
         if (c == nullptr)
             continue;
-        if (chunk_distance(c, p, q) < DELETE_CHUNK_RADIUS)
+        if (chunk_distance(c.get(), p, q) < DELETE_CHUNK_RADIUS)
             break;
 
-        detach_chunk_from_layer(c);
+        detach_chunk_from_layer(c.get());
         chunk_index.erase(chunk_key(c->p, c->q));
         c->release_buffers();
-        delete c;
 
         --count;
         if (i != count)
         {
-            background_layer[i] = background_layer[count];
+            scene_graph[i] = std::move(scene_graph[count]);
             --i;
         }
-        background_layer[count] = nullptr;
+        scene_graph[count].reset();
     }
     this->next_chunk_slot_in_view = count;
 }
 
 void world::delete_all_chunks() noexcept
 {
-    auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
     for (std::size_t i = 1; i < this->next_chunk_slot_in_view; ++i)
     {
-        chunk *c = background_layer[i];
-        if (c == nullptr)
+        std::shared_ptr<chunk> c = scene_graph[i];
+        if (!c)
             continue;
-        detach_chunk_from_layer(c);
+        detach_chunk_from_layer(c.get());
         c->release_buffers();
-        delete c;
-        background_layer[i] = nullptr;
+        scene_graph[i].reset();
     }
     chunk_index.clear();
     this->next_chunk_slot_in_view = 1;
-    if (background_layer[0] != nullptr)
-        background_layer[0]->children.clear();
+    if (scene_graph[0] != nullptr)
+        scene_graph[0]->children.clear();
+    scene_graph[0].reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -782,12 +780,11 @@ void world::force_chunks(player *_player) noexcept
             }
             else if (this->next_chunk_slot_in_view < MAX_CHUNKS)
             {
-                auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-                chunk *c = new chunk{};
-                background_layer[this->next_chunk_slot_in_view] = c;
+                auto c = std::make_shared<chunk>();
+                scene_graph[this->next_chunk_slot_in_view] = c;
                 ++this->next_chunk_slot_in_view;
-                create_chunk(c, a, b);
-                gen_chunk_buffer(c);
+                create_chunk(c.get(), a, b);
+                gen_chunk_buffer(c.get());
             }
         }
     }
@@ -846,9 +843,9 @@ void world::dispatch_chunk_to_worker(worker *w, int a, int b) noexcept
         load = 1;
         if (this->next_chunk_slot_in_view < MAX_CHUNKS)
         {
-            auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-            c = new chunk{};
-            background_layer[this->next_chunk_slot_in_view] = c;
+            auto c_ptr = std::make_shared<chunk>();
+            c = c_ptr.get();
+            scene_graph[this->next_chunk_slot_in_view] = c_ptr;
             ++this->next_chunk_slot_in_view;
             init_chunk(c, a, b);
         }
@@ -942,27 +939,19 @@ void world::ensure_chunks(player *_player) noexcept
 
 void world::build_scene()
 {
-    auto &background_layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
 
-    chunk *root = new chunk{};
+    auto root = std::make_shared<chunk>();
     root->bounds_min_x = -10000;
     root->bounds_min_z = -10000;
     root->bounds_max_x = 10000;
     root->bounds_max_z = 10000;
     root->parent = nullptr;
-    background_layer[0] = root;
-
-    std::fill(background_layer.begin() + 1, background_layer.end(), nullptr);
-
-    auto &foreground_layer = scene_graph_layers[static_cast<std::size_t>(Layer::FOREGROUND)];
-    std::ranges::fill(foreground_layer, nullptr);
+    scene_graph[0] = root;
+    std::ranges::fill(scene_graph.begin() + 1, scene_graph.end(), nullptr);
 }
 
-void world::attach_chunk_to_layer(chunk *c, int layer_index) noexcept
+void world::attach_chunk_to_layer(chunk *c) noexcept
 {
-    if (layer_index >= static_cast<int>(Layer::LAYER_COUNT) || c == nullptr)
-        return;
-
     constexpr int CHUNK_SIZE = BUILD_CHUNK_SIZE;
     c->bounds_min_x = c->p * CHUNK_SIZE;
     c->bounds_min_z = c->q * CHUNK_SIZE;
@@ -984,7 +973,7 @@ void world::insert_chunk_into_spatial_tree(chunk *c) const noexcept
     if (c == nullptr)
         return;
 
-    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
+    chunk *root = scene_graph.at(0).get();
     if (root == nullptr)
         return;
 
@@ -1009,7 +998,7 @@ void world::remove_chunk_from_spatial_tree(chunk *c) noexcept
 
 void world::traverse_chunks(const std::function<void(chunk *)> &callback) const noexcept
 {
-    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
+    chunk *root = scene_graph.at(0).get();
     if (root == nullptr)
         return;
 
@@ -1037,7 +1026,7 @@ void world::traverse_chunks_in_bounds(const int min_p, const int min_q, const in
     const int max_x = (max_p + 1) * CHUNK_SIZE - 1;
     const int max_z = (max_q + 1) * CHUNK_SIZE - 1;
 
-    chunk *root = scene_graph_layers.at(static_cast<std::size_t>(Layer::BACKGROUND)).at(0);
+    std::shared_ptr<chunk> root = scene_graph.at(0);
     if (root == nullptr)
         return;
 
@@ -1049,14 +1038,14 @@ void world::traverse_chunks_in_bounds(const int min_p, const int min_q, const in
         if (!node->intersects_bounds(min_x, min_z, max_x, max_z))
             return;
 
-        if (node != root)
+        if (node != root.get())
             callback(node);
 
         for (chunk *child : node->children)
             traverse_node(child);
     };
 
-    traverse_node(root);
+    traverse_node(root.get());
 }
 
 // ---------------------------------------------------------------------------
@@ -1078,10 +1067,12 @@ std::optional<chunk *> world::find_chunk(const int p, const int q) const noexcep
 }
 
 // Contiguous view of occupied slots; slot 0 is the root and is excluded.
-std::span<chunk *const> world::active_chunks() const noexcept
+std::span<std::shared_ptr<chunk> const> world::active_chunks() const noexcept
 {
-    const auto &layer = scene_graph_layers[static_cast<std::size_t>(Layer::BACKGROUND)];
-    return std::span<chunk *const>{layer}.subspan(1, next_chunk_slot_in_view - 1);
+    const std::size_t active_end = std::min(next_chunk_slot_in_view, scene_graph.size());
+    if (active_end <= 1)
+        return {};
+    return std::span<std::shared_ptr<chunk> const>{scene_graph}.subspan(1, active_end - 1);
 }
 
 bool world::chunk_visible(float planes[6][4], const int p, const int q,
@@ -1140,13 +1131,14 @@ int world::chunk_distance(const chunk *c, const int p, const int q) noexcept
 
 void world::load_chunk(const worker_item *item) const noexcept
 {
-    load(item, true,
+    load(item,
          active_player ? active_player->pos.x : 0.0f,
          active_player ? active_player->pos.z : 0.0f,
          world_heightmap.get(),
          world_include_decorations,
          world_load_persisted_blocks,
          world_db);
+    stamp_arena(item->block_maps.get(1, 1), item->p, item->q);
 }
 
 void world::init_chunk(chunk *c, const int p, const int q) noexcept
@@ -1154,7 +1146,7 @@ void world::init_chunk(chunk *c, const int p, const int q) noexcept
     c->initialize(p, q, world_db);
     chunk_index[chunk_key(p, q)] = c;
     dirty_chunk(c);
-    attach_chunk_to_layer(c, static_cast<int>(Layer::BACKGROUND));
+    attach_chunk_to_layer(c);
 }
 
 std::size_t world::get_chunk_count() const noexcept

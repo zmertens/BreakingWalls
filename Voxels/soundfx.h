@@ -17,7 +17,7 @@ public:
     bool load_from_file(SoundIdentifier id, std::string_view filename,
                         float offset, float pitch, float volume, bool loop);
     void play(SoundIdentifier id);
-    // Spatialized playback: SFML applies the inverse-clamped model internally.
+    // Spatialized playback: gain is derived from volume_factor() using the listener position.
     void play_at(SoundIdentifier id, float x, float y, float z);
     void set_listener_position(float x, float y, float z);
     // Applies to subsequently played spatialized sounds; both must be finite, min_distance > 0, attenuation >= 0.

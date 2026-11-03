@@ -19,6 +19,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <SFML/Network.hpp>
+
 #include "db_manager.h"
 #include "font.h"
 #include "geometries.h"
@@ -83,6 +85,7 @@ struct craft::craft_impl
             std::ref(artifact_exporters),
             std::ref(world_db)});
 
+        active_player.get_gamepads().open_all();
         register_states();
 
         crafting_states->push_state(StateIdentifier::EDITOR);
@@ -177,6 +180,12 @@ struct craft::craft_impl
             {
                 crafting_states->handle_event(event);
                 break;
+            }
+
+            // Controller hotplug is handled here so it works whichever state is on top.
+            if (active_player.get_gamepads().handle_device_event(event))
+            {
+                continue;
             }
 
             // Resize and focus loss must reach the world even when ImGui captures input.
@@ -317,6 +326,8 @@ bool craft::run(mazes::randomizer &rng) const noexcept
 #endif
 
     SDL_Log("Game ended, beginning cleanup...\n");
+    SDL_Log("Saving player settings...\n");
+    app->world_db.save_settings(app->active_player.export_settings());
     SDL_Log("Clearing state stack...\n");
     if (!app->crafting_states->is_empty())
     {
@@ -335,8 +346,12 @@ bool craft::run(mazes::randomizer &rng) const noexcept
     ImGui::DestroyContext();
 
     // States are gone, so nothing else touches the database; close it before SDL goes away.
+    app->active_player.get_gamepads().close_all();
     SDL_Log("Closing database...\n");
     app->world_db.close();
+
+    // SDL_mixer must be torn down while SDL is still initialized
+    app->world_sounds.clear();
 
     // Cleanup SDL (this must be last)
     SDL_Log("Shutting down SDL...\n");
@@ -372,25 +387,27 @@ void craft::reset_download_flag() const noexcept
 void craft::begin_export() const noexcept
 {
     // Kick off the async OBJ-generation worker; safe to call from JS event handler.
-    this->crafting_impl->active_player.start_async_artifact_export();
+    // this->crafting_impl->active_player.start_async_artifact_export();
 }
 
 bool craft::is_export_ready() const noexcept
 {
     // Non-blocking poll: returns true once the background OBJ worker has finished.
-    return this->crafting_impl->active_player.is_artifact_export_ready();
+    // return this->crafting_impl->active_player.is_artifact_export_ready();
+    return false;
 }
 
 std::string craft::get_export() noexcept
 {
     // Retrieve the finished OBJ string; empty if called before is_export_ready().
-    const std::string result = this->crafting_impl->active_player.get_artifact_export_result();
-    // Mark download flag so legacy is_download_ready() path is also satisfied.
-    if (!result.empty() && !this->crafting_impl->artifact_exporters.is_empty())
-    {
-        this->crafting_impl->artifact_exporters.get(ArtifactIdentifier::WORLD_OBJ_1).set_download_ready(true);
-    }
-    return result;
+    // const std::string result = this->crafting_impl->active_player.get_artifact_export_result();
+    // // Mark download flag so legacy is_download_ready() path is also satisfied.
+    // if (!result.empty() && !this->crafting_impl->artifact_exporters.is_empty())
+    // {
+    //     this->crafting_impl->artifact_exporters.get(ArtifactIdentifier::WORLD_OBJ_1).set_download_ready(true);
+    // }
+    // return result;
+    return "";
 }
 
 std::string craft::get_export_status() const noexcept
@@ -399,14 +416,14 @@ std::string craft::get_export_status() const noexcept
     // "idle"    – no export requested yet
     // "running" – worker thread active
     // "ready"   – result available, call get_export()
-    if (this->crafting_impl->active_player.is_artifact_export_ready())
-    {
-        return "ready";
-    }
+    // if (this->crafting_impl->active_player.is_artifact_export_ready())
+    // {
+    //     return "ready";
+    // }
     // Check whether a future is in-flight (valid but not yet ready).
     // We reuse is_artifact_export_ready() for the ready check and infer running
     // from the download flag being false and an export having been requested.
-    if (this->is_download_ready() && !this->crafting_impl->active_player.is_artifact_export_ready())
+    if (this->is_download_ready() /* && !this->crafting_impl->active_player.is_artifact_export_ready() */)
     {
         return "ready";
     }

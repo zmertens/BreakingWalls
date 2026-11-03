@@ -15,6 +15,8 @@ uniform bool use_view;
 // camera position, heightmap side (world units); the map spans [0, side] on x and z
 uniform vec4 ocean;
 uniform float sea_level;
+// camera offset in backdrop units; each layer scrolls by a different share of it (parallax)
+uniform vec2 parallax;
 in vec2 screen_position;
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 brightColor;
@@ -92,6 +94,8 @@ void main() {
     vec2 local = vec2(screen_position.x, -screen_position.y) * viewport_scale / zoom;
     float c = cos(rotation), s = sin(rotation);
     vec2 world = vec2(c * local.x - s * local.y, s * local.x + c * local.y) + pan;
+    vec2 far_world = world + parallax * 0.25;
+    world += parallax;
     // Rings spread outward from the heightmap edge; every lit light adds strength. They bend the
     // cubemap lookup (refraction) and brighten it (reflection), so the clouds ripple instead of fog.
     float board_distance = max(abs(world.x), abs(world.y)) / max(animation.w, 0.01);
@@ -101,7 +105,7 @@ void main() {
     float strength = envelope * (0.35 + 0.13 * animation.z);
     float wave = sin(travel);
     vec2 outward = normalize(world + vec2(1e-4));
-    vec3 direction = normalize(vec3(world.x, -0.7, world.y) + vec3(outward.x, 0.0, outward.y) * wave * strength * 0.5);
+    vec3 direction = normalize(vec3(far_world.x, -0.7, far_world.y) + vec3(outward.x, 0.0, outward.y) * wave * strength * 0.5);
     vec3 clouds = texture(environment_map, direction).rgb;
     vec3 radiance = neon_field(world) * 0.6 + clouds * (0.55 + 0.9 * strength * (0.5 + 0.5 * wave));
     if (static_horizon) {
