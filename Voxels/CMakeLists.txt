@@ -66,11 +66,20 @@ FetchContent_MakeAvailable(SDL)
 set_property(DIRECTORY "${CMAKE_BINARY_DIR}/_deps/sdl-src" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
 # Get SDL mixer
-set(SDL3MIXER_VORBIS "STB" CACHE STRING "Use stb_vorbis for OGG audio decoding" FORCE)
+# Use the bundled decoders (stb_vorbis, drflac, dr_mp3) so system codec libs/headers are not required
+set(SDLMIXER_VORBIS_VORBISFILE OFF CACHE BOOL "" FORCE)
+set(SDLMIXER_FLAC_LIBFLAC OFF CACHE BOOL "" FORCE)
+set(SDLMIXER_MP3_MPG123 OFF CACHE BOOL "" FORCE)
+set(SDLMIXER_OPUS OFF CACHE BOOL "" FORCE)
+set(SDLMIXER_MIDI_FLUIDSYNTH OFF CACHE BOOL "" FORCE)
+set(SDLMIXER_GME OFF CACHE BOOL "" FORCE)
+set(SDLMIXER_WAVPACK OFF CACHE BOOL "" FORCE)
+
 FetchContent_Declare(SDL_MIXER GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git GIT_TAG release-3.2.4)
-set(SDL_MIXER_SHARED FALSE CACHE BOOL "Build a SDL_mixer shared library (if available)")
-set(SDL_MIXER_STATIC TRUE CACHE BOOL "Build a SDL_mixer static library (if available)")
+set(_saved_bsl ${BUILD_SHARED_LIBS})
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(SDL_MIXER)
+set(BUILD_SHARED_LIBS ${_saved_bsl} CACHE BOOL "" FORCE)
 set_property(DIRECTORY "${CMAKE_BINARY_DIR}/_deps/sdl_mixer-src" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
 # Get SFML

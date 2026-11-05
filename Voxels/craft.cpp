@@ -351,6 +351,7 @@ bool craft::run(mazes::randomizer &rng) const noexcept
     app->world_db.close();
 
     // SDL_mixer must be torn down while SDL is still initialized
+    SDL_Log("Shutting down SDL_mixer...\n");
     app->world_sounds.clear();
 
     // Cleanup SDL (this must be last)
